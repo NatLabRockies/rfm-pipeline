@@ -1,4 +1,4 @@
-"""Format tracked Markdown files while excluding generated/transient paths."""
+"""Format repository Markdown files while excluding generated/transient paths."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ EXCLUDED_PARTS = {
     "build",
     "dist",
     "_build",
-    "docs/_build",
+    "__MACOSX",
 }
 
 MARKDOWN_SUFFIXES = {".md", ".mdx", ".markdown"}
@@ -25,14 +25,13 @@ MARKDOWN_SUFFIXES = {".md", ".mdx", ".markdown"}
 
 def _is_excluded(path: Path) -> bool:
     """Return True when the path is under an excluded directory."""
-    parts = set(path.parts)
-    return bool(parts & EXCLUDED_PARTS)
+    return any(part in EXCLUDED_PARTS for part in path.parts)
 
 
-def _tracked_markdown_files() -> list[Path]:
-    """Return tracked Markdown files in the repository."""
+def _repo_markdown_files() -> list[Path]:
+    """Return tracked and untracked Markdown files that are not ignored."""
     result = subprocess.run(
-        ["git", "ls-files"],
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
         check=True,
         capture_output=True,
         text=True,
@@ -44,17 +43,18 @@ def _tracked_markdown_files() -> list[Path]:
             continue
         if _is_excluded(path):
             continue
-        files.append(path)
-    return sorted(files)
+        if path.is_file():
+            files.append(path)
+    return sorted(set(files))
 
 
 def main() -> int:
-    """Run mdformat over tracked Markdown files."""
+    """Run mdformat over repository Markdown files."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
 
-    files = _tracked_markdown_files()
+    files = _repo_markdown_files()
     if not files:
         return 0
 

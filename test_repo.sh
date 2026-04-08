@@ -26,6 +26,55 @@ sync_env_locked() {
   "$PIXI_BIN" install --locked
 }
 
+fail_on_untracked_markdown() {
+  echo ">>> checking for untracked markdown files that CI would validate after commit"
+  python - <<'PY'
+from pathlib import Path
+import subprocess
+import sys
+
+EXCLUDED_PARTS = {
+    ".git",
+    ".pixi",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".ipynb_checkpoints",
+    ".venv",
+    "build",
+    "dist",
+    "_build",
+    "__MACOSX",
+}
+MARKDOWN_SUFFIXES = {".md", ".mdx", ".markdown"}
+
+result = subprocess.run(
+    ["git", "status", "--short", "--untracked-files=all"],
+    check=True,
+    capture_output=True,
+    text=True,
+)
+
+bad: list[str] = []
+for line in result.stdout.splitlines():
+    if not line.startswith("?? "):
+        continue
+    rel = line[3:]
+    path = Path(rel)
+    if path.suffix.lower() not in MARKDOWN_SUFFIXES:
+        continue
+    if any(part in EXCLUDED_PARTS for part in path.parts):
+        continue
+    bad.append(rel)
+
+if bad:
+    print("error: untracked markdown files detected; these can bypass local formatting and fail CI after commit:")
+    for item in bad:
+        print(f" - {item}")
+    print("run `pixi run format-markdown` after adding them, or add them before running the gate.")
+    sys.exit(1)
+PY
+}
+
 main() {
   local mode="${1:---fix}"
 
@@ -45,6 +94,7 @@ main() {
       sync_env_fix
       run_python_smoke
       run_task build-import-smoke
+      fail_on_untracked_markdown
       run_task clean-transients
       run_task format-python
       run_task format-markdown
@@ -69,6 +119,7 @@ main() {
       sync_env_locked
       run_python_smoke
       run_task build-import-smoke
+      fail_on_untracked_markdown
       run_task clean-transients
       run_task repo-hygiene
       run_task lint

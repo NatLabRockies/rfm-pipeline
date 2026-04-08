@@ -1,6 +1,7 @@
 # Proposed module breakdown (initial)
 
 ## Stage-aware package layout
+
 - `bsm_rfm.data`
   - row alignment
   - scenario flag recovery
@@ -24,7 +25,9 @@
   - read-only loader for canonical exported artifacts
 
 ## Immediate tested slices in this bundle
+
 This initial implementation provides the reusable, tested foundations needed before the heavier modeling code is ported:
+
 - scenario parsing and alignment
 - stratified holdout splitting
 - train-only scaling
@@ -34,8 +37,8 @@ This initial implementation provides the reusable, tested foundations needed bef
 - artifact manifest schema with order-preserving position maps
 - visualization-side canonical artifact loader
 
-
 ## Engineering scaffold adopted for the refactor
+
 - `pixi.toml`
   - canonical environment manifest for local development and CI
   - task aliases for fix, check, unit tests, workflow smoke tests, and docs builds
@@ -49,7 +52,6 @@ This initial implementation provides the reusable, tested foundations needed bef
   - repository hygiene checks, including generated artifact detection
 - `tools/notebook_hygiene.py`
   - notebook output stripping and notebook-cleanliness checks
-
 
 ## Module update
 

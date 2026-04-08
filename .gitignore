@@ -1,0 +1,28 @@
+*.zip
+
+# Pixi and Python environments
+.pixi/
+.venv/
+
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Notebook and docs build artifacts
+.ipynb_checkpoints/
+docs/_build/
+
+
+# Archive extraction detritus
+__MACOSX/
+
+# macOS Finder metadata
+.DS_Store

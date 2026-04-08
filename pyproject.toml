@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bsm-rfm"
+version = "0.1.0"
+description = "Foundational modules for the BSM reduced-form modeling refactor"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Dylan Hettinger" }]
+dependencies = [
+  "numpy",
+  "pandas",
+  "scikit-learn",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "ruff>=0.6",
+  "mdformat>=0.7",
+  "mdformat-gfm>=0.4",
+  "nbformat>=5.10",
+  "sphinx>=8",
+  "myst-parser>=4",
+  "jupyter>=1",
+  "build>=1.2",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+testpaths = ["tests"]
+addopts = "-q -p no:cacheprovider"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = [
+  ".git",
+  ".pixi",
+  ".pytest_cache",
+  ".ruff_cache",
+  ".venv",
+  "__MACOSX",
+  "build",
+  "dist",
+  "docs/_build",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "D"]
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D"]
+"docs/conf.py" = ["D"]
+
+[tool.ruff.format]
+docstring-code-format = true
+

@@ -1,0 +1,43 @@
+[workspace]
+name = "bsm-rfm"
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "osx-64", "linux-64", "win-64"]
+
+[dependencies]
+python = "3.12.*"
+numpy = ">=2"
+pandas = ">=2"
+scikit-learn = ">=1.5"
+pytest = ">=8"
+ruff = ">=0.6"
+mdformat = ">=0.7"
+mdformat-gfm = ">=0.4"
+nbformat = ">=5.10"
+sphinx = ">=8"
+myst-parser = ">=4"
+jupyter = ">=1"
+setuptools = ">=68"
+wheel = ">=0.45"
+
+[pypi-dependencies]
+build = ">=1.2"
+
+[tasks]
+import-smoke = "python tools/import_smoke.py"
+build-import-smoke = 'python -c "import build; print(build.__file__)"'
+clean-transients = "python tools/clean_transients.py"
+repo-hygiene = "python tools/check_repo.py"
+format-python = "ruff check . --fix && ruff format ."
+format-markdown = "python tools/format_markdown.py"
+fix-notebooks = "python tools/notebook_hygiene.py fix"
+lint = "ruff check ."
+format-check = "ruff format --check ."
+markdown-check = "python tools/format_markdown.py --check"
+notebook-check = "python tools/notebook_hygiene.py check"
+compile-check = "python tools/compile_check.py"
+unit-tests = "pytest -q tests"
+workflow-tests = "pytest -q tests/test_pipeline_smoke.py"
+notebook-tests = "python tools/execute_notebooks.py --timeout 1200"
+docs = "python tools/build_docs.py"
+package-build = "python -m build --no-isolation --sdist --wheel"
+git-diff-check = "git diff --check"

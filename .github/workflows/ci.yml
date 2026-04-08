@@ -21,8 +21,11 @@ jobs:
       - name: Run repository gate
         run: ./test_repo.sh --ci
 
+      - name: Rebuild docs artifact
+        run: pixi run docs
+
       - name: Upload built docs
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: sphinx-html

@@ -1,0 +1,5 @@
+wrap = "keep"
+end_of_line = "lf"
+number = false
+validate = true
+extensions = ["gfm"]

@@ -1,35 +1,60 @@
-"""Build Sphinx documentation into a temporary directory for gate validation."""
+"""Build Sphinx documentation into a deterministic output directory."""
 
 from __future__ import annotations
 
+import argparse
+import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 
-def build_docs(root: Path) -> None:
-    """Build Sphinx HTML docs into a temporary directory.
+def build_docs(root: Path, output_dir: Path | None = None) -> Path:
+    """Build Sphinx HTML docs.
 
     Parameters
     ----------
     root
         Repository root.
+    output_dir
+        Optional output directory. Defaults to ``docs/_build/html``.
+
+    Returns
+    -------
+    pathlib.Path
+        The HTML output directory.
     """
     docs_dir = root / "docs"
-    with tempfile.TemporaryDirectory(prefix="bsm_docs_build_") as tmpdir:
-        subprocess.run(
-            [sys.executable, "-m", "sphinx", "-W", "-b", "html", str(docs_dir), tmpdir],
-            cwd=root,
-            check=True,
-        )
-        print(f"Docs build succeeded: {tmpdir}")
+    html_dir = output_dir if output_dir is not None else docs_dir / "_build" / "html"
+    html_dir = html_dir.resolve()
+
+    if html_dir.exists():
+        shutil.rmtree(html_dir)
+
+    html_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    subprocess.run(
+        [sys.executable, "-m", "sphinx", "-W", "-b", "html", str(docs_dir), str(html_dir)],
+        cwd=root,
+        check=True,
+    )
+    print(f"Docs build succeeded: {html_dir}")
+    return html_dir
 
 
 def main() -> int:
     """Run the docs-build command-line interface."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Optional explicit Sphinx HTML output directory.",
+    )
+    args = parser.parse_args()
+
     root = Path(__file__).resolve().parents[1]
-    build_docs(root)
+    build_docs(root, args.output_dir)
     return 0
 
 

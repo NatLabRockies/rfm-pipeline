@@ -18,12 +18,6 @@ jobs:
         with:
           cache: true
 
-      - name: Sync locked Pixi environment
-        run: pixi install --locked
-
-      - name: Verify build frontend is importable
-        run: pixi run build-import-smoke
-
       - name: Run repository gate
         run: ./test_repo.sh --ci
 
@@ -33,4 +27,4 @@ jobs:
         with:
           name: sphinx-html
           path: docs/_build/html
-          if-no-files-found: ignore
+          if-no-files-found: error

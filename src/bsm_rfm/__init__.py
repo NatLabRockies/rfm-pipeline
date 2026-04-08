@@ -31,6 +31,13 @@ from .null_screening import (
     load_source_module,
     run_null_screening_with_source,
 )
+from .workflow import (
+    WorkflowStage,
+    canonical_case_study_numbers,
+    canonical_workflow_stages,
+    case_study_number_table,
+    workflow_stage_table,
+)
 
 __all__ = [
     "KNOWN_TRANSFORMATIONS",
@@ -48,6 +55,11 @@ __all__ = [
     "macro_nrmse_with_ref",
     "make_metadata_frame",
     "make_null_mean_prediction",
+    "WorkflowStage",
+    "canonical_case_study_numbers",
+    "canonical_workflow_stages",
+    "case_study_number_table",
+    "workflow_stage_table",
     "NullScreeningConfig",
     "NullScreeningResult",
     "parse_selected_input_structure",

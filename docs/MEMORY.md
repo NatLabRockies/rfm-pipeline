@@ -1,9 +1,11 @@
 # MEMORY.md
 
 ## Project
+
 `bsm-public-rf`
 
 ## Core engineering rules
+
 - Never patch from assumed state.
 - Always audit the exact live repo before making changes.
 - Make every patch cumulative.
@@ -15,6 +17,7 @@
 - `./test_repo.sh --check` and CI must enforce the locked, already-prepared state.
 
 ## Scientific provenance that should be treated as canonical
+
 - Original simulator sample size: 300,000
 - Modeling subset size: 20,000
 - Canonical subset path:
@@ -26,10 +29,13 @@
 - notebooks are not canonical scientific truth and may contain drift
 
 ## What was actually fixed in the live repo
+
 ### 1) Pixi/package build environment
+
 The `build` import failure was eventually fixed in the **live repo workflow**, not by changing scientific code.
 
 Current correct design:
+
 - `pixi.toml` uses:
   - `[pypi-dependencies]`
   - `build = ">=1.2"`
@@ -39,7 +45,9 @@ Current correct design:
 - Pixi version on live machine: `0.59.0`
 
 ### 2) test_repo.sh gate behavior
+
 The script was updated so it now:
+
 - anchors to repo root
 - resolves and uses a pinned Pixi executable path
 - prints repo root and pixi binary for traceability
@@ -53,14 +61,18 @@ The script was updated so it now:
 This fixed the previous situation where manual commands worked but the script failed.
 
 ### 3) Transient cleaner / gate tests
+
 The cleaner/tests were updated so that:
+
 - `.DS_Store` is removed as a transient artifact
 - `.pixi` is preserved
 - regression coverage exists for preserving Pixi env contents
 - stale tests that still expected `python-build` were updated to the current `build`-via-PyPI design
 
 ## Latest verified gate status
+
 `./test_repo.sh --fix` now progresses through:
+
 - pixi install
 - build import smoke
 - clean-transients
@@ -80,22 +92,28 @@ The cleaner/tests were updated so that:
 All of the above passed in the live repo run. The current failure is now in the docs step, which is good because it means the earlier gate issues were resolved. The failing docs output showed that `docs/MEMORY.md` is being scanned by Sphinx but is not included in any toctree, and warnings are treated as errors. :contentReference[oaicite:0]{index=0}
 
 ## Current blocker
+
 Sphinx docs build fails with:
+
 - `docs/MEMORY.md: WARNING: document isn't included in any toctree [toc.not_included]`
 - warnings are treated as errors in the docs build
 - this currently stops `./test_repo.sh --fix` at the docs step :contentReference[oaicite:1]{index=1}
 
 ## Most likely correct next step
+
 Audit the docs configuration and fix the doc-structure issue correctly.
 
 Likely valid repair directions to verify against the live repo:
+
 1. If `docs/MEMORY.md` is intended to be published documentation, include it in a toctree.
-2. If `docs/MEMORY.md` is only an internal engineering artifact, exclude it from Sphinx input via `docs/conf.py`.
+1. If `docs/MEMORY.md` is only an internal engineering artifact, exclude it from Sphinx input via `docs/conf.py`.
 
 Do not guess. Audit the live docs tree and choose the correct fix based on actual repo intent.
 
 ## Required audit files for the next chat
+
 Before changing anything, inspect at least:
+
 - `git status --short`
 - `docs/conf.py`
 - `docs/index.md` and/or `docs/index.rst`
@@ -106,7 +124,9 @@ Before changing anything, inspect at least:
 - `.github/workflows/*`
 
 ## Validation requirements before claiming success
+
 After the next patch, run and report actual results for:
+
 - `pixi run docs`
 - `./test_repo.sh --fix`
 - `git status --short`

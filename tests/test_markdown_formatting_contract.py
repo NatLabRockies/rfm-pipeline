@@ -1,3 +1,5 @@
+"""Regression tests for Markdown formatting discovery."""
+
 from __future__ import annotations
 
 import subprocess
@@ -34,7 +36,7 @@ def test_markdown_formatter_targets_untracked_files(tmp_path: Path) -> None:
     untracked.parent.mkdir()
     untracked.write_text("# Bad   spacing\n", encoding="utf-8")
 
-    script = Path("tools/format_markdown.py").resolve()
+    script = Path(__file__).resolve().parents[1] / "tools" / "format_markdown.py"
     result = subprocess.run(
         [sys.executable, str(script), "--check"],
         cwd=tmp_path,
@@ -43,4 +45,5 @@ def test_markdown_formatter_targets_untracked_files(tmp_path: Path) -> None:
     )
 
     assert result.returncode != 0
-    assert "docs/new_doc.md" in result.stderr or "docs/new_doc.md" in result.stdout
+    combined = f"{result.stdout}\n{result.stderr}"
+    assert "docs/new_doc.md" in combined

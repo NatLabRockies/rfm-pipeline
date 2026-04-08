@@ -19,12 +19,11 @@ EXCLUDED_PARTS = {
     "_build",
     "__MACOSX",
 }
-
 MARKDOWN_SUFFIXES = {".md", ".mdx", ".markdown"}
 
 
 def _is_excluded(path: Path) -> bool:
-    """Return True when the path is under an excluded directory."""
+    """Return whether a path is inside an excluded directory tree."""
     return any(part in EXCLUDED_PARTS for part in path.parts)
 
 
@@ -36,7 +35,8 @@ def _repo_markdown_files() -> list[Path]:
         capture_output=True,
         text=True,
     )
-    files: list[Path] = []
+
+    files: set[Path] = set()
     for line in result.stdout.splitlines():
         path = Path(line)
         if path.suffix.lower() not in MARKDOWN_SUFFIXES:
@@ -44,8 +44,9 @@ def _repo_markdown_files() -> list[Path]:
         if _is_excluded(path):
             continue
         if path.is_file():
-            files.append(path)
-    return sorted(set(files))
+            files.add(path)
+
+    return sorted(files)
 
 
 def main() -> int:

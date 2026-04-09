@@ -16,12 +16,11 @@ from .data import (
     stratified_subset_by_boolean_combination,
 )
 from .feature_expansion import (
-    SUPPORTED_TRANSFORMS,
     FeatureExpansionResult,
     FeatureExpansionSpec,
     apply_feature_expansion,
-    expanded_feature_names,
-    make_feature_expansion_spec,
+    default_feature_expansion_spec,
+    ordered_expanded_feature_names,
 )
 from .features import (
     KNOWN_TRANSFORMATIONS,
@@ -39,35 +38,27 @@ from .null_screening import (
     load_source_module,
     run_null_screening_with_source,
 )
-from .workflow import (
-    WorkflowStage,
-    canonical_case_study_numbers,
-    canonical_workflow_stages,
-    case_study_number_table,
-    workflow_stage_table,
-)
 
 __all__ = [
+    "CaseStudyNumber",
     "FeatureExpansionResult",
     "FeatureExpansionSpec",
     "KNOWN_TRANSFORMATIONS",
-    "SUPPORTED_TRANSFORMS",
-    "WorkflowStage",
     "PipelineManifest",
-    "apply_feature_expansion",
     "StandardizationBundle",
+    "WorkflowStage",
     "add_scenario_flags",
     "align_xy",
+    "apply_feature_expansion",
     "bootstrap_macro_nrmse_ci",
+    "build_position_map",
     "canonical_case_study_numbers",
+    "canonical_module_from_factor_name",
     "canonical_workflow_stages",
     "case_study_number_table",
-    "build_position_map",
-    "canonical_module_from_factor_name",
-    "expanded_feature_names",
+    "default_feature_expansion_spec",
     "ensure_id_columns",
     "fit_standardizers",
-    "make_feature_expansion_spec",
     "load_source_module",
     "make_boolean_combination_labels",
     "macro_nrmse_with_ref",
@@ -75,9 +66,19 @@ __all__ = [
     "make_null_mean_prediction",
     "NullScreeningConfig",
     "NullScreeningResult",
+    "ordered_expanded_feature_names",
     "parse_selected_input_structure",
     "run_null_screening_with_source",
     "stratified_holdout_split",
-    "workflow_stage_table",
     "stratified_subset_by_boolean_combination",
+    "workflow_stage_table",
 ]
+
+from .workflow import (
+    CaseStudyNumber,
+    WorkflowStage,
+    canonical_case_study_numbers,
+    canonical_workflow_stages,
+    case_study_number_table,
+    workflow_stage_table,
+)

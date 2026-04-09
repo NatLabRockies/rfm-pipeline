@@ -3,67 +3,64 @@
 from __future__ import annotations
 
 from bsm_rfm.regularized_screening import (
-    archived_multitask_elastic_net_spec,
-    divergence_table,
-    notebook_regularized_screening_spec,
-    recovered_regularized_screening_comparison,
-    screening_spec_table,
+    archived_multitask_enet_contract,
+    canonical_screening_contracts,
+    notebook_sparse_screening_contract,
+    screening_contract_table,
+    screening_divergence_table,
 )
 
 
-def test_archived_script_screening_spec_matches_recovered_audit_values() -> None:
-    spec = archived_multitask_elastic_net_spec()
-
-    assert spec.provenance == "archived_script"
-    assert spec.model_family == "MultiTaskElasticNetCV"
-    assert spec.holdout_fraction == 0.05
-    assert spec.candidate_input_count == 352
-    assert spec.full_output_count == 23495
-    assert spec.tuning_subset_file == "tune_vars.csv"
-    assert spec.selected_feature_count is None
-
-
-def test_notebook_screening_spec_matches_recovered_audit_values() -> None:
-    spec = notebook_regularized_screening_spec()
-
-    assert spec.provenance == "notebook_derived"
-    assert spec.holdout_fraction == 0.10
-    assert spec.output_count_after_culling == 9782
-    assert spec.selected_feature_count == 346
-    assert spec.l1_ratio_grid == (1.0, 0.95, 0.9)
-    assert spec.alpha_fraction_grid == (0.75, 0.5, 0.25, 0.10, 0.05, 0.02, 0.01)
-    assert spec.selected_l1_ratio == 1.0
-    assert spec.selected_alpha_fraction == 0.10
-    assert spec.selected_alpha_absolute == 2.8541
-    assert spec.model_selection_criterion == "EBIC"
+def test_archived_multitask_contract_matches_recovered_script_audit() -> None:
+    contract = archived_multitask_enet_contract()
+    assert contract.provenance == "source-script"
+    assert contract.source_artifact == "multivariate_mmreg_pipeline.with_subset.py"
+    assert contract.estimator_family == "MultiTaskElasticNetCV"
+    assert contract.holdout_fraction == 0.05
+    assert contract.candidate_input_count == 352
+    assert contract.output_count == 23495
+    assert contract.tuning_subset_file == "tune_vars.csv"
 
 
-def test_recovered_screening_comparison_exposes_material_divergences() -> None:
-    comparison = recovered_regularized_screening_comparison()
-    divergences = comparison.divergence_summary()
-
-    assert divergences["model_family"] == (
-        "MultiTaskElasticNetCV",
-        "PCA plus de-biased LASSO with final OLS handoff",
-    )
-    assert divergences["holdout_fraction"] == (0.05, 0.10)
-    assert divergences["tuning_subset_file"] == ("tune_vars.csv", None)
-    assert divergences["model_selection_criterion"] == (None, "EBIC")
+def test_notebook_sparse_contract_matches_recovered_notebook_audit() -> None:
+    contract = notebook_sparse_screening_contract()
+    assert contract.provenance == "notebook-derived"
+    assert contract.source_artifact == "LASSO_to_OLS_v9.ipynb"
+    assert contract.holdout_fraction == 0.10
+    assert contract.output_count_after_culling == 9782
+    assert contract.selected_feature_count == 346
+    assert "EBIC" in (contract.scoring_rule or "")
 
 
-def test_screening_tables_include_both_recovered_variants() -> None:
-    specs = screening_spec_table()
-    divergences = divergence_table()
+def test_screening_contracts_preserve_audit_order() -> None:
+    contracts = canonical_screening_contracts()
+    assert [contract.workflow_name for contract in contracts] == [
+        "archived_multitask_elastic_net",
+        "notebook_pca_debiased_lasso",
+    ]
 
-    assert specs.shape[0] == 2
-    assert set(specs["workflow_name"]) == {
-        "archived multitask elastic-net script",
-        "notebook PCA plus debiased-lasso screening",
-    }
-    assert set(divergences["field"]) == {
-        "model_family",
-        "response_representation",
+
+def test_screening_contract_table_exposes_key_recovered_fields() -> None:
+    table = screening_contract_table()
+    assert table["workflow_name"].tolist() == [
+        "archived_multitask_elastic_net",
+        "notebook_pca_debiased_lasso",
+    ]
+    assert table["holdout_fraction"].tolist() == [0.05, 0.10]
+    assert table["candidate_input_count"].tolist() == [352, 352]
+
+
+def test_screening_divergence_table_surfaces_material_differences() -> None:
+    table = screening_divergence_table()
+    assert set(table["dimension"]) >= {
         "holdout_fraction",
+        "estimator_family",
+        "response_representation",
+        "output_count_after_culling",
+        "selected_feature_count",
+        "scoring_rule",
         "tuning_subset_file",
-        "model_selection_criterion",
     }
+    holdout = table.loc[table["dimension"] == "holdout_fraction"].iloc[0]
+    assert holdout["archived_script"] == 0.05
+    assert holdout["notebook_workflow"] == 0.10

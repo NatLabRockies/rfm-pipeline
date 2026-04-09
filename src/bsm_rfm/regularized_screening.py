@@ -1,204 +1,228 @@
-"""Notebook-derived regularized-screening workflow contracts.
+"""Recovered regularized-screening workflow contracts.
 
-This module does not claim that the notebook workflow is the only canonical scientific
-truth for the case study. Instead, it captures the recovered, auditable configuration
-boundary for the downstream regularized-screening stage so later refactors can test
-against a stable contract.
+This module does not implement the full downstream screening estimators yet. Instead,
+it makes the recovered scientific contract explicit and testable by encoding the two
+materially different screening paths found in the audited archive:
+
+- the archived standalone ``multivariate_mmreg_pipeline.with_subset.py`` script
+- the notebook-derived ``LASSO_to_OLS_v9.ipynb`` workflow
+
+The goal is to keep these paths distinct until a canonical implementation is ported
+from verified scientific source artifacts.
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from typing import Any, Literal
+from dataclasses import dataclass
 
 import pandas as pd
 
-ScreeningProvenance = Literal["archived_script", "notebook_derived", "audit_resolved"]
-
 
 @dataclass(frozen=True)
-class RegularizedScreeningSpec:
-    """Configuration contract for a recovered regularized-screening workflow.
+class ScreeningWorkflowContract:
+    """Structured description of one recovered regularized-screening workflow.
 
     Attributes
     ----------
     workflow_name
-        Human-readable name for the recovered workflow variant.
+        Human-readable workflow label.
     provenance
-        Provenance label describing where the workflow definition came from.
-    model_family
-        Main regression family used in the screening stage.
+        Source provenance classification for the workflow.
+    source_artifact
+        Archived script or notebook from which the contract was recovered.
+    estimator_family
+        High-level estimator family used for screening.
     response_representation
-        Representation used for the multi-output response matrix before screening.
+        Response-space representation used by the workflow before selection.
     holdout_fraction
         External holdout fraction used by the workflow.
     candidate_input_count
-        Number of candidate inputs entering the screening stage.
-    full_output_count
-        Number of outputs available before any culling.
+        Number of candidate input columns at screening start when recovered.
+    output_count
+        Number of outputs entering the workflow stage.
     output_count_after_culling
-        Number of outputs retained after any pre-screen culling step.
+        Number of outputs retained after notebook-side culling, when applicable.
     selected_feature_count
-        Number of features retained by the regularized-screening workflow.
+        Number of retained features after the final sparse-screening stage,
+        when recovered.
     tuning_subset_file
-        Optional file used to define a tuning subset of outputs.
-    l1_ratio_grid
-        Candidate l1-ratio values explored during hyperparameter search.
-    alpha_fraction_grid
-        Candidate alpha-fraction values explored during hyperparameter search.
-    selected_l1_ratio
-        Selected l1-ratio recovered from the workflow, when known.
-    selected_alpha_fraction
-        Selected alpha-fraction recovered from the workflow, when known.
-    selected_alpha_absolute
-        Selected absolute alpha value recovered from the workflow, when known.
-    model_selection_criterion
-        Main selection criterion used to choose the final screening setting.
+        Optional archived filename used for output-subset tuning.
+    scoring_rule
+        Primary scoring or model-selection rule used by the workflow.
     notes
-        Additional concise provenance notes needed to interpret the workflow.
+        Additional concise scientific notes from the audit.
     """
 
     workflow_name: str
-    provenance: ScreeningProvenance
-    model_family: str
+    provenance: str
+    source_artifact: str
+    estimator_family: str
     response_representation: str
     holdout_fraction: float
-    candidate_input_count: int
-    full_output_count: int
+    candidate_input_count: int | None
+    output_count: int | None
     output_count_after_culling: int | None
     selected_feature_count: int | None
     tuning_subset_file: str | None
-    l1_ratio_grid: tuple[float, ...]
-    alpha_fraction_grid: tuple[float, ...]
-    selected_l1_ratio: float | None
-    selected_alpha_fraction: float | None
-    selected_alpha_absolute: float | None
-    model_selection_criterion: str | None
-    notes: tuple[str, ...] = ()
-
-    def to_dict(self) -> dict[str, Any]:
-        """Return a JSON-serializable view of the screening specification."""
-        payload = asdict(self)
-        payload["l1_ratio_grid"] = list(self.l1_ratio_grid)
-        payload["alpha_fraction_grid"] = list(self.alpha_fraction_grid)
-        payload["notes"] = list(self.notes)
-        return payload
+    scoring_rule: str | None
+    notes: tuple[str, ...]
 
 
-@dataclass(frozen=True)
-class ScreeningWorkflowComparison:
-    """Summary of the material differences between recovered workflow variants."""
+def archived_multitask_enet_contract() -> ScreeningWorkflowContract:
+    """Return the recovered archived-script screening contract.
 
-    archived_script: RegularizedScreeningSpec
-    notebook_workflow: RegularizedScreeningSpec
-
-    def divergence_summary(self) -> dict[str, tuple[Any, Any]]:
-        """Return the key archived-script versus notebook divergences."""
-        return {
-            "model_family": (
-                self.archived_script.model_family,
-                self.notebook_workflow.model_family,
-            ),
-            "response_representation": (
-                self.archived_script.response_representation,
-                self.notebook_workflow.response_representation,
-            ),
-            "holdout_fraction": (
-                self.archived_script.holdout_fraction,
-                self.notebook_workflow.holdout_fraction,
-            ),
-            "tuning_subset_file": (
-                self.archived_script.tuning_subset_file,
-                self.notebook_workflow.tuning_subset_file,
-            ),
-            "model_selection_criterion": (
-                self.archived_script.model_selection_criterion,
-                self.notebook_workflow.model_selection_criterion,
-            ),
-        }
-
-
-def archived_multitask_elastic_net_spec() -> RegularizedScreeningSpec:
-    """Return the recovered archived-script screening specification."""
-    return RegularizedScreeningSpec(
-        workflow_name="archived multitask elastic-net script",
-        provenance="archived_script",
-        model_family="MultiTaskElasticNetCV",
+    Returns
+    -------
+    ScreeningWorkflowContract
+        Contract recovered from the archived
+        ``multivariate_mmreg_pipeline.with_subset.py`` script.
+    """
+    return ScreeningWorkflowContract(
+        workflow_name="archived_multitask_elastic_net",
+        provenance="source-script",
+        source_artifact="multivariate_mmreg_pipeline.with_subset.py",
+        estimator_family="MultiTaskElasticNetCV",
         response_representation="direct standardized multi-output response",
         holdout_fraction=0.05,
         candidate_input_count=352,
-        full_output_count=23495,
+        output_count=23495,
         output_count_after_culling=None,
         selected_feature_count=None,
         tuning_subset_file="tune_vars.csv",
-        l1_ratio_grid=(),
-        alpha_fraction_grid=(),
-        selected_l1_ratio=None,
-        selected_alpha_fraction=None,
-        selected_alpha_absolute=None,
-        model_selection_criterion=None,
+        scoring_rule="cross-validation within MultiTaskElasticNetCV",
         notes=(
-            "Recovered source script uses a 5% holdout by default.",
-            "Script tunes on a target subset, then refits on all outputs.",
+            "Tunes on a target subset before refitting on all outputs.",
+            "Represents the canonical archived regularized screening script.",
         ),
     )
 
 
-def notebook_regularized_screening_spec() -> RegularizedScreeningSpec:
-    """Return the recovered notebook-derived screening specification."""
-    return RegularizedScreeningSpec(
-        workflow_name="notebook PCA plus debiased-lasso screening",
-        provenance="notebook_derived",
-        model_family="PCA plus de-biased LASSO with final OLS handoff",
+def notebook_sparse_screening_contract() -> ScreeningWorkflowContract:
+    """Return the recovered notebook-derived sparse-screening contract.
+
+    Returns
+    -------
+    ScreeningWorkflowContract
+        Contract recovered from ``LASSO_to_OLS_v9.ipynb``.
+    """
+    return ScreeningWorkflowContract(
+        workflow_name="notebook_pca_debiased_lasso",
+        provenance="notebook-derived",
+        source_artifact="LASSO_to_OLS_v9.ipynb",
+        estimator_family="PCA plus de-biased LASSO with final OLS handoff",
         response_representation="PCA-compressed output representation",
         holdout_fraction=0.10,
         candidate_input_count=352,
-        full_output_count=23495,
+        output_count=23495,
         output_count_after_culling=9782,
         selected_feature_count=346,
         tuning_subset_file=None,
-        l1_ratio_grid=(1.0, 0.95, 0.9),
-        alpha_fraction_grid=(0.75, 0.5, 0.25, 0.10, 0.05, 0.02, 0.01),
-        selected_l1_ratio=1.0,
-        selected_alpha_fraction=0.10,
-        selected_alpha_absolute=2.8541,
-        model_selection_criterion="EBIC",
+        scoring_rule="EBIC-guided sparse path search with ALO/KKT diagnostics",
         notes=(
-            "Notebook uses a deterministic 10% external holdout.",
-            "Notebook applies output culling before the PCA-LASSO search.",
-            "Recovered notebook workflow includes KKT checks and BH-FDR rowwise selection.",
+            "Uses a deterministic 18,000 / 2,000 train-holdout split.",
+            "Uses notebook-side bootstrap uncertainty for macro nRMSE reporting.",
+            "Produces the richer export schema already expected by downstream viz code.",
         ),
     )
 
 
-def recovered_regularized_screening_comparison() -> ScreeningWorkflowComparison:
-    """Return the archived-script versus notebook workflow comparison."""
-    return ScreeningWorkflowComparison(
-        archived_script=archived_multitask_elastic_net_spec(),
-        notebook_workflow=notebook_regularized_screening_spec(),
+def canonical_screening_contracts() -> tuple[ScreeningWorkflowContract, ...]:
+    """Return the recovered screening contracts in audit order.
+
+    Returns
+    -------
+    tuple[ScreeningWorkflowContract, ...]
+        Archived-script contract followed by the notebook-derived contract.
+    """
+    return (
+        archived_multitask_enet_contract(),
+        notebook_sparse_screening_contract(),
     )
 
 
-def screening_spec_table() -> pd.DataFrame:
-    """Return a tidy table of the recovered screening workflow variants."""
-    specs = [
-        archived_multitask_elastic_net_spec(),
-        notebook_regularized_screening_spec(),
-    ]
-    rows = [spec.to_dict() for spec in specs]
-    return pd.DataFrame(rows)
+def screening_contract_table() -> pd.DataFrame:
+    """Return the recovered screening contracts as a tabular summary.
 
-
-def divergence_table() -> pd.DataFrame:
-    """Return a tidy table of the key workflow divergences."""
-    comparison = recovered_regularized_screening_comparison()
-    rows = []
-    for field_name, values in comparison.divergence_summary().items():
-        rows.append(
+    Returns
+    -------
+    pandas.DataFrame
+        One row per recovered workflow contract.
+    """
+    return pd.DataFrame.from_records(
+        [
             {
-                "field": field_name,
-                "archived_script": values[0],
-                "notebook_workflow": values[1],
+                "workflow_name": contract.workflow_name,
+                "provenance": contract.provenance,
+                "source_artifact": contract.source_artifact,
+                "estimator_family": contract.estimator_family,
+                "response_representation": contract.response_representation,
+                "holdout_fraction": contract.holdout_fraction,
+                "candidate_input_count": contract.candidate_input_count,
+                "output_count": contract.output_count,
+                "output_count_after_culling": contract.output_count_after_culling,
+                "selected_feature_count": contract.selected_feature_count,
+                "tuning_subset_file": contract.tuning_subset_file,
+                "scoring_rule": contract.scoring_rule,
             }
-        )
-    return pd.DataFrame(rows)
+            for contract in canonical_screening_contracts()
+        ]
+    )
+
+
+def screening_divergence_table() -> pd.DataFrame:
+    """Summarize material divergences between recovered screening paths.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Row-wise divergence summary comparing the archived script with the
+        notebook-derived workflow.
+    """
+    archived, notebook = canonical_screening_contracts()
+    records = [
+        {
+            "dimension": "holdout_fraction",
+            "archived_script": archived.holdout_fraction,
+            "notebook_workflow": notebook.holdout_fraction,
+            "scientific_implication": "Different external validation design.",
+        },
+        {
+            "dimension": "estimator_family",
+            "archived_script": archived.estimator_family,
+            "notebook_workflow": notebook.estimator_family,
+            "scientific_implication": (
+                "Different sparse-screening estimator and optimization path."
+            ),
+        },
+        {
+            "dimension": "response_representation",
+            "archived_script": archived.response_representation,
+            "notebook_workflow": notebook.response_representation,
+            "scientific_implication": "Notebook compresses outputs before screening.",
+        },
+        {
+            "dimension": "output_count_after_culling",
+            "archived_script": archived.output_count_after_culling,
+            "notebook_workflow": notebook.output_count_after_culling,
+            "scientific_implication": "Notebook culls outputs before PCA-LASSO search.",
+        },
+        {
+            "dimension": "selected_feature_count",
+            "archived_script": archived.selected_feature_count,
+            "notebook_workflow": notebook.selected_feature_count,
+            "scientific_implication": "Notebook records a recovered final feature count.",
+        },
+        {
+            "dimension": "scoring_rule",
+            "archived_script": archived.scoring_rule,
+            "notebook_workflow": notebook.scoring_rule,
+            "scientific_implication": "Model selection criteria differ materially.",
+        },
+        {
+            "dimension": "tuning_subset_file",
+            "archived_script": archived.tuning_subset_file,
+            "notebook_workflow": notebook.tuning_subset_file,
+            "scientific_implication": "Archived script tunes on an explicit output subset file.",
+        },
+    ]
+    return pd.DataFrame.from_records(records)

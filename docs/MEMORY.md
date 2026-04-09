@@ -164,6 +164,14 @@ Before making changes, inspect at least:
 - `tools/`
 - any module/script associated with null screening, subset generation, modeling workflow, and scientific provenance
 
+## Scientific workflow reconciliation progress
+
+- `bsm_rfm.null_screening` is the canonical adapter boundary for the recovered `null_distribution.py` source workflow.
+- `bsm_rfm.regularized_screening` now encodes the recovered downstream screening divergence explicitly:
+  - archived script path: `MultiTaskElasticNetCV`, 5% holdout, direct standardized multi-output response, tuning via `tune_vars.csv`
+  - notebook-derived path: PCA-compressed response plus de-biased LASSO and final OLS handoff, 10% holdout, `9782` outputs retained after culling, `346` selected features
+- The next unresolved scientific boundary after this stage is the final OLS handoff/export contract.
+
 ## Validation requirements before claiming success in future chats
 
 Run and report actual results for all relevant checks touched by the next change. At minimum, if repo-engineering files are changed:
@@ -173,10 +181,3 @@ Run and report actual results for all relevant checks touched by the next change
 - `./test_repo.sh --check`
 
 If CI-relevant paths are changed, ensure the local contract still mirrors CI.
-
-## Latest cumulative scientific-reconciliation slice
-
-- Added importable workflow provenance in `bsm_rfm.workflow`.
-- Added explicit notebook-derived feature-expansion contract in `bsm_rfm.feature_expansion`.
-- Added tests for stage order, recovered case-study numbers, expanded feature naming, and feature-matrix materialization.
-- This repo still does not yet contain canonical package modules for regularized screening or final OLS; those remain the next likely scientific reconciliation targets after auditing the live repo again.

@@ -24,7 +24,4 @@ Run the repair path before committing:
 - mdformat for Markdown formatting
 - stripped notebook outputs before commit
 - Sphinx documentation build in the local and CI gates
-
-## Audit-driven update
-
-The package now exposes importable workflow provenance and an explicit notebook-derived feature-expansion boundary so later scientific modules can depend on tested contracts instead of markdown-only summaries.
+- explicit provenance boundaries for recovered scientific workflow stages

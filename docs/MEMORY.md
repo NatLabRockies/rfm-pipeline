@@ -174,4 +174,12 @@ Run and report actual results for all relevant checks touched by the next change
 
 If CI-relevant paths are changed, ensure the local contract still mirrors CI.
 
-- latest cumulative refactor slice added `bsm_rfm.regularized_screening` to encode the recovered archived-script (`MultiTaskElasticNetCV`, 5% holdout, `tune_vars.csv`) versus notebook-derived (`PCA + de-biased LASSO`, 10% holdout, EBIC, 346 selected features, 9782 kept outputs) screening boundary as importable tested code rather than markdown-only prose.
+## Additional stabilized scientific boundary
+
+- `bsm_rfm.workflow` now exposes the recovered stage sequence and audited case-study counts as importable code.
+- `bsm_rfm.feature_expansion` now exposes an explicit notebook-derived feature-expansion contract and matrix materialization utilities.
+- These two modules make the current scientific boundary testable without pretending the later regularized-screening or final-OLS stages are already canonical package implementations.
+
+## Likely next scientific step
+
+After this slice, the next highest-value step is to port the regularized-screening boundary into explicit code, with the archived multi-task elastic-net script and notebook-derived PCA/sparse-screening workflow kept clearly distinguished.

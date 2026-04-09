@@ -11,9 +11,8 @@
   - future home for recovered delta/permutation-null logic from `null_distribution.py`
 - `bsm_rfm.feature_engineering`
   - future home for interaction and nonlinear feature generation from `make_nonlinear_features.ipynb`
-- `bsm_rfm.regularized_screening`
-  - recovered archived-script versus notebook-derived screening contracts
-  - future home for the tested refactor of the screening workflow itself
+- `bsm_rfm.regularized_screen`
+  - future home for notebook-derived PCA/debiased-LASSO workflow
 - `bsm_rfm.final_ols`
   - future home for final OLS fitting and export
 - `bsm_rfm.metrics`
@@ -58,4 +57,8 @@ This initial implementation provides the reusable, tested foundations needed bef
 
 - `bsm_rfm.data`: add canonical balanced subset generation from 300k to 20k by sampling 5,000 rows within each AFSC/UAEORO boolean combination.
 - `bsm_rfm.null_screening`: adapter layer that delegates the upstream null-screening stage to the recovered `null_distribution.py` implementation instead of reimplementing notebook-drifted logic.
-- `bsm_rfm.regularized_screening`: expose the recovered archived-script versus notebook-derived downstream screening boundary as importable, tested configuration contracts and divergence tables.
+
+## Module update
+
+- `bsm_rfm.workflow`: importable stage-order and case-study provenance derived from the workflow audit.
+- `bsm_rfm.feature_expansion`: explicit notebook-derived feature-expansion spec and matrix materialization utilities for nonlinear terms, second-order terms, and scenario flags.

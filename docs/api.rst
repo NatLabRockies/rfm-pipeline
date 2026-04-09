@@ -49,6 +49,14 @@ null_screening
    :undoc-members:
    :show-inheritance:
 
+workflow
+--------
+
+.. automodule:: bsm_rfm.workflow
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 feature_expansion
 -----------------
 
@@ -57,10 +65,3 @@ feature_expansion
    :undoc-members:
    :show-inheritance:
 
-workflow
---------
-
-.. automodule:: bsm_rfm.workflow
-   :members:
-   :undoc-members:
-   :show-inheritance:

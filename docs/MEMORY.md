@@ -174,12 +174,9 @@ Run and report actual results for all relevant checks touched by the next change
 
 If CI-relevant paths are changed, ensure the local contract still mirrors CI.
 
-## Additional stabilized scientific boundary
+## Latest cumulative scientific-reconciliation slice
 
-- `bsm_rfm.workflow` now exposes the recovered stage sequence and audited case-study counts as importable code.
-- `bsm_rfm.feature_expansion` now exposes an explicit notebook-derived feature-expansion contract and matrix materialization utilities.
-- These two modules make the current scientific boundary testable without pretending the later regularized-screening or final-OLS stages are already canonical package implementations.
-
-## Likely next scientific step
-
-After this slice, the next highest-value step is to port the regularized-screening boundary into explicit code, with the archived multi-task elastic-net script and notebook-derived PCA/sparse-screening workflow kept clearly distinguished.
+- Added importable workflow provenance in `bsm_rfm.workflow`.
+- Added explicit notebook-derived feature-expansion contract in `bsm_rfm.feature_expansion`.
+- Added tests for stage order, recovered case-study numbers, expanded feature naming, and feature-matrix materialization.
+- This repo still does not yet contain canonical package modules for regularized screening or final OLS; those remain the next likely scientific reconciliation targets after auditing the live repo again.

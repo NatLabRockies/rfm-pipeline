@@ -1,4 +1,9 @@
-"""Canonical workflow provenance for the reduced-form modeling case study."""
+"""Canonical workflow provenance for the BSM reduced-form case study.
+
+This module records the recovered stage ordering and case-study counts that are
+already established by the repo audit. It does not claim that every stage has
+already been ported into canonical package code.
+"""
 
 from __future__ import annotations
 
@@ -9,250 +14,182 @@ import pandas as pd
 
 @dataclass(frozen=True)
 class WorkflowStage:
-    """Describe one workflow stage and its current implementation status.
+    """Provenance record for one workflow stage.
 
-    Attributes
+    Parameters
     ----------
     stage_key
-        Stable programmatic stage identifier.
+        Stable machine-readable stage identifier.
     stage_label
-        Human-readable stage label.
-    provenance
-        Provenance classification for the current implementation boundary.
-    implementation_status
-        Whether the stage is implemented in canonical package code, wrapped through a
-        recovered source script, or still only documented.
-    source_artifact
-        Recovered source artifact or notebook associated with the stage.
+        Human-readable stage name.
+    source_status
+        Provenance classification for the stage.
+    primary_source
+        Recovered script, notebook, or audit document anchoring this stage.
+    implemented_in_package
+        Whether this stage already exists as importable package code.
     notes
-        Short audit note explaining the current boundary.
+        Short explanatory note describing the current boundary.
     """
 
     stage_key: str
     stage_label: str
-    provenance: str
-    implementation_status: str
-    source_artifact: str
+    source_status: str
+    primary_source: str
+    implemented_in_package: bool
     notes: str
 
 
-@dataclass(frozen=True)
-class CaseStudyNumber:
-    """Verified case-study number recovered during the repo audit."""
+_CANONICAL_STAGES: tuple[WorkflowStage, ...] = (
+    WorkflowStage(
+        stage_key="null_screening",
+        stage_label="Upstream delta/null screening",
+        source_status="source-derived",
+        primary_source="null_distribution.py",
+        implemented_in_package=True,
+        notes=("Canonical upstream screening stage delegated through bsm_rfm.null_screening."),
+    ),
+    WorkflowStage(
+        stage_key="feature_expansion",
+        stage_label="Feature expansion",
+        source_status="notebook-derived",
+        primary_source="make_nonlinear_features.ipynb",
+        implemented_in_package=False,
+        notes=(
+            "Adds nonlinear terms, interactions, and scenario flags after the "
+            "recovered null-screening stage."
+        ),
+    ),
+    WorkflowStage(
+        stage_key="modeling_subset",
+        stage_label="Balanced modeling subset creation",
+        source_status="audit-resolved",
+        primary_source="repo workflow audit",
+        implemented_in_package=True,
+        notes=(
+            "Balanced 20k subset built by sampling 5,000 rows within each "
+            "AFSC/UAEORO boolean combination."
+        ),
+    ),
+    WorkflowStage(
+        stage_key="regularized_screening",
+        stage_label="Regularized screening",
+        source_status="notebook-derived",
+        primary_source="LASSO_to_OLS_v9.ipynb",
+        implemented_in_package=False,
+        notes=(
+            "Notebook workflow replaces the archived multi-task elastic-net "
+            "script with PCA plus sparse screening."
+        ),
+    ),
+    WorkflowStage(
+        stage_key="final_ols",
+        stage_label="Final OLS handoff",
+        source_status="notebook-derived",
+        primary_source="LASSO_to_OLS_v9.ipynb",
+        implemented_in_package=False,
+        notes=(
+            "Final selected features are handed to interpretable OLS fits with "
+            "exported coefficients and diagnostics."
+        ),
+    ),
+    WorkflowStage(
+        stage_key="evaluation_export",
+        stage_label="Evaluation and export",
+        source_status="notebook-derived",
+        primary_source="LASSO_to_OLS_v9.ipynb",
+        implemented_in_package=False,
+        notes=(
+            "Macro nRMSE summaries, holdout diagnostics, and artifact schema "
+            "live downstream of the final OLS stage."
+        ),
+    ),
+    WorkflowStage(
+        stage_key="downstream_visualization",
+        stage_label="Downstream visualization",
+        source_status="consumer-contract",
+        primary_source="visualization notebook expectations",
+        implemented_in_package=True,
+        notes=(
+            "Read-only artifact loading is stabilized in bsm_rfm.viz_io even "
+            "though the richer export contract is still being ported."
+        ),
+    ),
+)
 
-    key: str
-    value: int
-    units: str
-    provenance: str
-    notes: str
+
+_CANONICAL_CASE_STUDY_NUMBERS: tuple[tuple[str, int], ...] = (
+    ("upstream_null_screening_rows", 300000),
+    ("modeling_subset_rows", 20000),
+    ("boolean_strata", 4),
+    ("rows_per_boolean_stratum", 5000),
+    ("train_rows_notebook_split", 18000),
+    ("holdout_rows_notebook_split", 2000),
+    ("candidate_input_count", 352),
+    ("full_output_count", 23495),
+    ("diagnostic_output_subset", 555),
+    ("outputs_retained_before_pca_lasso", 9782),
+    ("outputs_culled_before_pca_lasso", 13713),
+    ("selected_feature_count", 346),
+    ("selected_first_order_count", 62),
+    ("selected_nonlinear_count", 40),
+    ("selected_second_order_count", 244),
+    ("null_permutation_count", 200),
+    ("null_resample_size", 2000),
+)
 
 
-def canonical_workflow_stages() -> list[WorkflowStage]:
-    """Return the audited canonical workflow stage sequence.
+def canonical_workflow_stages() -> tuple[WorkflowStage, ...]:
+    """Return the recovered workflow-stage sequence.
 
     Returns
     -------
-    list[WorkflowStage]
-        Workflow stages in their audited canonical order.
+    tuple[WorkflowStage, ...]
+        Immutable ordered stage records for the current audited workflow.
     """
-    return [
-        WorkflowStage(
-            stage_key="upstream_null_screening",
-            stage_label="Upstream null screening",
-            provenance="source-derived",
-            implementation_status="wrapped_source_script",
-            source_artifact="null_distribution.py",
-            notes=(
-                "Canonical delta sensitivity with permutation null. Package code wraps "
-                "the recovered source interface rather than reimplementing it."
-            ),
-        ),
-        WorkflowStage(
-            stage_key="feature_expansion",
-            stage_label="Feature expansion",
-            provenance="notebook-derived",
-            implementation_status="implemented_config_boundary",
-            source_artifact="make_nonlinear_features.ipynb",
-            notes=(
-                "Interaction and nonlinear feature generation is notebook-derived, but "
-                "the package now provides an explicit configuration boundary so those "
-                "choices are labeled instead of treated as implicit canonical truth."
-            ),
-        ),
-        WorkflowStage(
-            stage_key="modeling_subset_creation",
-            stage_label="Modeling subset creation",
-            provenance="audit-resolved",
-            implementation_status="implemented",
-            source_artifact="workflow audit + recovered subset rule",
-            notes=(
-                "Balanced 20k modeling subset formed by sampling 5,000 rows within each "
-                "AFSC/UAEORO boolean combination."
-            ),
-        ),
-        WorkflowStage(
-            stage_key="regularized_screening",
-            stage_label="Regularized screening",
-            provenance="notebook-derived",
-            implementation_status="documented_only",
-            source_artifact="LASSO_to_OLS_v9.ipynb",
-            notes=(
-                "PCA plus de-biased LASSO search is scientifically important but not yet "
-                "ported into canonical modules."
-            ),
-        ),
-        WorkflowStage(
-            stage_key="final_ols",
-            stage_label="Final OLS",
-            provenance="notebook-derived",
-            implementation_status="documented_only",
-            source_artifact="LASSO_to_OLS_v9.ipynb",
-            notes=(
-                "Final selected-feature OLS export remains notebook-derived until the "
-                "fitting and export contract are ported into package code."
-            ),
-        ),
-        WorkflowStage(
-            stage_key="evaluation_export",
-            stage_label="Evaluation and export",
-            provenance="consumer-contract",
-            implementation_status="partially_implemented",
-            source_artifact="artifact schema + notebook exports",
-            notes=(
-                "Metrics, manifests, and viz-side loaders exist, but the full postfit "
-                "evaluation/export workflow is not yet ported."
-            ),
-        ),
-        WorkflowStage(
-            stage_key="downstream_visualization",
-            stage_label="Downstream visualization",
-            provenance="consumer-contract",
-            implementation_status="implemented_read_only_loader",
-            source_artifact="canonical exported artifacts",
-            notes=(
-                "Visualization-side loading helpers are implemented for artifact "
-                "consumption, not for fitting the upstream model."
-            ),
-        ),
-    ]
+    return _CANONICAL_STAGES
 
 
 def workflow_stage_table() -> pd.DataFrame:
-    """Return workflow stages as a tabular audit artifact."""
-    return pd.DataFrame(asdict(stage) for stage in canonical_workflow_stages())
+    """Return the recovered workflow stages as a table.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per canonical stage in execution order.
+    """
+    return pd.DataFrame(asdict(stage) for stage in _CANONICAL_STAGES)
 
 
-def canonical_case_study_numbers() -> list[CaseStudyNumber]:
-    """Return verified workflow numbers recovered from the archive audit."""
-    return [
-        CaseStudyNumber(
-            key="upstream_rows",
-            value=300000,
-            units="rows",
-            provenance="source-derived",
-            notes="Standardized upstream screening matrix size in null_distribution.py.",
-        ),
-        CaseStudyNumber(
-            key="modeling_subset_rows",
-            value=20000,
-            units="rows",
-            provenance="audit-resolved",
-            notes="Balanced modeling subset recovered from the audited workflow.",
-        ),
-        CaseStudyNumber(
-            key="boolean_strata",
-            value=4,
-            units="strata",
-            provenance="audit-resolved",
-            notes="AFSC/UAEORO combinations used for balanced sampling.",
-        ),
-        CaseStudyNumber(
-            key="rows_per_boolean_stratum",
-            value=5000,
-            units="rows",
-            provenance="audit-resolved",
-            notes="Per-stratum draw size used to form the 20k modeling subset.",
-        ),
-        CaseStudyNumber(
-            key="notebook_train_rows",
-            value=18000,
-            units="rows",
-            provenance="notebook-derived",
-            notes="Notebook external training split size under the 10 percent holdout.",
-        ),
-        CaseStudyNumber(
-            key="notebook_holdout_rows",
-            value=2000,
-            units="rows",
-            provenance="notebook-derived",
-            notes="Notebook external holdout size under the 10 percent split.",
-        ),
-        CaseStudyNumber(
-            key="candidate_inputs",
-            value=352,
-            units="features",
-            provenance="notebook-derived",
-            notes="Candidate input count loaded at modeling start in the notebook.",
-        ),
-        CaseStudyNumber(
-            key="full_outputs",
-            value=23495,
-            units="outputs",
-            provenance="notebook-derived",
-            notes="Output count loaded at modeling start in the notebook.",
-        ),
-        CaseStudyNumber(
-            key="selected_features",
-            value=346,
-            units="features",
-            provenance="notebook-derived",
-            notes="Selected-feature count after the final notebook LASSO stage.",
-        ),
-        CaseStudyNumber(
-            key="selected_first_order_features",
-            value=62,
-            units="features",
-            provenance="notebook-derived",
-            notes="Selected first-order feature count parsed from notebook artifacts.",
-        ),
-        CaseStudyNumber(
-            key="selected_nonlinear_features",
-            value=40,
-            units="features",
-            provenance="notebook-derived",
-            notes=("Selected nonlinear transformation count parsed from notebook artifacts."),
-        ),
-        CaseStudyNumber(
-            key="selected_second_order_features",
-            value=244,
-            units="features",
-            provenance="notebook-derived",
-            notes="Selected second-order interaction count parsed from notebook artifacts.",
-        ),
-        CaseStudyNumber(
-            key="null_permutations",
-            value=200,
-            units="permutations",
-            provenance="source-derived",
-            notes="Permutation count B in the recovered null-screening script.",
-        ),
-        CaseStudyNumber(
-            key="null_resample_size",
-            value=2000,
-            units="rows",
-            provenance="source-derived",
-            notes="New influential-input resampling size N_NEW in null_distribution.py.",
-        ),
-        CaseStudyNumber(
-            key="bootstrap_replicates",
-            value=1000,
-            units="bootstrap_samples",
-            provenance="notebook-derived",
-            notes="Bootstrap replicate count used for notebook nRMSE intervals.",
-        ),
-    ]
+def canonical_case_study_numbers() -> dict[str, int]:
+    """Return the recovered case-study counts from the workflow audit.
+
+    Returns
+    -------
+    dict[str, int]
+        Mapping from stable metric names to audited integer values.
+    """
+    return {key: value for key, value in _CANONICAL_CASE_STUDY_NUMBERS}
 
 
 def case_study_number_table() -> pd.DataFrame:
-    """Return case-study numbers as a tabular audit artifact."""
-    return pd.DataFrame(asdict(item) for item in canonical_case_study_numbers())
+    """Return the recovered case-study counts as a table.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Two-column table with metric names and integer values.
+    """
+    return pd.DataFrame(
+        _CANONICAL_CASE_STUDY_NUMBERS,
+        columns=["metric_name", "value"],
+    )
+
+
+__all__ = [
+    "WorkflowStage",
+    "canonical_workflow_stages",
+    "workflow_stage_table",
+    "canonical_case_study_numbers",
+    "case_study_number_table",
+]

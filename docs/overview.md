@@ -25,6 +25,6 @@ Run the repair path before committing:
 - stripped notebook outputs before commit
 - Sphinx documentation build in the local and CI gates
 
-## Scientific provenance status
+## Current scientific boundary
 
-The repo now exposes the recovered regularized-screening workflow boundary as importable package code. This does not collapse the archived script and notebook into one assumed canonical method; instead, it preserves their material differences explicitly so later module work can reconcile them under test.
+The repo now exposes the recovered workflow-stage ordering and case-study counts through `bsm_rfm.workflow`. It also exposes an explicit notebook-derived feature-expansion contract through `bsm_rfm.feature_expansion`. This makes the audited scientific boundary importable and testable even though the later regularized-screening and final-OLS stages have not yet been ported into canonical package code.

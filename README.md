@@ -40,8 +40,9 @@ This scaffold covers the foundational utilities that the later canonical workflo
 - nRMSE helpers and bootstrap summaries
 - artifact manifest helpers
 - visualization-side artifact loading
+- recovered regularized-screening workflow contracts and divergences
 
-The scientific workflow itself still needs to be ported from the recovered scripts and notebooks into canonical modules.
+The scientific workflow itself still needs to be ported from the recovered scripts and notebooks into canonical modules. The regularized-screening boundary is now captured as an explicit, importable contract so downstream refactors can test against the recovered archived-script versus notebook divergence instead of relying on prose-only documentation.
 
 ## Provenance notes
 
@@ -63,9 +64,3 @@ The validation chain includes repository hygiene checks, Ruff lint/format valida
 Markdown formatting validation, notebook hygiene validation, Python compilation, unit tests,
 workflow smoke tests, notebook execution tests, Sphinx documentation builds, package builds,
 and `git diff --check`.
-
-## Current scientific boundary
-
-- `bsm_rfm.workflow` exposes the audited stage sequence and recovered case-study numbers as importable provenance tables.
-- `bsm_rfm.feature_expansion` provides an explicit, tested configuration boundary for notebook-derived interaction and nonlinear feature construction.
-- Later regularized-screening and final-OLS stages remain documented but are not yet canonical package modules.

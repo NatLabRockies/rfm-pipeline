@@ -41,26 +41,10 @@ viz_io
    :undoc-members:
    :show-inheritance:
 
-null_screening
---------------
+regularized_screening
+---------------------
 
-.. automodule:: bsm_rfm.null_screening
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-workflow
---------
-
-.. automodule:: bsm_rfm.workflow
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-feature_expansion
------------------
-
-.. automodule:: bsm_rfm.feature_expansion
+.. automodule:: bsm_rfm.regularized_screening
    :members:
    :undoc-members:
    :show-inheritance:

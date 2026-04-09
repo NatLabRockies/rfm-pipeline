@@ -33,19 +33,18 @@ metrics
    :undoc-members:
    :show-inheritance:
 
-viz_io
-------
+final_ols
+---------
 
-.. automodule:: bsm_rfm.viz_io
+.. automodule:: bsm_rfm.final_ols
    :members:
    :undoc-members:
    :show-inheritance:
 
+viz_io
+------
 
-regularized_screening
----------------------
-
-.. automodule:: bsm_rfm.regularized_screening
+.. automodule:: bsm_rfm.viz_io
    :members:
    :undoc-members:
    :show-inheritance:

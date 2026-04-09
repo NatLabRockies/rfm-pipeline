@@ -11,11 +11,11 @@
   - future home for recovered delta/permutation-null logic from `null_distribution.py`
 - `bsm_rfm.feature_engineering`
   - future home for interaction and nonlinear feature generation from `make_nonlinear_features.ipynb`
-- `bsm_rfm.regularized_screening`
-  - recovered workflow contracts for the archived MultiTaskElasticNetCV script and the notebook-derived PCA/debiased-LASSO path
-  - future home for the canonical port of the selected regularized-screening workflow
+- `bsm_rfm.regularized_screen`
+  - future home for notebook-derived PCA/debiased-LASSO workflow
 - `bsm_rfm.final_ols`
-  - future home for final OLS fitting and export
+  - recovered notebook-derived final OLS handoff and export contract
+  - canonical post-fit artifact schema helpers
 - `bsm_rfm.metrics`
   - macro nRMSE, null baseline, bootstrap CIs
 - `bsm_rfm.features`

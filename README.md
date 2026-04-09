@@ -43,7 +43,10 @@ This scaffold covers the foundational utilities that the later canonical workflo
 
 The scientific workflow itself still needs to be ported from the recovered scripts and notebooks into canonical modules.
 
-The recovered regularized-screening boundary is now explicit and testable in `bsm_rfm.regularized_screening`. That module intentionally keeps the archived `MultiTaskElasticNetCV` script contract separate from the notebook-derived PCA/de-biased-LASSO contract until a single canonical implementation is ported.
+Current explicit workflow-boundary modules now cover:
+
+- upstream null-screening delegation to the recovered source script
+- notebook-derived final OLS handoff and post-fit export schema helpers
 
 ## Provenance notes
 

@@ -134,6 +134,11 @@ This means the engineering layer is now in a substantially better state:
 - docs artifact publication is a separate post-gate CI step
 - transient cleanup is allowed to remove docs build outputs because the artifact step rebuilds them explicitly
 
+## Latest scientific refactor progress
+
+- The notebook-derived final OLS handoff and post-fit export schema are now captured in a tested package module boundary.
+- Canonical post-fit artifact names now live in package code rather than only in visualization-side assumptions.
+
 ## Current likely next step
 
 The engineering-layer stabilization for packaging/gate/docs/CI is now mostly complete.
@@ -163,14 +168,6 @@ Before making changes, inspect at least:
 - `tests/`
 - `tools/`
 - any module/script associated with null screening, subset generation, modeling workflow, and scientific provenance
-
-## Scientific workflow reconciliation progress
-
-- `bsm_rfm.null_screening` is the canonical adapter boundary for the recovered `null_distribution.py` source workflow.
-- `bsm_rfm.regularized_screening` now encodes the recovered downstream screening divergence explicitly:
-  - archived script path: `MultiTaskElasticNetCV`, 5% holdout, direct standardized multi-output response, tuning via `tune_vars.csv`
-  - notebook-derived path: PCA-compressed response plus de-biased LASSO and final OLS handoff, 10% holdout, `9782` outputs retained after culling, `346` selected features
-- The next unresolved scientific boundary after this stage is the final OLS handoff/export contract.
 
 ## Validation requirements before claiming success in future chats
 

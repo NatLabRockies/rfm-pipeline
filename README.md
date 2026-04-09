@@ -63,3 +63,9 @@ The validation chain includes repository hygiene checks, Ruff lint/format valida
 Markdown formatting validation, notebook hygiene validation, Python compilation, unit tests,
 workflow smoke tests, notebook execution tests, Sphinx documentation builds, package builds,
 and `git diff --check`.
+
+## Current scientific boundary
+
+- `bsm_rfm.workflow` exposes the audited stage sequence and recovered case-study numbers as importable provenance tables.
+- `bsm_rfm.feature_expansion` provides an explicit, tested configuration boundary for notebook-derived interaction and nonlinear feature construction.
+- Later regularized-screening and final-OLS stages remain documented but are not yet canonical package modules.

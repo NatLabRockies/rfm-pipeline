@@ -14,7 +14,7 @@
 - Do not suppress warnings instead of fixing them correctly.
 - Do not claim anything passes unless it was actually run against the live repo.
 - `./test_repo.sh --fix` must fully prepare the repo for a clean commit.
-- `./test_repo.sh --check` and CI must enforce the locked, already-prepared state.
+- `./test_repo.sh --check` and `./test_repo.sh --ci` must enforce the locked, already-prepared state.
 
 ## Scientific provenance that should be treated as canonical
 
@@ -28,13 +28,11 @@
 - `null_distribution.py` is canonical for null-model / null-screening calculations
 - notebooks are not canonical scientific truth and may contain drift
 
-## What was actually fixed in the live repo
+## What was actually stabilized in the live repo
 
 ### 1) Pixi/package build environment
 
-The `build` import failure was eventually fixed in the **live repo workflow**, not by changing scientific code.
-
-Current correct design:
+The package-build path is now aligned and verified:
 
 - `pixi.toml` uses:
   - `[pypi-dependencies]`
@@ -42,94 +40,160 @@ Current correct design:
 - `pixi.toml` task:
   - `package-build = "python -m build --no-isolation --sdist --wheel"`
 - `pixi.lock` contains the PyPI `build` wheel entries
-- Pixi version on live machine: `0.59.0`
+- live Pixi version observed during debugging: `0.59.0` locally and `0.67.0` on GitHub Actions
 
-### 2) test_repo.sh gate behavior
+### 2) Repository gate behavior
 
-The script was updated so it now:
+`test_repo.sh` was corrected so that it now:
 
 - anchors to repo root
 - resolves and uses a pinned Pixi executable path
 - prints repo root and pixi binary for traceability
-- runs an inline Python smoke check for `build`
+- performs an inline Python smoke check for `build`
 - runs `build-import-smoke` immediately after environment sync
 - uses:
   - `pixi install` for `--fix`
   - `pixi install --locked` for `--check` / `--ci`
 - `--clean` removes `.pixi` and rebuilds through `--fix`
 
-This fixed the previous situation where manual commands worked but the script failed.
+This fixed the earlier mismatch where manual commands succeeded but the script failed.
 
-### 3) Transient cleaner / gate tests
+### 3) Cleaner / transient handling
 
-The cleaner/tests were updated so that:
+The cleaner was corrected so it:
 
-- `.DS_Store` is removed as a transient artifact
-- `.pixi` is preserved
-- regression coverage exists for preserving Pixi env contents
-- stale tests that still expected `python-build` were updated to the current `build`-via-PyPI design
+- removes `.DS_Store`
+- preserves `.pixi`
+- preserves installed environment contents
+- still removes repo build/cache transients such as `build`, `dist`, caches, and `docs/_build`
 
-## Latest verified gate status
+Regression coverage was added so the cleaner does not delete Pixi environment contents.
 
-`./test_repo.sh --fix` now progresses through:
+### 4) Markdown formatting contract
 
-- pixi install
-- build import smoke
-- clean-transients
-- format-python
-- format-markdown
-- notebook hygiene
-- repo hygiene
-- lint
-- format-check
-- markdown-check
-- notebook-check
-- compile-check
-- unit-tests
-- workflow-tests
-- notebook-tests
+A CI/local mismatch was found and fixed:
 
-All of the above passed in the live repo run. The current failure is now in the docs step, which is good because it means the earlier gate issues were resolved. The failing docs output showed that `docs/MEMORY.md` is being scanned by Sphinx but is not included in any toctree, and warnings are treated as errors. :contentReference[oaicite:0]{index=0}
+- local formatting originally missed untracked Markdown files
+- CI later failed on those files once they were committed
+- `tools/format_markdown.py` was updated to operate on both tracked and untracked non-ignored Markdown files using:
+  - `git ls-files --cached --others --exclude-standard`
+- regression coverage was added for untracked Markdown formatting discovery
 
-## Current blocker
+### 5) Docs build path and artifact handling
 
-Sphinx docs build fails with:
+A docs artifact path mismatch was resolved:
 
-- `docs/MEMORY.md: WARNING: document isn't included in any toctree [toc.not_included]`
-- warnings are treated as errors in the docs build
-- this currently stops `./test_repo.sh --fix` at the docs step :contentReference[oaicite:1]{index=1}
+- local/docs task had been building to a temp directory
+- GitHub Actions tried to upload `docs/_build/html`
+- `tools/build_docs.py` was changed to build deterministically to:
+  - `docs/_build/html`
+- CI artifact upload now targets that same deterministic path
 
-## Most likely correct next step
+A second CI mismatch was then fixed:
 
-Audit the docs configuration and fix the doc-structure issue correctly.
+- the gate correctly cleans transients, including `docs/_build`
+- this removed docs before the artifact upload step
+- GitHub Actions was updated to:
+  - run `./test_repo.sh --ci`
+  - then rebuild docs with `pixi run docs`
+  - then upload `docs/_build/html`
 
-Likely valid repair directions to verify against the live repo:
+This preserves a strict clean gate while still publishing docs artifacts.
 
-1. If `docs/MEMORY.md` is intended to be published documentation, include it in a toctree.
-1. If `docs/MEMORY.md` is only an internal engineering artifact, exclude it from Sphinx input via `docs/conf.py`.
+### 6) CI contract tests
 
-Do not guess. Audit the live docs tree and choose the correct fix based on actual repo intent.
+The CI tests were updated to reflect the actual current contract:
+
+- CI invokes `./test_repo.sh --ci`
+- the locked install requirement is enforced in `test_repo.sh`
+- docs are rebuilt before upload
+- docs artifact upload targets `docs/_build/html`
+
+## Latest verified repo status
+
+At the end of this debugging sequence:
+
+- local `./test_repo.sh --fix` passes
+- local `./test_repo.sh --check` passes
+- GitHub CI passes
+- docs artifacts upload successfully after an explicit post-gate docs rebuild
+
+This means the engineering layer is now in a substantially better state:
+
+- local and CI are aligned
+- package build is exercised
+- markdown/doc formatting mismatches are caught locally
+- docs upload path is deterministic
+
+## Important design contracts that now exist
+
+- `./test_repo.sh --fix` is the authoritative local prep path before commit
+- `./test_repo.sh --check` is the locked local validation path
+- `./test_repo.sh --ci` is the locked CI validation path
+- docs build validation is part of the gate
+- docs artifact publication is a separate post-gate CI step
+- transient cleanup is allowed to remove docs build outputs because the artifact step rebuilds them explicitly
+
+## Current likely next step
+
+The engineering-layer stabilization for packaging/gate/docs/CI is now mostly complete.
+
+The next chat should begin by auditing the live repo and deciding the next highest-value scientific/repo step. Plausible next-step categories to audit before choosing:
+
+1. documentation cleanup and publication readiness
+1. scientific workflow/module implementation status versus canonical report
+1. notebook drift versus canonical module/script truth
+1. missing tests around the actual reduced-form modeling pipeline
+1. package/API cleanup for public release readiness
+
+Do not assume which is next. Audit the live repo first and choose based on actual current state.
 
 ## Required audit files for the next chat
 
-Before changing anything, inspect at least:
+Before making changes, inspect at least:
 
 - `git status --short`
-- `docs/conf.py`
-- `docs/index.md` and/or `docs/index.rst`
-- all files under `docs/`
-- `tools/build_docs.py`
+- `MEMORY.md`
+- `pixi.toml`
+- `pyproject.toml`
 - `test_repo.sh`
-- relevant tests covering docs / repo gate / CI
 - `.github/workflows/*`
+- `docs/`
+- `src/bsm_rfm/`
+- `tests/`
+- `tools/`
+- any module/script associated with null screening, subset generation, modeling workflow, and scientific provenance
 
-## Validation requirements before claiming success
+## Validation requirements before claiming success in future chats
 
-After the next patch, run and report actual results for:
+Run and report actual results for all relevant checks touched by the next change. At minimum, if repo-engineering files are changed:
 
-- `pixi run docs`
 - `./test_repo.sh --fix`
 - `git status --short`
 - `./test_repo.sh --check`
 
-Do not claim success unless the docs step passes and the repo is clean afterward.
+If CI-relevant paths are changed, ensure the local contract still mirrors CI.
+
+## Latest cumulative update: workflow provenance and feature-expansion boundary
+
+- Added `bsm_rfm.workflow` as an importable provenance layer for the audited stage sequence and recovered case-study numbers.
+- Added `bsm_rfm.feature_expansion` as an explicit, tested configuration boundary for notebook-derived feature construction.
+- The feature-expansion boundary supports:
+  - explicit first-order terms
+  - explicit nonlinear transforms (`quadratic`, `inverse`)
+  - explicit second-order interactions
+  - automatic interactions between modeled features and scenario flags when requested
+- Provenance remains explicit:
+  - source-derived for recovered source-script truth
+  - audit-resolved for recovered canonical workflow facts
+  - notebook-derived for modeling-stage logic that has not yet been validated against a recovered standalone source script
+- Regularized screening and final OLS are still not canonical package modules yet.
+
+## Recommended next step after this update
+
+Audit and port the next scientifically meaningful boundary in code:
+
+- either the notebook-derived regularized-screening configuration/interface
+- or the final OLS fit/export contract
+
+Do not skip the audit. The next implementation should continue preserving provenance labels rather than silently promoting notebook logic to canonical source truth.

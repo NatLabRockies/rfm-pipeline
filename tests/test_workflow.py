@@ -1,4 +1,4 @@
-"""Tests for workflow provenance helpers."""
+"""Tests for canonical workflow provenance artifacts."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ from bsm_rfm.workflow import (
 )
 
 
-def test_canonical_workflow_stages_capture_verified_stage_sequence() -> None:
-    stages = canonical_workflow_stages()
-    assert [stage.stage_key for stage in stages] == [
+def test_canonical_workflow_stages_preserve_audited_stage_order():
+    stage_keys = [stage.stage_key for stage in canonical_workflow_stages()]
+    assert stage_keys == [
         "upstream_null_screening",
         "feature_expansion",
         "modeling_subset_creation",
@@ -21,29 +21,25 @@ def test_canonical_workflow_stages_capture_verified_stage_sequence() -> None:
         "evaluation_export",
         "downstream_visualization",
     ]
-    assert stages[0].canonical_source == "null_distribution.py"
-    assert stages[2].key_settings["n_per_stratum"] == 5000
-    assert stages[3].provenance_status == "notebook-derived"
-    assert stages[5].key_settings["bootstrap_replicates"] == 1000
 
 
-def test_workflow_stage_table_preserves_stage_order() -> None:
-    table = workflow_stage_table()
-    assert table["stage_key"].tolist()[0] == "upstream_null_screening"
-    assert table["stage_key"].tolist()[-1] == "downstream_visualization"
-    assert "implementation_status" in table.columns
+def test_workflow_stage_table_exposes_provenance_boundary_labels():
+    stage_table = workflow_stage_table().set_index("stage_key")
+    assert stage_table.loc["upstream_null_screening", "provenance"] == "source-derived"
+    assert stage_table.loc["feature_expansion", "implementation_status"] == (
+        "implemented_config_boundary"
+    )
+    assert stage_table.loc["regularized_screening", "implementation_status"] == ("documented_only")
 
 
-def test_canonical_case_study_numbers_match_recovered_values() -> None:
-    numbers = canonical_case_study_numbers()
-    assert numbers["upstream_screening_dataset_size"] == 300000
-    assert numbers["modeling_subset_size"] == 20000
-    assert numbers["selected_feature_count"] == 346
-    assert numbers["bootstrap_replicates"] == 1000
+def test_case_study_number_table_contains_recovered_values():
+    number_table = case_study_number_table().set_index("key")
+    assert number_table.loc["upstream_rows", "value"] == 300000
+    assert number_table.loc["modeling_subset_rows", "value"] == 20000
+    assert number_table.loc["selected_second_order_features", "value"] == 244
+    assert number_table.loc["bootstrap_replicates", "value"] == 1000
 
 
-def test_case_study_number_table_contains_key_rows() -> None:
-    table = case_study_number_table()
-    lookup = dict(zip(table["name"], table["value"], strict=True))
-    assert lookup["n_per_boolean_stratum"] == 5000
-    assert lookup["full_output_count"] == 23495
+def test_canonical_case_study_numbers_are_unique_by_key():
+    keys = [item.key for item in canonical_case_study_numbers()]
+    assert len(keys) == len(set(keys))

@@ -25,10 +25,6 @@ Run the repair path before committing:
 - stripped notebook outputs before commit
 - Sphinx documentation build in the local and CI gates
 
-## Current scientific refactor boundary
+## Scientific provenance status
 
-The package now separates three kinds of workflow state:
-
-- recovered source-script truth (`bsm_rfm.null_screening`)
-- audit-resolved canonical provenance (`bsm_rfm.workflow`)
-- notebook-derived but explicitly labeled feature construction (`bsm_rfm.feature_expansion`)
+The repo now exposes the recovered regularized-screening workflow boundary as importable package code. This does not collapse the archived script and notebook into one assumed canonical method; instead, it preserves their material differences explicitly so later module work can reconcile them under test.

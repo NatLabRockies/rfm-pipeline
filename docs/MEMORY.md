@@ -174,26 +174,4 @@ Run and report actual results for all relevant checks touched by the next change
 
 If CI-relevant paths are changed, ensure the local contract still mirrors CI.
 
-## Latest cumulative update: workflow provenance and feature-expansion boundary
-
-- Added `bsm_rfm.workflow` as an importable provenance layer for the audited stage sequence and recovered case-study numbers.
-- Added `bsm_rfm.feature_expansion` as an explicit, tested configuration boundary for notebook-derived feature construction.
-- The feature-expansion boundary supports:
-  - explicit first-order terms
-  - explicit nonlinear transforms (`quadratic`, `inverse`)
-  - explicit second-order interactions
-  - automatic interactions between modeled features and scenario flags when requested
-- Provenance remains explicit:
-  - source-derived for recovered source-script truth
-  - audit-resolved for recovered canonical workflow facts
-  - notebook-derived for modeling-stage logic that has not yet been validated against a recovered standalone source script
-- Regularized screening and final OLS are still not canonical package modules yet.
-
-## Recommended next step after this update
-
-Audit and port the next scientifically meaningful boundary in code:
-
-- either the notebook-derived regularized-screening configuration/interface
-- or the final OLS fit/export contract
-
-Do not skip the audit. The next implementation should continue preserving provenance labels rather than silently promoting notebook logic to canonical source truth.
+- latest cumulative refactor slice added `bsm_rfm.regularized_screening` to encode the recovered archived-script (`MultiTaskElasticNetCV`, 5% holdout, `tune_vars.csv`) versus notebook-derived (`PCA + de-biased LASSO`, 10% holdout, EBIC, 346 selected features, 9782 kept outputs) screening boundary as importable tested code rather than markdown-only prose.

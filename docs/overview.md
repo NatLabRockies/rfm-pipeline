@@ -24,3 +24,11 @@ Run the repair path before committing:
 - mdformat for Markdown formatting
 - stripped notebook outputs before commit
 - Sphinx documentation build in the local and CI gates
+
+## Current scientific refactor boundary
+
+The package now separates three kinds of workflow state:
+
+- recovered source-script truth (`bsm_rfm.null_screening`)
+- audit-resolved canonical provenance (`bsm_rfm.workflow`)
+- notebook-derived but explicitly labeled feature construction (`bsm_rfm.feature_expansion`)

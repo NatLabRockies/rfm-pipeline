@@ -1,0 +1,40 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: debug-statements
+
+  - repo: local
+    hooks:
+      - id: notebook-hygiene-fix
+        name: notebook hygiene fix
+        entry: bash -lc 'pixi run fix-notebooks'
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: markdown-format
+        name: markdown format
+        entry: bash -lc 'pixi run format-markdown'
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: ruff-check-fix
+        name: ruff check --fix and format
+        entry: bash -lc 'pixi run format-python'
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: repo-gate-check
+        name: full repo gate
+        entry: bash -lc './test_repo.sh --check'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

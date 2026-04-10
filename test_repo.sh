@@ -6,6 +6,11 @@ cd "$REPO_ROOT"
 
 PIXI_BIN="${PIXI_BIN:-$(command -v pixi)}"
 
+if [[ -z "${PIXI_BIN:-}" ]] || [[ ! -x "$PIXI_BIN" ]]; then
+  echo "error: pixi executable not found" >&2
+  exit 1
+fi
+
 run_task() {
   echo ">>> $PIXI_BIN run $1"
   "$PIXI_BIN" run "$1"
@@ -28,17 +33,6 @@ sync_env_locked() {
 
 main() {
   local mode="${1:---fix}"
-
-  if [[ -z "${PIXI_BIN:-}" ]] || [[ ! -x "$PIXI_BIN" ]]; then
-    echo "error: pixi executable not found" >&2
-    exit 1
-  fi
-
-  echo ">>> repo root: $REPO_ROOT"
-  echo ">>> pixi bin: $PIXI_BIN"
-  "$PIXI_BIN" --version
-
-  export PYTHONDONTWRITEBYTECODE=1
 
   case "$mode" in
     --fix|"")
@@ -88,7 +82,7 @@ main() {
     --clean)
       echo ">>> $PIXI_BIN clean"
       "$PIXI_BIN" clean
-      rm -rf "$REPO_ROOT/.pixi"
+      rm -rf .pixi
       "$0" --fix
       ;;
     *)

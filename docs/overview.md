@@ -1,6 +1,6 @@
 # Overview
 
-This scaffold establishes the local and CI engineering contract for the BSM reduced-form workflow refactor.
+This repository provides the local and CI engineering contract for the BSM reduced-form modeling workflow package.
 
 ## Canonical local gate
 
@@ -23,5 +23,6 @@ Run the repair path before committing:
 - Ruff for Python and notebook linting and formatting
 - mdformat for Markdown formatting
 - stripped notebook outputs before commit
-- Sphinx documentation build in the local and CI gates
+- Sphinx documentation builds in the local and CI gates
 - explicit provenance boundaries for recovered scientific workflow stages
+- package metadata and docs versioning kept consistent from the live repo state

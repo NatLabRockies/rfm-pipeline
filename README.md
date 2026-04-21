@@ -1,6 +1,6 @@
-# BSM reduced-form model refactor scaffold
+# BSM reduced-form modeling workflow package
 
-This repository scaffold establishes the engineering contract for the BSM reduced-form modeling refactor.
+This repository provides the tested package modules, documentation, and repository gate for the BSM reduced-form modeling workflow.
 
 ## Environment management
 
@@ -32,13 +32,14 @@ The package documentation is built with Sphinx and MyST. Public Python APIs are 
 
 ## Current scope
 
-This scaffold now covers the foundational and workflow-level utilities needed for a canonical reduced-form modeling path:
+This package now covers the foundational and workflow-level utilities needed for a canonical reduced-form modeling path:
 
 - data alignment, subset, split, and train-only standardization utilities
 - executable archived-style multitask elastic-net screening
 - executable final OLS fitting, prediction, and post-fit artifact assembly
 - end-to-end workflow orchestration from screening through holdout evaluation and export-bundle assembly
 - canonical post-fit bundle writing with CSV fallback when a parquet engine is unavailable
+- explicit feature-expansion specification and materialization utilities
 - selected-feature structure parsing
 - nRMSE helpers and bootstrap summaries
 - artifact manifest helpers
@@ -52,7 +53,7 @@ The scientific workflow is no longer only documented at the screening/final-fit/
 - holdout bootstrap nRMSE evaluation
 - canonical post-fit artifact assembly and on-disk export writing
 
-Higher-level reconciliation work still remains for the notebook-derived feature-expansion stage and for broader case-study-specific artifact provenance.
+Higher-level reconciliation still remains for the notebook-derived feature-expansion stage: the repo now exposes an explicit, tested feature-expansion contract, but the notebook-specific recovered specification has not yet been fully ported into a canonical source-driven default. Broader case-study-specific artifact provenance reconciliation also remains.
 
 ## Provenance notes
 

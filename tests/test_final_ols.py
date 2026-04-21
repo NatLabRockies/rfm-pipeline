@@ -21,7 +21,7 @@ from bsm_rfm.final_ols import (
 
 def test_notebook_final_ols_contract_captures_recovered_boundary() -> None:
     contract = notebook_final_ols_contract()
-    assert contract.provenance == "notebook_derived"
+    assert contract.provenance == "notebook-derived"
     assert contract.holdout_fraction == pytest.approx(0.10)
     assert contract.selected_feature_count == 346
     assert contract.coefficient_scales == ("standardized", "raw_scale")

@@ -9,6 +9,15 @@ artifacts
    :undoc-members:
    :show-inheritance:
 
+
+feature_expansion
+-----------------
+
+.. automodule:: bsm_rfm.feature_expansion
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 features
 --------
 

@@ -153,7 +153,7 @@ def notebook_final_ols_contract() -> FinalOLSContract:
         Explicit contract for the final OLS handoff and post-fit export boundary.
     """
     return FinalOLSContract(
-        provenance="notebook_derived",
+        provenance="notebook-derived",
         estimator="per-output ordinary least squares",
         selected_feature_handoff=(
             "selected inputs from the notebook sparse-screening stage are handed to a final OLS fit"

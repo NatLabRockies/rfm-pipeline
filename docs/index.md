@@ -1,12 +1,14 @@
-# BSM reduced-form model refactor
+# BSM reduced-form modeling workflow package
 
-This documentation site is built from the package source and the repository design documents.
+This documentation site is built from the live package source and the repository design documents.
 
 ```{toctree}
 :maxdepth: 2
 :caption: Contents
 
 overview
+quickstart
+export_bundle
 api
 workflow_audit
 module_plan

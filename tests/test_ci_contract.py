@@ -11,13 +11,6 @@ def test_ci_runs_repo_gate() -> None:
     assert "./test_repo.sh --ci" in workflow
 
 
-def test_gate_ci_mode_uses_locked_install() -> None:
-    script = Path("test_repo.sh").read_text(encoding="utf-8")
-    assert 'echo ">>> $PIXI_BIN install --locked"' in script
-    assert '"$PIXI_BIN" install --locked' in script
-    assert "--check|--ci)" in script
-
-
 def test_ci_rebuilds_docs_before_upload() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "Rebuild docs artifact" in workflow

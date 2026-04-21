@@ -21,11 +21,16 @@ from .features import (
     parse_selected_input_structure,
 )
 from .final_ols import (
+    FinalOLSFitResult,
+    build_postfit_artifacts,
     canonical_postfit_artifact_names,
+    fit_final_ols,
     make_coefficient_matrix_frame,
+    make_holdout_nrmse_summary,
     make_standardization_frame,
     notebook_final_ols_contract,
     postfit_artifact_table,
+    predict_final_ols,
 )
 from .metrics import (
     bootstrap_macro_nrmse_ci,
@@ -37,6 +42,11 @@ from .null_screening import (
     NullScreeningResult,
     load_source_module,
     run_null_screening_with_source,
+)
+from .regularized_screening import (
+    ScreeningSelectionResult,
+    fit_multitask_elastic_net_screen,
+    screening_selection_table,
 )
 
 __all__ = [
@@ -51,9 +61,15 @@ __all__ = [
     "ensure_id_columns",
     "fit_standardizers",
     "canonical_postfit_artifact_names",
+    "FinalOLSFitResult",
+    "ScreeningSelectionResult",
+    "build_postfit_artifacts",
+    "fit_final_ols",
+    "fit_multitask_elastic_net_screen",
     "load_source_module",
     "make_coefficient_matrix_frame",
     "make_standardization_frame",
+    "make_holdout_nrmse_summary",
     "make_boolean_combination_labels",
     "notebook_final_ols_contract",
     "macro_nrmse_with_ref",
@@ -63,7 +79,9 @@ __all__ = [
     "NullScreeningResult",
     "parse_selected_input_structure",
     "postfit_artifact_table",
+    "predict_final_ols",
     "run_null_screening_with_source",
+    "screening_selection_table",
     "stratified_holdout_split",
     "stratified_subset_by_boolean_combination",
 ]

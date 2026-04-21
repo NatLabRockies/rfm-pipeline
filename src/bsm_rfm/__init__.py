@@ -48,6 +48,15 @@ from .regularized_screening import (
     fit_multitask_elastic_net_screen,
     screening_selection_table,
 )
+from .workflow import (
+    CanonicalWorkflowRun,
+    canonical_case_study_numbers,
+    canonical_workflow_stages,
+    case_study_number_table,
+    run_canonical_workflow,
+    workflow_stage_table,
+    write_postfit_bundle,
+)
 
 __all__ = [
     "KNOWN_TRANSFORMATIONS",
@@ -84,4 +93,11 @@ __all__ = [
     "screening_selection_table",
     "stratified_holdout_split",
     "stratified_subset_by_boolean_combination",
+    "CanonicalWorkflowRun",
+    "canonical_case_study_numbers",
+    "canonical_workflow_stages",
+    "case_study_number_table",
+    "run_canonical_workflow",
+    "workflow_stage_table",
+    "write_postfit_bundle",
 ]

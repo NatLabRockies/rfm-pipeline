@@ -32,24 +32,27 @@ The package documentation is built with Sphinx and MyST. Public Python APIs are 
 
 ## Current scope
 
-This scaffold covers the foundational utilities that the later canonical workflow refactor will build on:
+This scaffold now covers the foundational and workflow-level utilities needed for a canonical reduced-form modeling path:
 
-- data alignment and split utilities
-- train-only standardization
+- data alignment, subset, split, and train-only standardization utilities
 - executable archived-style multitask elastic-net screening
 - executable final OLS fitting, prediction, and post-fit artifact assembly
+- end-to-end workflow orchestration from screening through holdout evaluation and export-bundle assembly
+- canonical post-fit bundle writing with CSV fallback when a parquet engine is unavailable
 - selected-feature structure parsing
 - nRMSE helpers and bootstrap summaries
 - artifact manifest helpers
 - visualization-side artifact loading
 
-The scientific workflow itself still needs to be ported from the recovered scripts and notebooks into canonical modules.
-
-Current explicit workflow-boundary modules now cover:
+The scientific workflow is no longer only documented at the screening/final-fit/export boundary. The repo now includes a tested canonical workflow foundation that performs:
 
 - upstream null-screening delegation to the recovered source script
-- executable archived-style multitask elastic-net screening foundation
-- notebook-derived final OLS contract plus executable final OLS/post-fit helpers
+- executable archived-style multitask elastic-net screening
+- executable final OLS fitting on retained features
+- holdout bootstrap nRMSE evaluation
+- canonical post-fit artifact assembly and on-disk export writing
+
+Higher-level reconciliation work still remains for the notebook-derived feature-expansion stage and for broader case-study-specific artifact provenance.
 
 ## Provenance notes
 

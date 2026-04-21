@@ -413,6 +413,9 @@ def build_postfit_artifacts(
     selected_features: list[str] | None = None,
     evaluation_summary: dict[str, Any] | pd.DataFrame | None = None,
     upstream_provenance: dict[str, Any] | None = None,
+    metrics: dict[str, Any] | None = None,
+    evaluation: dict[str, Any] | None = None,
+    artifact_format: str = "parquet",
 ) -> dict[str, pd.DataFrame | dict[str, Any]]:
     """Assemble the canonical post-fit artifact bundle from a fitted model.
 
@@ -431,6 +434,13 @@ def build_postfit_artifacts(
         Optional one-row summary payload for the ``nrmse_summary`` artifact.
     upstream_provenance
         Optional provenance metadata stored in the manifest.
+    metrics
+        Optional metric payloads stored in the manifest.
+    evaluation
+        Optional evaluation metadata stored in the manifest.
+    artifact_format
+        Tabular artifact format recorded in the manifest file map. Must be either
+        ``"parquet"`` or ``"csv"``.
 
     Returns
     -------
@@ -438,6 +448,9 @@ def build_postfit_artifacts(
         Artifact bundle keyed by the canonical notebook-derived artifact names plus a
         ``manifest`` entry.
     """
+    if artifact_format not in {"parquet", "csv"}:
+        raise ValueError("artifact_format must be either 'parquet' or 'csv'.")
+
     selected = list(selected_features or result.feature_names)
     retained = list(result.feature_names)
 
@@ -449,7 +462,7 @@ def build_postfit_artifacts(
         nrmse_summary = pd.DataFrame([evaluation_summary])
 
     files = {
-        artifact_name: f"postfit_diagnostics/{artifact_name}.parquet"
+        artifact_name: f"postfit_diagnostics/{artifact_name}.{artifact_format}"
         for artifact_name in canonical_postfit_artifact_names()
     }
 
@@ -492,8 +505,8 @@ def build_postfit_artifacts(
         retained_features=retained,
         output_names=list(result.output_names),
         files=files,
-        metrics={},
-        evaluation={},
+        metrics=dict(metrics or {}),
+        evaluation=dict(evaluation or {}),
         upstream_provenance=dict(upstream_provenance or {}),
     ).to_dict()
     return artifacts

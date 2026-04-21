@@ -1,60 +1,53 @@
-# Proposed module breakdown (initial)
+# Module map and current implementation status
 
-## Stage-aware package layout
+This page records the live package modules and what they currently cover.
+
+## Current package modules
 
 - `bsm_rfm.data`
   - row alignment
-  - scenario flag recovery
+  - scenario-flag helpers
+  - balanced boolean-stratum subset helpers
   - holdout splitting
   - train-only standardization
-- `bsm_rfm.screening_null`
-  - future home for recovered delta/permutation-null logic from `null_distribution.py`
-- `bsm_rfm.feature_engineering`
-  - future home for interaction and nonlinear feature generation from `make_nonlinear_features.ipynb`
-- `bsm_rfm.regularized_screen`
-  - future home for notebook-derived PCA/debiased-LASSO workflow
+- `bsm_rfm.null_screening`
+  - stable adapter around the recovered `null_distribution.py` source workflow
+- `bsm_rfm.feature_expansion`
+  - explicit feature-expansion specification and materialization helpers
+- `bsm_rfm.regularized_screening`
+  - executable multitask elastic-net screening foundation
 - `bsm_rfm.final_ols`
-  - recovered notebook-derived final OLS handoff and export contract
-  - canonical post-fit artifact schema helpers
+  - final OLS fitting, prediction, evaluation summary, and canonical post-fit artifact assembly
 - `bsm_rfm.metrics`
-  - macro nRMSE, null baseline, bootstrap CIs
+  - macro nRMSE and bootstrap confidence-interval helpers
 - `bsm_rfm.features`
-  - selected-feature parser and module summaries
+  - selected-feature parser and transformation-name utilities
 - `bsm_rfm.artifacts`
-  - manifest schema and metadata tables
+  - manifest schema and metadata-table helpers
 - `bsm_rfm.viz_io`
-  - read-only loader for canonical exported artifacts
+  - canonical bundle reload helpers for downstream visualization
+- `bsm_rfm.workflow`
+  - end-to-end workflow orchestration, case-study provenance tables, and bundle writing
 
-## Immediate tested slices in this bundle
+## Repository engineering contract
 
-This initial implementation provides the reusable, tested foundations needed before the heavier modeling code is ported:
+The live repository contract is built around:
 
-- scenario parsing and alignment
-- stratified holdout splitting
-- train-only scaling
-- canonical macro nRMSE and bootstrap CI helpers
-- null mean-prediction baseline helper
-- selected-feature parser validated against real naming examples
-- artifact manifest schema with order-preserving position maps
-- visualization-side canonical artifact loader
+- `pixi.toml` for the canonical local and CI environment
+- `test_repo.sh` for the local and CI validation entrypoint
+- `.github/workflows/ci.yml` for CI orchestration through Pixi
+- `tools/check_repo.py` for repository hygiene checks
+- `tools/notebook_hygiene.py` for notebook output stripping and syntax validation
+- `tools/check_markdown.py` and `tools/format_markdown.py` for shared Markdown checks
 
-## Engineering scaffold adopted for the refactor
+## Remaining reconciliation work
 
-- `pixi.toml`
-  - canonical environment manifest for local development and CI
-  - task aliases for fix, check, unit tests, workflow smoke tests, and docs builds
-- `test_repo.sh`
-  - local gate with `--fix`, `--clean`, and `--ci` modes
-- `.github/workflows/ci.yml`
-  - GitHub Actions workflow that mirrors the local gate through Pixi
-- `docs/`
-  - Sphinx + MyST documentation tree built from package code and repo design docs
-- `tools/check_repo.py`
-  - repository hygiene checks, including generated artifact detection
-- `tools/notebook_hygiene.py`
-  - notebook output stripping and notebook-cleanliness checks
+The package now covers the canonical screening/final-fit/evaluation/export path directly.
+The main remaining scientific reconciliation work is upstream of that path:
 
-## Module update
-
-- `bsm_rfm.data`: add canonical balanced subset generation from 300k to 20k by sampling 5,000 rows within each AFSC/UAEORO boolean combination.
-- `bsm_rfm.null_screening`: adapter layer that delegates the upstream null-screening stage to the recovered `null_distribution.py` implementation instead of reimplementing notebook-drifted logic.
+- fully promoting the recovered notebook-specific feature-expansion defaults into a
+  canonical source-driven default specification
+- continuing to document provenance boundaries between source-derived and notebook-derived
+  stages
+- deciding whether additional case-study-specific reporting helpers belong in the public
+  package surface or only in manuscript/reporting artifacts

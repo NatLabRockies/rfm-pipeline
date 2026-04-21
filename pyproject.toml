@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "bsm-rfm"
 version = "0.1.0"
-description = "Foundational modules for the BSM reduced-form modeling refactor"
+description = "Tested package modules and workflow gate for the BSM reduced-form model"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Dylan Hettinger" }]
@@ -64,4 +64,3 @@ convention = "numpy"
 
 [tool.ruff.format]
 docstring-code-format = true
-

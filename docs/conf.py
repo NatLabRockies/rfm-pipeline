@@ -1,7 +1,8 @@
-"""Sphinx configuration for the BSM reduced-form refactor docs."""
+"""Sphinx configuration for the BSM reduced-form workflow package docs."""
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -9,9 +10,23 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
-project = "BSM reduced-form model refactor"
+
+def _read_project_version(pyproject_path: Path) -> str:
+    """Return the project version declared in ``pyproject.toml``."""
+    match = re.search(
+        r'^version = "([^"]+)"$',
+        pyproject_path.read_text(encoding="utf-8"),
+        flags=re.MULTILINE,
+    )
+    if match is None:
+        raise RuntimeError(f"Could not find project version in {pyproject_path}")
+    return match.group(1)
+
+
+project = "BSM reduced-form modeling workflow package"
 author = "Dylan Hettinger"
-release = "0.1.0"
+release = _read_project_version(ROOT / "pyproject.toml")
+version = release
 
 extensions = [
     "myst_parser",

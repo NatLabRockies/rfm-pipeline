@@ -1,7 +1,7 @@
 """Adapters for the recovered null-screening source workflow.
 
 This module does not reimplement the permutation-null Delta workflow. Instead, it
-provides a thin interface layer so the refactored package can call the recovered
+provides a thin interface layer so the live package can call the recovered
 ``null_distribution.py`` script as the canonical implementation for the
 null-screening stage.
 """

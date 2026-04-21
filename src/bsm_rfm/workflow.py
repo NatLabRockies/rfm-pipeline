@@ -40,7 +40,7 @@ class WorkflowStage:
     source_artifact
         Audited script, notebook, or report artifact supporting the stage.
     status
-        Current module-port status in this refactor scaffold.
+        Current implementation status in the live package.
     description
         Concise description of the stage responsibility.
     """

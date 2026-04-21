@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 from pathlib import Path
 from unittest.mock import patch
 
 from tools.build_docs import build_docs
 
 
-def test_docs_conf_uses_ivar_for_attribute_sections() -> None:
+def _load_docs_conf_module():
     repo_root = Path(__file__).resolve().parents[1]
     conf_path = repo_root / "docs" / "conf.py"
     spec = importlib.util.spec_from_file_location("bsm_docs_conf", conf_path)
@@ -17,7 +18,43 @@ def test_docs_conf_uses_ivar_for_attribute_sections() -> None:
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    return module
+
+
+def _pyproject_version(repo_root: Path) -> str:
+    pyproject = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
+    match = re.search(r'^version = "([^"]+)"$', pyproject, flags=re.MULTILINE)
+    assert match is not None
+    return match.group(1)
+
+
+def test_docs_conf_uses_ivar_for_attribute_sections() -> None:
+    module = _load_docs_conf_module()
     assert module.napoleon_use_ivar is True
+
+
+def test_docs_conf_release_matches_pyproject_version() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    module = _load_docs_conf_module()
+    version = _pyproject_version(repo_root)
+    assert module.release == version
+    assert module.version == version
+
+
+def test_docs_index_includes_user_guides() -> None:
+    index_text = Path("docs/index.md").read_text(encoding="utf-8")
+    assert "quickstart" in index_text
+    assert "export_bundle" in index_text
+
+
+def test_module_plan_uses_live_module_names() -> None:
+    module_plan = Path("docs/module_plan.md").read_text(encoding="utf-8")
+    assert "`bsm_rfm.feature_expansion`" in module_plan
+    assert "`bsm_rfm.regularized_screening`" in module_plan
+    assert "`bsm_rfm.workflow`" in module_plan
+    assert "`bsm_rfm.regularized_screen`" not in module_plan
+    assert "`bsm_rfm.screening_null`" not in module_plan
+    assert "`bsm_rfm.feature_engineering`" not in module_plan
 
 
 def test_build_docs_uses_repo_build_directory_by_default(tmp_path: Path) -> None:

@@ -1,7 +1,7 @@
-"""Foundational utilities for the BSM reduced-form modeling workflow.
+"""Public package surface for the BSM reduced-form modeling workflow.
 
-The package currently provides small, tested building blocks used to stabilize the
-refactor boundary before the full modeling workflow is ported into canonical modules.
+The package exposes tested modules for data preparation, feature expansion, screening,
+final OLS fitting, artifact assembly, and workflow orchestration.
 """
 
 from .artifacts import PipelineManifest, build_position_map, make_metadata_frame
@@ -14,6 +14,13 @@ from .data import (
     make_boolean_combination_labels,
     stratified_holdout_split,
     stratified_subset_by_boolean_combination,
+)
+from .feature_expansion import (
+    FeatureExpansionResult,
+    FeatureExpansionSpec,
+    apply_feature_expansion,
+    default_feature_expansion_spec,
+    ordered_expanded_feature_names,
 )
 from .features import (
     KNOWN_TRANSFORMATIONS,
@@ -48,6 +55,7 @@ from .regularized_screening import (
     fit_multitask_elastic_net_screen,
     screening_selection_table,
 )
+from .viz_io import load_pipeline_outputs, load_postfit_bundle
 from .workflow import (
     CanonicalWorkflowRun,
     canonical_case_study_numbers,
@@ -65,23 +73,30 @@ __all__ = [
     "add_scenario_flags",
     "align_xy",
     "bootstrap_macro_nrmse_ci",
+    "apply_feature_expansion",
     "build_position_map",
     "canonical_module_from_factor_name",
+    "default_feature_expansion_spec",
     "ensure_id_columns",
     "fit_standardizers",
     "canonical_postfit_artifact_names",
     "FinalOLSFitResult",
     "ScreeningSelectionResult",
+    "FeatureExpansionSpec",
+    "FeatureExpansionResult",
     "build_postfit_artifacts",
     "fit_final_ols",
     "fit_multitask_elastic_net_screen",
     "load_source_module",
+    "load_pipeline_outputs",
+    "load_postfit_bundle",
     "make_coefficient_matrix_frame",
     "make_standardization_frame",
     "make_holdout_nrmse_summary",
     "make_boolean_combination_labels",
     "notebook_final_ols_contract",
     "macro_nrmse_with_ref",
+    "ordered_expanded_feature_names",
     "make_metadata_frame",
     "make_null_mean_prediction",
     "NullScreeningConfig",

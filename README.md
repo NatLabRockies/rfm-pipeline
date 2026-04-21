@@ -36,6 +36,8 @@ This scaffold covers the foundational utilities that the later canonical workflo
 
 - data alignment and split utilities
 - train-only standardization
+- executable archived-style multitask elastic-net screening
+- executable final OLS fitting, prediction, and post-fit artifact assembly
 - selected-feature structure parsing
 - nRMSE helpers and bootstrap summaries
 - artifact manifest helpers
@@ -46,7 +48,8 @@ The scientific workflow itself still needs to be ported from the recovered scrip
 Current explicit workflow-boundary modules now cover:
 
 - upstream null-screening delegation to the recovered source script
-- notebook-derived final OLS handoff and post-fit export schema helpers
+- executable archived-style multitask elastic-net screening foundation
+- notebook-derived final OLS contract plus executable final OLS/post-fit helpers
 
 ## Provenance notes
 

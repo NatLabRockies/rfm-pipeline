@@ -1,7 +1,9 @@
 """Notebook hygiene utilities.
 
 The fixer clears execution counts and cell outputs so the repository gate can enforce a
-clean, reviewable notebook state before commits.
+clean, reviewable notebook state before commits. It also validates committed code-cell
+syntax and repairs a narrow class of malformed notebook sources where newline or tab
+characters were written as literal escape sequences.
 """
 
 from __future__ import annotations
@@ -46,8 +48,52 @@ def notebook_has_outputs(path: Path) -> bool:
     return False
 
 
+def try_normalize_code_source(source: str) -> tuple[str, bool]:
+    r"""Repair literal escaped control sequences in malformed code-cell sources.
+
+    This targets a narrow corruption mode where notebook generators serialize code with
+    literal ``\n`` or ``\t`` sequences instead of actual newline or tab characters.
+    The transformation is applied only when the original source fails to compile and the
+    normalized source compiles successfully.
+    """
+    try:
+        compile(source, "<notebook-source>", "exec")
+        return source, False
+    except SyntaxError:
+        pass
+
+    if not any(token in source for token in (r"\n", r"\r", r"\t")):
+        return source, False
+
+    normalized = source.replace(r"\r\n", "\n")
+    normalized = normalized.replace(r"\n", "\n")
+    normalized = normalized.replace(r"\t", "\t")
+    normalized = normalized.replace(r"\r", "\r")
+
+    try:
+        compile(normalized, "<notebook-source>", "exec")
+    except SyntaxError:
+        return source, False
+    return normalized, normalized != source
+
+
+def find_notebook_source_failures(path: Path) -> list[str]:
+    """Return syntax failures for code cells in a notebook."""
+    notebook = nbformat.read(path, as_version=4)
+    failures: list[str] = []
+    for index, cell in enumerate(notebook.cells):
+        if cell.get("cell_type") != "code":
+            continue
+        source = cell.get("source", "")
+        try:
+            compile(source, f"{path}#cell-{index}", "exec")
+        except SyntaxError as exc:
+            failures.append(f"invalid code cell syntax: {path}#cell-{index}: {exc.msg}")
+    return failures
+
+
 def sanitize_notebook(path: Path, *, write: bool) -> bool:
-    """Strip outputs and execution counts from a notebook.
+    """Strip outputs, execution counts, and repair malformed code-cell source text.
 
     Parameters
     ----------
@@ -72,22 +118,28 @@ def sanitize_notebook(path: Path, *, write: bool) -> bool:
         if cell.get("outputs"):
             cell["outputs"] = []
             changed = True
+        source = cell.get("source", "")
+        normalized, normalized_changed = try_normalize_code_source(source)
+        if normalized_changed:
+            cell["source"] = normalized
+            changed = True
     if changed and write:
         nbformat.write(notebook, path)
     return changed
 
 
 def check_notebooks(root: Path) -> list[str]:
-    """Return notebook-hygiene failures under ``root``."""
+    """Return notebook-hygiene and syntax failures under ``root``."""
     failures: list[str] = []
     for path in iter_notebook_paths(root):
         if notebook_has_outputs(path):
             failures.append(f"notebook has stored outputs or execution counts: {path}")
+        failures.extend(find_notebook_source_failures(path))
     return failures
 
 
 def fix_notebooks(root: Path) -> list[Path]:
-    """Strip outputs from all notebooks requiring cleanup."""
+    """Strip outputs and repair malformed code sources for all notebooks requiring cleanup."""
     changed: list[Path] = []
     for path in iter_notebook_paths(root):
         if sanitize_notebook(path, write=True):

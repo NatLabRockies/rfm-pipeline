@@ -4,177 +4,126 @@
 
 `bsm-public-rf`
 
-## Core engineering rules
+## Current objective
 
-- Never patch from assumed state.
-- Always audit the exact live repo before making changes.
-- Make every patch cumulative.
-- Fix root causes, not symptoms.
-- No hacks, no shims, no compatibility layers unless explicitly requested.
-- Do not suppress warnings instead of fixing them correctly.
-- Do not claim anything passes unless it was actually run against the live repo.
-- `./test_repo.sh --fix` must fully prepare the repo for a clean commit.
-- `./test_repo.sh --check` and `./test_repo.sh --ci` must enforce the locked, already-prepared state.
+Build a fully tested, documented, and reproducible public package and workflow for the reduced-form modeling process applied to the Biomass Scenario Model (BSM), using the audited live repo as the only source of truth.
 
-## Scientific provenance that should be treated as canonical
+## Current confirmed repo state
 
-- Original simulator sample size: 300,000
-- Modeling subset size: 20,000
-- Canonical subset path:
-  - stratify by AFSC/UAEORO boolean scenario combination
-  - 4 strata
-  - sample 5,000 run IDs independently within each stratum
-  - recombine into balanced 20k sample
-- `null_distribution.py` is canonical for null-model / null-screening calculations
-- notebooks are not canonical scientific truth and may contain drift
-
-## What was actually stabilized in the live repo
-
-### 1) Pixi/package build environment
-
-The package-build path is now aligned and verified:
-
-- `pixi.toml` uses:
-  - `[pypi-dependencies]`
-  - `build = ">=1.2"`
-- `pixi.toml` task:
-  - `package-build = "python -m build --no-isolation --sdist --wheel"`
-- `pixi.lock` contains the PyPI `build` wheel entries
-- live Pixi version observed during debugging: `0.59.0` locally and `0.67.0` on GitHub Actions
-
-### 2) Repository gate behavior
-
-`test_repo.sh` was corrected so that it now:
-
-- anchors to repo root
-- resolves and uses a pinned Pixi executable path
-- prints repo root and pixi binary for traceability
-- performs an inline Python smoke check for `build`
-- runs `build-import-smoke` immediately after environment sync
-- uses:
-  - `pixi install` for `--fix`
-  - `pixi install --locked` for `--check` / `--ci`
-- `--clean` removes `.pixi` and rebuilds through `--fix`
-
-This fixed the earlier mismatch where manual commands succeeded but the script failed.
-
-### 3) Cleaner / transient handling
-
-The cleaner was corrected so it:
-
-- removes `.DS_Store`
-- preserves `.pixi`
-- preserves installed environment contents
-- still removes repo build/cache transients such as `build`, `dist`, caches, and `docs/_build`
-
-Regression coverage was added so the cleaner does not delete Pixi environment contents.
-
-### 4) Markdown formatting contract
-
-A CI/local mismatch was found and fixed:
-
-- local formatting originally missed untracked Markdown files
-- CI later failed on those files once they were committed
-- `tools/format_markdown.py` was updated to operate on both tracked and untracked non-ignored Markdown files using:
-  - `git ls-files --cached --others --exclude-standard`
-- regression coverage was added for untracked Markdown formatting discovery
-
-### 5) Docs build path and artifact handling
-
-A docs artifact path mismatch was resolved:
-
-- local/docs task had been building to a temp directory
-- GitHub Actions tried to upload `docs/_build/html`
-- `tools/build_docs.py` was changed to build deterministically to:
-  - `docs/_build/html`
-- CI artifact upload now targets that same deterministic path
-
-A second CI mismatch was then fixed:
-
-- the gate correctly cleans transients, including `docs/_build`
-- this removed docs before the artifact upload step
-- GitHub Actions was updated to:
-  - run `./test_repo.sh --ci`
-  - then rebuild docs with `pixi run docs`
-  - then upload `docs/_build/html`
-
-This preserves a strict clean gate while still publishing docs artifacts.
-
-### 6) CI contract tests
-
-The CI tests were updated to reflect the actual current contract:
-
-- CI invokes `./test_repo.sh --ci`
-- the locked install requirement is enforced in `test_repo.sh`
-- docs are rebuilt before upload
-- docs artifact upload targets `docs/_build/html`
-
-## Latest verified repo status
-
-At the end of this debugging sequence:
+As of the latest completed step:
 
 - local `./test_repo.sh --fix` passes
 - local `./test_repo.sh --check` passes
+- local `pixi run test` passes
 - GitHub CI passes
-- docs artifacts upload successfully after an explicit post-gate docs rebuild
+- docs artifacts upload successfully after the CI workflow rebuilds docs post-gate
+- the local engineering layer has been hardened enough that formatting, docs, package build, and CI/gate contracts are now aligned
 
-This means the engineering layer is now in a substantially better state:
+## Important recent engineering changes
 
-- local and CI are aligned
-- package build is exercised
-- markdown/doc formatting mismatches are caught locally
-- docs upload path is deterministic
+The following repo-engineering state was established and should be treated as current unless the live repo proves otherwise:
 
-## Important design contracts that now exist
+- `pixi.toml` now includes explicit task names for:
+  - `format-python`
+  - `format-markdown`
+  - `fix-notebooks`
+  - `markdown-check`
+  - `notebook-check`
+  - `lint`
+  - `format-check`
+  - `unit-tests`
+  - `workflow-tests`
+  - `compile-check`
+  - plus broader gate/build/docs tasks
+- `pixi.toml` includes the necessary tooling dependencies for the gate, including:
+  - `ruff`
+  - `mdformat`
+  - `mdformat-gfm`
+  - `nbformat`
+  - `sphinx`
+  - `myst-parser`
+  - `build`
+  - `pre-commit`
+- `tools/check_markdown.py` was added because the gate referenced it but it did not exist
+- `.pre-commit-config.yaml` and `test_repo.sh` were aligned to the actual Pixi task contract
+- `test_repo.sh` was adjusted to satisfy explicit repo-engineering tests that check for exact strings and ordering, including:
+  - `echo ">>> $PIXI_BIN install"`
+  - `echo ">>> $PIXI_BIN install --locked"`
+  - `run_python_smoke`
+  - `run_task build-import-smoke` before `run_task clean-transients`
 
-- `./test_repo.sh --fix` is the authoritative local prep path before commit
-- `./test_repo.sh --check` is the locked local validation path
-- `./test_repo.sh --ci` is the locked CI validation path
-- docs build validation is part of the gate
-- docs artifact publication is a separate post-gate CI step
-- transient cleanup is allowed to remove docs build outputs because the artifact step rebuilds them explicitly
+## Important caution about the testing regime
 
-## Latest scientific refactor progress
+We now need to reassess the testing strategy and repo best practices from the live repo itself.
 
-- The notebook-derived final OLS handoff and post-fit export schema are now captured in a tested package module boundary.
-- Canonical post-fit artifact names now live in package code rather than only in visualization-side assumptions.
+Working hypothesis to audit:
 
-## Current likely next step
+- `test_repo.sh` should prepare the repo for a successful commit and push
+- but the test suite should not be overly dependent on asserting exact `test_repo.sh` implementation details unless those contracts are truly intentional and valuable
+- repo-engineering tests may currently be too coupled to shell-script literals and ordering
+- we should audit whether those tests are enforcing real behavior or just freezing incidental implementation
 
-The engineering-layer stabilization for packaging/gate/docs/CI is now mostly complete.
+Do not assume this hypothesis is correct until the live repo is audited.
 
-The next chat should begin by auditing the live repo and deciding the next highest-value scientific/repo step. Plausible next-step categories to audit before choosing:
+## Scientific/workflow state
 
-1. documentation cleanup and publication readiness
-1. scientific workflow/module implementation status versus canonical report
-1. notebook drift versus canonical module/script truth
-1. missing tests around the actual reduced-form modeling pipeline
-1. package/API cleanup for public release readiness
+The repo started from a stabilized packaging/gate/docs/CI layer and then moved into scientific workflow reconciliation.
 
-Do not assume which is next. Audit the live repo first and choose based on actual current state.
+Previously identified scientific gaps included:
 
-## Required audit files for the next chat
+- workflow provenance boundary
+- feature expansion boundary
+- regularized screening boundary
+- final OLS handoff/export boundary
+- evaluation/export reconciliation
+- notebook-to-module migration and notebook drift
+- canonical provenance of actual modeling workflow steps and artifacts
 
-Before making changes, inspect at least:
+However, do **not** trust prior summaries or generated bundles over the live repo. Re-audit the live repo to determine what is actually present now.
 
-- `git status --short`
-- `MEMORY.md`
-- `pixi.toml`
-- `pyproject.toml`
-- `test_repo.sh`
-- `.github/workflows/*`
-- `docs/`
-- `src/bsm_rfm/`
-- `tests/`
-- `tools/`
-- any module/script associated with null screening, subset generation, modeling workflow, and scientific provenance
+## Core workflow rule
 
-## Validation requirements before claiming success in future chats
+Always audit the exact live repo first.
+Do not patch from assumptions.
+Do not trust prior patch bundles, summaries, or claimed repo state over the uploaded live repo.
 
-Run and report actual results for all relevant checks touched by the next change. At minimum, if repo-engineering files are changed:
+## Engineering rules
 
+- Make only cumulative changes
+- Fix root causes
+- No hacks, no shims, no compatibility layers unless explicitly requested
+- Keep local and CI behavior aligned
+- Do not claim anything passes unless it was actually run
+- Prefer tests that validate behavior and contracts over brittle implementation-string assertions, unless the string-level contract is intentional and justified
+
+## Next-session starting point
+
+Start with a strict repo audit focused on:
+
+1. engineering best practices
+1. whether the current testing regime is appropriately designed
+1. what scientific/modeling functionality is actually implemented vs only documented
+1. what remains to reach a fully tested, documented, reproducible reduced-form modeling workflow package
+
+## Validation expectations for future changes
+
+If repo-engineering files are changed, run at minimum:
+
+- `pixi run test`
 - `./test_repo.sh --fix`
-- `git status --short`
 - `./test_repo.sh --check`
+- inspect `git status --short`
 
-If CI-relevant paths are changed, ensure the local contract still mirrors CI.
+If scientific/modeling code changes:
+
+- run targeted tests first
+- then run the broader relevant gate
+
+## User preferences for this repo
+
+- strict live-repo audit first
+- focus on root-cause fixes
+- minimal discussion when errors are provided
+- provide exact updated files/scripts
+- do not claim success without actual validation
+- no compatibility layers unless explicitly requested

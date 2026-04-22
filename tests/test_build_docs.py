@@ -45,6 +45,12 @@ def test_docs_index_includes_user_guides() -> None:
     index_text = Path("docs/index.md").read_text(encoding="utf-8")
     assert "quickstart" in index_text
     assert "export_bundle" in index_text
+    assert "reproducibility_example" in index_text
+
+
+def test_docs_index_includes_scope_boundary_guide() -> None:
+    index_text = Path("docs/index.md").read_text(encoding="utf-8")
+    assert "scope_boundary" in index_text
 
 
 def test_module_plan_uses_live_module_names() -> None:

@@ -62,6 +62,7 @@ from .workflow import (
     canonical_workflow_stages,
     case_study_number_table,
     run_canonical_workflow,
+    workflow_scope_boundary_table,
     workflow_stage_table,
     write_postfit_bundle,
 )
@@ -113,6 +114,7 @@ __all__ = [
     "canonical_workflow_stages",
     "case_study_number_table",
     "run_canonical_workflow",
+    "workflow_scope_boundary_table",
     "workflow_stage_table",
     "write_postfit_bundle",
 ]

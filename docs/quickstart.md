@@ -69,3 +69,15 @@ The package implements the screening/final-fit/evaluation/export path directly. 
 Delta permutation-null screen is still represented through the recovered source adapter in
 `bsm_rfm.null_screening`, while the recovered notebook-specific feature-expansion specification
 is still only partially promoted into a source-driven canonical default.
+
+For a machine-readable summary of those current limits, call
+`bsm_rfm.workflow_scope_boundary_table()`.
+
+## Reproducibility example
+
+For a deterministic end-to-end example that also writes and reloads the bundle, run
+`examples/end_to_end_reproducibility.py` from the repo source tree:
+
+```bash
+PYTHONPATH=src python examples/end_to_end_reproducibility.py --output-dir artifacts/toy-reproducibility-example
+```

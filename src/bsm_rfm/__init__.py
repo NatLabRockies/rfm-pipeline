@@ -4,7 +4,13 @@ The package exposes tested modules for data preparation, feature expansion, scre
 final OLS fitting, artifact assembly, and workflow orchestration.
 """
 
-from .artifacts import PipelineManifest, build_position_map, make_metadata_frame
+from .artifacts import (
+    PipelineManifest,
+    build_position_map,
+    canonical_manifest_position_map_keys,
+    canonical_manifest_top_level_keys,
+    make_metadata_frame,
+)
 from .data import (
     StandardizationBundle,
     add_scenario_flags,
@@ -55,7 +61,7 @@ from .regularized_screening import (
     fit_multitask_elastic_net_screen,
     screening_selection_table,
 )
-from .viz_io import load_pipeline_outputs, load_postfit_bundle
+from .viz_io import canonical_bundle_loader_keys, load_pipeline_outputs, load_postfit_bundle
 from .workflow import (
     CanonicalWorkflowRun,
     canonical_case_study_numbers,
@@ -76,6 +82,9 @@ __all__ = [
     "bootstrap_macro_nrmse_ci",
     "apply_feature_expansion",
     "build_position_map",
+    "canonical_bundle_loader_keys",
+    "canonical_manifest_position_map_keys",
+    "canonical_manifest_top_level_keys",
     "canonical_module_from_factor_name",
     "default_feature_expansion_spec",
     "ensure_id_columns",

@@ -353,3 +353,37 @@ The following were actually run and passed after reconstruction of the full live
 - `PYTHONPATH=src:. python tools/compile_check.py`
 - `PYTHONPATH=src:. python tools/clean_transients.py`
 - `PYTHONPATH=src:. python tools/check_repo.py`
+
+## Subsequent live-repo bundle-contract freeze phase
+
+This update is based on the exact live repo copy after the MIT-license and reproducibility-example
+phase.
+
+### Additional cumulative fixes now present in the live repo copy
+
+- Added explicit bundle-contract helpers:
+  - `bsm_rfm.canonical_bundle_loader_keys()`
+  - `bsm_rfm.canonical_manifest_position_map_keys()`
+  - `bsm_rfm.canonical_manifest_top_level_keys()`
+- Updated `docs/export_bundle.md` and `docs/quickstart.md` to point users at the stable
+  helper functions instead of hard-coding manifest or bundle keys.
+- Added regression tests that freeze the top-level manifest keys, position-map keys, file-map
+  keys, and visualization-loader keys.
+
+### Actual validation run in this bundle-contract phase
+
+The following were actually run in this environment and passed after the cumulative edits:
+
+- `PYTHONPATH=src:. python -m pytest -q tests/test_bundle_contract.py tests/test_public_api.py tests/test_reproducibility_example.py`
+- `PYTHONPATH=src:. python -m pytest -q`
+- `PYTHONPATH=src:. python tools/import_smoke.py`
+- `PYTHONPATH=src:. python tools/compile_check.py`
+- `PYTHONPATH=src:. python tools/clean_transients.py`
+- `PYTHONPATH=src:. python tools/check_repo.py`
+
+### Recommended next phase after this one
+
+The highest-value remaining work is now small and ship-facing:
+
+- decide whether to stop hardening and ship
+- or add one final publication/release polish pass over wording and repository metadata

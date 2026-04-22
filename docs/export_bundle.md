@@ -26,19 +26,39 @@ The `postfit_diagnostics/` subtree contains these canonical tables:
 - `y_standardization`
 - `nrmse_summary`
 
+These logical table names are frozen by `bsm_rfm.canonical_postfit_artifact_names()` and
+`bsm_rfm.canonical_bundle_loader_keys()`.
+
 Each table is written as `.parquet` when a parquet engine is available. If the requested
 output suffix is `.parquet` but no parquet engine is importable, the writer falls back to `.csv`
 and records the actual written path in `manifest.json`.
 
 ## Manifest payload
 
-The manifest records:
+The manifest top-level keys are frozen by `bsm_rfm.canonical_manifest_top_level_keys()`.
+They are:
 
-- dataset tag
-- counts for all input features, selected features, retained features, and outputs
-- ordered feature and output names
-- file map for each canonical artifact
-- optional metrics, evaluation metadata, and upstream provenance metadata
+- `dataset_tag`
+- `n_all_input_features`
+- `n_selected_features`
+- `n_retained_features`
+- `n_outputs`
+- `all_input_features`
+- `selected_features`
+- `retained_features`
+- `output_names`
+- `files`
+- `metrics`
+- `evaluation`
+- `upstream_provenance`
+- `all_input_position_map`
+- `selected_input_position_map`
+- `retained_input_position_map`
+- `output_position_map`
+
+The `files` mapping is expected to contain one relative path for each canonical artifact table.
+The position-map payload preserves original ordering so downstream code can reconstruct
+feature/output provenance without recomputing modeling steps.
 
 ## Reader entrypoint
 

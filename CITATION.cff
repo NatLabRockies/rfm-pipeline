@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "bsm-rfm: BSM reduced-form modeling workflow package"
+type: software
+authors:
+  - family-names: Hettinger
+    given-names: Dylan
+license: MIT
+version: 0.1.0
+repository-code: "https://github.com/NatLabRockies/bsm-public-rf"
+url: "https://github.com/NatLabRockies/bsm-public-rf"
+abstract: >-
+  Public reduced-form modeling workflow package for the Biomass Scenario Model,
+  including screening, final OLS fitting, holdout evaluation, artifact assembly,
+  and manifest-aware export/reload utilities.

@@ -45,6 +45,13 @@ from .final_ols import (
     postfit_artifact_table,
     predict_final_ols,
 )
+from .manuscript_data_contract import (
+    manuscript_notebook_manifest_table,
+    manuscript_notebook_order,
+    manuscript_placeholder_path_policy,
+    manuscript_required_artifact_table,
+    required_manuscript_artifacts,
+)
 from .metrics import (
     bootstrap_macro_nrmse_ci,
     macro_nrmse_with_ref,
@@ -104,6 +111,10 @@ __all__ = [
     "make_standardization_frame",
     "make_holdout_nrmse_summary",
     "make_boolean_combination_labels",
+    "manuscript_notebook_manifest_table",
+    "manuscript_notebook_order",
+    "manuscript_placeholder_path_policy",
+    "manuscript_required_artifact_table",
     "notebook_final_ols_contract",
     "macro_nrmse_with_ref",
     "ordered_expanded_feature_names",
@@ -122,6 +133,7 @@ __all__ = [
     "canonical_case_study_numbers",
     "canonical_workflow_stages",
     "case_study_number_table",
+    "required_manuscript_artifacts",
     "run_canonical_workflow",
     "workflow_scope_boundary_table",
     "workflow_stage_table",

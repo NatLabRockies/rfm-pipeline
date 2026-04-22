@@ -26,3 +26,5 @@ __MACOSX/
 
 # macOS Finder metadata
 .DS_Store
+configs/local/
+artifacts/

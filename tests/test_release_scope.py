@@ -31,6 +31,7 @@ def test_pyproject_includes_release_facing_repository_metadata() -> None:
     assert urls["Homepage"].endswith("NatLabRockies/bsm-public-rf")
     assert urls["Repository"].endswith("NatLabRockies/bsm-public-rf")
     assert urls["Issues"].endswith("NatLabRockies/bsm-public-rf/issues")
+    assert urls["Changelog"].endswith("NatLabRockies/bsm-public-rf/blob/main/CHANGELOG.md")
     assert "keywords" in project and "workflow" in project["keywords"]
     assert "classifiers" in project
     assert any(
@@ -48,3 +49,18 @@ def test_repo_includes_mit_license_file_and_metadata() -> None:
     assert project["license"] == "MIT"
     assert project["license-files"] == ["LICENSE"]
     assert all("License :: OSI Approved ::" not in item for item in project["classifiers"])
+
+
+def test_repo_includes_changelog_and_citation_metadata() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    changelog_text = (repo_root / "CHANGELOG.md").read_text(encoding="utf-8")
+    citation_text = (repo_root / "CITATION.cff").read_text(encoding="utf-8")
+    pyproject = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    version = pyproject["project"]["version"]
+
+    assert "# Changelog" in changelog_text
+    assert f"## {version}" in changelog_text
+    assert "cff-version: 1.2.0" in citation_text
+    assert 'title: "bsm-rfm: BSM reduced-form modeling workflow package"' in citation_text
+    assert f"version: {version}" in citation_text
+    assert 'repository-code: "https://github.com/NatLabRockies/bsm-public-rf"' in citation_text

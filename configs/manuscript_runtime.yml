@@ -1,0 +1,10 @@
+notebooks:
+  - 00_case_study_data_intake.ipynb
+  - 01_candidate_library_audit.ipynb
+  - 02_output_conditioning.ipynb
+  - 03_empirical_null_screen.ipynb
+  - 04_interaction_discovery.ipynb
+  - 05_nonlinear_discovery.ipynb
+  - 06_sparse_selection_and_stability.ipynb
+  - 07_final_ols_and_bundle_export.ipynb
+  - 08_manuscript_tables_and_figures.ipynb

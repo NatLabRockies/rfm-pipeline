@@ -88,6 +88,18 @@ Markdown formatting validation, notebook hygiene validation, Python compilation,
 workflow smoke tests, notebook execution tests, Sphinx documentation builds, package builds,
 and `git diff --check`.
 
+## Citation and release notes
+
+- Cite the package using the metadata in `CITATION.cff`.
+- Track package-facing changes in `CHANGELOG.md`.
+
 ## License
 
 This project is released under the MIT License. See `LICENSE`.
+
+## Manuscript reproduction contract
+
+The repo now freezes the manuscript reconstruction contract in `docs/manuscript_contract.md` and
+`docs/manuscript_data_contract.md`. Real-data local filenames should be supplied through
+`configs/local/manuscript_paths.local.yml`, using `configs/manuscript_paths.template.yml` as the
+tracked template.

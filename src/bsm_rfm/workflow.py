@@ -177,23 +177,13 @@ def canonical_workflow_stages() -> tuple[WorkflowStage, ...]:
 
 
 def workflow_scope_boundary_table() -> pd.DataFrame:
-    """Return the current implementation-boundary stages as a table.
-
-    The canonical workflow intentionally exposes a mixed provenance boundary while the
-    package remains honest about what is implemented directly versus what is still
-    represented through recovered notebook- or source-derived contracts.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Subset of :func:`workflow_stage_table` containing the stages whose implementation
-        status is not yet ``"implemented_foundation"``.
-    """
-    table = workflow_stage_table()
-    return table.loc[
-        table["status"] != "implemented_foundation",
-        ["order", "name", "provenance", "source_artifact", "status", "description"],
-    ].reset_index(drop=True)
+    """Return the non-foundation stages that still define the package scope boundary."""
+    rows = [
+        asdict(stage)
+        for stage in canonical_workflow_stages()
+        if stage.status in {"implemented_adapter", "spec_recovered_not_fully_ported"}
+    ]
+    return pd.DataFrame(rows).sort_values("order", ignore_index=True)
 
 
 def workflow_stage_table() -> pd.DataFrame:

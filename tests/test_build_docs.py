@@ -98,3 +98,8 @@ def test_build_docs_respects_explicit_output_dir(tmp_path: Path) -> None:
     args, _kwargs = run_mock.call_args
     command = args[0]
     assert str(explicit.resolve()) in command
+
+
+def test_docs_index_includes_manuscript_data_contract_guide() -> None:
+    index_text = Path("docs/index.md").read_text(encoding="utf-8")
+    assert "manuscript_data_contract" in index_text

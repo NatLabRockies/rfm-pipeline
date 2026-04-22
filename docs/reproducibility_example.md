@@ -1,7 +1,8 @@
 # End-to-end reproducibility example
 
-The repository now ships a deterministic toy example that exercises the canonical public
-workflow end to end:
+The repository ships a deterministic toy example that exercises the canonical public
+workflow end to end. It is intended for CI and demonstration; the manuscript reproduction layer
+adds separate real-data notebooks for the full BSM case study.
 
 1. build aligned train and holdout DataFrames
 1. run `run_canonical_workflow(...)`

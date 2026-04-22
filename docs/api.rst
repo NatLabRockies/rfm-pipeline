@@ -81,3 +81,12 @@ workflow
    :members:
    :undoc-members:
    :show-inheritance:
+
+
+manuscript_data_contract
+------------------------
+
+.. automodule:: bsm_rfm.manuscript_data_contract
+   :members:
+   :undoc-members:
+   :show-inheritance:

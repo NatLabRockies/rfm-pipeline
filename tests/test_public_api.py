@@ -14,6 +14,9 @@ from bsm_rfm import (
     default_feature_expansion_spec,
     load_pipeline_outputs,
     load_postfit_bundle,
+    manuscript_notebook_order,
+    manuscript_placeholder_path_policy,
+    manuscript_required_artifact_table,
     ordered_expanded_feature_names,
     workflow_scope_boundary_table,
 )
@@ -62,3 +65,21 @@ def test_package_exports_bundle_contract_helpers() -> None:
     assert callable(canonical_bundle_loader_keys)
     assert callable(canonical_manifest_position_map_keys)
     assert callable(canonical_manifest_top_level_keys)
+
+
+def test_readme_mentions_citation_and_changelog_files() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    assert "CITATION.cff" in readme
+    assert "CHANGELOG.md" in readme
+
+
+def test_package_exports_manuscript_data_contract_helpers() -> None:
+    assert callable(manuscript_required_artifact_table)
+    assert callable(manuscript_placeholder_path_policy)
+    assert isinstance(manuscript_notebook_order(), tuple)
+
+
+def test_docs_include_manuscript_data_contract_guide() -> None:
+    doc = Path("docs/manuscript_data_contract.md").read_text(encoding="utf-8")
+    assert "manuscript_feature_catalog" in doc
+    assert "configs/manuscript_runtime.yml" in doc

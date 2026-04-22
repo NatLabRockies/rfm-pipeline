@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -26,7 +27,7 @@ def test_reproducibility_example_function_writes_and_reloads_bundle(tmp_path: Pa
 def test_reproducibility_example_cli_runs_from_repo_source_tree(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     output_dir = tmp_path / "cli-bundle"
-    env = dict(**__import__("os").environ)
+    env = dict(**os.environ)
     env["PYTHONPATH"] = str(repo_root / "src")
 
     completed = subprocess.run(

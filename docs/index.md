@@ -11,6 +11,8 @@ quickstart
 export_bundle
 reproducibility_example
 scope_boundary
+manuscript_contract
+manuscript_data_contract
 api
 workflow_audit
 module_plan

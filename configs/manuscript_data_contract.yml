@@ -1,0 +1,12 @@
+contract_status: phase1_complete
+required_artifacts:
+  - input_metadata
+  - output_metadata
+  - case_study_input_matrix
+  - case_study_output_matrix
+  - manuscript_feature_catalog
+  - fixed_holdout_assignments
+placeholder_path_policy:
+  template_file: configs/manuscript_paths.template.yml
+  local_override_file: configs/local/manuscript_paths.local.yml
+  placeholder_prefix: REPLACE_WITH_REAL_FILE/

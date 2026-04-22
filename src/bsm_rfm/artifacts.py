@@ -13,48 +13,6 @@ from typing import Any
 import pandas as pd
 
 
-def canonical_manifest_position_map_keys() -> list[str]:
-    """Return the stable position-map keys stored in the manifest.
-
-    Returns
-    -------
-    list of str
-        Canonical position-map payload keys written into ``manifest.json``.
-    """
-    return [
-        "all_input_position_map",
-        "selected_input_position_map",
-        "retained_input_position_map",
-        "output_position_map",
-    ]
-
-
-def canonical_manifest_top_level_keys() -> list[str]:
-    """Return the stable top-level keys stored in the manifest.
-
-    Returns
-    -------
-    list of str
-        Canonical top-level manifest keys for exported bundles.
-    """
-    return [
-        "dataset_tag",
-        "n_all_input_features",
-        "n_selected_features",
-        "n_retained_features",
-        "n_outputs",
-        "all_input_features",
-        "selected_features",
-        "retained_features",
-        "output_names",
-        "files",
-        "metrics",
-        "evaluation",
-        "upstream_provenance",
-        *canonical_manifest_position_map_keys(),
-    ]
-
-
 @dataclass(frozen=True)
 class PipelineManifest:
     """Top-level manifest for a canonical pipeline export bundle.
@@ -157,3 +115,33 @@ def make_metadata_frame(names: list[str], name_column: str) -> pd.DataFrame:
             "original_position": list(range(len(names))),
         }
     )
+
+
+def canonical_manifest_position_map_keys() -> list[str]:
+    """Return the canonical position-map keys stored in the manifest payload."""
+    return [
+        "all_input_position_map",
+        "selected_input_position_map",
+        "retained_input_position_map",
+        "output_position_map",
+    ]
+
+
+def canonical_manifest_top_level_keys() -> list[str]:
+    """Return the canonical top-level keys in the manifest payload."""
+    return [
+        "dataset_tag",
+        "n_all_input_features",
+        "n_selected_features",
+        "n_retained_features",
+        "n_outputs",
+        "all_input_features",
+        "selected_features",
+        "retained_features",
+        "output_names",
+        "files",
+        "metrics",
+        "evaluation",
+        "upstream_provenance",
+        *canonical_manifest_position_map_keys(),
+    ]

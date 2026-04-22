@@ -44,7 +44,7 @@ def make_example_frames() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.
     return x_train, y_train, x_holdout, y_holdout
 
 
-def run_reproducibility_example(output_dir: Path) -> dict[str, object]:
+def run_reproducibility_example(output_dir: Path | str) -> dict[str, object]:
     """Execute the canonical workflow, write the bundle, and reload it from disk."""
     x_train, y_train, x_holdout, y_holdout = make_example_frames()
     bundle_root = Path(output_dir)
@@ -93,7 +93,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    """Run the reproducibility example CLI entrypoint."""
+    """Run the example script from the command line."""
     args = _build_parser().parse_args()
     result = run_reproducibility_example(args.output_dir)
     manifest = result["manifest"]

@@ -32,6 +32,7 @@ dependencies = [
 Homepage = "https://github.com/NatLabRockies/bsm-public-rf"
 Repository = "https://github.com/NatLabRockies/bsm-public-rf"
 Issues = "https://github.com/NatLabRockies/bsm-public-rf/issues"
+Changelog = "https://github.com/NatLabRockies/bsm-public-rf/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [

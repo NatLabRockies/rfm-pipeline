@@ -15,7 +15,9 @@ The bundle root contains:
 - `manifest.json`
 - `postfit_diagnostics/`
 
-The `postfit_diagnostics/` subtree contains these canonical tables:
+The `postfit_diagnostics/` subtree contains these canonical tables. These logical table names are
+frozen by `bsm_rfm.canonical_postfit_artifact_names()` and
+`bsm_rfm.canonical_bundle_loader_keys()`.
 
 - `all_input_metadata`
 - `selected_input_metadata`
@@ -26,9 +28,6 @@ The `postfit_diagnostics/` subtree contains these canonical tables:
 - `y_standardization`
 - `nrmse_summary`
 
-These logical table names are frozen by `bsm_rfm.canonical_postfit_artifact_names()` and
-`bsm_rfm.canonical_bundle_loader_keys()`.
-
 Each table is written as `.parquet` when a parquet engine is available. If the requested
 output suffix is `.parquet` but no parquet engine is importable, the writer falls back to `.csv`
 and records the actual written path in `manifest.json`.
@@ -36,6 +35,8 @@ and records the actual written path in `manifest.json`.
 ## Manifest payload
 
 The manifest top-level keys are frozen by `bsm_rfm.canonical_manifest_top_level_keys()`.
+The position-map payload keys are frozen by `bsm_rfm.canonical_manifest_position_map_keys()`.
+
 They are:
 
 - `dataset_tag`

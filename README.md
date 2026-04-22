@@ -30,6 +30,16 @@ To repair formatting and notebook hygiene before committing:
 
 The package documentation is built with Sphinx and MyST. Public Python APIs are expected to use NumPy-style docstrings.
 
+## End-to-end reproducibility example
+
+A deterministic toy example is included at `examples/end_to_end_reproducibility.py`. It runs the canonical workflow, writes a post-fit bundle, and reloads the written artifacts from disk.
+
+Run it from the repo source tree with:
+
+```bash
+PYTHONPATH=src python examples/end_to_end_reproducibility.py --output-dir artifacts/toy-reproducibility-example
+```
+
 ## Current scope
 
 This package now covers the foundational and workflow-level utilities needed for a canonical reduced-form modeling path:
@@ -55,6 +65,8 @@ The scientific workflow is no longer only documented at the screening/final-fit/
 
 Higher-level reconciliation still remains for the notebook-derived feature-expansion stage: the repo now exposes an explicit, tested feature-expansion contract, but the notebook-specific recovered specification has not yet been fully ported into a canonical source-driven default. Broader case-study-specific artifact provenance reconciliation also remains.
 
+The release-facing package metadata now records repository URLs, classifiers, and keywords, while the scientific scope boundary remains explicit: upstream Delta null screening is still exposed through a source-derived adapter, and the notebook-specific feature-expansion defaults are still only partially promoted into the canonical package path.
+
 ## Provenance notes
 
 - The canonical 20k modeling subset is a balanced stratified sample: 5,000 rows drawn within each AFSC/UAEORO boolean combination.
@@ -75,3 +87,7 @@ The validation chain includes repository hygiene checks, Ruff lint/format valida
 Markdown formatting validation, notebook hygiene validation, Python compilation, unit tests,
 workflow smoke tests, notebook execution tests, Sphinx documentation builds, package builds,
 and `git diff --check`.
+
+## License
+
+This project is released under the MIT License. See `LICENSE`.

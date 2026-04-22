@@ -275,3 +275,81 @@ The highest-value remaining work is release and publication polish:
 - verify final docs titles and user-facing language are exactly what should ship
 - decide whether any remaining notebook-derived helper behavior should be promoted into the
   canonical workflow or remain explicitly out of scope
+
+## Subsequent live-repo scope-freeze and release-metadata phase
+
+This additional update is based on the exact live repo copy edited after the full package snapshot.
+
+### Additional cumulative fixes now present in the live repo copy
+
+- `src/bsm_rfm.workflow` now exposes `workflow_scope_boundary_table()` as the machine-readable
+  contract for non-foundation workflow stages.
+- `src/bsm_rfm.__init__` now exports `workflow_scope_boundary_table` at the package root.
+- `docs/scope_boundary.md` now documents the explicit release boundary between implemented
+  foundation stages, the source-derived Delta-screen adapter, and the partially promoted
+  notebook-derived feature-expansion defaults.
+- `pyproject.toml` now carries release-facing repository metadata through project URLs,
+  keywords, and classifiers.
+- new tests now guard:
+  - the current non-foundation workflow stages and their statuses
+  - the presence of the scope-boundary guide in the docs tree
+  - the presence of release-facing repository metadata in `pyproject.toml`
+
+## Subsequent live-repo release-completion phase
+
+This update is based on the exact live repo copy after adding explicit release licensing
+and a shipped end-to-end reproducibility example.
+
+### Additional cumulative fixes now present in the live repo copy
+
+- Added a top-level `LICENSE` file with the MIT license text.
+- Added release metadata in `pyproject.toml` for the MIT license and classifier.
+- Added `examples/end_to_end_reproducibility.py`, a deterministic toy workflow that runs
+  `run_canonical_workflow(...)`, writes a bundle, and reloads it with
+  `load_postfit_bundle(...)`.
+- Added `docs/reproducibility_example.md` and linked it from the docs index and quickstart.
+- Added regression tests that execute the shipped reproducibility example and guard the
+  release-license metadata.
+
+### Actual validation run in this release-completion phase
+
+The following were actually run in this environment and passed after the cumulative edits:
+
+- `python -m pytest -q tests/test_reproducibility_example.py tests/test_release_scope.py tests/test_build_docs.py`
+- `python -m pytest -q`
+- `python tools/import_smoke.py`
+- `python tools/compile_check.py`
+- `python tools/clean_transients.py`
+- `python tools/check_repo.py`
+
+### Recommended next phase after this one
+
+The remaining highest-value work is now relatively small: either freeze the external artifact
+contract even more aggressively with manifest-key tests, or stop hardening and move into
+release/publication use of the package.
+
+## Subsequent lint/build cleanup phase
+
+This update captures the follow-on fixes required by the user's true local Pixi run.
+
+### Additional cumulative fixes now present in the live repo copy
+
+- Added a NumPy-style docstring to `examples/end_to_end_reproducibility.py:main` to satisfy Ruff `D103`.
+- Broke the long generator expression assertion in `tests/test_release_scope.py` to satisfy Ruff `E501`.
+- Updated `pyproject.toml` license metadata to current setuptools/packaging guidance:
+  - `project.license = "MIT"`
+  - `project.license-files = ["LICENSE"]`
+  - removed the deprecated MIT license classifier
+- Updated release-metadata tests to match the SPDX-string license form and to assert that deprecated license classifiers are absent.
+
+### Actual validation run for this phase
+
+The incremental bundle was not a standalone repo tree, so validation was performed by overlaying these fixes onto the latest full repo snapshot and then running the checks there.
+The following were actually run and passed after reconstruction of the full live tree:
+
+- `PYTHONPATH=src:. python -m pytest -q tests/test_reproducibility_example.py tests/test_release_scope.py tests/test_build_docs.py tests/test_public_api.py`
+- `PYTHONPATH=src:. python -m pytest -q`
+- `PYTHONPATH=src:. python tools/import_smoke.py`
+- `PYTHONPATH=src:. python tools/compile_check.py`
+- `PYTHONPATH=src:. python tools/clean_transients.py`
+- `PYTHONPATH=src:. python tools/check_repo.py`

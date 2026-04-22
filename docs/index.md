@@ -9,6 +9,8 @@ This documentation site is built from the live package source and the repository
 overview
 quickstart
 export_bundle
+reproducibility_example
+scope_boundary
 api
 workflow_audit
 module_plan

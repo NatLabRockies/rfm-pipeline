@@ -8,6 +8,9 @@ from bsm_rfm import (
     FeatureExpansionResult,
     FeatureExpansionSpec,
     apply_feature_expansion,
+    canonical_bundle_loader_keys,
+    canonical_manifest_position_map_keys,
+    canonical_manifest_top_level_keys,
     default_feature_expansion_spec,
     load_pipeline_outputs,
     load_postfit_bundle,
@@ -53,3 +56,9 @@ def test_docs_include_reproducibility_example_guide() -> None:
     example_doc = Path("docs/reproducibility_example.md").read_text(encoding="utf-8")
     assert "run_reproducibility_example" in example_doc
     assert "examples/end_to_end_reproducibility.py" in example_doc
+
+
+def test_package_exports_bundle_contract_helpers() -> None:
+    assert callable(canonical_bundle_loader_keys)
+    assert callable(canonical_manifest_position_map_keys)
+    assert callable(canonical_manifest_top_level_keys)

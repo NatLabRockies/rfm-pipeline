@@ -7,6 +7,26 @@ from pathlib import Path
 import pandas as pd
 
 
+def canonical_bundle_loader_keys() -> list[str]:
+    """Return the stable logical table names exposed by the bundle loader.
+
+    Returns
+    -------
+    list of str
+        Canonical logical keys returned by :func:`load_postfit_bundle`.
+    """
+    return [
+        "all_input_metadata",
+        "selected_input_metadata",
+        "output_metadata",
+        "coef_matrix_standardized",
+        "coef_matrix_raw_scale",
+        "x_standardization",
+        "y_standardization",
+        "nrmse_summary",
+    ]
+
+
 def load_table(path_no_ext: Path) -> pd.DataFrame:
     """Load a canonical artifact table from Parquet or CSV.
 
@@ -52,14 +72,8 @@ def load_postfit_bundle(root: Path) -> dict[str, pd.DataFrame]:
     """
     postfit = root / "postfit_diagnostics"
     return {
-        "all_input_metadata": load_table(postfit / "all_input_metadata"),
-        "selected_input_metadata": load_table(postfit / "selected_input_metadata"),
-        "output_metadata": load_table(postfit / "output_metadata"),
-        "coef_matrix_standardized": load_table(postfit / "coef_matrix_standardized"),
-        "coef_matrix_raw_scale": load_table(postfit / "coef_matrix_raw_scale"),
-        "x_standardization": load_table(postfit / "x_standardization"),
-        "y_standardization": load_table(postfit / "y_standardization"),
-        "nrmse_summary": load_table(postfit / "nrmse_summary"),
+        artifact_name: load_table(postfit / artifact_name)
+        for artifact_name in canonical_bundle_loader_keys()
     }
 
 

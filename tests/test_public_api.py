@@ -8,6 +8,7 @@ from bsm_rfm import (
     EmpiricalNullScreeningSpec,
     FeatureExpansionResult,
     FeatureExpansionSpec,
+    InteractionDiscoverySpec,
     OutputConditioningSpec,
     apply_feature_expansion,
     build_manuscript_feature_design,
@@ -17,7 +18,9 @@ from bsm_rfm import (
     canonical_manifest_top_level_keys,
     condition_manuscript_outputs,
     default_feature_expansion_spec,
+    discover_manuscript_interactions,
     empirical_null_screening_spec_from_case_study_config,
+    interaction_discovery_spec_from_case_study_config,
     load_pipeline_outputs,
     load_postfit_bundle,
     manuscript_notebook_order,
@@ -28,9 +31,11 @@ from bsm_rfm import (
     output_conditioning_spec_from_case_study_config,
     resolve_manuscript_runtime,
     run_empirical_null_screening_stage,
+    run_interaction_discovery_stage,
     run_output_conditioning_stage,
     screen_manuscript_empirical_null_terms,
     workflow_scope_boundary_table,
+    write_interaction_discovery_artifacts,
 )
 
 
@@ -120,3 +125,11 @@ def test_package_exports_manuscript_empirical_null_screening_stage() -> None:
     assert callable(build_manuscript_feature_design)
     assert callable(screen_manuscript_empirical_null_terms)
     assert callable(run_empirical_null_screening_stage)
+
+
+def test_package_exports_manuscript_interaction_discovery_stage() -> None:
+    assert InteractionDiscoverySpec.__name__ == "InteractionDiscoverySpec"
+    assert callable(interaction_discovery_spec_from_case_study_config)
+    assert callable(discover_manuscript_interactions)
+    assert callable(run_interaction_discovery_stage)
+    assert callable(write_interaction_discovery_artifacts)

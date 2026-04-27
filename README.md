@@ -55,10 +55,11 @@ This package now covers the foundational and workflow-level utilities needed for
 - artifact manifest helpers
 - visualization-side artifact loading
 
-The scientific workflow is no longer only documented at the screening/final-fit/export boundary. The repo now includes a tested canonical workflow foundation that performs:
+The scientific workflow is no longer only documented at the screening/final-fit/export boundary.
+The repo now includes a tested canonical workflow foundation that performs:
 
 - upstream null-screening delegation to the recovered source script
-- source-backed manuscript output conditioning and empirical-null screening stages
+- source-backed manuscript output-conditioning, empirical-null, and interaction-discovery stages
 - executable archived-style multitask elastic-net screening
 - executable final OLS fitting on retained features
 - holdout bootstrap nRMSE evaluation
@@ -72,7 +73,13 @@ The release-facing package metadata now records repository URLs, classifiers, an
 
 - The canonical 20k modeling subset is a balanced stratified sample: 5,000 rows drawn within each AFSC/UAEORO boolean combination.
 - The canonical upstream null-screening stage comes from the recovered `null_distribution.py` source script and is wrapped through `bsm_rfm.null_screening` rather than reimplemented ad hoc in notebooks.
-- The manuscript empirical-null notebook now uses a deterministic source-backed screening implementation that materializes the tracked feature catalog, computes coefficient-row-norm statistics against retained PCA component scores, estimates featurewise permutation-null p-values, and applies the frozen Benjamini--Hochberg threshold.
+- The manuscript empirical-null notebook now uses a deterministic source-backed screening
+  implementation that materializes the tracked feature catalog, computes coefficient-row-norm
+  statistics against retained PCA component scores, estimates featurewise permutation-null p-values,
+  and applies the frozen Benjamini--Hochberg threshold.
+- The manuscript interaction-discovery notebook now scores released catalog interaction pairs by
+  residualized incremental contribution beyond their first-order factors and writes deterministic
+  pair-score, component-score, null-summary, and retained-pair artifacts.
 
 ## Repository gate
 
@@ -110,7 +117,7 @@ Phase 2 adds tracked notebook skeletons under `notebooks/manuscript/` and runtim
 helpers in `bsm_rfm.manuscript_runtime` so the notebooks execute on deterministic demo data in CI
 and switch to real data once the local path override file is populated.
 
-Phase 3 has started with a source-backed output-conditioning stage in
-`bsm_rfm.manuscript_stages`. The `02_output_conditioning.ipynb` notebook now runs the frozen
-train-only output filters and PCA reduced-response representation, writing deterministic handoff
-artifacts under the resolved manuscript output root.
+Phase 3 has source-backed stages in `bsm_rfm.manuscript_stages` for output conditioning,
+empirical-null screening, and interaction discovery. The `02_output_conditioning.ipynb`,
+`03_empirical_null_screen.ipynb`, and `04_interaction_discovery.ipynb` notebooks now run
+deterministic stage functions and write handoff artifacts under the resolved manuscript output root.

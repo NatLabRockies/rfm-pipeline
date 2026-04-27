@@ -157,6 +157,75 @@ class EmpiricalNullScreeningStageResult:
     artifact_paths: dict[str, Path]
 
 
+@dataclass(frozen=True)
+class InteractionDiscoverySpec:
+    """Frozen interaction-discovery settings from the manuscript contract.
+
+    Parameters
+    ----------
+    method
+        Manuscript interaction-discovery method recorded in the frozen contract.
+    aggregation_rule
+        Rule used to collapse component-level interaction evidence to one score per pair.
+    null_threshold_quantile
+        Quantile of the empirical-null score distribution used as the retention threshold.
+    retained_pairs_reference
+        Manuscript-reported retained interaction-pair count for the full case study.
+    permutation_count_B
+        Number of response permutations used for the public deterministic null threshold.
+    random_seed
+        Deterministic random seed for the permutation sequence.
+    """
+
+    method: str
+    aggregation_rule: str
+    null_threshold_quantile: float
+    retained_pairs_reference: int
+    permutation_count_B: int
+    random_seed: int = 123
+
+
+@dataclass(frozen=True)
+class InteractionDiscoveryResult:
+    """Materialized interaction-discovery artifacts for one manuscript run.
+
+    Parameters
+    ----------
+    pair_scores
+        Per-pair observed score, null threshold, empirical p-value, and retention flag.
+    component_interaction_scores
+        Long-form component-level residual interaction coefficients.
+    interaction_null_summary
+        Per-pair summary of empirical-null interaction-score distributions.
+    retained_pairs
+        Retained interaction-pair table after thresholding.
+    summary
+        One-row summary of the interaction-discovery stage.
+    """
+
+    pair_scores: pd.DataFrame
+    component_interaction_scores: pd.DataFrame
+    interaction_null_summary: pd.DataFrame
+    retained_pairs: pd.DataFrame
+    summary: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class InteractionDiscoveryStageResult:
+    """Interaction-discovery result plus paths written for notebook handoff.
+
+    Parameters
+    ----------
+    interactions
+        In-memory interaction-discovery result.
+    artifact_paths
+        Mapping from stable artifact name to the CSV path written under the output root.
+    """
+
+    interactions: InteractionDiscoveryResult
+    artifact_paths: dict[str, Path]
+
+
 def output_conditioning_spec_from_case_study_config(
     case_study_config: dict[str, Any],
 ) -> OutputConditioningSpec:
@@ -583,6 +652,228 @@ def run_empirical_null_screening_stage(context: Any) -> EmpiricalNullScreeningSt
     return EmpiricalNullScreeningStageResult(screening=screening, artifact_paths=artifact_paths)
 
 
+def interaction_discovery_spec_from_case_study_config(
+    case_study_config: dict[str, Any],
+) -> InteractionDiscoverySpec:
+    """Build the interaction-discovery specification from the case-study config.
+
+    Parameters
+    ----------
+    case_study_config
+        Parsed ``configs/manuscript_case_study.yml`` mapping.
+
+    Returns
+    -------
+    InteractionDiscoverySpec
+        Typed interaction-discovery specification.
+    """
+    case_study = case_study_config["case_study"]
+    interaction = case_study["interaction_discovery"]
+    empirical_null = case_study["empirical_null_screen"]
+    interface = case_study.get("interface", {})
+    return InteractionDiscoverySpec(
+        method=str(interaction["method"]),
+        aggregation_rule=str(interaction["aggregation_rule"]),
+        null_threshold_quantile=float(interaction["null_threshold_quantile"]),
+        retained_pairs_reference=int(interaction["retained_pairs"]),
+        permutation_count_B=int(empirical_null["permutation_count_B"]),
+        random_seed=int(interface.get("holdout_random_seed", 123)),
+    )
+
+
+def discover_manuscript_interactions(
+    input_matrix: pd.DataFrame,
+    feature_catalog: pd.DataFrame,
+    holdout_assignments: pd.DataFrame,
+    pca_scores: pd.DataFrame,
+    retained_terms: pd.DataFrame,
+    spec: InteractionDiscoverySpec,
+) -> InteractionDiscoveryResult:
+    """Discover candidate interaction pairs from the manuscript feature catalog.
+
+    The public reproduction package uses the released feature catalog as the authoritative
+    candidate-pair source. Each pair is scored by residualizing its product term against the
+    corresponding first-order factors on training rows, then aggregating the absolute standardized
+    coefficient across retained PCA components. Response permutations provide deterministic
+    pair-specific null thresholds for CI/demo execution.
+
+    Parameters
+    ----------
+    input_matrix
+        Case-study input table with ``sample_id`` and source input columns.
+    feature_catalog
+        Manuscript feature catalog containing candidate colon-delimited interaction terms.
+    holdout_assignments
+        Table with ``sample_id`` and ``split`` columns. Only train rows are scored.
+    pca_scores
+        Output-conditioning PCA score table with ``sample_id`` and component columns.
+    retained_terms
+        Empirical-null retained-term table with at least a ``feature_name`` column. The table is
+        used to annotate which candidate pairs survived the previous screening stage.
+    spec
+        Interaction-discovery specification.
+
+    Returns
+    -------
+    InteractionDiscoveryResult
+        Materialized pair-score, component-score, null-summary, retained-pair, and summary tables.
+    """
+    if spec.method != "tree_shap_interaction_values":
+        raise ValueError(f"Unsupported interaction-discovery method: {spec.method}")
+    expected_rule = "max_over_components_of_mean_absolute_shap_interaction"
+    if spec.aggregation_rule != expected_rule:
+        raise ValueError(f"Unsupported interaction aggregation rule: {spec.aggregation_rule}")
+    if spec.permutation_count_B < 1:
+        raise ValueError("permutation_count_B must be positive.")
+    if not 0.0 < spec.null_threshold_quantile < 1.0:
+        raise ValueError("null_threshold_quantile must be in the interval (0, 1).")
+
+    candidates = _interaction_candidate_pairs(feature_catalog)
+    component_names = _component_columns(pca_scores)
+    train_ids = _train_sample_ids(holdout_assignments)
+    y_train = _align_table_by_sample_id(pca_scores, train_ids, component_names, "PCA scores")
+    if len(y_train) < 4:
+        raise ValueError("Interaction discovery requires at least four training rows.")
+    y_scaled, component_active = _standardize_for_screening(y_train)
+    if not component_active.any():
+        raise ValueError("All retained PCA components have zero training variance.")
+
+    residualized = _residualized_interaction_matrix(input_matrix, train_ids, candidates)
+    if residualized.shape[1] == 0:
+        raise ValueError("feature_catalog does not contain any two-factor interaction candidates.")
+
+    coefficients = (residualized.T @ y_scaled) / float(len(residualized))
+    observed_scores = np.max(np.abs(coefficients), axis=1)
+    null_statistics = _permutation_max_abs_coefficient_null(
+        residualized,
+        y_scaled,
+        n_permutations=spec.permutation_count_B,
+        random_seed=spec.random_seed,
+    )
+    thresholds = np.quantile(null_statistics, spec.null_threshold_quantile, axis=0)
+    p_values = (1.0 + (null_statistics >= observed_scores[None, :]).sum(axis=0)) / (
+        spec.permutation_count_B + 1.0
+    )
+    retained = observed_scores > thresholds
+    retained_term_names = _retained_feature_names(retained_terms)
+    pair_scores = _build_interaction_pair_scores(
+        candidates=candidates,
+        observed_scores=observed_scores,
+        thresholds=thresholds,
+        p_values=p_values,
+        retained=retained,
+        retained_term_names=retained_term_names,
+        spec=spec,
+    )
+    component_scores = _build_component_interaction_scores(
+        candidates=candidates,
+        component_names=component_names,
+        coefficients=coefficients,
+    )
+    null_summary = _build_interaction_null_summary(candidates, null_statistics)
+    retained_pairs = pair_scores.loc[pair_scores["retained"]].copy()
+    retained_pairs = retained_pairs.sort_values(
+        ["interaction_score", "pair_name"],
+        ascending=[False, True],
+        ignore_index=True,
+    )
+    summary = _build_interaction_discovery_summary(
+        n_training_rows=len(y_train),
+        n_candidate_pairs=len(candidates),
+        n_empirical_null_retained_pairs=int(pair_scores["empirical_null_retained"].sum()),
+        n_retained_pairs=len(retained_pairs),
+        n_components=len(component_names),
+        max_score=float(observed_scores.max()),
+        spec=spec,
+    )
+    return InteractionDiscoveryResult(
+        pair_scores=pair_scores,
+        component_interaction_scores=component_scores,
+        interaction_null_summary=null_summary,
+        retained_pairs=retained_pairs,
+        summary=summary,
+    )
+
+
+def write_interaction_discovery_artifacts(
+    result: InteractionDiscoveryResult,
+    output_root: Path,
+) -> dict[str, Path]:
+    """Write interaction-discovery artifacts under ``output_root``.
+
+    Parameters
+    ----------
+    result
+        Materialized interaction-discovery result.
+    output_root
+        Resolved manuscript output root from the runtime context.
+
+    Returns
+    -------
+    dict[str, pathlib.Path]
+        Paths keyed by stable artifact name.
+    """
+    stage_root = output_root / "interaction_discovery"
+    stage_root.mkdir(parents=True, exist_ok=True)
+    tables = {
+        "interaction_pair_scores": result.pair_scores,
+        "component_interaction_scores": result.component_interaction_scores,
+        "interaction_null_summary": result.interaction_null_summary,
+        "retained_interaction_pairs": result.retained_pairs,
+        "interaction_discovery_summary": result.summary,
+    }
+    written: dict[str, Path] = {}
+    for name, table in tables.items():
+        path = stage_root / f"{name}.csv"
+        table.to_csv(path, index=False)
+        written[name] = path
+    return written
+
+
+def run_interaction_discovery_stage(context: Any) -> InteractionDiscoveryStageResult:
+    """Run interaction discovery from a manuscript notebook runtime context.
+
+    Parameters
+    ----------
+    context
+        ``bsm_rfm.manuscript_runtime.ManuscriptNotebookContext``. It is typed as ``Any`` here to
+        avoid an import cycle between the runtime and stage modules.
+
+    Returns
+    -------
+    InteractionDiscoveryStageResult
+        In-memory result and written artifact paths.
+    """
+    conditioning_spec = output_conditioning_spec_from_case_study_config(context.case_study_config)
+    conditioning = condition_manuscript_outputs(
+        context.tables["case_study_output_matrix"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning_spec,
+    )
+    screening_spec = empirical_null_screening_spec_from_case_study_config(context.case_study_config)
+    screening = screen_manuscript_empirical_null_terms(
+        context.tables["case_study_input_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening_spec,
+    )
+    interaction_spec = interaction_discovery_spec_from_case_study_config(context.case_study_config)
+    interactions = discover_manuscript_interactions(
+        context.tables["case_study_input_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening.retained_terms,
+        interaction_spec,
+    )
+    artifact_paths = write_interaction_discovery_artifacts(
+        interactions,
+        context.runtime.output_root,
+    )
+    return InteractionDiscoveryStageResult(interactions=interactions, artifact_paths=artifact_paths)
+
+
 def _output_columns(output_matrix: pd.DataFrame) -> list[str]:
     """Return scalar-output columns from an output artifact table."""
     if "sample_id" not in output_matrix.columns:
@@ -966,6 +1257,201 @@ def _build_empirical_null_screening_summary(
                 "n_retained_terms": int(n_retained_terms),
                 "min_empirical_p_value": float(min_p_value),
                 "manuscript_retained_terms_reference": int(spec.retained_terms_reference),
+                "random_seed": int(spec.random_seed),
+            }
+        ]
+    )
+
+
+def _interaction_candidate_pairs(
+    feature_catalog: pd.DataFrame,
+) -> list[tuple[str, str, str]]:
+    """Return two-factor interaction candidates from a feature catalog."""
+    if "feature_name" not in feature_catalog.columns:
+        raise ValueError("feature_catalog must include a feature_name column.")
+    if "feature_type" in feature_catalog.columns:
+        candidate_rows = feature_catalog.loc[
+            feature_catalog["feature_type"].astype(str).str.lower() == "interaction"
+        ]
+    else:
+        candidate_rows = feature_catalog
+
+    candidates: list[tuple[str, str, str]] = []
+    for feature_name in candidate_rows["feature_name"].astype(str):
+        factors = feature_name.split(":")
+        if len(factors) != 2:
+            continue
+        left, right = factors
+        if not left or not right:
+            raise ValueError(f"Malformed interaction feature name: {feature_name!r}")
+        candidates.append((feature_name, left, right))
+    if not candidates:
+        return []
+    names = [candidate[0] for candidate in candidates]
+    if len(names) != len(set(names)):
+        raise ValueError("feature_catalog contains duplicate interaction feature names.")
+    return candidates
+
+
+def _residualized_interaction_matrix(
+    input_matrix: pd.DataFrame,
+    train_ids: pd.Series,
+    candidates: list[tuple[str, str, str]],
+) -> np.ndarray:
+    """Materialize train-standardized residual interaction terms for candidate pairs."""
+    if not candidates:
+        return np.empty((len(train_ids), 0), dtype=float)
+    columns = sorted({factor for _, left, right in candidates for factor in (left, right)})
+    train_inputs = _align_table_by_sample_id(input_matrix, train_ids, columns, "input matrix")
+    source_values = {
+        column: train_inputs[column].to_numpy(dtype=float) for column in train_inputs.columns
+    }
+    residualized_columns = []
+    for _, left, right in candidates:
+        left_values = source_values[left]
+        right_values = source_values[right]
+        product = left_values * right_values
+        controls = np.column_stack(
+            [
+                np.ones(len(product), dtype=float),
+                _standardize_vector(left_values),
+                _standardize_vector(right_values),
+            ]
+        )
+        coefficients, *_ = np.linalg.lstsq(controls, product, rcond=None)
+        residual = product - controls @ coefficients
+        residualized_columns.append(_standardize_vector(residual))
+    return np.column_stack(residualized_columns)
+
+
+def _standardize_vector(values: np.ndarray) -> np.ndarray:
+    """Return a zero-mean, unit-scale vector, or zeros for constant input."""
+    mean = float(values.mean())
+    scale = float(values.std(ddof=0))
+    if scale <= 0.0:
+        return np.zeros_like(values, dtype=float)
+    return (values - mean) / scale
+
+
+def _permutation_max_abs_coefficient_null(
+    residualized_interactions: np.ndarray,
+    y_scaled: np.ndarray,
+    *,
+    n_permutations: int,
+    random_seed: int,
+) -> np.ndarray:
+    """Compute max-absolute coefficient statistics under response permutations."""
+    rng = np.random.default_rng(random_seed)
+    null_statistics = np.zeros(
+        (n_permutations, residualized_interactions.shape[1]),
+        dtype=float,
+    )
+    n_rows = float(len(residualized_interactions))
+    for index in range(n_permutations):
+        permuted = y_scaled[rng.permutation(len(y_scaled)), :]
+        coefficients = (residualized_interactions.T @ permuted) / n_rows
+        null_statistics[index, :] = np.max(np.abs(coefficients), axis=1)
+    return null_statistics
+
+
+def _retained_feature_names(retained_terms: pd.DataFrame) -> set[str]:
+    """Return retained empirical-null feature names from a retained-term table."""
+    if "feature_name" not in retained_terms.columns:
+        raise ValueError("retained_terms must include a feature_name column.")
+    return set(retained_terms["feature_name"].astype(str))
+
+
+def _build_interaction_pair_scores(
+    *,
+    candidates: list[tuple[str, str, str]],
+    observed_scores: np.ndarray,
+    thresholds: np.ndarray,
+    p_values: np.ndarray,
+    retained: np.ndarray,
+    retained_term_names: set[str],
+    spec: InteractionDiscoverySpec,
+) -> pd.DataFrame:
+    """Build the pair-level interaction-discovery score table."""
+    rows = []
+    for index, (pair_name, left, right) in enumerate(candidates):
+        rows.append(
+            {
+                "pair_name": pair_name,
+                "left_feature": left,
+                "right_feature": right,
+                "interaction_score": float(observed_scores[index]),
+                "null_threshold": float(thresholds[index]),
+                "empirical_p_value": float(p_values[index]),
+                "retained": bool(retained[index]),
+                "empirical_null_retained": pair_name in retained_term_names,
+                "aggregation_rule": spec.aggregation_rule,
+            }
+        )
+    return pd.DataFrame.from_records(rows).sort_values(
+        ["retained", "interaction_score", "pair_name"],
+        ascending=[False, False, True],
+        ignore_index=True,
+    )
+
+
+def _build_component_interaction_scores(
+    *,
+    candidates: list[tuple[str, str, str]],
+    component_names: list[str],
+    coefficients: np.ndarray,
+) -> pd.DataFrame:
+    """Build a long-form component-level interaction-coefficient table."""
+    wide = pd.DataFrame(coefficients, columns=component_names)
+    wide.insert(0, "pair_name", [candidate[0] for candidate in candidates])
+    return wide.melt(
+        id_vars="pair_name",
+        var_name="component",
+        value_name="standardized_residual_interaction_coefficient",
+    )
+
+
+def _build_interaction_null_summary(
+    candidates: list[tuple[str, str, str]],
+    null_statistics: np.ndarray,
+) -> pd.DataFrame:
+    """Build pair-level summaries of empirical-null interaction distributions."""
+    return pd.DataFrame(
+        {
+            "pair_name": [candidate[0] for candidate in candidates],
+            "null_mean_score": null_statistics.mean(axis=0),
+            "null_quantile_95": np.quantile(null_statistics, 0.95, axis=0),
+            "null_quantile_99": np.quantile(null_statistics, 0.99, axis=0),
+            "null_max_score": null_statistics.max(axis=0),
+        }
+    )
+
+
+def _build_interaction_discovery_summary(
+    *,
+    n_training_rows: int,
+    n_candidate_pairs: int,
+    n_empirical_null_retained_pairs: int,
+    n_retained_pairs: int,
+    n_components: int,
+    max_score: float,
+    spec: InteractionDiscoverySpec,
+) -> pd.DataFrame:
+    """Build the one-row interaction-discovery summary table."""
+    return pd.DataFrame(
+        [
+            {
+                "stage": "interaction_discovery",
+                "method": spec.method,
+                "aggregation_rule": spec.aggregation_rule,
+                "n_training_rows": int(n_training_rows),
+                "n_candidate_pairs": int(n_candidate_pairs),
+                "n_empirical_null_retained_pairs": int(n_empirical_null_retained_pairs),
+                "n_components": int(n_components),
+                "n_permutations": int(spec.permutation_count_B),
+                "null_threshold_quantile": float(spec.null_threshold_quantile),
+                "n_retained_pairs": int(n_retained_pairs),
+                "max_interaction_score": float(max_score),
+                "manuscript_retained_pairs_reference": int(spec.retained_pairs_reference),
                 "random_seed": int(spec.random_seed),
             }
         ]

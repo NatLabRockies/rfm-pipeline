@@ -75,5 +75,21 @@ The stage currently writes:
 - `retained_terms.csv`
 - `empirical_null_screen_summary.csv`
 
+## Phase 3 interaction-discovery stage
+
+The third Phase 3 source-backed notebook stage is `04_interaction_discovery.ipynb`. It calls
+`bsm_rfm.run_interaction_discovery_stage(...)`, which reads interaction-discovery metadata from
+the frozen case-study contract, uses the released feature catalog as the authoritative candidate
+pair source, scores residualized two-factor product terms against retained PCA component scores,
+and estimates deterministic response-permutation null thresholds for CI/demo execution.
+
+The stage currently writes:
+
+- `interaction_pair_scores.csv`
+- `component_interaction_scores.csv`
+- `interaction_null_summary.csv`
+- `retained_interaction_pairs.csv`
+- `interaction_discovery_summary.csv`
+
 The remaining manuscript notebooks still provide the Phase 2 executable skeletons until their
 scientific stages are promoted into source-backed functions in later Phase 3 slices.

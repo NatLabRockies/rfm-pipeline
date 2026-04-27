@@ -29,7 +29,7 @@ The repo must ultimately:
 - **Phase 0 complete**: manuscript contract freeze layer exists.
 - **Phase 1 complete**: manuscript data/runtime/notebook manifests and placeholder-path contract exist.
 - **Phase 2 functionally complete**: manuscript notebook skeletons, runtime/path-resolution utilities, demo-data fallback, and notebook execution support were added.
-- **Phase 3 slices 1-3 implemented in source**: output conditioning, empirical-null screening, and interaction discovery now have tested source-backed stage functions, notebook entrypoints, deterministic demo execution, and CSV handoff artifacts.
+- **Phase 3 slices 1-4 implemented in source**: output conditioning, empirical-null screening, interaction discovery, and nonlinear discovery now have tested source-backed stage functions, notebook entrypoints, deterministic demo execution, and CSV handoff artifacts.
 
 ### Important nuance about validation state
 
@@ -184,7 +184,7 @@ In this order:
 1. exact output conditioning / reduced-response representation (implemented source-backed slice),
 1. empirical-null screening (implemented source-backed slice),
 1. interaction discovery (implemented source-backed slice),
-1. nonlinear transformation discovery,
+1. nonlinear transformation discovery (implemented source-backed slice),
 1. sparse selection and stability filtering,
 1. final manuscript tables and figures regeneration.
 
@@ -214,9 +214,9 @@ Only after that should Phase 3 implementation begin.
 
 ## Latest Phase 3 continuation note
 
-The interaction-discovery slice adds `run_interaction_discovery_stage(...)` and related
-source-backed helpers in `bsm_rfm.manuscript_stages`. The public demo implementation uses the
-released feature catalog as the authoritative candidate-pair source, scores residualized two-factor
-product terms against retained PCA component scores, estimates deterministic response-permutation
-null thresholds, and writes CSV artifacts under `interaction_discovery/`. The next Phase 3 slice
-should implement nonlinear transformation discovery.
+The nonlinear-discovery slice adds `run_nonlinear_discovery_stage(...)` and related source-backed
+helpers in `bsm_rfm.manuscript_stages`. The public demo implementation uses the released feature
+catalog as the authoritative transformation-candidate source, scores residualized nonlinear terms
+against retained PCA component scores, annotates empirical-null retention, and writes CSV artifacts
+under `nonlinear_discovery/`. The next Phase 3 slice should implement sparse selection and
+stability filtering.

@@ -9,6 +9,7 @@ from bsm_rfm import (
     FeatureExpansionResult,
     FeatureExpansionSpec,
     InteractionDiscoverySpec,
+    NonlinearDiscoverySpec,
     OutputConditioningSpec,
     apply_feature_expansion,
     build_manuscript_feature_design,
@@ -19,6 +20,7 @@ from bsm_rfm import (
     condition_manuscript_outputs,
     default_feature_expansion_spec,
     discover_manuscript_interactions,
+    discover_manuscript_nonlinear_transformations,
     empirical_null_screening_spec_from_case_study_config,
     interaction_discovery_spec_from_case_study_config,
     load_pipeline_outputs,
@@ -27,15 +29,18 @@ from bsm_rfm import (
     manuscript_placeholder_path_policy,
     manuscript_required_artifact_table,
     manuscript_runtime_summary_table,
+    nonlinear_discovery_spec_from_case_study_config,
     ordered_expanded_feature_names,
     output_conditioning_spec_from_case_study_config,
     resolve_manuscript_runtime,
     run_empirical_null_screening_stage,
     run_interaction_discovery_stage,
+    run_nonlinear_discovery_stage,
     run_output_conditioning_stage,
     screen_manuscript_empirical_null_terms,
     workflow_scope_boundary_table,
     write_interaction_discovery_artifacts,
+    write_nonlinear_discovery_artifacts,
 )
 
 
@@ -133,3 +138,11 @@ def test_package_exports_manuscript_interaction_discovery_stage() -> None:
     assert callable(discover_manuscript_interactions)
     assert callable(run_interaction_discovery_stage)
     assert callable(write_interaction_discovery_artifacts)
+
+
+def test_package_exports_manuscript_nonlinear_discovery_stage() -> None:
+    assert NonlinearDiscoverySpec.__name__ == "NonlinearDiscoverySpec"
+    assert callable(nonlinear_discovery_spec_from_case_study_config)
+    assert callable(discover_manuscript_nonlinear_transformations)
+    assert callable(run_nonlinear_discovery_stage)
+    assert callable(write_nonlinear_discovery_artifacts)

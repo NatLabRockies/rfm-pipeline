@@ -91,5 +91,20 @@ The stage currently writes:
 - `retained_interaction_pairs.csv`
 - `interaction_discovery_summary.csv`
 
+## Phase 3 nonlinear-discovery stage
+
+The fourth Phase 3 source-backed notebook stage is `05_nonlinear_discovery.ipynb`. It calls
+`bsm_rfm.run_nonlinear_discovery_stage(...)`, which reads nonlinear-discovery metadata from the
+frozen case-study contract, uses the released feature catalog as the authoritative transformation
+candidate source, residualizes each supported transformation against its source first-order input,
+and scores the incremental nonlinear contribution against retained PCA component scores.
+
+The stage currently writes:
+
+- `transformation_scores.csv`
+- `component_transformation_scores.csv`
+- `retained_transformations.csv`
+- `nonlinear_discovery_summary.csv`
+
 The remaining manuscript notebooks still provide the Phase 2 executable skeletons until their
 scientific stages are promoted into source-backed functions in later Phase 3 slices.

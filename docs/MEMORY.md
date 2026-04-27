@@ -1,90 +1,212 @@
-# MEMORY.md
+# MEMORY — bsm-public-rf handoff for next chat
 
-## Project
-
-`bsm-public-rf`
+You are continuing work on the `bsm-public-rf` repo.
 
 ## Core rule
 
-Always audit the exact live repo on disk first.
-Do not trust prior generated bundles, summaries, or assumptions over the local repo state.
+Treat the user's live local repo as the only source of truth.
+
+Do **not** trust prior bundles, summaries, or assumptions over the actual repo on disk.
+Start every new chat with a strict live-repo audit.
 Make only cumulative fixes.
 
 ## Current objective
 
-Transition `bsm-public-rf` from a tested public workflow package into a **complete manuscript
-reproduction package** for the JDS BSM manuscript.
+Continue hardening and finalizing `bsm-public-rf` as a **complete manuscript reproduction package** for the JDS BSM manuscript, not just a public workflow package.
 
-## Manuscript-reproduction priority shift
+The repo must ultimately:
 
-The highest-priority work is no longer general package hardening. The repo now needs a stage-for-stage
-reconstruction of the workflow described in the manuscript, with:
+- implement the manuscript workflow stage for stage,
+- run deterministically on a toy/demo dataset for CI and public validation,
+- execute real-data notebooks from start to finish once local path placeholders are filled in,
+- regenerate manuscript-facing tables and figures,
+- support a new user reproducing the documented workflow with clear contracts and documentation.
 
-- a deterministic toy pipeline for automated validation;
-- real-data notebooks that execute the full workflow once placeholder paths are updated;
-- regenerated manuscript tables and figures;
-- executable regression checks for the manuscript's reported counts and holdout metrics.
+## Current confirmed project state from this chat
 
-## Current active phase
+### Phase status
 
-**Phase 2 is complete.**
+- **Phase 0 complete**: manuscript contract freeze layer exists.
+- **Phase 1 complete**: manuscript data/runtime/notebook manifests and placeholder-path contract exist.
+- **Phase 2 functionally complete**: manuscript notebook skeletons, runtime/path-resolution utilities, demo-data fallback, and notebook execution support were added.
 
-The manuscript contract is now frozen in `docs/manuscript_contract.md` and
-`configs/manuscript_case_study.yml`. Manuscript-explicit values remain authoritative. Manuscript
-ambiguities are now represented as explicit repo-frozen reconstruction decisions that later phases
-must implement and that the manuscript must be revised to match.
+### Important nuance about validation state
 
-## Phase 1 completion notes
+Do **not** assume the repo is fully clean right now without re-running the local gate.
 
-Phase 1 added the executable manifests and placeholder paths for:
+During this chat, multiple late-cycle fixes were made after user-reported local failures, including:
 
-- the real case-study input matrix;
-- the real case-study output matrix;
-- the released feature catalog defining the exact 26,560-term candidate library;
-- the notebook/runtime configuration needed to run the manuscript workflow end to end.
+- restoring the reproducibility example public contract (`DATASET_TAG`, `run_reproducibility_example`, CLI output wording),
+- fixing bundle-contract helper return types and export-bundle docs references,
+- fixing manuscript notebook runtime path normalization,
+- fixing notebook key access for nested manuscript config structure,
+- fixing Ruff notebook E402 issues by moving imports out of bootstrap cells,
+- fixing Ruff import-order issues in `tests/test_public_api.py` and `tests/test_release_scope.py`.
 
-## Phase 2 completion notes
+The **latest known local reported failures** at the end of the chat were just Ruff import-order issues in:
 
-Phase 2 added:
+- `tests/test_public_api.py`
+- `tests/test_release_scope.py`
 
-- tracked notebook skeletons at every frozen manuscript stage path;
-- a runtime/path-resolution layer in `bsm_rfm.manuscript_runtime`;
-- deterministic demo-data fallback so the notebook gate can execute without the private case-study files;
-- data-intake validation helpers that freeze the required artifact columns.
+A final small patch bundle was produced for those import-order fixes, but there was **no final user-confirmed full-gate rerun after that last patch** in this chat.
 
-## Immediate next phase
+So the next chat must begin by auditing the live local repo and rerunning the full local validation chain.
 
-Proceed to **Phase 3 — implement the manuscript-stage computations behind the notebook entrypoints**.
+## Confirmed manuscript-reproduction contract layers now present
 
-Phase 3 must implement, in source form and then wire into the notebooks:
+### Phase 0
 
-- exact output conditioning and reduced-response representation;
-- exact empirical-null screening;
-- exact interaction discovery;
-- exact nonlinear transformation discovery;
-- exact sparse selection and stability filtering;
-- exact manuscript tables and figures regeneration.
+Files added/maintained around the manuscript contract freeze include:
 
-## Contract rules for subsequent phases
+- `docs/manuscript_contract.md`
+- `configs/manuscript_case_study.yml`
+- `tests/test_manuscript_contract.py`
 
-- manuscript-explicit case-study values outrank current package defaults;
-- repo-frozen reconstruction decisions in the case-study YAML must be implemented literally unless
-  the manuscript is revised and the contract is updated in lockstep;
-- later code, scripts, and notebooks must read the manuscript case-study config rather than
-  retyping constants;
-- if executable truth differs from the manuscript, the repo must either preserve the manuscript
-  contract and explain the discrepancy or update the manuscript to match the executable truth.
+The case-study contract now freezes manuscript-explicit values and repo decisions for ambiguous items.
 
-## User preferences for this repo
+### Phase 1
 
-- strict live-repo audit first
-- focus on root-cause fixes
-- minimal discussion when errors are provided
-- provide exact updated files/scripts
-- provide zipped bundles in repo-relative folder structure
-- provide an `rsync` command from `~/Downloads/{bundle}/` to `~/src/bsm-public-rf/`
-- provide separate `git add` / `git rm` commands
-- provide local Pixi validation commands
-- provide git commit messages separately
-- do not claim success without actual validation
-- no compatibility layers unless explicitly requested
+Files added/maintained around the manuscript data/runtime contract include:
+
+- `docs/manuscript_data_contract.md`
+- `configs/manuscript_data_contract.yml`
+- `configs/manuscript_paths.template.yml`
+- `configs/manuscript_runtime.yml`
+- `notebooks/manuscript/README.md`
+- `src/bsm_rfm/manuscript_data_contract.py`
+- `tests/test_manuscript_data_contract.py`
+
+This layer freezes:
+
+- required real-data artifact tables,
+- local placeholder-path policy,
+- frozen manuscript notebook execution order.
+
+### Phase 2
+
+Files added/maintained around manuscript runtime and notebooks include:
+
+- `docs/manuscript_runtime.md`
+- `src/bsm_rfm/manuscript_runtime.py`
+- `tests/test_manuscript_runtime.py`
+- `notebooks/manuscript/00_case_study_data_intake.ipynb`
+- `notebooks/manuscript/01_candidate_library_audit.ipynb`
+- `notebooks/manuscript/02_output_conditioning.ipynb`
+- `notebooks/manuscript/03_empirical_null_screen.ipynb`
+- `notebooks/manuscript/04_interaction_discovery.ipynb`
+- `notebooks/manuscript/05_nonlinear_discovery.ipynb`
+- `notebooks/manuscript/06_sparse_selection_and_stability.ipynb`
+- `notebooks/manuscript/07_final_ols_and_bundle_export.ipynb`
+- `notebooks/manuscript/08_manuscript_tables_and_figures.ipynb`
+
+The runtime layer now aims to:
+
+- resolve manuscript execution in `real` or `demo` mode,
+- use deterministic demo fallback when private case-study files are absent,
+- normalize nested notebook paths back to repo root,
+- validate artifact-table presence/columns before notebook use,
+- give notebooks a shared context object.
+
+## Confirmed public/release-facing layers already added earlier in this project thread
+
+These may already be present in the live repo, but must be audited rather than assumed:
+
+- `LICENSE` (MIT)
+- `CHANGELOG.md`
+- `CITATION.cff`
+- `docs/quickstart.md`
+- `docs/export_bundle.md`
+- `docs/reproducibility_example.md`
+- `docs/scope_boundary.md`
+- example script `examples/end_to_end_reproducibility.py`
+- bundle contract helpers and tests
+- release metadata in `pyproject.toml`
+
+## Current likely live-repo fault line
+
+Because of repeated incremental fixes and merge/conflict resolution during this chat, the most likely remaining issues are **repo-state drift** rather than deep scientific bugs.
+
+Specifically audit for:
+
+- merge-marker residue,
+- docs/index drift versus docs tests,
+- example-script drift versus `tests/test_reproducibility_example.py`,
+- notebook bootstrap/import drift versus Ruff E402 and notebook execution,
+- manuscript runtime drift versus the actual YAML config shape,
+- `__init__` export drift versus `tests/test_public_api.py`,
+- release metadata drift versus `tests/test_release_scope.py`.
+
+## Immediate next step for the new chat
+
+Start with a strict live-repo audit and actual local validation from the user's repo.
+
+### Run first
+
+1. `git status --short`
+1. read `docs/MEMORY.md`
+1. inspect:
+   - `README.md`
+   - `pyproject.toml`
+   - `pixi.toml`
+   - `test_repo.sh`
+   - `docs/index.md`
+   - `docs/api.rst`
+   - `docs/manuscript_contract.md`
+   - `docs/manuscript_data_contract.md`
+   - `docs/manuscript_runtime.md`
+   - `examples/end_to_end_reproducibility.py`
+   - `src/bsm_rfm/__init__.py`
+   - `src/bsm_rfm/manuscript_runtime.py`
+   - `tests/test_public_api.py`
+   - `tests/test_release_scope.py`
+   - `tests/test_reproducibility_example.py`
+   - `tests/test_manuscript_runtime.py`
+1. run the real local validation chain:
+   - `pixi run lint`
+   - `pixi run test`
+   - `pixi run notebook-tests`
+   - `./test_repo.sh --fix`
+   - `./test_repo.sh --check`
+   - `pixi run docs`
+   - `pixi run package-build`
+
+Do not claim anything passes unless it was actually re-run on the user's live repo.
+
+## Next engineering priority after the live audit
+
+If the gate is clean after the live audit, the next highest-priority step is:
+
+### Phase 3 — implement the actual manuscript scientific stages
+
+In this order:
+
+1. exact output conditioning / reduced-response representation,
+1. empirical-null screening,
+1. interaction discovery,
+1. nonlinear transformation discovery,
+1. sparse selection and stability filtering,
+1. final manuscript tables and figures regeneration.
+
+These stages must be implemented according to the frozen manuscript contract, with:
+
+- demo-data execution support for CI,
+- real-data notebook entrypoints,
+- manuscript-count regression tests wherever feasible.
+
+## Rules for future work
+
+- Make only cumulative fixes.
+- Fix root causes only.
+- No hacks, no shims, no compatibility layers unless explicitly requested.
+- Keep local and CI behavior aligned.
+- Prefer behavior-oriented tests over brittle implementation-literal tests unless the literal value is itself a frozen contract.
+- For notebook work, do not send notebook changes unless they are Ruff-clean and notebook-execution-safe.
+- For example scripts, preserve the public contract expected by existing tests unless intentionally changing the contract and updating the tests together.
+
+## Suggested first question for the next chat
+
+Ask the repo to prove its current state first:
+
+- Does the live local repo fully pass `pixi run lint`, `pixi run test`, `pixi run notebook-tests`, `./test_repo.sh --fix`, `./test_repo.sh --check`, `pixi run docs`, and `pixi run package-build` after all late-cycle fixes from this chat?
+
+Only after that should Phase 3 implementation begin.

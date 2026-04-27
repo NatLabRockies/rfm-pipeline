@@ -7,11 +7,13 @@ from pathlib import Path
 from bsm_rfm import (
     FeatureExpansionResult,
     FeatureExpansionSpec,
+    OutputConditioningSpec,
     apply_feature_expansion,
     build_manuscript_notebook_context,
     canonical_bundle_loader_keys,
     canonical_manifest_position_map_keys,
     canonical_manifest_top_level_keys,
+    condition_manuscript_outputs,
     default_feature_expansion_spec,
     load_pipeline_outputs,
     load_postfit_bundle,
@@ -20,7 +22,9 @@ from bsm_rfm import (
     manuscript_required_artifact_table,
     manuscript_runtime_summary_table,
     ordered_expanded_feature_names,
+    output_conditioning_spec_from_case_study_config,
     resolve_manuscript_runtime,
+    run_output_conditioning_stage,
     workflow_scope_boundary_table,
 )
 
@@ -43,6 +47,7 @@ def test_api_reference_documents_feature_expansion_viz_io_and_runtime_modules() 
     assert ".. automodule:: bsm_rfm.feature_expansion" in api
     assert ".. automodule:: bsm_rfm.viz_io" in api
     assert ".. automodule:: bsm_rfm.manuscript_runtime" in api
+    assert ".. automodule:: bsm_rfm.manuscript_stages" in api
 
 
 def test_docs_include_quickstart_export_bundle_and_runtime_guides() -> None:
@@ -89,6 +94,13 @@ def test_package_exports_manuscript_runtime_helpers() -> None:
     assert callable(resolve_manuscript_runtime)
     assert callable(build_manuscript_notebook_context)
     assert callable(manuscript_runtime_summary_table)
+
+
+def test_package_exports_manuscript_output_conditioning_stage() -> None:
+    assert OutputConditioningSpec.__name__ == "OutputConditioningSpec"
+    assert callable(output_conditioning_spec_from_case_study_config)
+    assert callable(condition_manuscript_outputs)
+    assert callable(run_output_conditioning_stage)
 
 
 def test_docs_include_manuscript_data_contract_guide() -> None:

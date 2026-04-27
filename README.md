@@ -107,3 +107,8 @@ tracked template.
 Phase 2 adds tracked notebook skeletons under `notebooks/manuscript/` and runtime/path-resolution
 helpers in `bsm_rfm.manuscript_runtime` so the notebooks execute on deterministic demo data in CI
 and switch to real data once the local path override file is populated.
+
+Phase 3 has started with a source-backed output-conditioning stage in
+`bsm_rfm.manuscript_stages`. The `02_output_conditioning.ipynb` notebook now runs the frozen
+train-only output filters and PCA reduced-response representation, writing deterministic handoff
+artifacts under the resolved manuscript output root.

@@ -99,3 +99,12 @@ manuscript_runtime
    :members:
    :undoc-members:
    :show-inheritance:
+
+
+manuscript_stages
+-----------------
+
+.. automodule:: bsm_rfm.manuscript_stages
+   :members:
+   :undoc-members:
+   :show-inheritance:

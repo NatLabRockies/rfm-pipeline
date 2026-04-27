@@ -59,5 +59,21 @@ The stage currently writes:
 - `pca_explained_variance.csv`
 - `output_conditioning_summary.csv`
 
+## Phase 3 empirical-null screening stage
+
+The second Phase 3 source-backed notebook stage is `03_empirical_null_screen.ipynb`. It calls
+`bsm_rfm.run_empirical_null_screening_stage(...)`, which materializes the tracked feature
+catalog, uses the retained PCA component scores as the screening response, computes the
+frozen coefficient-row-norm statistic, estimates featurewise empirical-null p-values from
+deterministic response permutations, and applies the frozen Benjamini--Hochberg threshold.
+
+The stage currently writes:
+
+- `feature_screening_statistics.csv`
+- `component_coefficients.csv`
+- `permutation_null_summary.csv`
+- `retained_terms.csv`
+- `empirical_null_screen_summary.csv`
+
 The remaining manuscript notebooks still provide the Phase 2 executable skeletons until their
 scientific stages are promoted into source-backed functions in later Phase 3 slices.

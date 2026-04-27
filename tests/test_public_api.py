@@ -5,16 +5,19 @@ from __future__ import annotations
 from pathlib import Path
 
 from bsm_rfm import (
+    EmpiricalNullScreeningSpec,
     FeatureExpansionResult,
     FeatureExpansionSpec,
     OutputConditioningSpec,
     apply_feature_expansion,
+    build_manuscript_feature_design,
     build_manuscript_notebook_context,
     canonical_bundle_loader_keys,
     canonical_manifest_position_map_keys,
     canonical_manifest_top_level_keys,
     condition_manuscript_outputs,
     default_feature_expansion_spec,
+    empirical_null_screening_spec_from_case_study_config,
     load_pipeline_outputs,
     load_postfit_bundle,
     manuscript_notebook_order,
@@ -24,7 +27,9 @@ from bsm_rfm import (
     ordered_expanded_feature_names,
     output_conditioning_spec_from_case_study_config,
     resolve_manuscript_runtime,
+    run_empirical_null_screening_stage,
     run_output_conditioning_stage,
+    screen_manuscript_empirical_null_terms,
     workflow_scope_boundary_table,
 )
 
@@ -107,3 +112,11 @@ def test_docs_include_manuscript_data_contract_guide() -> None:
     doc = Path("docs/manuscript_data_contract.md").read_text(encoding="utf-8")
     assert "manuscript_feature_catalog" in doc
     assert "configs/manuscript_runtime.yml" in doc
+
+
+def test_package_exports_manuscript_empirical_null_screening_stage() -> None:
+    assert EmpiricalNullScreeningSpec.__name__ == "EmpiricalNullScreeningSpec"
+    assert callable(empirical_null_screening_spec_from_case_study_config)
+    assert callable(build_manuscript_feature_design)
+    assert callable(screen_manuscript_empirical_null_terms)
+    assert callable(run_empirical_null_screening_stage)

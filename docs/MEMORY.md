@@ -29,6 +29,7 @@ The repo must ultimately:
 - **Phase 0 complete**: manuscript contract freeze layer exists.
 - **Phase 1 complete**: manuscript data/runtime/notebook manifests and placeholder-path contract exist.
 - **Phase 2 functionally complete**: manuscript notebook skeletons, runtime/path-resolution utilities, demo-data fallback, and notebook execution support were added.
+- **Phase 3 slices 1-2 implemented in source**: output conditioning and empirical-null screening now have tested source-backed stage functions, notebook entrypoints, deterministic demo execution, and CSV handoff artifacts.
 
 ### Important nuance about validation state
 
@@ -180,8 +181,8 @@ If the gate is clean after the live audit, the next highest-priority step is:
 
 In this order:
 
-1. exact output conditioning / reduced-response representation,
-1. empirical-null screening,
+1. exact output conditioning / reduced-response representation (implemented source-backed slice),
+1. empirical-null screening (implemented source-backed slice),
 1. interaction discovery,
 1. nonlinear transformation discovery,
 1. sparse selection and stability filtering,

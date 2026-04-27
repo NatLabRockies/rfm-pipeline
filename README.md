@@ -58,6 +58,7 @@ This package now covers the foundational and workflow-level utilities needed for
 The scientific workflow is no longer only documented at the screening/final-fit/export boundary. The repo now includes a tested canonical workflow foundation that performs:
 
 - upstream null-screening delegation to the recovered source script
+- source-backed manuscript output conditioning and empirical-null screening stages
 - executable archived-style multitask elastic-net screening
 - executable final OLS fitting on retained features
 - holdout bootstrap nRMSE evaluation
@@ -71,6 +72,7 @@ The release-facing package metadata now records repository URLs, classifiers, an
 
 - The canonical 20k modeling subset is a balanced stratified sample: 5,000 rows drawn within each AFSC/UAEORO boolean combination.
 - The canonical upstream null-screening stage comes from the recovered `null_distribution.py` source script and is wrapped through `bsm_rfm.null_screening` rather than reimplemented ad hoc in notebooks.
+- The manuscript empirical-null notebook now uses a deterministic source-backed screening implementation that materializes the tracked feature catalog, computes coefficient-row-norm statistics against retained PCA component scores, estimates featurewise permutation-null p-values, and applies the frozen Benjamini--Hochberg threshold.
 
 ## Repository gate
 

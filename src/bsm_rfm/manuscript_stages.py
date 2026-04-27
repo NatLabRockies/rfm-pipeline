@@ -226,6 +226,72 @@ class InteractionDiscoveryStageResult:
     artifact_paths: dict[str, Path]
 
 
+@dataclass(frozen=True)
+class NonlinearDiscoverySpec:
+    """Frozen nonlinear-discovery settings from the manuscript contract.
+
+    Parameters
+    ----------
+    method
+        Manuscript nonlinear-discovery method recorded in the frozen contract.
+    curvature_rule
+        Rule used by the full case study to identify nonlinear response shapes.
+    replacement_selection_rule
+        Rule used to choose restricted parametric replacements for smooth nonlinear terms.
+    identified_transformations_reference
+        Manuscript-reported number of transformations identified before final support filtering.
+    final_support_transformations_reference
+        Manuscript-reported number of transformations retained in the final model support.
+    minimum_curvature_score
+        Deterministic public-stage threshold for the residualized nonlinear coefficient score.
+    """
+
+    method: str
+    curvature_rule: str
+    replacement_selection_rule: str
+    identified_transformations_reference: int
+    final_support_transformations_reference: int
+    minimum_curvature_score: float = 1.0e-12
+
+
+@dataclass(frozen=True)
+class NonlinearDiscoveryResult:
+    """Materialized nonlinear-discovery artifacts for one manuscript run.
+
+    Parameters
+    ----------
+    transformation_scores
+        Per-transformation residualized curvature score and replacement diagnostics.
+    component_transformation_scores
+        Long-form component-level residualized nonlinear coefficients.
+    retained_transformations
+        Transformations retained by the deterministic public nonlinear-discovery rule.
+    summary
+        One-row summary of the nonlinear-discovery stage.
+    """
+
+    transformation_scores: pd.DataFrame
+    component_transformation_scores: pd.DataFrame
+    retained_transformations: pd.DataFrame
+    summary: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class NonlinearDiscoveryStageResult:
+    """Nonlinear-discovery result plus paths written for notebook handoff.
+
+    Parameters
+    ----------
+    nonlinear
+        In-memory nonlinear-discovery result.
+    artifact_paths
+        Mapping from stable artifact name to the CSV path written under the output root.
+    """
+
+    nonlinear: NonlinearDiscoveryResult
+    artifact_paths: dict[str, Path]
+
+
 def output_conditioning_spec_from_case_study_config(
     case_study_config: dict[str, Any],
 ) -> OutputConditioningSpec:
@@ -872,6 +938,428 @@ def run_interaction_discovery_stage(context: Any) -> InteractionDiscoveryStageRe
         context.runtime.output_root,
     )
     return InteractionDiscoveryStageResult(interactions=interactions, artifact_paths=artifact_paths)
+
+
+def nonlinear_discovery_spec_from_case_study_config(
+    case_study_config: dict[str, Any],
+) -> NonlinearDiscoverySpec:
+    """Build the nonlinear-discovery specification from the case-study config.
+
+    Parameters
+    ----------
+    case_study_config
+        Parsed ``configs/manuscript_case_study.yml`` mapping.
+
+    Returns
+    -------
+    NonlinearDiscoverySpec
+        Typed nonlinear-discovery specification.
+    """
+    section = case_study_config["case_study"]["nonlinear_discovery"]
+    return NonlinearDiscoverySpec(
+        method=str(section["method"]),
+        curvature_rule=str(section["curvature_rule"]),
+        replacement_selection_rule=str(section["replacement_selection_rule"]),
+        identified_transformations_reference=int(section["identified_transformations"]),
+        final_support_transformations_reference=int(section["final_support_transformations"]),
+    )
+
+
+def discover_manuscript_nonlinear_transformations(
+    input_matrix: pd.DataFrame,
+    feature_catalog: pd.DataFrame,
+    holdout_assignments: pd.DataFrame,
+    pca_scores: pd.DataFrame,
+    retained_terms: pd.DataFrame,
+    spec: NonlinearDiscoverySpec,
+) -> NonlinearDiscoveryResult:
+    """Score catalog-defined nonlinear transformations against PCA response scores.
+
+    The public reproduction stage implements a deterministic, dependency-light analogue of the
+    frozen case-study nonlinear-discovery contract. Each candidate transformation from the released
+    feature catalog is residualized against an intercept and its source first-order input on
+    training rows. The residualized candidate is then scored by its maximum absolute standardized
+    coefficient
+    across retained PCA components. This isolates incremental nonlinear evidence rather than
+    re-counting the source linear main effect.
+
+    Parameters
+    ----------
+    input_matrix
+        Case-study input table with ``sample_id`` and source input columns.
+    feature_catalog
+        Manuscript feature catalog containing candidate transformation terms.
+    holdout_assignments
+        Table with ``sample_id`` and ``split`` columns. Only train rows are scored.
+    pca_scores
+        Output-conditioning PCA score table with ``sample_id`` and component columns.
+    retained_terms
+        Empirical-null retained-term table with at least a ``feature_name`` column. The table is
+        used to annotate which transformation candidates survived the previous screening stage.
+    spec
+        Nonlinear-discovery specification.
+
+    Returns
+    -------
+    NonlinearDiscoveryResult
+        Materialized transformation-score, component-score, retained-transformation, and summary
+        tables.
+    """
+    if spec.method != "gam_plus_restricted_parametric_replacement":
+        raise ValueError(f"Unsupported nonlinear-discovery method: {spec.method}")
+    expected_curvature_rule = "edf_gt_1_and_smooth_pvalue_lt_0p01"
+    if spec.curvature_rule != expected_curvature_rule:
+        raise ValueError(f"Unsupported nonlinear curvature rule: {spec.curvature_rule}")
+    expected_replacement_rule = "minimum_training_rmse_against_gam_smooth"
+    if spec.replacement_selection_rule != expected_replacement_rule:
+        raise ValueError(
+            f"Unsupported nonlinear replacement selection rule: {spec.replacement_selection_rule}"
+        )
+    if spec.minimum_curvature_score < 0.0:
+        raise ValueError("minimum_curvature_score must be non-negative.")
+
+    candidates = _nonlinear_transformation_candidates(feature_catalog)
+    component_names = _component_columns(pca_scores)
+    train_ids = _train_sample_ids(holdout_assignments)
+    y_train = _align_table_by_sample_id(pca_scores, train_ids, component_names, "PCA scores")
+    if len(y_train) < 3:
+        raise ValueError("Nonlinear discovery requires at least three training rows.")
+    y_scaled, component_active = _standardize_for_screening(y_train)
+    if not component_active.any():
+        raise ValueError("All retained PCA components have zero training variance.")
+
+    residualized, active_transformations = _residualized_transformation_matrix(
+        input_matrix,
+        train_ids,
+        candidates,
+    )
+    if residualized.shape[1] == 0:
+        raise ValueError("feature_catalog does not contain supported nonlinear candidates.")
+
+    coefficients = (residualized.T @ y_scaled) / float(len(residualized))
+    curvature_scores = np.max(np.abs(coefficients), axis=1)
+    best_component_indices = np.argmax(np.abs(coefficients), axis=1)
+    replacement_rmse = _best_component_replacement_rmse(
+        residualized,
+        y_scaled,
+        coefficients,
+        best_component_indices,
+    )
+    retained = active_transformations & (curvature_scores > spec.minimum_curvature_score)
+    retained_term_names = _retained_feature_names(retained_terms)
+
+    transformation_scores = _build_nonlinear_transformation_scores(
+        candidates=candidates,
+        curvature_scores=curvature_scores,
+        active_transformations=active_transformations,
+        retained=retained,
+        retained_term_names=retained_term_names,
+        component_names=component_names,
+        best_component_indices=best_component_indices,
+        replacement_rmse=replacement_rmse,
+        spec=spec,
+    )
+    component_scores = _build_component_transformation_scores(
+        candidates=candidates,
+        component_names=component_names,
+        coefficients=coefficients,
+    )
+    retained_transformations = transformation_scores.loc[transformation_scores["retained"]].copy()
+    retained_transformations = retained_transformations.sort_values(
+        ["curvature_score", "feature_name"],
+        ascending=[False, True],
+        ignore_index=True,
+    )
+    summary = _build_nonlinear_discovery_summary(
+        n_training_rows=len(y_train),
+        n_candidate_transformations=len(candidates),
+        n_active_transformations=int(active_transformations.sum()),
+        n_empirical_null_retained_transformations=int(
+            transformation_scores["empirical_null_retained"].sum()
+        ),
+        n_retained_transformations=len(retained_transformations),
+        n_components=len(component_names),
+        max_curvature_score=float(curvature_scores.max()),
+        spec=spec,
+    )
+    return NonlinearDiscoveryResult(
+        transformation_scores=transformation_scores,
+        component_transformation_scores=component_scores,
+        retained_transformations=retained_transformations,
+        summary=summary,
+    )
+
+
+def write_nonlinear_discovery_artifacts(
+    result: NonlinearDiscoveryResult,
+    output_root: Path,
+) -> dict[str, Path]:
+    """Write nonlinear-discovery artifacts under ``output_root``.
+
+    Parameters
+    ----------
+    result
+        Materialized nonlinear-discovery result.
+    output_root
+        Resolved manuscript output root from the runtime context.
+
+    Returns
+    -------
+    dict[str, pathlib.Path]
+        Paths keyed by stable artifact name.
+    """
+    stage_root = output_root / "nonlinear_discovery"
+    stage_root.mkdir(parents=True, exist_ok=True)
+    tables = {
+        "transformation_scores": result.transformation_scores,
+        "component_transformation_scores": result.component_transformation_scores,
+        "retained_transformations": result.retained_transformations,
+        "nonlinear_discovery_summary": result.summary,
+    }
+    written: dict[str, Path] = {}
+    for name, table in tables.items():
+        path = stage_root / f"{name}.csv"
+        table.to_csv(path, index=False)
+        written[name] = path
+    return written
+
+
+def run_nonlinear_discovery_stage(context: Any) -> NonlinearDiscoveryStageResult:
+    """Run nonlinear discovery from a manuscript notebook runtime context.
+
+    Parameters
+    ----------
+    context
+        ``bsm_rfm.manuscript_runtime.ManuscriptNotebookContext``. It is typed as ``Any`` here to
+        avoid an import cycle between the runtime and stage modules.
+
+    Returns
+    -------
+    NonlinearDiscoveryStageResult
+        In-memory result and written artifact paths.
+    """
+    conditioning_spec = output_conditioning_spec_from_case_study_config(context.case_study_config)
+    conditioning = condition_manuscript_outputs(
+        context.tables["case_study_output_matrix"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning_spec,
+    )
+    screening_spec = empirical_null_screening_spec_from_case_study_config(context.case_study_config)
+    screening = screen_manuscript_empirical_null_terms(
+        context.tables["case_study_input_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening_spec,
+    )
+    nonlinear_spec = nonlinear_discovery_spec_from_case_study_config(context.case_study_config)
+    nonlinear = discover_manuscript_nonlinear_transformations(
+        context.tables["case_study_input_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening.retained_terms,
+        nonlinear_spec,
+    )
+    artifact_paths = write_nonlinear_discovery_artifacts(
+        nonlinear,
+        context.runtime.output_root,
+    )
+    return NonlinearDiscoveryStageResult(nonlinear=nonlinear, artifact_paths=artifact_paths)
+
+
+def _nonlinear_transformation_candidates(
+    feature_catalog: pd.DataFrame,
+) -> list[tuple[str, str, str]]:
+    """Return supported nonlinear-transformation candidates from a feature catalog."""
+    if "feature_name" not in feature_catalog.columns:
+        raise ValueError("feature_catalog must include a feature_name column.")
+    if "feature_type" in feature_catalog.columns:
+        candidate_rows = feature_catalog.loc[
+            feature_catalog["feature_type"].astype(str).str.lower() == "transformation"
+        ]
+    else:
+        candidate_rows = feature_catalog
+
+    candidates: list[tuple[str, str, str]] = []
+    for feature_name in candidate_rows["feature_name"].astype(str):
+        parsed = _parse_supported_transformation_name(feature_name)
+        if parsed is None:
+            continue
+        base_feature, family = parsed
+        candidates.append((feature_name, base_feature, family))
+    if not candidates:
+        return []
+    names = [candidate[0] for candidate in candidates]
+    if len(names) != len(set(names)):
+        raise ValueError("feature_catalog contains duplicate nonlinear transformation names.")
+    return candidates
+
+
+def _parse_supported_transformation_name(feature_name: str) -> tuple[str, str] | None:
+    """Parse a supported nonlinear-transformation feature name."""
+    if feature_name.endswith("_squared"):
+        base = feature_name.removesuffix("_squared")
+        return (base, "quadratic") if base else None
+    if feature_name.startswith("log1p_"):
+        base = feature_name.removeprefix("log1p_")
+        return (base, "logarithmic") if base else None
+    if feature_name.startswith("inverse_"):
+        base = feature_name.removeprefix("inverse_")
+        return (base, "inverse") if base else None
+    if feature_name.startswith("exp_"):
+        base = feature_name.removeprefix("exp_")
+        return (base, "exponential") if base else None
+    return None
+
+
+def _residualized_transformation_matrix(
+    input_matrix: pd.DataFrame,
+    train_ids: pd.Series,
+    candidates: list[tuple[str, str, str]],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Materialize train-standardized residual nonlinear transformation terms."""
+    if not candidates:
+        return np.empty((len(train_ids), 0), dtype=float), np.array([], dtype=bool)
+    if "sample_id" not in input_matrix.columns:
+        raise ValueError("input_matrix must include a sample_id column.")
+    if input_matrix["sample_id"].duplicated(keep=False).any():
+        raise ValueError("input_matrix must contain unique sample_id values.")
+
+    indexed = input_matrix.set_index("sample_id", drop=False)
+    missing_ids = [sample_id for sample_id in train_ids if sample_id not in indexed.index]
+    if missing_ids:
+        preview = ", ".join(str(value) for value in missing_ids[:5])
+        raise ValueError(f"input matrix is missing sample_id values: {preview}")
+    train_rows = indexed.loc[list(train_ids)].reset_index(drop=True)
+
+    residualized_columns: list[np.ndarray] = []
+    active_columns: list[bool] = []
+    for feature_name, base_feature, _ in candidates:
+        base_values = _source_input_column(train_rows, base_feature, feature_name).to_numpy(
+            dtype=float
+        )
+        transformed = _materialize_feature_column(train_rows, feature_name).to_numpy(dtype=float)
+        controls = np.column_stack(
+            [
+                np.ones(len(transformed), dtype=float),
+                _standardize_vector(base_values),
+            ]
+        )
+        coefficients, *_ = np.linalg.lstsq(controls, transformed, rcond=None)
+        residual = transformed - controls @ coefficients
+        residualized = _standardize_vector(residual)
+        residualized_columns.append(residualized)
+        active_columns.append(bool(np.any(np.abs(residualized) > 0.0)))
+    return np.column_stack(residualized_columns), np.array(active_columns, dtype=bool)
+
+
+def _best_component_replacement_rmse(
+    residualized_transformations: np.ndarray,
+    y_scaled: np.ndarray,
+    coefficients: np.ndarray,
+    best_component_indices: np.ndarray,
+) -> np.ndarray:
+    """Return the one-term replacement RMSE for each candidate's strongest component."""
+    rmse = np.zeros(residualized_transformations.shape[1], dtype=float)
+    for index, component_index in enumerate(best_component_indices):
+        prediction = residualized_transformations[:, index] * coefficients[index, component_index]
+        residual = y_scaled[:, component_index] - prediction
+        rmse[index] = float(np.sqrt(np.mean(residual**2)))
+    return rmse
+
+
+def _build_nonlinear_transformation_scores(
+    *,
+    candidates: list[tuple[str, str, str]],
+    curvature_scores: np.ndarray,
+    active_transformations: np.ndarray,
+    retained: np.ndarray,
+    retained_term_names: set[str],
+    component_names: list[str],
+    best_component_indices: np.ndarray,
+    replacement_rmse: np.ndarray,
+    spec: NonlinearDiscoverySpec,
+) -> pd.DataFrame:
+    """Build the transformation-level nonlinear-discovery score table."""
+    rows = []
+    for index, (feature_name, base_feature, family) in enumerate(candidates):
+        rows.append(
+            {
+                "feature_name": feature_name,
+                "base_feature": base_feature,
+                "transformation_family": family,
+                "curvature_score": float(curvature_scores[index]),
+                "best_component": component_names[int(best_component_indices[index])],
+                "replacement_training_rmse": float(replacement_rmse[index]),
+                "nonzero_residualized_training_variance": bool(active_transformations[index]),
+                "empirical_null_retained": feature_name in retained_term_names,
+                "retained": bool(retained[index]),
+                "curvature_rule": spec.curvature_rule,
+                "replacement_selection_rule": spec.replacement_selection_rule,
+            }
+        )
+    return pd.DataFrame.from_records(rows).sort_values(
+        ["retained", "curvature_score", "feature_name"],
+        ascending=[False, False, True],
+        ignore_index=True,
+    )
+
+
+def _build_component_transformation_scores(
+    *,
+    candidates: list[tuple[str, str, str]],
+    component_names: list[str],
+    coefficients: np.ndarray,
+) -> pd.DataFrame:
+    """Build a long-form component-level nonlinear-coefficient table."""
+    wide = pd.DataFrame(coefficients, columns=component_names)
+    wide.insert(0, "feature_name", [candidate[0] for candidate in candidates])
+    return wide.melt(
+        id_vars="feature_name",
+        var_name="component",
+        value_name="standardized_residual_transformation_coefficient",
+    )
+
+
+def _build_nonlinear_discovery_summary(
+    *,
+    n_training_rows: int,
+    n_candidate_transformations: int,
+    n_active_transformations: int,
+    n_empirical_null_retained_transformations: int,
+    n_retained_transformations: int,
+    n_components: int,
+    max_curvature_score: float,
+    spec: NonlinearDiscoverySpec,
+) -> pd.DataFrame:
+    """Build the one-row nonlinear-discovery summary table."""
+    return pd.DataFrame(
+        [
+            {
+                "stage": "nonlinear_discovery",
+                "method": spec.method,
+                "curvature_rule": spec.curvature_rule,
+                "replacement_selection_rule": spec.replacement_selection_rule,
+                "n_training_rows": int(n_training_rows),
+                "n_candidate_transformations": int(n_candidate_transformations),
+                "n_active_transformations": int(n_active_transformations),
+                "n_empirical_null_retained_transformations": int(
+                    n_empirical_null_retained_transformations
+                ),
+                "n_components": int(n_components),
+                "minimum_curvature_score": float(spec.minimum_curvature_score),
+                "n_retained_transformations": int(n_retained_transformations),
+                "max_curvature_score": float(max_curvature_score),
+                "manuscript_identified_transformations_reference": int(
+                    spec.identified_transformations_reference
+                ),
+                "manuscript_final_support_transformations_reference": int(
+                    spec.final_support_transformations_reference
+                ),
+            }
+        ]
+    )
 
 
 def _output_columns(output_matrix: pd.DataFrame) -> list[str]:

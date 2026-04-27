@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -121,10 +122,18 @@ def execute_notebook(notebook: Path, repo_root: Path, *, timeout: int) -> None:
     timeout
         Per-cell timeout in seconds.
     """
+    env = dict(os.environ)
+    src_dir = repo_root / "src"
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    search_paths = [str(repo_root), str(src_dir)]
+    if existing_pythonpath:
+        search_paths.append(existing_pythonpath)
+    env["BSM_PUBLIC_RF_REPO_ROOT"] = str(repo_root)
+    env["PYTHONPATH"] = os.pathsep.join(search_paths)
     with tempfile.TemporaryDirectory(prefix="bsm_notebook_exec_") as tmpdir:
         output_dir = Path(tmpdir)
         command = build_nbconvert_command(notebook, output_dir, timeout=timeout)
-        subprocess.run(command, cwd=repo_root, check=True)
+        subprocess.run(command, cwd=repo_root, check=True, env=env)
 
 
 def execute_all_notebooks(root: Path, *, timeout: int) -> int:

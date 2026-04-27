@@ -13,6 +13,7 @@ reproducibility_example
 scope_boundary
 manuscript_contract
 manuscript_data_contract
+manuscript_runtime
 api
 workflow_audit
 module_plan

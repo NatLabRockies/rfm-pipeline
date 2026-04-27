@@ -27,34 +27,43 @@ reconstruction of the workflow described in the manuscript, with:
 
 ## Current active phase
 
-**Phase 1 is complete.**
+**Phase 2 is complete.**
 
 The manuscript contract is now frozen in `docs/manuscript_contract.md` and
 `configs/manuscript_case_study.yml`. Manuscript-explicit values remain authoritative. Manuscript
 ambiguities are now represented as explicit repo-frozen reconstruction decisions that later phases
 must implement and that the manuscript must be revised to match.
 
-## Cumulative files added in the manuscript-contract phase
+## Phase 1 completion notes
 
-- `configs/manuscript_case_study.yml`
-- `docs/manuscript_contract.md`
-- `tests/test_manuscript_contract.py`
-
-## Additional cumulative file changes in the manuscript-contract phase
-
-- `docs/index.md`
-- `docs/MEMORY.md`
-
-## Immediate next phase
-
-Proceed to **Phase 2 — add notebook skeletons plus path-resolution and data-intake validation utilities**.
-
-Phase 1 has now added the executable manifests and placeholder paths for:
+Phase 1 added the executable manifests and placeholder paths for:
 
 - the real case-study input matrix;
 - the real case-study output matrix;
 - the released feature catalog defining the exact 26,560-term candidate library;
 - the notebook/runtime configuration needed to run the manuscript workflow end to end.
+
+## Phase 2 completion notes
+
+Phase 2 added:
+
+- tracked notebook skeletons at every frozen manuscript stage path;
+- a runtime/path-resolution layer in `bsm_rfm.manuscript_runtime`;
+- deterministic demo-data fallback so the notebook gate can execute without the private case-study files;
+- data-intake validation helpers that freeze the required artifact columns.
+
+## Immediate next phase
+
+Proceed to **Phase 3 — implement the manuscript-stage computations behind the notebook entrypoints**.
+
+Phase 3 must implement, in source form and then wire into the notebooks:
+
+- exact output conditioning and reduced-response representation;
+- exact empirical-null screening;
+- exact interaction discovery;
+- exact nonlinear transformation discovery;
+- exact sparse selection and stability filtering;
+- exact manuscript tables and figures regeneration.
 
 ## Contract rules for subsequent phases
 

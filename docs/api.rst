@@ -90,3 +90,12 @@ manuscript_data_contract
    :members:
    :undoc-members:
    :show-inheritance:
+
+
+manuscript_runtime
+------------------
+
+.. automodule:: bsm_rfm.manuscript_runtime
+   :members:
+   :undoc-members:
+   :show-inheritance:

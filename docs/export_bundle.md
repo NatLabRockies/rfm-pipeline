@@ -15,8 +15,8 @@ The bundle root contains:
 - `manifest.json`
 - `postfit_diagnostics/`
 
-The `postfit_diagnostics/` subtree contains these canonical tables. These logical table names are
-frozen by `bsm_rfm.canonical_postfit_artifact_names()` and
+The `postfit_diagnostics/` subtree contains these canonical tables.
+These logical table names are frozen by `bsm_rfm.canonical_postfit_artifact_names()` and
 `bsm_rfm.canonical_bundle_loader_keys()`.
 
 - `all_input_metadata`

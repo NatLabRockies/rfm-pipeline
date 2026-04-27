@@ -12,8 +12,7 @@ adds separate real-data notebooks for the full BSM case study.
 ## Run from the repo source tree
 
 ```bash
-PYTHONPATH=src python examples/end_to_end_reproducibility.py \
-  --output-dir artifacts/toy-reproducibility-example
+PYTHONPATH=src python examples/end_to_end_reproducibility.py   --output-dir artifacts/toy-reproducibility-example
 ```
 
 The command writes a canonical bundle containing:

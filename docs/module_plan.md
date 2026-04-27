@@ -51,8 +51,3 @@ The main remaining scientific reconciliation work is upstream of that path:
   stages
 - deciding whether additional case-study-specific reporting helpers belong in the public
   package surface or only in manuscript/reporting artifacts
-
-## Current scope-freeze helper
-
-Use `bsm_rfm.workflow_scope_boundary_table()` for the current machine-readable view of
-which canonical workflow stages are still source-derived or only partially ported.

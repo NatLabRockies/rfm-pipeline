@@ -8,6 +8,7 @@ from bsm_rfm import (
     FeatureExpansionResult,
     FeatureExpansionSpec,
     apply_feature_expansion,
+    build_manuscript_notebook_context,
     canonical_bundle_loader_keys,
     canonical_manifest_position_map_keys,
     canonical_manifest_top_level_keys,
@@ -17,7 +18,9 @@ from bsm_rfm import (
     manuscript_notebook_order,
     manuscript_placeholder_path_policy,
     manuscript_required_artifact_table,
+    manuscript_runtime_summary_table,
     ordered_expanded_feature_names,
+    resolve_manuscript_runtime,
     workflow_scope_boundary_table,
 )
 
@@ -35,20 +38,23 @@ def test_package_exports_postfit_bundle_loaders() -> None:
     assert callable(load_pipeline_outputs)
 
 
-def test_api_reference_documents_feature_expansion_and_viz_io_modules() -> None:
+def test_api_reference_documents_feature_expansion_viz_io_and_runtime_modules() -> None:
     api = Path("docs/api.rst").read_text(encoding="utf-8")
     assert ".. automodule:: bsm_rfm.feature_expansion" in api
     assert ".. automodule:: bsm_rfm.viz_io" in api
+    assert ".. automodule:: bsm_rfm.manuscript_runtime" in api
 
 
-def test_docs_include_quickstart_and_export_bundle_guides() -> None:
+def test_docs_include_quickstart_export_bundle_and_runtime_guides() -> None:
     quickstart = Path("docs/quickstart.md").read_text(encoding="utf-8")
     export_bundle = Path("docs/export_bundle.md").read_text(encoding="utf-8")
+    runtime_doc = Path("docs/manuscript_runtime.md").read_text(encoding="utf-8")
     assert "run_canonical_workflow" in quickstart
     assert "write_postfit_bundle" in quickstart
     assert "load_postfit_bundle" in quickstart
     assert "manifest.json" in export_bundle
     assert "postfit_diagnostics/" in export_bundle
+    assert "resolve_manuscript_runtime" in runtime_doc
 
 
 def test_package_exports_workflow_scope_boundary_helper() -> None:
@@ -77,6 +83,12 @@ def test_package_exports_manuscript_data_contract_helpers() -> None:
     assert callable(manuscript_required_artifact_table)
     assert callable(manuscript_placeholder_path_policy)
     assert isinstance(manuscript_notebook_order(), tuple)
+
+
+def test_package_exports_manuscript_runtime_helpers() -> None:
+    assert callable(resolve_manuscript_runtime)
+    assert callable(build_manuscript_notebook_context)
+    assert callable(manuscript_runtime_summary_table)
 
 
 def test_docs_include_manuscript_data_contract_guide() -> None:

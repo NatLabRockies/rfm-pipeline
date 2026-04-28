@@ -106,5 +106,25 @@ The stage currently writes:
 - `retained_transformations.csv`
 - `nonlinear_discovery_summary.csv`
 
+## Phase 3 sparse-selection and stability stage
+
+The fifth Phase 3 source-backed notebook stage is
+`06_sparse_selection_and_stability.ipynb`. It calls
+`bsm_rfm.run_sparse_selection_stability_stage(...)`, which reads sparse-selection and stability
+metadata from the frozen case-study contract, builds the ordered union of retained empirical-null
+terms plus retained interaction and nonlinear candidates, fits EBIC-selected L1 models per retained
+PCA component, aggregates nonzero support across components, and evaluates deterministic
+subsample-stability diagnostics.
+
+The stage currently writes:
+
+- `support_candidates.csv`
+- `component_model_selection.csv`
+- `component_coefficients.csv`
+- `stability_resample_summary.csv`
+- `stability_feature_summary.csv`
+- `final_stable_support.csv`
+- `sparse_selection_summary.csv`
+
 The remaining manuscript notebooks still provide the Phase 2 executable skeletons until their
 scientific stages are promoted into source-backed functions in later Phase 3 slices.

@@ -59,7 +59,7 @@ The scientific workflow is no longer only documented at the screening/final-fit/
 The repo now includes a tested canonical workflow foundation that performs:
 
 - upstream null-screening delegation to the recovered source script
-- source-backed manuscript output-conditioning, empirical-null, interaction-discovery, and nonlinear-discovery stages
+- source-backed manuscript output-conditioning, empirical-null, interaction-discovery, nonlinear-discovery, and sparse-selection/stability stages
 - executable archived-style multitask elastic-net screening
 - executable final OLS fitting on retained features
 - holdout bootstrap nRMSE evaluation
@@ -87,6 +87,10 @@ The release-facing package metadata now records repository URLs, classifiers, an
 - The manuscript nonlinear-discovery notebook now scores released catalog transformation terms by
   residualized incremental nonlinear contribution beyond each source first-order input and writes
   deterministic transformation-score, component-score, and retained-transformation artifacts.
+
+- The manuscript sparse-selection/stability notebook now fits EBIC-selected L1 models per
+  retained PCA component, aggregates support across components, and writes deterministic
+  subsample-stability diagnostics and final stable-support artifacts.
 
 ## Repository gate
 
@@ -125,7 +129,8 @@ helpers in `bsm_rfm.manuscript_runtime` so the notebooks execute on deterministi
 and switch to real data once the local path override file is populated.
 
 Phase 3 has source-backed stages in `bsm_rfm.manuscript_stages` for output conditioning,
-empirical-null screening, interaction discovery, and nonlinear discovery. The
-`02_output_conditioning.ipynb`, `03_empirical_null_screen.ipynb`,
-`04_interaction_discovery.ipynb`, and `05_nonlinear_discovery.ipynb` notebooks now run
-deterministic stage functions and write handoff artifacts under the resolved manuscript output root.
+empirical-null screening, interaction discovery, nonlinear discovery, and sparse selection with
+stability filtering. The `02_output_conditioning.ipynb`, `03_empirical_null_screen.ipynb`,
+`04_interaction_discovery.ipynb`, `05_nonlinear_discovery.ipynb`, and
+`06_sparse_selection_and_stability.ipynb` notebooks now run deterministic stage functions and write
+handoff artifacts under the resolved manuscript output root.

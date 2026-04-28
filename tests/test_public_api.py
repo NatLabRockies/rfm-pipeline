@@ -11,6 +11,7 @@ from bsm_rfm import (
     InteractionDiscoverySpec,
     NonlinearDiscoverySpec,
     OutputConditioningSpec,
+    SparseSelectionStabilitySpec,
     apply_feature_expansion,
     build_manuscript_feature_design,
     build_manuscript_notebook_context,
@@ -37,10 +38,14 @@ from bsm_rfm import (
     run_interaction_discovery_stage,
     run_nonlinear_discovery_stage,
     run_output_conditioning_stage,
+    run_sparse_selection_stability_stage,
     screen_manuscript_empirical_null_terms,
+    select_manuscript_sparse_support,
+    sparse_selection_stability_spec_from_case_study_config,
     workflow_scope_boundary_table,
     write_interaction_discovery_artifacts,
     write_nonlinear_discovery_artifacts,
+    write_sparse_selection_stability_artifacts,
 )
 
 
@@ -146,3 +151,11 @@ def test_package_exports_manuscript_nonlinear_discovery_stage() -> None:
     assert callable(discover_manuscript_nonlinear_transformations)
     assert callable(run_nonlinear_discovery_stage)
     assert callable(write_nonlinear_discovery_artifacts)
+
+
+def test_package_exports_manuscript_sparse_selection_stage() -> None:
+    assert SparseSelectionStabilitySpec.__name__ == "SparseSelectionStabilitySpec"
+    assert callable(sparse_selection_stability_spec_from_case_study_config)
+    assert callable(select_manuscript_sparse_support)
+    assert callable(run_sparse_selection_stability_stage)
+    assert callable(write_sparse_selection_stability_artifacts)

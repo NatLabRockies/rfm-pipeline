@@ -177,4 +177,6 @@ end-to-end Phase 3 chain, then writes `reproduction_audit/` with:
   overall `qa_status`.
 
 This audit is intended to catch misleading smoke-test outputs such as a zero holdout nRMSE before
-manuscript tables or public examples are interpreted.
+manuscript tables or public examples are interpreted. The repository gate runs the same audited
+path through `pixi run manuscript-reproduction-smoke`, which uses a temporary output root so the
+check validates the manuscript chain without leaving generated artifacts in the work tree.

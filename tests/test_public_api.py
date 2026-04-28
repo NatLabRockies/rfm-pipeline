@@ -96,6 +96,8 @@ def test_package_exports_workflow_scope_boundary_helper() -> None:
 def test_docs_include_reproducibility_example_guide() -> None:
     example_doc = Path("docs/reproducibility_example.md").read_text(encoding="utf-8")
     assert "run_reproducibility_example" in example_doc
+    assert "run_manuscript_reproduction_example" in example_doc
+    assert "--run-manuscript-chain" in example_doc
     assert "examples/end_to_end_reproducibility.py" in example_doc
 
 

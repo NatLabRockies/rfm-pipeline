@@ -239,3 +239,23 @@ Phase 3 manuscript workflow from one runtime context, writes every upstream hand
 plus the final table/figure artifacts, and has an integration test that verifies all Phase 3 artifact
 families are emitted. This is now the preferred single-call public entry point for validating the
 source-backed manuscript reproduction chain before running notebook-by-notebook workflows.
+
+## Latest finalization continuation note
+
+The reproducibility example now has a manuscript-chain smoke-test path. The existing
+`run_reproducibility_example(...)` canonical workflow contract and CLI wording are preserved, and
+`examples/end_to_end_reproducibility.py` also exposes
+`run_manuscript_reproduction_example(...)`. The CLI flag `--run-manuscript-chain` writes the
+complete deterministic demo manuscript artifact family tree to `--manuscript-output-dir`, including
+output conditioning, empirical-null screening, interaction discovery, nonlinear discovery,
+sparse-selection/stability, and final manuscript table/figure artifacts. This is intended as the
+public example-level smoke-test companion to the notebook-by-notebook reproduction workflow.
+
+## Latest finalization bug-fix note
+
+The canonical reproducibility example originally used perfectly linear holdout responses, so the
+final OLS demo could report a printed holdout macro nRMSE of `0.000000`. That was misleading for a
+public evaluation smoke test. The example now adds a small fixed deterministic residual to the toy
+holdout responses and tests that the holdout nRMSE point estimate is strictly positive and round
+trips through the written `nrmse_summary` artifact. This preserves determinism while exercising the
+nonzero holdout-error path.

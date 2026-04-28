@@ -13,7 +13,7 @@ from bsm_rfm import (
     build_manuscript_notebook_context,
     load_postfit_bundle,
     run_canonical_workflow,
-    run_manuscript_reproduction_stage_chain,
+    run_manuscript_reproduction_audit_stage,
     write_postfit_bundle,
 )
 
@@ -104,12 +104,16 @@ def run_manuscript_reproduction_example(output_dir: Path | str) -> dict[str, obj
     )
     runtime = replace(context.runtime, output_root=output_root)
     context = replace(context, runtime=runtime)
-    reproduction = run_manuscript_reproduction_stage_chain(context)
+    audit_result = run_manuscript_reproduction_audit_stage(context)
+    reproduction = audit_result.reproduction
     return {
         "manuscript_output_root": output_root,
         "manuscript_runtime_mode": context.runtime.mode,
         "manuscript_reproduction": reproduction,
         "manuscript_artifact_paths": reproduction.artifact_paths,
+        "manuscript_audit": audit_result.audit,
+        "manuscript_audit_paths": audit_result.artifact_paths,
+        "manuscript_audit_summary": audit_result.audit.summary,
     }
 
 
@@ -155,6 +159,8 @@ def main() -> None:
         artifact_families = sorted(manuscript_result["manuscript_artifact_paths"])
         print(f"Wrote manuscript reproduction artifacts to: {args.manuscript_output_dir}")
         print(f"Manuscript artifact families: {', '.join(artifact_families)}")
+        audit_summary = manuscript_result["manuscript_audit_summary"]
+        print(f"Manuscript audit status: {audit_summary.loc[0, 'qa_status']}")
 
 
 if __name__ == "__main__":

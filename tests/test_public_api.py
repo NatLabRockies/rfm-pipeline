@@ -10,11 +10,14 @@ from bsm_rfm import (
     FeatureExpansionSpec,
     FinalManuscriptArtifactsSpec,
     InteractionDiscoverySpec,
+    ManuscriptReproductionAuditResult,
+    ManuscriptReproductionAuditStageResult,
     ManuscriptReproductionStageChainResult,
     NonlinearDiscoverySpec,
     OutputConditioningSpec,
     SparseSelectionStabilitySpec,
     apply_feature_expansion,
+    audit_manuscript_reproduction_outputs,
     build_manuscript_feature_design,
     build_manuscript_notebook_context,
     canonical_bundle_loader_keys,
@@ -41,6 +44,7 @@ from bsm_rfm import (
     run_empirical_null_screening_stage,
     run_final_manuscript_artifacts_stage,
     run_interaction_discovery_stage,
+    run_manuscript_reproduction_audit_stage,
     run_manuscript_reproduction_stage_chain,
     run_nonlinear_discovery_stage,
     run_output_conditioning_stage,
@@ -51,6 +55,7 @@ from bsm_rfm import (
     workflow_scope_boundary_table,
     write_final_manuscript_artifacts,
     write_interaction_discovery_artifacts,
+    write_manuscript_reproduction_audit,
     write_nonlinear_discovery_artifacts,
     write_sparse_selection_stability_artifacts,
 )
@@ -183,3 +188,13 @@ def test_package_exports_manuscript_reproduction_chain() -> None:
         "ManuscriptReproductionStageChainResult"
     )
     assert callable(run_manuscript_reproduction_stage_chain)
+
+
+def test_package_exports_manuscript_reproduction_audit() -> None:
+    assert ManuscriptReproductionAuditResult.__name__ == "ManuscriptReproductionAuditResult"
+    assert ManuscriptReproductionAuditStageResult.__name__ == (
+        "ManuscriptReproductionAuditStageResult"
+    )
+    assert callable(audit_manuscript_reproduction_outputs)
+    assert callable(run_manuscript_reproduction_audit_stage)
+    assert callable(write_manuscript_reproduction_audit)

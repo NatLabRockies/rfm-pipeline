@@ -1,8 +1,9 @@
 # End-to-end reproducibility example
 
 The repository ships a deterministic toy example that exercises the canonical public
-workflow end to end. It is intended for CI and demonstration; the manuscript reproduction layer
-adds separate real-data notebooks for the full BSM case study.
+workflow end to end. It is intended for CI and demonstration. The toy holdout responses include a fixed deterministic residual so the reported holdout nRMSE is nonzero and exercises the evaluation path rather than a perfect interpolation case. The same script can also run
+the complete demo manuscript-reproduction stage chain, which mirrors the source-backed
+Phase 3 notebook stages and writes every manuscript artifact family.
 
 1. build aligned train and holdout DataFrames
 1. run `run_canonical_workflow(...)`
@@ -12,7 +13,17 @@ adds separate real-data notebooks for the full BSM case study.
 ## Run from the repo source tree
 
 ```bash
-PYTHONPATH=src python examples/end_to_end_reproducibility.py   --output-dir artifacts/toy-reproducibility-example
+PYTHONPATH=src python examples/end_to_end_reproducibility.py \
+  --output-dir artifacts/toy-reproducibility-example
+```
+
+To run the canonical example and the complete demo manuscript-reproduction chain together:
+
+```bash
+PYTHONPATH=src python examples/end_to_end_reproducibility.py \
+  --output-dir artifacts/toy-reproducibility-example \
+  --run-manuscript-chain \
+  --manuscript-output-dir artifacts/toy-manuscript-reproduction-example
 ```
 
 The command writes a canonical bundle containing:
@@ -29,7 +40,7 @@ The command writes a canonical bundle containing:
 
 ## Python entrypoint
 
-The example script exposes `run_reproducibility_example(...)` for tests and notebook reuse.
+The example script exposes `run_reproducibility_example(...)` and `run_manuscript_reproduction_example(...)` for tests and notebook reuse.
 
 ```python
 from pathlib import Path
@@ -43,3 +54,16 @@ print(result["loaded"]["nrmse_summary"])
 
 The output bundle is deterministic because the example uses fixed synthetic data and fixed
 screening/bootstrap random seeds.
+
+## Manuscript-reproduction chain output
+
+When `--run-manuscript-chain` is supplied, the script writes the deterministic demo outputs for:
+
+- `output_conditioning/`
+- `empirical_null_screen/`
+- `interaction_discovery/`
+- `nonlinear_discovery/`
+- `sparse_selection/`
+- `final_manuscript_artifacts/`
+
+This path is the public smoke-test companion to the real-data manuscript notebooks.

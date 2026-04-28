@@ -8,7 +8,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-from examples.end_to_end_reproducibility import DATASET_TAG, run_reproducibility_example
+import pytest
+
+from examples.end_to_end_reproducibility import (
+    DATASET_TAG,
+    run_manuscript_reproduction_example,
+    run_reproducibility_example,
+)
 
 
 def test_reproducibility_example_function_writes_and_reloads_bundle(tmp_path: Path) -> None:
@@ -22,6 +28,34 @@ def test_reproducibility_example_function_writes_and_reloads_bundle(tmp_path: Pa
     assert manifest["dataset_tag"] == DATASET_TAG
     assert manifest["files"]["nrmse_summary"].endswith(".csv")
     assert result["loaded"]["nrmse_summary"].loc[0, "n_boot"] == 25
+    holdout_point = float(result["holdout_summary"].loc[0, "point_estimate"])
+    assert holdout_point > 0.0
+    loaded_point = float(result["loaded"]["nrmse_summary"].loc[0, "point_estimate"])
+    assert loaded_point == pytest.approx(holdout_point)
+
+
+def test_reproducibility_example_runs_manuscript_reproduction_chain(
+    tmp_path: Path,
+) -> None:
+    result = run_manuscript_reproduction_example(tmp_path / "manuscript-artifacts")
+
+    output_root = result["manuscript_output_root"]
+    artifact_paths = result["manuscript_artifact_paths"]
+
+    assert output_root == tmp_path / "manuscript-artifacts"
+    assert result["manuscript_runtime_mode"] == "demo"
+    assert set(artifact_paths) == {
+        "output_conditioning",
+        "empirical_null_screen",
+        "interaction_discovery",
+        "nonlinear_discovery",
+        "sparse_selection",
+        "final_manuscript_artifacts",
+    }
+    assert all(
+        path.exists() for stage_paths in artifact_paths.values() for path in stage_paths.values()
+    )
+    assert (output_root / "final_manuscript_artifacts").exists()
 
 
 def test_reproducibility_example_cli_runs_from_repo_source_tree(tmp_path: Path) -> None:
@@ -46,3 +80,33 @@ def test_reproducibility_example_cli_runs_from_repo_source_tree(tmp_path: Path) 
 
     assert "Wrote bundle to:" in completed.stdout
     assert (output_dir / "manifest.json").exists()
+
+
+def test_reproducibility_example_cli_can_run_manuscript_chain(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    output_dir = tmp_path / "cli-bundle"
+    manuscript_output_dir = tmp_path / "cli-manuscript-artifacts"
+    env = dict(**os.environ)
+    env["PYTHONPATH"] = str(repo_root / "src")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(repo_root / "examples" / "end_to_end_reproducibility.py"),
+            "--output-dir",
+            str(output_dir),
+            "--run-manuscript-chain",
+            "--manuscript-output-dir",
+            str(manuscript_output_dir),
+        ],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert "Wrote bundle to:" in completed.stdout
+    assert "Wrote manuscript reproduction artifacts to:" in completed.stdout
+    assert (output_dir / "manifest.json").exists()
+    assert (manuscript_output_dir / "final_manuscript_artifacts").exists()

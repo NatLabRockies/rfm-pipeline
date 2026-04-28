@@ -32,12 +32,21 @@ The package documentation is built with Sphinx and MyST. Public Python APIs are 
 
 ## End-to-end reproducibility example
 
-A deterministic toy example is included at `examples/end_to_end_reproducibility.py`. It runs the canonical workflow, writes a post-fit bundle, and reloads the written artifacts from disk.
+A deterministic toy example is included at `examples/end_to_end_reproducibility.py`. It runs the canonical workflow, writes a post-fit bundle, and reloads the written artifacts from disk. The toy holdout responses include a fixed deterministic residual so the printed holdout nRMSE is nonzero. It can also run the complete demo manuscript-reproduction stage chain and write every Phase 3 artifact family.
 
-Run it from the repo source tree with:
+Run the canonical workflow example from the repo source tree with:
 
 ```bash
 PYTHONPATH=src python examples/end_to_end_reproducibility.py --output-dir artifacts/toy-reproducibility-example
+```
+
+Run both the canonical workflow example and the demo manuscript-reproduction chain with:
+
+```bash
+PYTHONPATH=src python examples/end_to_end_reproducibility.py \
+  --output-dir artifacts/toy-reproducibility-example \
+  --run-manuscript-chain \
+  --manuscript-output-dir artifacts/toy-manuscript-reproduction-example
 ```
 
 ## Current scope

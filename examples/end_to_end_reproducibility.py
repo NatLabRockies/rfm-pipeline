@@ -1,16 +1,24 @@
-"""Run a deterministic end-to-end workflow example and reload the written bundle."""
+"""Run deterministic public workflow and manuscript-reproduction examples."""
 
 from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
 
-from bsm_rfm import load_postfit_bundle, run_canonical_workflow, write_postfit_bundle
+from bsm_rfm import (
+    build_manuscript_notebook_context,
+    load_postfit_bundle,
+    run_canonical_workflow,
+    run_manuscript_reproduction_stage_chain,
+    write_postfit_bundle,
+)
 
 DATASET_TAG = "toy-reproducibility-example"
+MANUSCRIPT_REPRODUCTION_TAG = "toy-manuscript-reproduction-example"
 
 
 def make_example_frames() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -35,11 +43,20 @@ def make_example_frames() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.
             "x3": [1.2, -0.4, 0.1],
         }
     )
-    y_holdout = pd.DataFrame(
+    holdout_residual = pd.DataFrame(
         {
-            "y1": 1.0 + 2.0 * x_holdout["x1"] - 1.0 * x_holdout["x2"],
-            "y2": -0.5 + 0.75 * x_holdout["x1"] + 0.5 * x_holdout["x2"],
+            "y1": [0.20, -0.15, 0.10],
+            "y2": [-0.08, 0.12, -0.06],
         }
+    )
+    y_holdout = (
+        pd.DataFrame(
+            {
+                "y1": 1.0 + 2.0 * x_holdout["x1"] - 1.0 * x_holdout["x2"],
+                "y2": -0.5 + 0.75 * x_holdout["x1"] + 0.5 * x_holdout["x2"],
+            }
+        )
+        + holdout_residual
     )
     return x_train, y_train, x_holdout, y_holdout
 
@@ -76,18 +93,49 @@ def run_reproducibility_example(output_dir: Path | str) -> dict[str, object]:
     }
 
 
+def run_manuscript_reproduction_example(output_dir: Path | str) -> dict[str, object]:
+    """Execute the complete demo manuscript reproduction chain and write artifacts."""
+    repo_root = Path(__file__).resolve().parents[1]
+    output_root = Path(output_dir)
+    output_root.mkdir(parents=True, exist_ok=True)
+    context = build_manuscript_notebook_context(
+        repo_root,
+        "08_manuscript_tables_and_figures.ipynb",
+    )
+    runtime = replace(context.runtime, output_root=output_root)
+    context = replace(context, runtime=runtime)
+    reproduction = run_manuscript_reproduction_stage_chain(context)
+    return {
+        "manuscript_output_root": output_root,
+        "manuscript_runtime_mode": context.runtime.mode,
+        "manuscript_reproduction": reproduction,
+        "manuscript_artifact_paths": reproduction.artifact_paths,
+    }
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Run a deterministic toy workflow, write a canonical post-fit bundle, "
-            "and reload it from disk."
+            "Run deterministic toy workflow examples, write canonical artifacts, "
+            "and reload or validate the generated outputs."
         )
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("artifacts") / DATASET_TAG,
-        help="Directory where the example bundle should be written.",
+        help="Directory where the canonical workflow example bundle should be written.",
+    )
+    parser.add_argument(
+        "--run-manuscript-chain",
+        action="store_true",
+        help="Also run the complete demo manuscript reproduction stage chain.",
+    )
+    parser.add_argument(
+        "--manuscript-output-dir",
+        type=Path,
+        default=Path("artifacts") / MANUSCRIPT_REPRODUCTION_TAG,
+        help="Directory where manuscript reproduction artifacts should be written.",
     )
     return parser
 
@@ -101,6 +149,12 @@ def main() -> None:
     print(f"Wrote bundle to: {result['bundle_root']}")
     print(f"Artifact tables: {', '.join(sorted(manifest['files']))}")
     print(f"Holdout macro nRMSE point estimate: {holdout_summary.loc[0, 'point_estimate']:.6f}")
+
+    if args.run_manuscript_chain:
+        manuscript_result = run_manuscript_reproduction_example(args.manuscript_output_dir)
+        artifact_families = sorted(manuscript_result["manuscript_artifact_paths"])
+        print(f"Wrote manuscript reproduction artifacts to: {args.manuscript_output_dir}")
+        print(f"Manuscript artifact families: {', '.join(artifact_families)}")
 
 
 if __name__ == "__main__":

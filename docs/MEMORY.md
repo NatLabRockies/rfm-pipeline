@@ -29,7 +29,7 @@ The repo must ultimately:
 - **Phase 0 complete**: manuscript contract freeze layer exists.
 - **Phase 1 complete**: manuscript data/runtime/notebook manifests and placeholder-path contract exist.
 - **Phase 2 functionally complete**: manuscript notebook skeletons, runtime/path-resolution utilities, demo-data fallback, and notebook execution support were added.
-- **Phase 3 slices 1-4 implemented in source**: output conditioning, empirical-null screening, interaction discovery, and nonlinear discovery now have tested source-backed stage functions, notebook entrypoints, deterministic demo execution, and CSV handoff artifacts.
+- **Phase 3 slices 1-5 implemented in source**: output conditioning, empirical-null screening, interaction discovery, nonlinear discovery, and sparse selection/stability filtering now have source-backed stage functions, notebook entrypoints, deterministic demo execution, and CSV handoff artifacts.
 
 ### Important nuance about validation state
 
@@ -185,7 +185,7 @@ In this order:
 1. empirical-null screening (implemented source-backed slice),
 1. interaction discovery (implemented source-backed slice),
 1. nonlinear transformation discovery (implemented source-backed slice),
-1. sparse selection and stability filtering,
+1. sparse selection and stability filtering (implemented source-backed slice),
 1. final manuscript tables and figures regeneration.
 
 These stages must be implemented according to the frozen manuscript contract, with:
@@ -214,9 +214,10 @@ Only after that should Phase 3 implementation begin.
 
 ## Latest Phase 3 continuation note
 
-The nonlinear-discovery slice adds `run_nonlinear_discovery_stage(...)` and related source-backed
-helpers in `bsm_rfm.manuscript_stages`. The public demo implementation uses the released feature
-catalog as the authoritative transformation-candidate source, scores residualized nonlinear terms
-against retained PCA component scores, annotates empirical-null retention, and writes CSV artifacts
-under `nonlinear_discovery/`. The next Phase 3 slice should implement sparse selection and
-stability filtering.
+The sparse-selection/stability slice adds `run_sparse_selection_stability_stage(...)` and related
+source-backed helpers in `bsm_rfm.manuscript_stages`. The public demo implementation uses the
+ordered union of empirical-null retained terms, retained interaction pairs, and retained nonlinear
+transformations as the sparse candidate support, fits EBIC-selected L1 models per retained PCA
+component, aggregates nonzero support across components, and writes deterministic stability and
+final-support CSV artifacts under `sparse_selection/`. The next Phase 3 slice should implement
+final manuscript table and figure regeneration.

@@ -8,12 +8,14 @@ manuscript output root.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.linear_model import Lasso
 
 
 @dataclass(frozen=True)
@@ -289,6 +291,90 @@ class NonlinearDiscoveryStageResult:
     """
 
     nonlinear: NonlinearDiscoveryResult
+    artifact_paths: dict[str, Path]
+
+
+@dataclass(frozen=True)
+class SparseSelectionStabilitySpec:
+    """Frozen sparse-selection and stability settings from the manuscript contract.
+
+    Parameters
+    ----------
+    model_class
+        Sparse model class recorded in the frozen manuscript contract.
+    ebic_gamma
+        Extended Bayesian information criterion gamma used to select the L1 penalty.
+    support_aggregation_rule
+        Rule used to aggregate per-component supports into one candidate support.
+    resampling_scheme
+        Human-readable stability-resampling scheme from the frozen contract.
+    subsample_count
+        Number of deterministic stability subsamples.
+    subsample_fraction
+        Fraction of training rows used in each stability subsample.
+    jaccard_threshold
+        Minimum mean support Jaccard similarity used for the stable-support flag.
+    spearman_threshold
+        Minimum mean feature-rank Spearman correlation used for the stable-rank flag.
+    random_seed
+        Deterministic random seed for stability subsampling.
+    """
+
+    model_class: str
+    ebic_gamma: float
+    support_aggregation_rule: str
+    resampling_scheme: str
+    subsample_count: int
+    subsample_fraction: float
+    jaccard_threshold: float
+    spearman_threshold: float
+    random_seed: int = 123
+
+
+@dataclass(frozen=True)
+class SparseSelectionStabilityResult:
+    """Materialized sparse-selection and stability artifacts for one manuscript run.
+
+    Parameters
+    ----------
+    support_candidates
+        Candidate terms entering the L1/EBIC sparse-selection stage.
+    component_model_selection
+        Per-component EBIC-selected penalty and support-size diagnostics.
+    component_coefficients
+        Per-candidate, per-component standardized sparse coefficients.
+    stability_resample_summary
+        Per-resample support-overlap and rank-correlation diagnostics.
+    stability_feature_summary
+        Per-candidate selection-frequency and full-model importance diagnostics.
+    final_stable_support
+        Terms selected by the full-data sparse model and passing stability filters.
+    summary
+        One-row summary of the sparse-selection and stability stage.
+    """
+
+    support_candidates: pd.DataFrame
+    component_model_selection: pd.DataFrame
+    component_coefficients: pd.DataFrame
+    stability_resample_summary: pd.DataFrame
+    stability_feature_summary: pd.DataFrame
+    final_stable_support: pd.DataFrame
+    summary: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class SparseSelectionStabilityStageResult:
+    """Sparse-selection/stability result plus paths written for notebook handoff.
+
+    Parameters
+    ----------
+    sparse_selection
+        In-memory sparse-selection and stability result.
+    artifact_paths
+        Mapping from stable artifact name to the CSV path written under the output root.
+    """
+
+    sparse_selection: SparseSelectionStabilityResult
     artifact_paths: dict[str, Path]
 
 
@@ -1166,6 +1252,765 @@ def run_nonlinear_discovery_stage(context: Any) -> NonlinearDiscoveryStageResult
         context.runtime.output_root,
     )
     return NonlinearDiscoveryStageResult(nonlinear=nonlinear, artifact_paths=artifact_paths)
+
+
+def sparse_selection_stability_spec_from_case_study_config(
+    case_study_config: dict[str, Any],
+) -> SparseSelectionStabilitySpec:
+    """Build the sparse-selection/stability specification from the case-study config.
+
+    Parameters
+    ----------
+    case_study_config
+        Parsed ``configs/manuscript_case_study.yml`` mapping.
+
+    Returns
+    -------
+    SparseSelectionStabilitySpec
+        Typed sparse-selection and stability specification.
+    """
+    case_study = case_study_config["case_study"]
+    sparse = case_study["sparse_selection"]
+    stability = case_study["stability"]
+    count, fraction, seed = _parse_stability_resampling_scheme(str(stability["resampling_scheme"]))
+    return SparseSelectionStabilitySpec(
+        model_class=str(sparse["model_class"]),
+        ebic_gamma=float(sparse["ebic_gamma"]),
+        support_aggregation_rule=str(sparse["support_aggregation_rule"]),
+        resampling_scheme=str(stability["resampling_scheme"]),
+        subsample_count=count,
+        subsample_fraction=fraction,
+        jaccard_threshold=float(stability["jaccard_threshold"]),
+        spearman_threshold=float(stability["spearman_threshold"]),
+        random_seed=seed,
+    )
+
+
+def select_manuscript_sparse_support(
+    input_matrix: pd.DataFrame,
+    feature_catalog: pd.DataFrame,
+    holdout_assignments: pd.DataFrame,
+    pca_scores: pd.DataFrame,
+    retained_terms: pd.DataFrame,
+    retained_interaction_pairs: pd.DataFrame,
+    retained_transformations: pd.DataFrame,
+    spec: SparseSelectionStabilitySpec,
+) -> SparseSelectionStabilityResult:
+    """Run EBIC-selected L1 sparse selection plus deterministic stability filtering.
+
+    Candidate terms are the feature-catalog-order union of terms retained by empirical-null
+    screening, retained interaction pairs, and retained nonlinear transformations. For each
+    retained PCA component, the public stage fits a deterministic L1 path and selects the penalty
+    minimizing EBIC with the frozen gamma. The full support is the union of nonzero component
+    supports. Stability is assessed with deterministic row subsamples without replacement.
+
+    Parameters
+    ----------
+    input_matrix
+        Case-study input table with ``sample_id`` and source input columns.
+    feature_catalog
+        Manuscript feature catalog used to materialize candidate terms.
+    holdout_assignments
+        Table with ``sample_id`` and ``split`` columns. Only train rows are fit.
+    pca_scores
+        Output-conditioning PCA score table with ``sample_id`` and component columns.
+    retained_terms
+        Empirical-null retained-term table.
+    retained_interaction_pairs
+        Interaction-discovery retained-pair table.
+    retained_transformations
+        Nonlinear-discovery retained-transformation table.
+    spec
+        Sparse-selection and stability specification.
+
+    Returns
+    -------
+    SparseSelectionStabilityResult
+        Materialized sparse-selection, stability, final-support, and summary tables.
+    """
+    _validate_sparse_selection_spec(spec)
+    candidate_names = _ordered_sparse_candidate_names(
+        feature_catalog=feature_catalog,
+        retained_terms=retained_terms,
+        retained_interaction_pairs=retained_interaction_pairs,
+        retained_transformations=retained_transformations,
+    )
+    candidate_catalog = _feature_catalog_subset(feature_catalog, candidate_names)
+    design = build_manuscript_feature_design(input_matrix, candidate_catalog)
+    component_names = _component_columns(pca_scores)
+    train_ids = _train_sample_ids(holdout_assignments)
+    x_train = _align_table_by_sample_id(design, train_ids, candidate_names, "candidate design")
+    y_train = _align_table_by_sample_id(pca_scores, train_ids, component_names, "PCA scores")
+    if len(x_train) < 4:
+        raise ValueError("Sparse selection requires at least four training rows.")
+
+    x_scaled, feature_active = _standardize_for_screening(x_train)
+    y_scaled, component_active = _standardize_for_screening(y_train)
+    if not component_active.any():
+        raise ValueError("All retained PCA components have zero training variance.")
+    x_scaled[:, ~feature_active] = 0.0
+
+    full_selection = _fit_sparse_l1_ebic_models(
+        x_scaled,
+        y_scaled,
+        feature_names=candidate_names,
+        component_names=component_names,
+        spec=spec,
+        active_features=feature_active,
+    )
+    full_support_mask = np.any(
+        np.abs(full_selection["coefficient_matrix"]) > 0.0,
+        axis=1,
+    )
+    full_importance = np.max(np.abs(full_selection["coefficient_matrix"]), axis=1)
+    resample_summary, resample_supports, resample_importances = _run_stability_resamples(
+        x_scaled=x_scaled,
+        y_scaled=y_scaled,
+        feature_names=candidate_names,
+        component_names=component_names,
+        full_support_mask=full_support_mask,
+        full_importance=full_importance,
+        spec=spec,
+        active_features=feature_active,
+    )
+
+    mean_jaccard = float(resample_summary["jaccard_with_full_support"].mean())
+    mean_spearman = float(resample_summary["spearman_with_full_importance"].mean())
+    stability_feature_summary = _build_stability_feature_summary(
+        feature_names=candidate_names,
+        feature_active=feature_active,
+        full_support_mask=full_support_mask,
+        full_importance=full_importance,
+        resample_supports=resample_supports,
+        resample_importances=resample_importances,
+        mean_jaccard=mean_jaccard,
+        mean_spearman=mean_spearman,
+        spec=spec,
+    )
+    final_stable_support = stability_feature_summary.loc[
+        stability_feature_summary["final_stable_support"]
+    ].copy()
+    final_stable_support = final_stable_support.sort_values(
+        ["full_support_importance", "feature_name"],
+        ascending=[False, True],
+        ignore_index=True,
+    )
+    support_candidates = _build_sparse_support_candidates(
+        candidate_names=candidate_names,
+        candidate_catalog=candidate_catalog,
+        retained_terms=retained_terms,
+        retained_interaction_pairs=retained_interaction_pairs,
+        retained_transformations=retained_transformations,
+    )
+    component_model_selection = full_selection["component_model_selection"]
+    component_coefficients = _build_sparse_component_coefficients(
+        candidate_names=candidate_names,
+        component_names=component_names,
+        coefficients=full_selection["coefficient_matrix"],
+    )
+    summary = _build_sparse_selection_summary(
+        n_training_rows=len(x_train),
+        n_candidate_terms=len(candidate_names),
+        n_active_candidate_terms=int(feature_active.sum()),
+        n_components=len(component_names),
+        n_full_support_terms=int(full_support_mask.sum()),
+        n_final_stable_support_terms=len(final_stable_support),
+        mean_jaccard=mean_jaccard,
+        mean_spearman=mean_spearman,
+        spec=spec,
+    )
+    return SparseSelectionStabilityResult(
+        support_candidates=support_candidates,
+        component_model_selection=component_model_selection,
+        component_coefficients=component_coefficients,
+        stability_resample_summary=resample_summary,
+        stability_feature_summary=stability_feature_summary,
+        final_stable_support=final_stable_support,
+        summary=summary,
+    )
+
+
+def write_sparse_selection_stability_artifacts(
+    result: SparseSelectionStabilityResult,
+    output_root: Path,
+) -> dict[str, Path]:
+    """Write sparse-selection and stability artifacts under ``output_root``.
+
+    Parameters
+    ----------
+    result
+        Materialized sparse-selection and stability result.
+    output_root
+        Resolved manuscript output root from the runtime context.
+
+    Returns
+    -------
+    dict[str, pathlib.Path]
+        Paths keyed by stable artifact name.
+    """
+    stage_root = output_root / "sparse_selection"
+    stage_root.mkdir(parents=True, exist_ok=True)
+    tables = {
+        "support_candidates": result.support_candidates,
+        "component_model_selection": result.component_model_selection,
+        "component_coefficients": result.component_coefficients,
+        "stability_resample_summary": result.stability_resample_summary,
+        "stability_feature_summary": result.stability_feature_summary,
+        "final_stable_support": result.final_stable_support,
+        "sparse_selection_summary": result.summary,
+    }
+    written: dict[str, Path] = {}
+    for name, table in tables.items():
+        path = stage_root / f"{name}.csv"
+        table.to_csv(path, index=False)
+        written[name] = path
+    return written
+
+
+def run_sparse_selection_stability_stage(context: Any) -> SparseSelectionStabilityStageResult:
+    """Run sparse selection and stability from a manuscript notebook runtime context.
+
+    Parameters
+    ----------
+    context
+        ``bsm_rfm.manuscript_runtime.ManuscriptNotebookContext``. It is typed as ``Any`` here to
+        avoid an import cycle between the runtime and stage modules.
+
+    Returns
+    -------
+    SparseSelectionStabilityStageResult
+        In-memory result and written artifact paths.
+    """
+    conditioning_spec = output_conditioning_spec_from_case_study_config(context.case_study_config)
+    conditioning = condition_manuscript_outputs(
+        context.tables["case_study_output_matrix"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning_spec,
+    )
+    screening_spec = empirical_null_screening_spec_from_case_study_config(context.case_study_config)
+    screening = screen_manuscript_empirical_null_terms(
+        context.tables["case_study_input_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening_spec,
+    )
+    interaction_spec = interaction_discovery_spec_from_case_study_config(context.case_study_config)
+    interactions = discover_manuscript_interactions(
+        context.tables["case_study_input_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening.retained_terms,
+        interaction_spec,
+    )
+    nonlinear_spec = nonlinear_discovery_spec_from_case_study_config(context.case_study_config)
+    nonlinear = discover_manuscript_nonlinear_transformations(
+        context.tables["case_study_input_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening.retained_terms,
+        nonlinear_spec,
+    )
+    sparse_spec = sparse_selection_stability_spec_from_case_study_config(context.case_study_config)
+    sparse_selection = select_manuscript_sparse_support(
+        context.tables["case_study_input_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening.retained_terms,
+        interactions.retained_pairs,
+        nonlinear.retained_transformations,
+        sparse_spec,
+    )
+    artifact_paths = write_sparse_selection_stability_artifacts(
+        sparse_selection,
+        context.runtime.output_root,
+    )
+    return SparseSelectionStabilityStageResult(
+        sparse_selection=sparse_selection,
+        artifact_paths=artifact_paths,
+    )
+
+
+def _parse_stability_resampling_scheme(scheme: str) -> tuple[int, float, int]:
+    """Parse the frozen stability-resampling scheme string."""
+    pieces = scheme.split("_")
+    try:
+        count = int(pieces[0])
+        percent = int(pieces[3])
+        seed = int(pieces[-1])
+    except (IndexError, ValueError) as exc:
+        raise ValueError(f"Unsupported stability resampling scheme: {scheme}") from exc
+    if "subsamples" not in pieces or "without" not in pieces or "replacement" not in pieces:
+        raise ValueError(f"Unsupported stability resampling scheme: {scheme}")
+    fraction = percent / 100.0
+    if count < 1 or not 0.0 < fraction <= 1.0:
+        raise ValueError(f"Invalid stability resampling scheme: {scheme}")
+    return count, fraction, seed
+
+
+def _validate_sparse_selection_spec(spec: SparseSelectionStabilitySpec) -> None:
+    """Validate sparse-selection and stability specification values."""
+    if spec.model_class != "l1_penalized_linear_model_per_retained_component":
+        raise ValueError(f"Unsupported sparse-selection model class: {spec.model_class}")
+    expected_rule = "union_nonzero_support_across_retained_components"
+    if spec.support_aggregation_rule != expected_rule:
+        raise ValueError(
+            f"Unsupported sparse support aggregation rule: {spec.support_aggregation_rule}"
+        )
+    if spec.ebic_gamma < 0.0:
+        raise ValueError("ebic_gamma must be non-negative.")
+    if spec.subsample_count < 1:
+        raise ValueError("subsample_count must be positive.")
+    if not 0.0 < spec.subsample_fraction <= 1.0:
+        raise ValueError("subsample_fraction must be in the interval (0, 1].")
+    if not 0.0 <= spec.jaccard_threshold <= 1.0:
+        raise ValueError("jaccard_threshold must be in the interval [0, 1].")
+    if not -1.0 <= spec.spearman_threshold <= 1.0:
+        raise ValueError("spearman_threshold must be in the interval [-1, 1].")
+
+
+def _ordered_sparse_candidate_names(
+    *,
+    feature_catalog: pd.DataFrame,
+    retained_terms: pd.DataFrame,
+    retained_interaction_pairs: pd.DataFrame,
+    retained_transformations: pd.DataFrame,
+) -> list[str]:
+    """Return sparse-selection candidates in feature-catalog order."""
+    if "feature_name" not in feature_catalog.columns:
+        raise ValueError("feature_catalog must include a feature_name column.")
+    retained_names = _retained_feature_names(retained_terms)
+    retained_names.update(_retained_pair_names(retained_interaction_pairs))
+    retained_names.update(_retained_feature_names(retained_transformations))
+    if not retained_names:
+        raise ValueError("Sparse selection requires at least one retained upstream term.")
+
+    ordered = [
+        str(feature_name)
+        for feature_name in feature_catalog["feature_name"].astype(str)
+        if str(feature_name) in retained_names
+    ]
+    missing = sorted(retained_names.difference(ordered))
+    if missing:
+        preview = ", ".join(missing[:5])
+        raise ValueError(f"Retained upstream terms are absent from feature_catalog: {preview}")
+    if not ordered:
+        raise ValueError("Sparse selection found no retained terms in feature_catalog order.")
+    return ordered
+
+
+def _retained_pair_names(retained_interaction_pairs: pd.DataFrame) -> set[str]:
+    """Return retained interaction pair names from a retained-pair table."""
+    if retained_interaction_pairs.empty:
+        return set()
+    column = "pair_name" if "pair_name" in retained_interaction_pairs.columns else "feature_name"
+    if column not in retained_interaction_pairs.columns:
+        raise ValueError("retained_interaction_pairs must include pair_name or feature_name.")
+    return set(retained_interaction_pairs[column].astype(str))
+
+
+def _feature_catalog_subset(
+    feature_catalog: pd.DataFrame,
+    feature_names: list[str],
+) -> pd.DataFrame:
+    """Return feature-catalog rows for ``feature_names`` in the requested order."""
+    if feature_catalog["feature_name"].duplicated(keep=False).any():
+        raise ValueError("feature_catalog contains duplicate feature_name values.")
+    indexed = feature_catalog.set_index("feature_name", drop=False)
+    rows = [indexed.loc[name] for name in feature_names]
+    return pd.DataFrame(rows).reset_index(drop=True)
+
+
+def _fit_sparse_l1_ebic_models(
+    x_scaled: np.ndarray,
+    y_scaled: np.ndarray,
+    *,
+    feature_names: list[str],
+    component_names: list[str],
+    spec: SparseSelectionStabilitySpec,
+    active_features: np.ndarray,
+) -> dict[str, Any]:
+    """Fit one EBIC-selected L1 path per response component."""
+    n_features = len(feature_names)
+    coefficient_matrix = np.zeros((n_features, len(component_names)), dtype=float)
+    rows = []
+    for component_index, component_name in enumerate(component_names):
+        y = y_scaled[:, component_index]
+        if np.std(y, ddof=0) <= 0.0:
+            rows.append(
+                _empty_sparse_component_row(
+                    component_name=component_name,
+                    n_rows=len(y),
+                    n_features=n_features,
+                    spec=spec,
+                )
+            )
+            continue
+        selected = _select_component_lasso_by_ebic(
+            x_scaled,
+            y,
+            active_features=active_features,
+            spec=spec,
+        )
+        coefficient_matrix[:, component_index] = selected["coefficients"]
+        rows.append(
+            {
+                "component": component_name,
+                "selected_alpha": float(selected["alpha"]),
+                "selected_ebic": float(selected["ebic"]),
+                "selected_rss": float(selected["rss"]),
+                "selected_support_size": int(selected["support_size"]),
+                "n_rows": int(len(y)),
+                "n_candidate_terms": int(n_features),
+                "ebic_gamma": float(spec.ebic_gamma),
+            }
+        )
+    return {
+        "coefficient_matrix": coefficient_matrix,
+        "component_model_selection": pd.DataFrame.from_records(rows),
+    }
+
+
+def _empty_sparse_component_row(
+    *,
+    component_name: str,
+    n_rows: int,
+    n_features: int,
+    spec: SparseSelectionStabilitySpec,
+) -> dict[str, Any]:
+    """Build model-selection diagnostics for a zero-variance response component."""
+    return {
+        "component": component_name,
+        "selected_alpha": 0.0,
+        "selected_ebic": 0.0,
+        "selected_rss": 0.0,
+        "selected_support_size": 0,
+        "n_rows": int(n_rows),
+        "n_candidate_terms": int(n_features),
+        "ebic_gamma": float(spec.ebic_gamma),
+    }
+
+
+def _select_component_lasso_by_ebic(
+    x_scaled: np.ndarray,
+    y_scaled: np.ndarray,
+    *,
+    active_features: np.ndarray,
+    spec: SparseSelectionStabilitySpec,
+) -> dict[str, Any]:
+    """Select one component-specific L1 penalty by EBIC."""
+    n_rows, n_features = x_scaled.shape
+    active_count = int(active_features.sum())
+    if active_count == 0:
+        return _zero_component_selection(n_features, y_scaled)
+    alpha_max = float(np.max(np.abs(x_scaled[:, active_features].T @ y_scaled)) / n_rows)
+    if alpha_max <= 0.0:
+        return _zero_component_selection(n_features, y_scaled)
+
+    alphas = np.geomspace(alpha_max, max(alpha_max * 1.0e-4, 1.0e-8), num=40)
+    baseline_rss = float(np.sum((y_scaled - y_scaled.mean()) ** 2))
+    best = _zero_component_selection(n_features, y_scaled)
+    best["ebic"] = _extended_bic(
+        rss=max(baseline_rss, np.finfo(float).tiny),
+        n_rows=n_rows,
+        n_features=active_count,
+        support_size=0,
+        gamma=spec.ebic_gamma,
+    )
+    for alpha in alphas:
+        estimator = Lasso(
+            alpha=float(alpha),
+            fit_intercept=False,
+            max_iter=10000,
+            tol=1.0e-6,
+            selection="cyclic",
+        )
+        estimator.fit(x_scaled, y_scaled)
+        coefficients = np.asarray(estimator.coef_, dtype=float)
+        coefficients[~active_features] = 0.0
+        prediction = x_scaled @ coefficients
+        rss = float(np.sum((y_scaled - prediction) ** 2))
+        support_size = int(np.sum(np.abs(coefficients) > 0.0))
+        ebic = _extended_bic(
+            rss=max(rss, np.finfo(float).tiny),
+            n_rows=n_rows,
+            n_features=active_count,
+            support_size=support_size,
+            gamma=spec.ebic_gamma,
+        )
+        if ebic < best["ebic"]:
+            best = {
+                "alpha": float(alpha),
+                "ebic": float(ebic),
+                "rss": float(rss),
+                "support_size": support_size,
+                "coefficients": coefficients,
+            }
+    return best
+
+
+def _zero_component_selection(n_features: int, y_scaled: np.ndarray) -> dict[str, Any]:
+    """Return a no-feature component model."""
+    rss = float(np.sum((y_scaled - y_scaled.mean()) ** 2))
+    return {
+        "alpha": 0.0,
+        "ebic": 0.0,
+        "rss": rss,
+        "support_size": 0,
+        "coefficients": np.zeros(n_features, dtype=float),
+    }
+
+
+def _extended_bic(
+    *,
+    rss: float,
+    n_rows: int,
+    n_features: int,
+    support_size: int,
+    gamma: float,
+) -> float:
+    """Compute EBIC for one sparse linear model."""
+    support_size = int(support_size)
+    likelihood_term = n_rows * math.log(max(rss, np.finfo(float).tiny) / float(n_rows))
+    bic_term = support_size * math.log(float(n_rows))
+    ebic_term = 2.0 * gamma * _log_combination(max(n_features, support_size), support_size)
+    return float(likelihood_term + bic_term + ebic_term)
+
+
+def _log_combination(n_items: int, n_selected: int) -> float:
+    """Return ``log(n choose k)`` without materializing large integers."""
+    if n_selected < 0 or n_selected > n_items:
+        return 0.0
+    if n_selected == 0 or n_selected == n_items:
+        return 0.0
+    return float(
+        math.lgamma(n_items + 1)
+        - math.lgamma(n_selected + 1)
+        - math.lgamma(n_items - n_selected + 1)
+    )
+
+
+def _run_stability_resamples(
+    *,
+    x_scaled: np.ndarray,
+    y_scaled: np.ndarray,
+    feature_names: list[str],
+    component_names: list[str],
+    full_support_mask: np.ndarray,
+    full_importance: np.ndarray,
+    spec: SparseSelectionStabilitySpec,
+    active_features: np.ndarray,
+) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
+    """Run deterministic sparse-selection stability resamples."""
+    rng = np.random.default_rng(spec.random_seed)
+    n_rows = len(x_scaled)
+    subsample_size = max(2, int(math.floor(n_rows * spec.subsample_fraction)))
+    subsample_size = min(subsample_size, n_rows)
+    support_rows = []
+    importance_rows = []
+    summary_rows = []
+    for resample_id in range(1, spec.subsample_count + 1):
+        row_indices = np.sort(rng.choice(n_rows, size=subsample_size, replace=False))
+        selected = _fit_sparse_l1_ebic_models(
+            x_scaled[row_indices, :],
+            y_scaled[row_indices, :],
+            feature_names=feature_names,
+            component_names=component_names,
+            spec=spec,
+            active_features=active_features,
+        )
+        coefficients = selected["coefficient_matrix"]
+        support_mask = np.any(np.abs(coefficients) > 0.0, axis=1)
+        importance = np.max(np.abs(coefficients), axis=1)
+        support_rows.append(support_mask)
+        importance_rows.append(importance)
+        summary_rows.append(
+            {
+                "resample_id": resample_id,
+                "subsample_size": int(subsample_size),
+                "selected_support_size": int(support_mask.sum()),
+                "jaccard_with_full_support": _jaccard_similarity(
+                    full_support_mask,
+                    support_mask,
+                ),
+                "spearman_with_full_importance": _spearman_rank_correlation(
+                    full_importance,
+                    importance,
+                ),
+            }
+        )
+    return (
+        pd.DataFrame.from_records(summary_rows),
+        np.vstack(support_rows),
+        np.vstack(importance_rows),
+    )
+
+
+def _jaccard_similarity(left: np.ndarray, right: np.ndarray) -> float:
+    """Return Jaccard similarity between two boolean support masks."""
+    union = np.logical_or(left, right)
+    if not union.any():
+        return 1.0
+    intersection = np.logical_and(left, right)
+    return float(intersection.sum() / union.sum())
+
+
+def _spearman_rank_correlation(left: np.ndarray, right: np.ndarray) -> float:
+    """Return Spearman correlation between two importance vectors."""
+    if len(left) < 2:
+        return 1.0
+    left_ranks = _average_ranks(left)
+    right_ranks = _average_ranks(right)
+    left_centered = left_ranks - left_ranks.mean()
+    right_centered = right_ranks - right_ranks.mean()
+    denominator = float(np.sqrt(np.sum(left_centered**2)) * np.sqrt(np.sum(right_centered**2)))
+    if denominator == 0.0:
+        return 1.0 if np.allclose(left_ranks, right_ranks) else 0.0
+    return float(np.sum(left_centered * right_centered) / denominator)
+
+
+def _average_ranks(values: np.ndarray) -> np.ndarray:
+    """Return average ranks for a numeric vector with deterministic tie handling."""
+    order = np.argsort(values, kind="mergesort")
+    ranks = np.empty(len(values), dtype=float)
+    sorted_values = values[order]
+    start = 0
+    while start < len(values):
+        stop = start + 1
+        while stop < len(values) and sorted_values[stop] == sorted_values[start]:
+            stop += 1
+        average_rank = 0.5 * (start + stop - 1) + 1.0
+        ranks[order[start:stop]] = average_rank
+        start = stop
+    return ranks
+
+
+def _build_stability_feature_summary(
+    *,
+    feature_names: list[str],
+    feature_active: np.ndarray,
+    full_support_mask: np.ndarray,
+    full_importance: np.ndarray,
+    resample_supports: np.ndarray,
+    resample_importances: np.ndarray,
+    mean_jaccard: float,
+    mean_spearman: float,
+    spec: SparseSelectionStabilitySpec,
+) -> pd.DataFrame:
+    """Build per-feature stability diagnostics."""
+    selection_frequency = resample_supports.mean(axis=0)
+    mean_resample_importance = resample_importances.mean(axis=0)
+    passes_global_stability = (
+        mean_jaccard >= spec.jaccard_threshold and mean_spearman >= spec.spearman_threshold
+    )
+    final_support = full_support_mask & (selection_frequency >= spec.jaccard_threshold)
+    final_support = final_support & passes_global_stability
+    return pd.DataFrame(
+        {
+            "feature_name": feature_names,
+            "nonzero_training_variance": feature_active,
+            "full_support_selected": full_support_mask,
+            "full_support_importance": full_importance,
+            "stability_selection_frequency": selection_frequency,
+            "mean_resample_importance": mean_resample_importance,
+            "mean_resample_jaccard": mean_jaccard,
+            "mean_resample_spearman": mean_spearman,
+            "passes_jaccard_threshold": mean_jaccard >= spec.jaccard_threshold,
+            "passes_spearman_threshold": mean_spearman >= spec.spearman_threshold,
+            "final_stable_support": final_support,
+        }
+    ).sort_values(
+        ["final_stable_support", "full_support_importance", "feature_name"],
+        ascending=[False, False, True],
+        ignore_index=True,
+    )
+
+
+def _build_sparse_support_candidates(
+    *,
+    candidate_names: list[str],
+    candidate_catalog: pd.DataFrame,
+    retained_terms: pd.DataFrame,
+    retained_interaction_pairs: pd.DataFrame,
+    retained_transformations: pd.DataFrame,
+) -> pd.DataFrame:
+    """Build sparse-stage candidate provenance table."""
+    retained_term_names = _retained_feature_names(retained_terms)
+    retained_pair_names = _retained_pair_names(retained_interaction_pairs)
+    retained_transformation_names = _retained_feature_names(retained_transformations)
+    rows = []
+    for original_position, feature_name in enumerate(candidate_names):
+        catalog_row = candidate_catalog.loc[
+            candidate_catalog["feature_name"].astype(str) == feature_name
+        ].iloc[0]
+        rows.append(
+            {
+                "feature_name": feature_name,
+                "original_position": int(original_position),
+                "feature_type": str(catalog_row.get("feature_type", "")),
+                "empirical_null_retained": feature_name in retained_term_names,
+                "interaction_discovery_retained": feature_name in retained_pair_names,
+                "nonlinear_discovery_retained": feature_name in retained_transformation_names,
+            }
+        )
+    return pd.DataFrame.from_records(rows)
+
+
+def _build_sparse_component_coefficients(
+    *,
+    candidate_names: list[str],
+    component_names: list[str],
+    coefficients: np.ndarray,
+) -> pd.DataFrame:
+    """Build long-form sparse coefficient table."""
+    wide = pd.DataFrame(coefficients, columns=component_names)
+    wide.insert(0, "feature_name", candidate_names)
+    return wide.melt(
+        id_vars="feature_name",
+        var_name="component",
+        value_name="standardized_sparse_coefficient",
+    )
+
+
+def _build_sparse_selection_summary(
+    *,
+    n_training_rows: int,
+    n_candidate_terms: int,
+    n_active_candidate_terms: int,
+    n_components: int,
+    n_full_support_terms: int,
+    n_final_stable_support_terms: int,
+    mean_jaccard: float,
+    mean_spearman: float,
+    spec: SparseSelectionStabilitySpec,
+) -> pd.DataFrame:
+    """Build the one-row sparse-selection and stability summary table."""
+    return pd.DataFrame(
+        [
+            {
+                "stage": "sparse_selection_and_stability",
+                "model_class": spec.model_class,
+                "support_aggregation_rule": spec.support_aggregation_rule,
+                "n_training_rows": int(n_training_rows),
+                "n_candidate_terms": int(n_candidate_terms),
+                "n_active_candidate_terms": int(n_active_candidate_terms),
+                "n_components": int(n_components),
+                "ebic_gamma": float(spec.ebic_gamma),
+                "n_full_support_terms": int(n_full_support_terms),
+                "n_final_stable_support_terms": int(n_final_stable_support_terms),
+                "stability_resampling_scheme": spec.resampling_scheme,
+                "stability_subsample_count": int(spec.subsample_count),
+                "stability_subsample_fraction": float(spec.subsample_fraction),
+                "mean_resample_jaccard": float(mean_jaccard),
+                "mean_resample_spearman": float(mean_spearman),
+                "jaccard_threshold": float(spec.jaccard_threshold),
+                "spearman_threshold": float(spec.spearman_threshold),
+            }
+        ]
+    )
 
 
 def _nonlinear_transformation_candidates(

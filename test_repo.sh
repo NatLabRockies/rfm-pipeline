@@ -38,6 +38,7 @@ VALIDATION_TASKS=(
   compile-check
   unit-tests
   workflow-tests
+  manuscript-reproduction-smoke
   notebook-tests
   docs
   package-build

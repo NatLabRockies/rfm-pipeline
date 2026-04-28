@@ -272,3 +272,15 @@ holdout nRMSE, ordered bootstrap intervals, finite null baseline nRMSE, nonempty
 registered SVG assets, and final-OLS workflow-summary coverage. The public reproducibility example
 now uses this audited path when `--run-manuscript-chain` is supplied and prints the manuscript audit
 status.
+
+## Latest finalization continuation note
+
+The next hardening slice adds a gate-level manuscript reproduction smoke check. The new script is
+`tools/check_manuscript_reproduction.py`, and the new Pixi task is
+`manuscript-reproduction-smoke = "python tools/check_manuscript_reproduction.py"`. The task runs
+`run_manuscript_reproduction_audit_stage(...)` from a temporary output root, checks that the audit
+status is `pass`, verifies all expected Phase 3 artifact families are emitted, verifies required QA
+metric checks are present and passing, and explicitly checks that final holdout nRMSE remains
+strictly positive. `test_repo.sh` now includes `manuscript-reproduction-smoke` in
+`VALIDATION_TASKS` after `workflow-tests` and before `notebook-tests`, so local and CI gates exercise
+the same audited manuscript-reproduction path without leaving generated artifacts in the work tree.

@@ -26,6 +26,7 @@ VALIDATION_TASKS = [
     "compile-check",
     "unit-tests",
     "workflow-tests",
+    "manuscript-reproduction-smoke",
     "notebook-tests",
     "docs",
     "package-build",
@@ -133,6 +134,7 @@ def test_pixi_declares_required_gate_tasks_and_build_dependencies() -> None:
         'package-build = "python -m build --no-isolation --sdist --wheel"',
         'format-markdown = "python -m tools.format_markdown"',
         'markdown-check = "python -m tools.check_markdown"',
+        'manuscript-reproduction-smoke = "python tools/check_manuscript_reproduction.py"',
     ]
 
     for snippet in required_snippets:

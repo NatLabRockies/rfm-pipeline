@@ -29,7 +29,9 @@ PYTHONPATH=src python examples/end_to_end_reproducibility.py \
 The manuscript-chain path also writes `reproduction_audit/`, including an artifact manifest,
 metric checks, and a one-row audit summary. The audit explicitly checks that every artifact
 exists, every artifact is nonempty, the demo final-OLS holdout nRMSE is finite and positive,
-and the bootstrap interval is ordered around the point estimate.
+and the bootstrap interval is ordered around the point estimate. The local and CI gate also runs
+this audited path through `pixi run manuscript-reproduction-smoke`, using a temporary output root
+so the smoke check does not leave generated artifacts behind.
 
 The command writes a canonical bundle containing:
 

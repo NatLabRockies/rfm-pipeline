@@ -24,6 +24,7 @@ To repair formatting and notebook hygiene before committing:
 - repository hygiene checks for generated Python artifacts and text whitespace issues
 - unit tests
 - workflow smoke tests
+- audited manuscript-reproduction smoke checks in a temporary output root
 - Sphinx documentation builds
 
 ## Documentation
@@ -51,6 +52,8 @@ PYTHONPATH=src python examples/end_to_end_reproducibility.py \
 
 This command also writes `reproduction_audit/`, which contains a portable artifact manifest,
 SHA-256 hashes, metric checks, and an audit summary for the generated manuscript outputs.
+The same audited path is exercised by the `manuscript-reproduction-smoke` Pixi task and
+by `test_repo.sh` so local and CI gates catch missing artifacts or misleading metrics.
 
 ## Current scope
 

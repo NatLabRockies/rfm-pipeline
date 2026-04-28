@@ -132,7 +132,7 @@ Phase 2 adds tracked notebook skeletons under `notebooks/manuscript/` and runtim
 helpers in `bsm_rfm.manuscript_runtime` so the notebooks execute on deterministic demo data in CI
 and switch to real data once the local path override file is populated.
 
-Phase 3 has source-backed stages in `bsm_rfm.manuscript_stages` for output conditioning,
+Phase 3 has source-backed stages and an end-to-end reproduction chain in `bsm_rfm.manuscript_stages` for output conditioning,
 empirical-null screening, interaction discovery, nonlinear discovery, sparse selection with
 stability filtering, and final manuscript table/figure regeneration. The
 `02_output_conditioning.ipynb` through `08_manuscript_tables_and_figures.ipynb` notebooks now run

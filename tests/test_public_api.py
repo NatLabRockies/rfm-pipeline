@@ -10,6 +10,7 @@ from bsm_rfm import (
     FeatureExpansionSpec,
     FinalManuscriptArtifactsSpec,
     InteractionDiscoverySpec,
+    ManuscriptReproductionStageChainResult,
     NonlinearDiscoverySpec,
     OutputConditioningSpec,
     SparseSelectionStabilitySpec,
@@ -40,6 +41,7 @@ from bsm_rfm import (
     run_empirical_null_screening_stage,
     run_final_manuscript_artifacts_stage,
     run_interaction_discovery_stage,
+    run_manuscript_reproduction_stage_chain,
     run_nonlinear_discovery_stage,
     run_output_conditioning_stage,
     run_sparse_selection_stability_stage,
@@ -172,3 +174,10 @@ def test_package_exports_final_manuscript_artifact_stage() -> None:
     assert callable(regenerate_final_manuscript_artifacts)
     assert callable(run_final_manuscript_artifacts_stage)
     assert callable(write_final_manuscript_artifacts)
+
+
+def test_package_exports_manuscript_reproduction_chain() -> None:
+    assert ManuscriptReproductionStageChainResult.__name__ == (
+        "ManuscriptReproductionStageChainResult"
+    )
+    assert callable(run_manuscript_reproduction_stage_chain)

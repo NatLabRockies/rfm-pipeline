@@ -26,6 +26,11 @@ PYTHONPATH=src python examples/end_to_end_reproducibility.py \
   --manuscript-output-dir artifacts/toy-manuscript-reproduction-example
 ```
 
+The manuscript-chain path also writes `reproduction_audit/`, including an artifact manifest,
+metric checks, and a one-row audit summary. The audit explicitly checks that every artifact
+exists, every artifact is nonempty, the demo final-OLS holdout nRMSE is finite and positive,
+and the bootstrap interval is ordered around the point estimate.
+
 The command writes a canonical bundle containing:
 
 - `manifest.json`
@@ -65,5 +70,6 @@ When `--run-manuscript-chain` is supplied, the script writes the deterministic d
 - `nonlinear_discovery/`
 - `sparse_selection/`
 - `final_manuscript_artifacts/`
+- `reproduction_audit/`
 
 This path is the public smoke-test companion to the real-data manuscript notebooks.

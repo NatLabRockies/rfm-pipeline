@@ -56,6 +56,8 @@ def test_reproducibility_example_runs_manuscript_reproduction_chain(
         path.exists() for stage_paths in artifact_paths.values() for path in stage_paths.values()
     )
     assert (output_root / "final_manuscript_artifacts").exists()
+    assert (output_root / "reproduction_audit").exists()
+    assert result["manuscript_audit_summary"].loc[0, "qa_status"] == "pass"
 
 
 def test_reproducibility_example_cli_runs_from_repo_source_tree(tmp_path: Path) -> None:
@@ -108,5 +110,6 @@ def test_reproducibility_example_cli_can_run_manuscript_chain(tmp_path: Path) ->
 
     assert "Wrote bundle to:" in completed.stdout
     assert "Wrote manuscript reproduction artifacts to:" in completed.stdout
+    assert "Manuscript audit status: pass" in completed.stdout
     assert (output_dir / "manifest.json").exists()
     assert (manuscript_output_dir / "final_manuscript_artifacts").exists()

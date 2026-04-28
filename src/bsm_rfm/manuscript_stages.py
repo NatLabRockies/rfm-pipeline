@@ -8,6 +8,7 @@ manuscript output root.
 
 from __future__ import annotations
 
+import hashlib
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -520,6 +521,44 @@ class ManuscriptReproductionStageChainResult:
     sparse_selection_stability: SparseSelectionStabilityStageResult
     final_manuscript_artifacts: FinalManuscriptArtifactsStageResult
     artifact_paths: dict[str, dict[str, Path]]
+
+
+@dataclass(frozen=True)
+class ManuscriptReproductionAuditResult:
+    """QA manifest and metric checks for a manuscript reproduction run.
+
+    Parameters
+    ----------
+    artifact_manifest
+        One row per written artifact with path, file size, SHA-256 digest, and presence checks.
+    metric_checks
+        Explicit pass/fail metric and consistency checks for the demo reproduction outputs.
+    summary
+        One-row audit summary with aggregate artifact and metric-check status.
+    """
+
+    artifact_manifest: pd.DataFrame
+    metric_checks: pd.DataFrame
+    summary: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class ManuscriptReproductionAuditStageResult:
+    """End-to-end reproduction chain plus written QA audit artifacts.
+
+    Parameters
+    ----------
+    reproduction
+        Complete manuscript reproduction stage-chain result.
+    audit
+        Materialized audit manifest, metric checks, and summary.
+    artifact_paths
+        Paths to written audit CSV artifacts under the output root.
+    """
+
+    reproduction: ManuscriptReproductionStageChainResult
+    audit: ManuscriptReproductionAuditResult
+    artifact_paths: dict[str, Path]
 
 
 def output_conditioning_spec_from_case_study_config(
@@ -2214,6 +2253,285 @@ def run_manuscript_reproduction_stage_chain(
         final_manuscript_artifacts=final_result,
         artifact_paths=artifact_paths,
     )
+
+
+def audit_manuscript_reproduction_outputs(
+    reproduction: ManuscriptReproductionStageChainResult,
+    output_root: Path | None = None,
+) -> ManuscriptReproductionAuditResult:
+    """Build QA tables for a completed manuscript reproduction chain.
+
+    Parameters
+    ----------
+    reproduction
+        Completed end-to-end manuscript reproduction chain result.
+    output_root
+        Optional output root used to make artifact paths repo/user portable in the manifest.
+
+    Returns
+    -------
+    ManuscriptReproductionAuditResult
+        Artifact manifest, metric checks, and aggregate audit summary.
+    """
+    artifact_manifest = _build_reproduction_artifact_manifest(
+        reproduction.artifact_paths,
+        output_root=output_root,
+    )
+    metric_checks = _build_reproduction_metric_checks(
+        reproduction,
+        artifact_manifest,
+    )
+    summary = _build_reproduction_audit_summary(artifact_manifest, metric_checks)
+    return ManuscriptReproductionAuditResult(
+        artifact_manifest=artifact_manifest,
+        metric_checks=metric_checks,
+        summary=summary,
+    )
+
+
+def write_manuscript_reproduction_audit(
+    audit: ManuscriptReproductionAuditResult,
+    output_root: Path,
+) -> dict[str, Path]:
+    """Write manuscript reproduction QA audit tables under ``output_root``.
+
+    Parameters
+    ----------
+    audit
+        Materialized reproduction audit tables.
+    output_root
+        Resolved manuscript output root from the runtime context.
+
+    Returns
+    -------
+    dict[str, pathlib.Path]
+        Paths keyed by stable audit artifact name.
+    """
+    audit_root = output_root / "reproduction_audit"
+    audit_root.mkdir(parents=True, exist_ok=True)
+    tables = {
+        "artifact_manifest": audit.artifact_manifest,
+        "metric_checks": audit.metric_checks,
+        "audit_summary": audit.summary,
+    }
+    written: dict[str, Path] = {}
+    for name, table in tables.items():
+        path = audit_root / f"{name}.csv"
+        table.to_csv(path, index=False)
+        written[name] = path
+    return written
+
+
+def run_manuscript_reproduction_audit_stage(
+    context: Any,
+) -> ManuscriptReproductionAuditStageResult:
+    """Run the full manuscript reproduction chain and write QA audit artifacts.
+
+    Parameters
+    ----------
+    context
+        ``bsm_rfm.manuscript_runtime.ManuscriptNotebookContext``. It is typed as ``Any`` here to
+        avoid an import cycle between the runtime and stage modules.
+
+    Returns
+    -------
+    ManuscriptReproductionAuditStageResult
+        Completed stage chain, audit tables, and paths to written audit CSV files.
+    """
+    reproduction = run_manuscript_reproduction_stage_chain(context)
+    audit = audit_manuscript_reproduction_outputs(
+        reproduction,
+        output_root=context.runtime.output_root,
+    )
+    artifact_paths = write_manuscript_reproduction_audit(
+        audit,
+        context.runtime.output_root,
+    )
+    return ManuscriptReproductionAuditStageResult(
+        reproduction=reproduction,
+        audit=audit,
+        artifact_paths=artifact_paths,
+    )
+
+
+def _build_reproduction_artifact_manifest(
+    artifact_paths: dict[str, dict[str, Path]],
+    *,
+    output_root: Path | None,
+) -> pd.DataFrame:
+    """Build a portable file manifest for every written reproduction artifact."""
+    rows = []
+    for stage_name, stage_paths in sorted(artifact_paths.items()):
+        for artifact_name, raw_path in sorted(stage_paths.items()):
+            path = Path(raw_path)
+            exists = path.exists()
+            is_file = path.is_file() if exists else False
+            size_bytes = path.stat().st_size if is_file else 0
+            rows.append(
+                {
+                    "stage": stage_name,
+                    "artifact_name": artifact_name,
+                    "path": _portable_artifact_path(path, output_root),
+                    "suffix": path.suffix,
+                    "exists": bool(exists),
+                    "is_file": bool(is_file),
+                    "nonempty": bool(size_bytes > 0),
+                    "size_bytes": int(size_bytes),
+                    "sha256": _sha256_file(path) if is_file else "",
+                }
+            )
+    return pd.DataFrame.from_records(
+        rows,
+        columns=[
+            "stage",
+            "artifact_name",
+            "path",
+            "suffix",
+            "exists",
+            "is_file",
+            "nonempty",
+            "size_bytes",
+            "sha256",
+        ],
+    )
+
+
+def _build_reproduction_metric_checks(
+    reproduction: ManuscriptReproductionStageChainResult,
+    artifact_manifest: pd.DataFrame,
+) -> pd.DataFrame:
+    """Build explicit QA checks for the reproduced manuscript outputs."""
+    final_artifacts = reproduction.final_manuscript_artifacts.final_artifacts
+    final_summary = final_artifacts.final_ols_summary.loc[0]
+    nrmse = float(final_summary["final_ols_holdout_nrmse"])
+    ci_lower = float(final_summary["final_ols_holdout_nrmse_ci_lower"])
+    ci_upper = float(final_summary["final_ols_holdout_nrmse_ci_upper"])
+    null_nrmse = float(final_summary["null_mean_holdout_nrmse"])
+    rows: list[dict[str, object]] = []
+
+    def add_check(
+        check_name: str,
+        passed: bool,
+        observed_value: object,
+        expected: str,
+        details: str,
+    ) -> None:
+        rows.append(
+            {
+                "check_name": check_name,
+                "status": "pass" if passed else "fail",
+                "observed_value": observed_value,
+                "expected": expected,
+                "details": details,
+            }
+        )
+
+    add_check(
+        "all_artifacts_exist",
+        bool(artifact_manifest["exists"].all()),
+        int(artifact_manifest["exists"].sum()),
+        "every artifact path exists",
+        "Catches missing handoff files after a reproduction run.",
+    )
+    add_check(
+        "all_artifacts_nonempty",
+        bool(artifact_manifest["nonempty"].all()),
+        int(artifact_manifest["nonempty"].sum()),
+        "every artifact file has positive size",
+        "Catches empty CSV/SVG outputs before manuscript handoff.",
+    )
+    add_check(
+        "final_ols_holdout_nrmse_positive",
+        math.isfinite(nrmse) and nrmse > 0.0,
+        nrmse,
+        "finite nRMSE strictly greater than zero",
+        "Prevents the demo holdout path from silently reporting a perfect fit.",
+    )
+    add_check(
+        "final_ols_holdout_nrmse_ci_ordered",
+        all(math.isfinite(value) for value in (ci_lower, nrmse, ci_upper))
+        and ci_lower <= nrmse <= ci_upper,
+        f"{ci_lower:.12g} <= {nrmse:.12g} <= {ci_upper:.12g}",
+        "finite lower <= point <= upper",
+        "Checks the bootstrap uncertainty summary before publication use.",
+    )
+    add_check(
+        "null_mean_holdout_nrmse_finite_positive",
+        math.isfinite(null_nrmse) and null_nrmse > 0.0,
+        null_nrmse,
+        "finite null baseline nRMSE strictly greater than zero",
+        "Confirms the reported baseline is numerically meaningful.",
+    )
+    add_check(
+        "final_support_nonempty",
+        len(final_artifacts.final_support_features) > 0,
+        int(len(final_artifacts.final_support_features)),
+        "at least one final support feature",
+        "Confirms the final OLS table is not generated from an empty support.",
+    )
+    svg_rows = artifact_manifest.loc[artifact_manifest["suffix"] == ".svg"]
+    add_check(
+        "registered_svg_figures_nonempty",
+        len(svg_rows) == len(final_artifacts.figure_specs) and bool(svg_rows["nonempty"].all()),
+        int(len(svg_rows)),
+        "one nonempty SVG file per registered figure",
+        "Confirms manuscript figure assets were actually written.",
+    )
+    workflow_stages = set(final_artifacts.workflow_stage_summary["stage"])
+    add_check(
+        "workflow_summary_includes_final_ols",
+        "final_ols" in workflow_stages,
+        ", ".join(sorted(str(stage) for stage in workflow_stages)),
+        "workflow-stage summary includes final_ols",
+        "Confirms the final model appears in manuscript-facing stage summaries.",
+    )
+    return pd.DataFrame.from_records(
+        rows,
+        columns=["check_name", "status", "observed_value", "expected", "details"],
+    )
+
+
+def _build_reproduction_audit_summary(
+    artifact_manifest: pd.DataFrame,
+    metric_checks: pd.DataFrame,
+) -> pd.DataFrame:
+    """Build the one-row reproduction audit summary table."""
+    n_missing = int((~artifact_manifest["exists"]).sum())
+    n_empty = int((~artifact_manifest["nonempty"]).sum())
+    n_failed_checks = int((metric_checks["status"] == "fail").sum())
+    qa_status = "pass" if n_missing == 0 and n_empty == 0 and n_failed_checks == 0 else "fail"
+    return pd.DataFrame(
+        [
+            {
+                "stage": "manuscript_reproduction_audit",
+                "qa_status": qa_status,
+                "n_artifacts": int(len(artifact_manifest)),
+                "n_missing_artifacts": n_missing,
+                "n_empty_artifacts": n_empty,
+                "n_metric_checks": int(len(metric_checks)),
+                "n_failed_metric_checks": n_failed_checks,
+            }
+        ]
+    )
+
+
+def _portable_artifact_path(path: Path, output_root: Path | None) -> str:
+    """Return a path string that is portable when the output root is known."""
+    if output_root is None:
+        return str(path)
+    try:
+        return str(path.relative_to(output_root))
+    except ValueError:
+        return str(path)
+
+
+def _sha256_file(path: Path) -> str:
+    """Hash a written artifact without loading large files into memory."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _parse_stability_resampling_scheme(scheme: str) -> tuple[int, float, int]:

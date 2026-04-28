@@ -162,3 +162,19 @@ For local reproduction runs that should emit every Phase 3 artifact family from 
 empirical-null screening, interaction discovery, nonlinear discovery, sparse selection/stability,
 and final table/figure regeneration in dependency order and writes all stage handoff artifacts
 under the resolved manuscript output root.
+
+## Manuscript reproduction audit
+
+For final local QA, use `bsm_rfm.run_manuscript_reproduction_audit_stage(...)`. This wraps the
+end-to-end Phase 3 chain, then writes `reproduction_audit/` with:
+
+- `artifact_manifest.csv`: one row per written manuscript artifact with portable path, suffix,
+  size, existence/nonempty flags, and SHA-256 digest;
+- `metric_checks.csv`: explicit pass/fail checks for artifact presence, nonempty files, positive
+  demo holdout nRMSE, ordered bootstrap interval, finite null baseline, nonempty final support,
+  registered SVG outputs, and final-OLS workflow-summary coverage;
+- `audit_summary.csv`: one row with aggregate artifact counts, failed metric-check count, and
+  overall `qa_status`.
+
+This audit is intended to catch misleading smoke-test outputs such as a zero holdout nRMSE before
+manuscript tables or public examples are interpreted.

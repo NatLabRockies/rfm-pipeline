@@ -32,7 +32,7 @@ The package documentation is built with Sphinx and MyST. Public Python APIs are 
 
 ## End-to-end reproducibility example
 
-A deterministic toy example is included at `examples/end_to_end_reproducibility.py`. It runs the canonical workflow, writes a post-fit bundle, and reloads the written artifacts from disk. The toy holdout responses include a fixed deterministic residual so the printed holdout nRMSE is nonzero. It can also run the complete demo manuscript-reproduction stage chain and write every Phase 3 artifact family.
+A deterministic toy example is included at `examples/end_to_end_reproducibility.py`. It runs the canonical workflow, writes a post-fit bundle, and reloads the written artifacts from disk. The toy holdout responses include a fixed deterministic residual so the printed holdout nRMSE is nonzero. It can also run the complete demo manuscript-reproduction stage chain and write every Phase 3 artifact family plus a reproduction audit with artifact hashes and metric QA checks.
 
 Run the canonical workflow example from the repo source tree with:
 
@@ -48,6 +48,9 @@ PYTHONPATH=src python examples/end_to_end_reproducibility.py \
   --run-manuscript-chain \
   --manuscript-output-dir artifacts/toy-manuscript-reproduction-example
 ```
+
+This command also writes `reproduction_audit/`, which contains a portable artifact manifest,
+SHA-256 hashes, metric checks, and an audit summary for the generated manuscript outputs.
 
 ## Current scope
 
@@ -146,3 +149,5 @@ empirical-null screening, interaction discovery, nonlinear discovery, sparse sel
 stability filtering, and final manuscript table/figure regeneration. The
 `02_output_conditioning.ipynb` through `08_manuscript_tables_and_figures.ipynb` notebooks now run
 deterministic stage functions and write handoff artifacts under the resolved manuscript output root.
+`run_manuscript_reproduction_audit_stage(...)` wraps the full chain with a QA layer that writes
+`reproduction_audit/artifact_manifest.csv`, `metric_checks.csv`, and `audit_summary.csv`.

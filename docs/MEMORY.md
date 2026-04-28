@@ -259,3 +259,16 @@ public evaluation smoke test. The example now adds a small fixed deterministic r
 holdout responses and tests that the holdout nRMSE point estimate is strictly positive and round
 trips through the written `nrmse_summary` artifact. This preserves determinism while exercising the
 nonzero holdout-error path.
+
+## Latest finalization continuation note
+
+The next finalization slice adds a manuscript reproduction QA audit layer. The new public API is
+`audit_manuscript_reproduction_outputs(...)`, `write_manuscript_reproduction_audit(...)`, and
+`run_manuscript_reproduction_audit_stage(...)`, with `ManuscriptReproductionAuditResult` and
+`ManuscriptReproductionAuditStageResult` result contracts. The audit wraps the complete Phase 3
+stage chain, writes `reproduction_audit/artifact_manifest.csv`, `metric_checks.csv`, and
+`audit_summary.csv`, and explicitly checks artifact existence, nonempty files, positive demo
+holdout nRMSE, ordered bootstrap intervals, finite null baseline nRMSE, nonempty final support,
+registered SVG assets, and final-OLS workflow-summary coverage. The public reproducibility example
+now uses this audited path when `--run-manuscript-chain` is supplied and prints the manuscript audit
+status.

@@ -284,3 +284,12 @@ metric checks are present and passing, and explicitly checks that final holdout 
 strictly positive. `test_repo.sh` now includes `manuscript-reproduction-smoke` in
 `VALIDATION_TASKS` after `workflow-tests` and before `notebook-tests`, so local and CI gates exercise
 the same audited manuscript-reproduction path without leaving generated artifacts in the work tree.
+
+## Latest finalization bug-fix note
+
+The manuscript reproduction smoke script now has a separate pure-Python
+`validate_metric_check_records(...)` helper. This prevents stale or incomplete audit-contract
+changes from producing a traceback when a required metric check is missing. The smoke script now
+reports missing metric checks cleanly, validates required check statuses, and only inspects the
+final holdout nRMSE value when the corresponding metric-check row is present. Regression tests cover
+missing, nonpositive, and nonnumeric final holdout nRMSE metric-check records.

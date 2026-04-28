@@ -230,3 +230,12 @@ the upstream manuscript stages for the active context, fits final OLS on the sta
 support, computes deterministic holdout macro nRMSE with bootstrap uncertainty against the frozen
 `Y_train` normalization contract, and writes final-model CSVs, manuscript-facing summary tables,
 figure source-data CSVs, and dependency-free SVG figures under `final_manuscript_artifacts/`.
+
+## Latest Phase 3 continuation note
+
+The finalization slice adds `run_manuscript_reproduction_stage_chain(...)` and the
+`ManuscriptReproductionStageChainResult` public result contract. The chain executes the complete
+Phase 3 manuscript workflow from one runtime context, writes every upstream handoff artifact family
+plus the final table/figure artifacts, and has an integration test that verifies all Phase 3 artifact
+families are emitted. This is now the preferred single-call public entry point for validating the
+source-backed manuscript reproduction chain before running notebook-by-notebook workflows.

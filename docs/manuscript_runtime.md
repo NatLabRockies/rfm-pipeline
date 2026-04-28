@@ -154,3 +154,11 @@ The stage currently writes under `final_manuscript_artifacts/`:
 
 `07_final_ols_and_bundle_export.ipynb` uses the same stage to display and validate final-model
 artifacts before the manuscript-facing table and figure notebook consumes them.
+
+## End-to-end Phase 3 reproduction chain
+
+For local reproduction runs that should emit every Phase 3 artifact family from one context, use
+`bsm_rfm.run_manuscript_reproduction_stage_chain(...)`. The chain executes output conditioning,
+empirical-null screening, interaction discovery, nonlinear discovery, sparse selection/stability,
+and final table/figure regeneration in dependency order and writes all stage handoff artifacts
+under the resolved manuscript output root.

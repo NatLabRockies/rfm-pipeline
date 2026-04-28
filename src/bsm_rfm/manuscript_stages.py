@@ -491,6 +491,37 @@ class FinalManuscriptArtifactsStageResult:
     artifact_paths: dict[str, Path]
 
 
+@dataclass(frozen=True)
+class ManuscriptReproductionStageChainResult:
+    """End-to-end manuscript reproduction chain result.
+
+    Parameters
+    ----------
+    output_conditioning
+        Output conditioning stage result and written artifact paths.
+    empirical_null_screening
+        Empirical-null screening stage result and written artifact paths.
+    interaction_discovery
+        Interaction-discovery stage result and written artifact paths.
+    nonlinear_discovery
+        Nonlinear-discovery stage result and written artifact paths.
+    sparse_selection_stability
+        Sparse-selection and stability stage result and written artifact paths.
+    final_manuscript_artifacts
+        Final table and figure regeneration result and written artifact paths.
+    artifact_paths
+        Nested mapping from stage family to that stage's written artifact paths.
+    """
+
+    output_conditioning: OutputConditioningStageResult
+    empirical_null_screening: EmpiricalNullScreeningStageResult
+    interaction_discovery: InteractionDiscoveryStageResult
+    nonlinear_discovery: NonlinearDiscoveryStageResult
+    sparse_selection_stability: SparseSelectionStabilityStageResult
+    final_manuscript_artifacts: FinalManuscriptArtifactsStageResult
+    artifact_paths: dict[str, dict[str, Path]]
+
+
 def output_conditioning_spec_from_case_study_config(
     case_study_config: dict[str, Any],
 ) -> OutputConditioningSpec:
@@ -2036,6 +2067,151 @@ def run_final_manuscript_artifacts_stage(
     )
     return FinalManuscriptArtifactsStageResult(
         final_artifacts=final_artifacts,
+        artifact_paths=artifact_paths,
+    )
+
+
+def run_manuscript_reproduction_stage_chain(
+    context: Any,
+) -> ManuscriptReproductionStageChainResult:
+    """Run the complete manuscript reproduction stage chain and write all artifacts.
+
+    Parameters
+    ----------
+    context
+        ``bsm_rfm.manuscript_runtime.ManuscriptNotebookContext``. It is typed as ``Any`` here to
+        avoid an import cycle between the runtime and stage modules.
+
+    Returns
+    -------
+    ManuscriptReproductionStageChainResult
+        In-memory stage results and nested artifact paths for every Phase 3 stage.
+    """
+    conditioning_spec = output_conditioning_spec_from_case_study_config(context.case_study_config)
+    conditioning = condition_manuscript_outputs(
+        context.tables["case_study_output_matrix"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning_spec,
+    )
+    output_paths = write_output_conditioning_artifacts(
+        conditioning,
+        context.runtime.output_root,
+    )
+    output_result = OutputConditioningStageResult(
+        conditioning=conditioning,
+        artifact_paths=output_paths,
+    )
+
+    screening_spec = empirical_null_screening_spec_from_case_study_config(context.case_study_config)
+    screening = screen_manuscript_empirical_null_terms(
+        context.tables["case_study_input_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening_spec,
+    )
+    screening_paths = write_empirical_null_screening_artifacts(
+        screening,
+        context.runtime.output_root,
+    )
+    screening_result = EmpiricalNullScreeningStageResult(
+        screening=screening,
+        artifact_paths=screening_paths,
+    )
+
+    interaction_spec = interaction_discovery_spec_from_case_study_config(context.case_study_config)
+    interactions = discover_manuscript_interactions(
+        context.tables["case_study_input_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening.retained_terms,
+        interaction_spec,
+    )
+    interaction_paths = write_interaction_discovery_artifacts(
+        interactions,
+        context.runtime.output_root,
+    )
+    interaction_result = InteractionDiscoveryStageResult(
+        interactions=interactions,
+        artifact_paths=interaction_paths,
+    )
+
+    nonlinear_spec = nonlinear_discovery_spec_from_case_study_config(context.case_study_config)
+    nonlinear = discover_manuscript_nonlinear_transformations(
+        context.tables["case_study_input_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening.retained_terms,
+        nonlinear_spec,
+    )
+    nonlinear_paths = write_nonlinear_discovery_artifacts(
+        nonlinear,
+        context.runtime.output_root,
+    )
+    nonlinear_result = NonlinearDiscoveryStageResult(
+        nonlinear=nonlinear,
+        artifact_paths=nonlinear_paths,
+    )
+
+    sparse_spec = sparse_selection_stability_spec_from_case_study_config(context.case_study_config)
+    sparse_selection = select_manuscript_sparse_support(
+        context.tables["case_study_input_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening.retained_terms,
+        interactions.retained_pairs,
+        nonlinear.retained_transformations,
+        sparse_spec,
+    )
+    sparse_paths = write_sparse_selection_stability_artifacts(
+        sparse_selection,
+        context.runtime.output_root,
+    )
+    sparse_result = SparseSelectionStabilityStageResult(
+        sparse_selection=sparse_selection,
+        artifact_paths=sparse_paths,
+    )
+
+    final_spec = final_manuscript_artifacts_spec_from_case_study_config(context.case_study_config)
+    final_artifacts = regenerate_final_manuscript_artifacts(
+        context.tables["case_study_input_matrix"],
+        context.tables["case_study_output_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning,
+        screening,
+        interactions,
+        nonlinear,
+        sparse_selection,
+        final_spec,
+    )
+    final_paths = write_final_manuscript_artifacts(
+        final_artifacts,
+        context.runtime.output_root,
+    )
+    final_result = FinalManuscriptArtifactsStageResult(
+        final_artifacts=final_artifacts,
+        artifact_paths=final_paths,
+    )
+
+    artifact_paths = {
+        "output_conditioning": output_paths,
+        "empirical_null_screen": screening_paths,
+        "interaction_discovery": interaction_paths,
+        "nonlinear_discovery": nonlinear_paths,
+        "sparse_selection": sparse_paths,
+        "final_manuscript_artifacts": final_paths,
+    }
+    return ManuscriptReproductionStageChainResult(
+        output_conditioning=output_result,
+        empirical_null_screening=screening_result,
+        interaction_discovery=interaction_result,
+        nonlinear_discovery=nonlinear_result,
+        sparse_selection_stability=sparse_result,
+        final_manuscript_artifacts=final_result,
         artifact_paths=artifact_paths,
     )
 

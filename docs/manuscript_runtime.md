@@ -126,5 +126,31 @@ The stage currently writes:
 - `final_stable_support.csv`
 - `sparse_selection_summary.csv`
 
-The remaining manuscript notebooks still provide the Phase 2 executable skeletons until their
-scientific stages are promoted into source-backed functions in later Phase 3 slices.
+## Phase 3 final manuscript tables and figures stage
+
+The final Phase 3 source-backed notebook stage is
+`08_manuscript_tables_and_figures.ipynb`. It calls
+`bsm_rfm.run_final_manuscript_artifacts_stage(...)`, which recomputes the upstream stage outputs
+for the active runtime context, fits final OLS on the stable sparse-selection support, evaluates
+holdout macro nRMSE against the frozen `Y_train` normalization contract, and writes final model
+tables, manuscript-facing summary tables, figure source data, and dependency-free SVG assets.
+
+The stage currently writes under `final_manuscript_artifacts/`:
+
+- `final_model/final_support_features.csv`
+- `final_model/final_ols_summary.csv`
+- `final_model/coefficient_matrix_raw_scale.csv`
+- `final_model/coefficient_matrix_standardized.csv`
+- `final_model/x_standardization.csv`
+- `final_model/y_standardization.csv`
+- `tables/model_performance.csv`
+- `tables/workflow_stage_summary.csv`
+- `figures/figure_model_performance_data.csv`
+- `figures/figure_support_composition_data.csv`
+- `figures/figure_specs.csv`
+- `figures/figure_model_performance.svg`
+- `figures/figure_support_composition.svg`
+- `final_artifact_summary.csv`
+
+`07_final_ols_and_bundle_export.ipynb` uses the same stage to display and validate final-model
+artifacts before the manuscript-facing table and figure notebook consumes them.

@@ -17,6 +17,14 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import Lasso
 
+from .final_ols import (
+    fit_final_ols,
+    make_coefficient_matrix_frame,
+    make_standardization_frame,
+    predict_final_ols,
+)
+from .metrics import bootstrap_macro_nrmse_ci, make_null_mean_prediction
+
 
 @dataclass(frozen=True)
 class OutputConditioningSpec:
@@ -375,6 +383,111 @@ class SparseSelectionStabilityStageResult:
     """
 
     sparse_selection: SparseSelectionStabilityResult
+    artifact_paths: dict[str, Path]
+
+
+@dataclass(frozen=True)
+class FinalManuscriptArtifactsSpec:
+    """Frozen final-model and manuscript-artifact settings.
+
+    Parameters
+    ----------
+    final_predictor_count_reference
+        Manuscript-reported final predictor count for the full case study.
+    final_first_order_input_count_reference
+        Manuscript-reported count of first-order inputs represented in the final support.
+    intermediate_penalized_holdout_nrmse_reference
+        Manuscript-reported intermediate penalized-model holdout nRMSE.
+    final_ols_holdout_nrmse_reference
+        Manuscript-reported final OLS holdout nRMSE.
+    nrmse_denominator_definition
+        Frozen definition of the nRMSE denominator.
+    nrmse_min_range
+        Minimum training-response range used when computing macro nRMSE.
+    nrmse_reference_matrix
+        Frozen source matrix used for nRMSE normalization ranges.
+    bootstrap_count
+        Number of deterministic row-bootstrap replicates used for demo uncertainty.
+    bootstrap_alpha
+        Two-sided bootstrap error level.
+    random_seed
+        Deterministic random seed for bootstrap resampling.
+    """
+
+    final_predictor_count_reference: int
+    final_first_order_input_count_reference: int
+    intermediate_penalized_holdout_nrmse_reference: float
+    final_ols_holdout_nrmse_reference: float
+    nrmse_denominator_definition: str
+    nrmse_min_range: float
+    nrmse_reference_matrix: str
+    bootstrap_count: int = 200
+    bootstrap_alpha: float = 0.05
+    random_seed: int = 123
+
+
+@dataclass(frozen=True)
+class FinalManuscriptArtifactsResult:
+    """Materialized final-model, manuscript-table, and figure-source artifacts.
+
+    Parameters
+    ----------
+    final_support_features
+        Final selected support joined to feature-catalog metadata.
+    final_ols_summary
+        One-row summary of the final OLS fit and holdout uncertainty.
+    model_performance
+        Manuscript-facing performance table including demo and manuscript-reference rows.
+    workflow_stage_summary
+        Manuscript-facing summary of retained counts by workflow stage.
+    coefficient_matrix_raw_scale
+        Raw-scale final OLS coefficient matrix.
+    coefficient_matrix_standardized
+        Standardized final OLS coefficient matrix.
+    x_standardization
+        Final-feature standardization parameters estimated on training rows.
+    y_standardization
+        Final-output standardization parameters estimated on training rows.
+    figure_model_performance_data
+        Source data for the model-performance figure.
+    figure_support_composition_data
+        Source data for the final-support composition figure.
+    figure_specs
+        Registry of generated figure assets.
+    svg_figures
+        SVG text keyed by stable figure name.
+    summary
+        One-row artifact-regeneration summary.
+    """
+
+    final_support_features: pd.DataFrame
+    final_ols_summary: pd.DataFrame
+    model_performance: pd.DataFrame
+    workflow_stage_summary: pd.DataFrame
+    coefficient_matrix_raw_scale: pd.DataFrame
+    coefficient_matrix_standardized: pd.DataFrame
+    x_standardization: pd.DataFrame
+    y_standardization: pd.DataFrame
+    figure_model_performance_data: pd.DataFrame
+    figure_support_composition_data: pd.DataFrame
+    figure_specs: pd.DataFrame
+    svg_figures: dict[str, str]
+    summary: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class FinalManuscriptArtifactsStageResult:
+    """Final manuscript-artifact result plus paths written for notebook handoff.
+
+    Parameters
+    ----------
+    final_artifacts
+        In-memory final manuscript artifacts.
+    artifact_paths
+        Mapping from stable artifact name to CSV or SVG paths under the output root.
+    """
+
+    final_artifacts: FinalManuscriptArtifactsResult
     artifact_paths: dict[str, Path]
 
 
@@ -1530,6 +1643,399 @@ def run_sparse_selection_stability_stage(context: Any) -> SparseSelectionStabili
     )
     return SparseSelectionStabilityStageResult(
         sparse_selection=sparse_selection,
+        artifact_paths=artifact_paths,
+    )
+
+
+def final_manuscript_artifacts_spec_from_case_study_config(
+    case_study_config: dict[str, Any],
+) -> FinalManuscriptArtifactsSpec:
+    """Build final-model and manuscript-artifact settings from the case-study config.
+
+    Parameters
+    ----------
+    case_study_config
+        Parsed ``configs/manuscript_case_study.yml`` mapping.
+
+    Returns
+    -------
+    FinalManuscriptArtifactsSpec
+        Typed final artifact-regeneration specification.
+    """
+    case_study = case_study_config["case_study"]
+    final_model = case_study["final_model"]
+    interface = case_study.get("interface", {})
+    return FinalManuscriptArtifactsSpec(
+        final_predictor_count_reference=int(final_model["final_predictor_count"]),
+        final_first_order_input_count_reference=int(final_model["final_first_order_input_count"]),
+        intermediate_penalized_holdout_nrmse_reference=float(
+            final_model["intermediate_penalized_holdout_nrmse"]
+        ),
+        final_ols_holdout_nrmse_reference=float(final_model["final_ols_holdout_nrmse"]),
+        nrmse_denominator_definition=str(final_model["nrmse_denominator_definition"]),
+        nrmse_min_range=float(final_model["nrmse_min_range"]),
+        nrmse_reference_matrix=str(final_model["nrmse_reference_matrix"]),
+        random_seed=int(interface.get("holdout_random_seed", 123)),
+    )
+
+
+def regenerate_final_manuscript_artifacts(
+    input_matrix: pd.DataFrame,
+    output_matrix: pd.DataFrame,
+    feature_catalog: pd.DataFrame,
+    holdout_assignments: pd.DataFrame,
+    conditioning: OutputConditioningResult,
+    screening: EmpiricalNullScreeningResult,
+    interactions: InteractionDiscoveryResult,
+    nonlinear: NonlinearDiscoveryResult,
+    sparse_selection: SparseSelectionStabilityResult,
+    spec: FinalManuscriptArtifactsSpec,
+) -> FinalManuscriptArtifactsResult:
+    """Regenerate final OLS, manuscript tables, and figure-source artifacts.
+
+    The final support is the stable sparse-selection support. The OLS model is fit on
+    training rows and evaluated on the fixed holdout rows against retained scalar outputs
+    from output conditioning. Macro nRMSE is normalized by the training response range,
+    matching the frozen manuscript contract.
+
+    Parameters
+    ----------
+    input_matrix
+        Case-study input table with ``sample_id`` and source input columns.
+    output_matrix
+        Case-study scalar-output table with ``sample_id`` and output columns.
+    feature_catalog
+        Manuscript feature catalog used to materialize final support features.
+    holdout_assignments
+        Table with ``sample_id`` and ``split`` columns.
+    conditioning
+        Output-conditioning result used to identify retained scalar outputs.
+    screening
+        Empirical-null screening result used for workflow-stage summaries.
+    interactions
+        Interaction-discovery result used for workflow-stage summaries.
+    nonlinear
+        Nonlinear-discovery result used for workflow-stage summaries.
+    sparse_selection
+        Sparse-selection result whose stable support defines the final OLS feature set.
+    spec
+        Final artifact-regeneration specification.
+
+    Returns
+    -------
+    FinalManuscriptArtifactsResult
+        Materialized final-model, manuscript-table, and SVG figure artifacts.
+    """
+    _validate_final_manuscript_artifacts_spec(spec)
+    final_feature_names = _final_support_feature_names(sparse_selection.final_stable_support)
+    final_catalog = _feature_catalog_subset(feature_catalog, final_feature_names)
+    final_support_features = _build_final_support_features(
+        final_feature_names=final_feature_names,
+        final_catalog=final_catalog,
+        sparse_selection=sparse_selection,
+    )
+    final_design = build_manuscript_feature_design(input_matrix, final_catalog)
+    retained_outputs = list(conditioning.retained_output_names)
+    train_ids = _train_sample_ids(holdout_assignments)
+    holdout_ids = _holdout_sample_ids(holdout_assignments)
+    if holdout_ids.empty:
+        raise ValueError("Final manuscript artifacts require at least one holdout row.")
+    x_train = _indexed_by_sample_id(
+        _align_table_by_sample_id(final_design, train_ids, final_feature_names, "final design"),
+        train_ids,
+    )
+    x_holdout = _indexed_by_sample_id(
+        _align_table_by_sample_id(
+            final_design,
+            holdout_ids,
+            final_feature_names,
+            "final holdout design",
+        ),
+        holdout_ids,
+    )
+    y_train = _indexed_by_sample_id(
+        _align_output_matrix(output_matrix, train_ids, retained_outputs),
+        train_ids,
+    )
+    y_holdout = _indexed_by_sample_id(
+        _align_output_matrix(output_matrix, holdout_ids, retained_outputs),
+        holdout_ids,
+    )
+
+    final_fit = fit_final_ols(x_train, y_train)
+    final_predictions = predict_final_ols(final_fit, x_holdout)
+    final_metric = bootstrap_macro_nrmse_ci(
+        y_holdout.to_numpy(dtype=float),
+        final_predictions.to_numpy(dtype=float),
+        y_train.to_numpy(dtype=float),
+        min_range=spec.nrmse_min_range,
+        n_boot=spec.bootstrap_count,
+        alpha=spec.bootstrap_alpha,
+        random_state=spec.random_seed,
+    )
+    null_predictions = make_null_mean_prediction(
+        y_train.to_numpy(dtype=float),
+        n_rows=len(y_holdout),
+    )
+    null_metric = bootstrap_macro_nrmse_ci(
+        y_holdout.to_numpy(dtype=float),
+        null_predictions,
+        y_train.to_numpy(dtype=float),
+        min_range=spec.nrmse_min_range,
+        n_boot=spec.bootstrap_count,
+        alpha=spec.bootstrap_alpha,
+        random_state=spec.random_seed,
+    )
+
+    coefficient_matrix_raw_scale = make_coefficient_matrix_frame(
+        final_fit.coef_raw_scale,
+        output_names=list(final_fit.output_names),
+        feature_names=list(final_fit.feature_names),
+    )
+    coefficient_matrix_standardized = make_coefficient_matrix_frame(
+        final_fit.coef_standardized,
+        output_names=list(final_fit.output_names),
+        feature_names=list(final_fit.feature_names),
+    )
+    x_standardization = make_standardization_frame(
+        list(final_fit.feature_names),
+        final_fit.x_means,
+        final_fit.x_scales,
+        name_column="feature_name",
+    )
+    y_standardization = make_standardization_frame(
+        list(final_fit.output_names),
+        final_fit.y_means,
+        final_fit.y_scales,
+        name_column="output_name",
+    )
+
+    final_ols_summary = _build_final_ols_summary(
+        n_training_rows=len(x_train),
+        n_holdout_rows=len(x_holdout),
+        n_features=len(final_feature_names),
+        n_outputs=len(retained_outputs),
+        final_metric=final_metric,
+        null_metric=null_metric,
+        spec=spec,
+    )
+    model_performance = _build_model_performance_table(
+        final_metric=final_metric,
+        null_metric=null_metric,
+        spec=spec,
+    )
+    workflow_stage_summary = _build_workflow_stage_summary(
+        conditioning=conditioning,
+        screening=screening,
+        interactions=interactions,
+        nonlinear=nonlinear,
+        sparse_selection=sparse_selection,
+        final_ols_summary=final_ols_summary,
+        spec=spec,
+    )
+    figure_model_performance_data = _build_model_performance_figure_data(model_performance)
+    figure_support_composition_data = _build_support_composition_figure_data(final_support_features)
+    svg_figures = {
+        "figure_model_performance": _render_horizontal_bar_svg(
+            figure_model_performance_data,
+            label_column="display_name",
+            value_column="nrmse",
+            title="Holdout macro nRMSE",
+        ),
+        "figure_support_composition": _render_horizontal_bar_svg(
+            figure_support_composition_data,
+            label_column="feature_type",
+            value_column="n_features",
+            title="Final support composition",
+        ),
+    }
+    figure_specs = _build_figure_specs(
+        figure_model_performance_data=figure_model_performance_data,
+        figure_support_composition_data=figure_support_composition_data,
+        svg_figures=svg_figures,
+    )
+    summary = _build_final_artifact_summary(
+        final_support_features=final_support_features,
+        final_ols_summary=final_ols_summary,
+        workflow_stage_summary=workflow_stage_summary,
+        figure_specs=figure_specs,
+        spec=spec,
+    )
+    return FinalManuscriptArtifactsResult(
+        final_support_features=final_support_features,
+        final_ols_summary=final_ols_summary,
+        model_performance=model_performance,
+        workflow_stage_summary=workflow_stage_summary,
+        coefficient_matrix_raw_scale=coefficient_matrix_raw_scale,
+        coefficient_matrix_standardized=coefficient_matrix_standardized,
+        x_standardization=x_standardization,
+        y_standardization=y_standardization,
+        figure_model_performance_data=figure_model_performance_data,
+        figure_support_composition_data=figure_support_composition_data,
+        figure_specs=figure_specs,
+        svg_figures=svg_figures,
+        summary=summary,
+    )
+
+
+def write_final_manuscript_artifacts(
+    result: FinalManuscriptArtifactsResult,
+    output_root: Path,
+) -> dict[str, Path]:
+    """Write final manuscript tables and SVG figures under ``output_root``.
+
+    Parameters
+    ----------
+    result
+        Materialized final manuscript artifact result.
+    output_root
+        Resolved manuscript output root from the runtime context.
+
+    Returns
+    -------
+    dict[str, pathlib.Path]
+        Paths keyed by stable artifact name.
+    """
+    stage_root = output_root / "final_manuscript_artifacts"
+    final_model_root = stage_root / "final_model"
+    table_root = stage_root / "tables"
+    figure_root = stage_root / "figures"
+    for root in (final_model_root, table_root, figure_root):
+        root.mkdir(parents=True, exist_ok=True)
+
+    tables = {
+        "final_support_features": (
+            final_model_root / "final_support_features.csv",
+            result.final_support_features,
+        ),
+        "final_ols_summary": (
+            final_model_root / "final_ols_summary.csv",
+            result.final_ols_summary,
+        ),
+        "coefficient_matrix_raw_scale": (
+            final_model_root / "coefficient_matrix_raw_scale.csv",
+            result.coefficient_matrix_raw_scale,
+        ),
+        "coefficient_matrix_standardized": (
+            final_model_root / "coefficient_matrix_standardized.csv",
+            result.coefficient_matrix_standardized,
+        ),
+        "x_standardization": (
+            final_model_root / "x_standardization.csv",
+            result.x_standardization,
+        ),
+        "y_standardization": (
+            final_model_root / "y_standardization.csv",
+            result.y_standardization,
+        ),
+        "model_performance": (table_root / "model_performance.csv", result.model_performance),
+        "workflow_stage_summary": (
+            table_root / "workflow_stage_summary.csv",
+            result.workflow_stage_summary,
+        ),
+        "figure_model_performance_data": (
+            figure_root / "figure_model_performance_data.csv",
+            result.figure_model_performance_data,
+        ),
+        "figure_support_composition_data": (
+            figure_root / "figure_support_composition_data.csv",
+            result.figure_support_composition_data,
+        ),
+        "figure_specs": (figure_root / "figure_specs.csv", result.figure_specs),
+        "final_artifact_summary": (
+            stage_root / "final_artifact_summary.csv",
+            result.summary,
+        ),
+    }
+    written: dict[str, Path] = {}
+    for name, (path, table) in tables.items():
+        table.to_csv(path, index=False)
+        written[name] = path
+    for name, svg_text in result.svg_figures.items():
+        path = figure_root / f"{name}.svg"
+        path.write_text(svg_text, encoding="utf-8")
+        written[f"{name}_svg"] = path
+    return written
+
+
+def run_final_manuscript_artifacts_stage(
+    context: Any,
+) -> FinalManuscriptArtifactsStageResult:
+    """Run final OLS and manuscript table/figure regeneration from a notebook context.
+
+    Parameters
+    ----------
+    context
+        ``bsm_rfm.manuscript_runtime.ManuscriptNotebookContext``. It is typed as ``Any`` here to
+        avoid an import cycle between the runtime and stage modules.
+
+    Returns
+    -------
+    FinalManuscriptArtifactsStageResult
+        In-memory result and written artifact paths.
+    """
+    conditioning_spec = output_conditioning_spec_from_case_study_config(context.case_study_config)
+    conditioning = condition_manuscript_outputs(
+        context.tables["case_study_output_matrix"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning_spec,
+    )
+    screening_spec = empirical_null_screening_spec_from_case_study_config(context.case_study_config)
+    screening = screen_manuscript_empirical_null_terms(
+        context.tables["case_study_input_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening_spec,
+    )
+    interaction_spec = interaction_discovery_spec_from_case_study_config(context.case_study_config)
+    interactions = discover_manuscript_interactions(
+        context.tables["case_study_input_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening.retained_terms,
+        interaction_spec,
+    )
+    nonlinear_spec = nonlinear_discovery_spec_from_case_study_config(context.case_study_config)
+    nonlinear = discover_manuscript_nonlinear_transformations(
+        context.tables["case_study_input_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening.retained_terms,
+        nonlinear_spec,
+    )
+    sparse_spec = sparse_selection_stability_spec_from_case_study_config(context.case_study_config)
+    sparse_selection = select_manuscript_sparse_support(
+        context.tables["case_study_input_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening.retained_terms,
+        interactions.retained_pairs,
+        nonlinear.retained_transformations,
+        sparse_spec,
+    )
+    final_spec = final_manuscript_artifacts_spec_from_case_study_config(context.case_study_config)
+    final_artifacts = regenerate_final_manuscript_artifacts(
+        context.tables["case_study_input_matrix"],
+        context.tables["case_study_output_matrix"],
+        context.tables["manuscript_feature_catalog"],
+        context.tables["fixed_holdout_assignments"],
+        conditioning,
+        screening,
+        interactions,
+        nonlinear,
+        sparse_selection,
+        final_spec,
+    )
+    artifact_paths = write_final_manuscript_artifacts(
+        final_artifacts,
+        context.runtime.output_root,
+    )
+    return FinalManuscriptArtifactsStageResult(
+        final_artifacts=final_artifacts,
         artifact_paths=artifact_paths,
     )
 
@@ -2789,3 +3295,416 @@ def _build_interaction_discovery_summary(
             }
         ]
     )
+
+
+def _validate_final_manuscript_artifacts_spec(spec: FinalManuscriptArtifactsSpec) -> None:
+    """Validate final artifact-regeneration settings."""
+    if spec.final_predictor_count_reference <= 0:
+        raise ValueError("final_predictor_count_reference must be positive.")
+    if spec.final_first_order_input_count_reference <= 0:
+        raise ValueError("final_first_order_input_count_reference must be positive.")
+    if spec.nrmse_min_range <= 0.0:
+        raise ValueError("nrmse_min_range must be positive.")
+    if spec.bootstrap_count < 2:
+        raise ValueError("bootstrap_count must be at least two.")
+    if not 0.0 < spec.bootstrap_alpha < 1.0:
+        raise ValueError("bootstrap_alpha must be in the interval (0, 1).")
+    if spec.nrmse_reference_matrix != "Y_train":
+        raise ValueError(
+            "Only Y_train nRMSE normalization is supported by the final artifact stage."
+        )
+
+
+def _final_support_feature_names(final_stable_support: pd.DataFrame) -> list[str]:
+    """Return final support names from a stable-support table."""
+    if "feature_name" not in final_stable_support.columns:
+        raise ValueError("final_stable_support must include a feature_name column.")
+    names = final_stable_support["feature_name"].astype(str).tolist()
+    if not names:
+        raise ValueError("Final manuscript artifacts require a non-empty final support.")
+    if len(names) != len(set(names)):
+        raise ValueError("final_stable_support contains duplicate feature names.")
+    return names
+
+
+def _build_final_support_features(
+    *,
+    final_feature_names: list[str],
+    final_catalog: pd.DataFrame,
+    sparse_selection: SparseSelectionStabilityResult,
+) -> pd.DataFrame:
+    """Join final support names to catalog and sparse-stability diagnostics."""
+    catalog = final_catalog.copy()
+    catalog["feature_name"] = catalog["feature_name"].astype(str)
+    metadata_columns = [
+        column for column in ("feature_name", "feature_type", "origin") if column in catalog.columns
+    ]
+    metadata = catalog.loc[:, metadata_columns].copy()
+    support = sparse_selection.final_stable_support.copy()
+    support["feature_name"] = support["feature_name"].astype(str)
+    support_columns = [
+        column
+        for column in (
+            "feature_name",
+            "full_support_importance",
+            "stability_selection_frequency",
+            "stable_by_jaccard",
+            "stable_by_spearman",
+            "final_stable_support",
+        )
+        if column in support.columns
+    ]
+    joined = metadata.merge(
+        support.loc[:, support_columns],
+        on="feature_name",
+        how="left",
+        validate="one_to_one",
+    )
+    ordered = pd.Categorical(joined["feature_name"], categories=final_feature_names, ordered=True)
+    joined = joined.assign(feature_order=ordered.codes)
+    joined = joined.sort_values("feature_order", ignore_index=True)
+    joined.insert(0, "final_support_position", range(len(joined)))
+    return joined.drop(columns=["feature_order"])
+
+
+def _holdout_sample_ids(holdout_assignments: pd.DataFrame) -> pd.Series:
+    """Return sample IDs assigned to holdout rows."""
+    if "sample_id" not in holdout_assignments.columns or "split" not in holdout_assignments.columns:
+        raise ValueError("holdout_assignments must include sample_id and split columns.")
+    holdout = holdout_assignments.loc[
+        holdout_assignments["split"].astype(str).str.lower() == "holdout",
+        "sample_id",
+    ]
+    if holdout.empty:
+        return pd.Series(dtype=holdout_assignments["sample_id"].dtype)
+    return holdout.reset_index(drop=True)
+
+
+def _indexed_by_sample_id(frame: pd.DataFrame, sample_ids: pd.Series) -> pd.DataFrame:
+    """Return a copy of ``frame`` indexed by aligned sample IDs."""
+    indexed = frame.copy()
+    indexed.index = pd.Index(sample_ids.to_numpy(), name="sample_id")
+    return indexed
+
+
+def _build_final_ols_summary(
+    *,
+    n_training_rows: int,
+    n_holdout_rows: int,
+    n_features: int,
+    n_outputs: int,
+    final_metric: dict[str, Any],
+    null_metric: dict[str, Any],
+    spec: FinalManuscriptArtifactsSpec,
+) -> pd.DataFrame:
+    """Build the one-row final OLS summary table."""
+    return pd.DataFrame(
+        [
+            {
+                "stage": "final_ols_and_manuscript_artifacts",
+                "n_training_rows": int(n_training_rows),
+                "n_holdout_rows": int(n_holdout_rows),
+                "n_final_features": int(n_features),
+                "n_retained_outputs": int(n_outputs),
+                "final_ols_holdout_nrmse": float(final_metric["point_estimate"]),
+                "final_ols_holdout_nrmse_ci_lower": float(final_metric["ci_lower"]),
+                "final_ols_holdout_nrmse_ci_upper": float(final_metric["ci_upper"]),
+                "null_mean_holdout_nrmse": float(null_metric["point_estimate"]),
+                "bootstrap_count": int(spec.bootstrap_count),
+                "bootstrap_alpha": float(spec.bootstrap_alpha),
+                "nrmse_denominator_definition": spec.nrmse_denominator_definition,
+                "nrmse_reference_matrix": spec.nrmse_reference_matrix,
+                "nrmse_min_range": float(spec.nrmse_min_range),
+                "manuscript_final_predictor_count_reference": int(
+                    spec.final_predictor_count_reference
+                ),
+                "manuscript_final_ols_holdout_nrmse_reference": float(
+                    spec.final_ols_holdout_nrmse_reference
+                ),
+            }
+        ]
+    )
+
+
+def _build_model_performance_table(
+    *,
+    final_metric: dict[str, Any],
+    null_metric: dict[str, Any],
+    spec: FinalManuscriptArtifactsSpec,
+) -> pd.DataFrame:
+    """Build the manuscript-facing model-performance table."""
+    rows = [
+        _metric_row(
+            model_name="null_mean_baseline_demo",
+            display_name="Null mean baseline",
+            source="demo_recomputed",
+            metric=null_metric,
+        ),
+        _metric_row(
+            model_name="final_ols_demo",
+            display_name="Final OLS",
+            source="demo_recomputed",
+            metric=final_metric,
+        ),
+        {
+            "model_name": "intermediate_penalized_reference",
+            "display_name": "Intermediate penalized model",
+            "source": "manuscript_reference",
+            "nrmse": float(spec.intermediate_penalized_holdout_nrmse_reference),
+            "ci_lower": np.nan,
+            "ci_upper": np.nan,
+            "n_boot": 0,
+            "bootstrap_sample_size": 0,
+            "normalization_reference": spec.nrmse_reference_matrix,
+        },
+        {
+            "model_name": "final_ols_reference",
+            "display_name": "Final OLS manuscript reference",
+            "source": "manuscript_reference",
+            "nrmse": float(spec.final_ols_holdout_nrmse_reference),
+            "ci_lower": np.nan,
+            "ci_upper": np.nan,
+            "n_boot": 0,
+            "bootstrap_sample_size": 0,
+            "normalization_reference": spec.nrmse_reference_matrix,
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def _metric_row(
+    *,
+    model_name: str,
+    display_name: str,
+    source: str,
+    metric: dict[str, Any],
+) -> dict[str, Any]:
+    """Build one model-performance row from a bootstrap metric payload."""
+    return {
+        "model_name": model_name,
+        "display_name": display_name,
+        "source": source,
+        "nrmse": float(metric["point_estimate"]),
+        "ci_lower": float(metric["ci_lower"]),
+        "ci_upper": float(metric["ci_upper"]),
+        "n_boot": int(metric["n_boot"]),
+        "bootstrap_sample_size": int(metric["bootstrap_sample_size"]),
+        "normalization_reference": str(metric["normalization_reference"]),
+    }
+
+
+def _build_workflow_stage_summary(
+    *,
+    conditioning: OutputConditioningResult,
+    screening: EmpiricalNullScreeningResult,
+    interactions: InteractionDiscoveryResult,
+    nonlinear: NonlinearDiscoveryResult,
+    sparse_selection: SparseSelectionStabilityResult,
+    final_ols_summary: pd.DataFrame,
+    spec: FinalManuscriptArtifactsSpec,
+) -> pd.DataFrame:
+    """Build a compact manuscript-facing workflow-stage summary table."""
+    return pd.DataFrame(
+        [
+            {
+                "stage": "output_conditioning",
+                "primary_quantity": "retained_scalar_outputs",
+                "recomputed_value": int(len(conditioning.retained_output_names)),
+                "manuscript_reference_value": np.nan,
+                "artifact_family": "output_conditioning",
+            },
+            {
+                "stage": "output_conditioning",
+                "primary_quantity": "retained_pca_components",
+                "recomputed_value": int(len(_component_columns(conditioning.pca_scores))),
+                "manuscript_reference_value": np.nan,
+                "artifact_family": "output_conditioning",
+            },
+            {
+                "stage": "empirical_null_screening",
+                "primary_quantity": "retained_terms",
+                "recomputed_value": int(len(screening.retained_terms)),
+                "manuscript_reference_value": _summary_reference(
+                    screening.summary,
+                    "manuscript_retained_terms_reference",
+                ),
+                "artifact_family": "empirical_null_screen",
+            },
+            {
+                "stage": "interaction_discovery",
+                "primary_quantity": "retained_pairs",
+                "recomputed_value": int(len(interactions.retained_pairs)),
+                "manuscript_reference_value": _summary_reference(
+                    interactions.summary,
+                    "manuscript_retained_pairs_reference",
+                ),
+                "artifact_family": "interaction_discovery",
+            },
+            {
+                "stage": "nonlinear_discovery",
+                "primary_quantity": "retained_transformations",
+                "recomputed_value": int(len(nonlinear.retained_transformations)),
+                "manuscript_reference_value": _summary_reference(
+                    nonlinear.summary,
+                    "manuscript_final_support_transformations_reference",
+                ),
+                "artifact_family": "nonlinear_discovery",
+            },
+            {
+                "stage": "sparse_selection_and_stability",
+                "primary_quantity": "final_stable_support_terms",
+                "recomputed_value": int(len(sparse_selection.final_stable_support)),
+                "manuscript_reference_value": int(spec.final_predictor_count_reference),
+                "artifact_family": "sparse_selection",
+            },
+            {
+                "stage": "final_ols",
+                "primary_quantity": "holdout_nrmse",
+                "recomputed_value": float(final_ols_summary.loc[0, "final_ols_holdout_nrmse"]),
+                "manuscript_reference_value": float(spec.final_ols_holdout_nrmse_reference),
+                "artifact_family": "final_manuscript_artifacts",
+            },
+        ]
+    )
+
+
+def _summary_reference(summary: pd.DataFrame, column: str) -> float:
+    """Extract a numeric reference value from a one-row summary table."""
+    if column not in summary.columns or summary.empty:
+        return float("nan")
+    return float(summary.loc[0, column])
+
+
+def _build_model_performance_figure_data(model_performance: pd.DataFrame) -> pd.DataFrame:
+    """Return finite model-performance rows used for the SVG bar chart."""
+    figure_data = model_performance.loc[
+        np.isfinite(pd.to_numeric(model_performance["nrmse"], errors="coerce"))
+    ].copy()
+    figure_data = figure_data.sort_values(["source", "nrmse", "model_name"], ignore_index=True)
+    return figure_data
+
+
+def _build_support_composition_figure_data(
+    final_support_features: pd.DataFrame,
+) -> pd.DataFrame:
+    """Count final support terms by feature type for figure rendering."""
+    if "feature_type" in final_support_features.columns:
+        values = final_support_features["feature_type"].fillna("unknown").astype(str)
+    else:
+        values = pd.Series(["unknown"] * len(final_support_features))
+    counts = values.value_counts().rename_axis("feature_type").reset_index(name="n_features")
+    return counts.sort_values(["n_features", "feature_type"], ascending=[False, True])
+
+
+def _build_figure_specs(
+    *,
+    figure_model_performance_data: pd.DataFrame,
+    figure_support_composition_data: pd.DataFrame,
+    svg_figures: dict[str, str],
+) -> pd.DataFrame:
+    """Build the generated figure registry table."""
+    return pd.DataFrame(
+        [
+            {
+                "figure_name": "figure_model_performance",
+                "source_data": "figure_model_performance_data.csv",
+                "asset": "figure_model_performance.svg",
+                "n_source_rows": int(len(figure_model_performance_data)),
+                "description": "Holdout macro nRMSE comparison for demo and reference rows.",
+                "svg_bytes": len(svg_figures["figure_model_performance"].encode("utf-8")),
+            },
+            {
+                "figure_name": "figure_support_composition",
+                "source_data": "figure_support_composition_data.csv",
+                "asset": "figure_support_composition.svg",
+                "n_source_rows": int(len(figure_support_composition_data)),
+                "description": "Final stable support count by feature type.",
+                "svg_bytes": len(svg_figures["figure_support_composition"].encode("utf-8")),
+            },
+        ]
+    )
+
+
+def _build_final_artifact_summary(
+    *,
+    final_support_features: pd.DataFrame,
+    final_ols_summary: pd.DataFrame,
+    workflow_stage_summary: pd.DataFrame,
+    figure_specs: pd.DataFrame,
+    spec: FinalManuscriptArtifactsSpec,
+) -> pd.DataFrame:
+    """Build the one-row summary of regenerated final manuscript artifacts."""
+    return pd.DataFrame(
+        [
+            {
+                "stage": "final_manuscript_tables_and_figures",
+                "n_final_support_features": int(len(final_support_features)),
+                "n_workflow_stage_rows": int(len(workflow_stage_summary)),
+                "n_figures": int(len(figure_specs)),
+                "final_ols_holdout_nrmse": float(
+                    final_ols_summary.loc[0, "final_ols_holdout_nrmse"]
+                ),
+                "manuscript_final_predictor_count_reference": int(
+                    spec.final_predictor_count_reference
+                ),
+                "manuscript_final_first_order_input_count_reference": int(
+                    spec.final_first_order_input_count_reference
+                ),
+                "manuscript_intermediate_penalized_holdout_nrmse_reference": float(
+                    spec.intermediate_penalized_holdout_nrmse_reference
+                ),
+                "manuscript_final_ols_holdout_nrmse_reference": float(
+                    spec.final_ols_holdout_nrmse_reference
+                ),
+            }
+        ]
+    )
+
+
+def _render_horizontal_bar_svg(
+    data: pd.DataFrame,
+    *,
+    label_column: str,
+    value_column: str,
+    title: str,
+) -> str:
+    """Render a small dependency-free horizontal bar chart as SVG text."""
+    from html import escape
+
+    rows = data.loc[:, [label_column, value_column]].copy()
+    rows[value_column] = pd.to_numeric(rows[value_column], errors="coerce")
+    rows = rows.loc[np.isfinite(rows[value_column])]
+    if rows.empty:
+        rows = pd.DataFrame({label_column: ["no finite data"], value_column: [0.0]})
+    width = 760
+    row_height = 32
+    top_margin = 54
+    left_margin = 260
+    right_margin = 120
+    height = top_margin + row_height * len(rows) + 34
+    max_value = float(rows[value_column].max())
+    if max_value <= 0.0 or not math.isfinite(max_value):
+        max_value = 1.0
+    bar_max_width = width - left_margin - right_margin
+    elements = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="white"/>',
+        f'<text x="24" y="32" font-family="sans-serif" font-size="20">{escape(title)}</text>',
+    ]
+    for row_index, (_, row) in enumerate(rows.iterrows()):
+        y = top_margin + row_index * row_height
+        label = escape(str(row[label_column]))
+        value = float(row[value_column])
+        bar_width = max(1.0, bar_max_width * value / max_value)
+        elements.extend(
+            [
+                f'<text x="24" y="{y + 18}" font-family="sans-serif" font-size="13">{label}</text>',
+                f'<rect x="{left_margin}" y="{y}" width="{bar_width:.2f}" '
+                'height="20" fill="#4b5563"/>',
+                f'<text x="{left_margin + bar_width + 8:.2f}" y="{y + 16}" '
+                f'font-family="sans-serif" font-size="12">{value:.4g}</text>',
+            ]
+        )
+    elements.append("</svg>")
+    return "\n".join(elements) + "\n"

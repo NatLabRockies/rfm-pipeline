@@ -29,7 +29,7 @@ The repo must ultimately:
 - **Phase 0 complete**: manuscript contract freeze layer exists.
 - **Phase 1 complete**: manuscript data/runtime/notebook manifests and placeholder-path contract exist.
 - **Phase 2 functionally complete**: manuscript notebook skeletons, runtime/path-resolution utilities, demo-data fallback, and notebook execution support were added.
-- **Phase 3 slices 1-5 implemented in source**: output conditioning, empirical-null screening, interaction discovery, nonlinear discovery, and sparse selection/stability filtering now have source-backed stage functions, notebook entrypoints, deterministic demo execution, and CSV handoff artifacts.
+- **Phase 3 slices 1-6 implemented in source**: output conditioning, empirical-null screening, interaction discovery, nonlinear discovery, sparse selection/stability filtering, and final manuscript table/figure regeneration now have source-backed stage functions, notebook entrypoints, deterministic demo execution, CSV handoff artifacts, and final SVG figure assets.
 
 ### Important nuance about validation state
 
@@ -220,4 +220,13 @@ ordered union of empirical-null retained terms, retained interaction pairs, and 
 transformations as the sparse candidate support, fits EBIC-selected L1 models per retained PCA
 component, aggregates nonzero support across components, and writes deterministic stability and
 final-support CSV artifacts under `sparse_selection/`. The next Phase 3 slice should implement
-final manuscript table and figure regeneration.
+final manuscript table and figure regeneration (implemented source-backed slice).
+
+## Latest Phase 3 continuation note
+
+The final manuscript-artifact slice adds `run_final_manuscript_artifacts_stage(...)` and related
+source-backed helpers in `bsm_rfm.manuscript_stages`. The public demo implementation recomputes
+the upstream manuscript stages for the active context, fits final OLS on the stable sparse-selection
+support, computes deterministic holdout macro nRMSE with bootstrap uncertainty against the frozen
+`Y_train` normalization contract, and writes final-model CSVs, manuscript-facing summary tables,
+figure source-data CSVs, and dependency-free SVG figures under `final_manuscript_artifacts/`.

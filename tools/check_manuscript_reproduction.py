@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -26,6 +27,35 @@ REQUIRED_METRIC_CHECKS = {
     "registered_svg_figures_nonempty",
     "workflow_summary_includes_final_ols",
 }
+
+
+def validate_metric_check_records(
+    metric_check_records: Mapping[str, Mapping[str, object]],
+) -> list[str]:
+    """Validate required manuscript-reproduction metric-check records."""
+    failures: list[str] = []
+    observed_check_names = set(metric_check_records)
+    missing_checks = REQUIRED_METRIC_CHECKS - observed_check_names
+    if missing_checks:
+        failures.append(f"missing metric checks: {sorted(missing_checks)}")
+
+    for check_name in sorted(REQUIRED_METRIC_CHECKS & observed_check_names):
+        status = metric_check_records[check_name]["status"]
+        if status != "pass":
+            failures.append(f"metric check {check_name!r} status is {status!r}")
+
+    final_check_name = "final_ols_holdout_nrmse_positive"
+    if final_check_name in metric_check_records:
+        final_nrmse = metric_check_records[final_check_name]["observed_value"]
+        try:
+            final_nrmse_value = float(final_nrmse)
+        except (TypeError, ValueError):
+            failures.append(f"final holdout nRMSE is not numeric: {final_nrmse!r}")
+        else:
+            if final_nrmse_value <= 0.0:
+                failures.append(f"final holdout nRMSE is not positive: {final_nrmse}")
+
+    return failures
 
 
 def _ensure_local_package_importable(repo_root: Path) -> None:
@@ -75,20 +105,8 @@ def check_manuscript_reproduction(repo_root: Path) -> list[str]:
             extra = sorted(artifact_families - EXPECTED_ARTIFACT_FAMILIES)
             failures.append(f"artifact families mismatch: missing={missing}, extra={extra}")
 
-        missing_checks = REQUIRED_METRIC_CHECKS - set(metric_checks.index)
-        if missing_checks:
-            failures.append(f"missing metric checks: {sorted(missing_checks)}")
-        for check_name in sorted(REQUIRED_METRIC_CHECKS & set(metric_checks.index)):
-            status = metric_checks.loc[check_name, "status"]
-            if status != "pass":
-                failures.append(f"metric check {check_name!r} status is {status!r}")
-
-        final_nrmse = metric_checks.loc[
-            "final_ols_holdout_nrmse_positive",
-            "observed_value",
-        ]
-        if float(final_nrmse) <= 0.0:
-            failures.append(f"final holdout nRMSE is not positive: {final_nrmse}")
+        metric_check_records = metric_checks.to_dict(orient="index")
+        failures.extend(validate_metric_check_records(metric_check_records))
 
     return failures
 

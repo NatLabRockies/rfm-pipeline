@@ -8,6 +8,7 @@ from bsm_rfm import (
     EmpiricalNullScreeningSpec,
     FeatureExpansionResult,
     FeatureExpansionSpec,
+    FinalManuscriptArtifactsSpec,
     InteractionDiscoverySpec,
     NonlinearDiscoverySpec,
     OutputConditioningSpec,
@@ -23,6 +24,7 @@ from bsm_rfm import (
     discover_manuscript_interactions,
     discover_manuscript_nonlinear_transformations,
     empirical_null_screening_spec_from_case_study_config,
+    final_manuscript_artifacts_spec_from_case_study_config,
     interaction_discovery_spec_from_case_study_config,
     load_pipeline_outputs,
     load_postfit_bundle,
@@ -33,8 +35,10 @@ from bsm_rfm import (
     nonlinear_discovery_spec_from_case_study_config,
     ordered_expanded_feature_names,
     output_conditioning_spec_from_case_study_config,
+    regenerate_final_manuscript_artifacts,
     resolve_manuscript_runtime,
     run_empirical_null_screening_stage,
+    run_final_manuscript_artifacts_stage,
     run_interaction_discovery_stage,
     run_nonlinear_discovery_stage,
     run_output_conditioning_stage,
@@ -43,6 +47,7 @@ from bsm_rfm import (
     select_manuscript_sparse_support,
     sparse_selection_stability_spec_from_case_study_config,
     workflow_scope_boundary_table,
+    write_final_manuscript_artifacts,
     write_interaction_discovery_artifacts,
     write_nonlinear_discovery_artifacts,
     write_sparse_selection_stability_artifacts,
@@ -159,3 +164,11 @@ def test_package_exports_manuscript_sparse_selection_stage() -> None:
     assert callable(select_manuscript_sparse_support)
     assert callable(run_sparse_selection_stability_stage)
     assert callable(write_sparse_selection_stability_artifacts)
+
+
+def test_package_exports_final_manuscript_artifact_stage() -> None:
+    assert FinalManuscriptArtifactsSpec.__name__ == "FinalManuscriptArtifactsSpec"
+    assert callable(final_manuscript_artifacts_spec_from_case_study_config)
+    assert callable(regenerate_final_manuscript_artifacts)
+    assert callable(run_final_manuscript_artifacts_stage)
+    assert callable(write_final_manuscript_artifacts)

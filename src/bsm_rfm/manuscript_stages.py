@@ -288,6 +288,14 @@ class NonlinearDiscoverySpec:
         Manuscript-reported number of transformations retained in the final model support.
     minimum_curvature_score
         Deterministic public-stage threshold for the residualized nonlinear coefficient score.
+    implementation_method
+        Public implementation method actually run by this package.
+    implementation_status
+        Alignment status for the public implementation relative to the manuscript method.
+    source_workflow_reference
+        Reference label for the manuscript nonlinear workflow to reconcile against.
+    source_workflow_equivalence_status
+        Validation status for equivalence to the manuscript nonlinear workflow.
     """
 
     method: str
@@ -296,6 +304,10 @@ class NonlinearDiscoverySpec:
     identified_transformations_reference: int
     final_support_transformations_reference: int
     minimum_curvature_score: float = 1.0e-12
+    implementation_method: str = "residualized_parametric_transform_surrogate"
+    implementation_status: str = "source_backed_public_surrogate"
+    source_workflow_reference: str = "private_gam_nonlinear_discovery_workflow"
+    source_workflow_equivalence_status: str = "not_yet_validated"
 
 
 @dataclass(frozen=True)
@@ -310,6 +322,9 @@ class NonlinearDiscoveryResult:
         Long-form component-level residualized nonlinear coefficients.
     retained_transformations
         Transformations retained by the deterministic public nonlinear-discovery rule.
+    provenance
+        One-row provenance table recording the manuscript method, public surrogate method, and
+        equivalence-validation status.
     summary
         One-row summary of the nonlinear-discovery stage.
     """
@@ -317,6 +332,7 @@ class NonlinearDiscoveryResult:
     transformation_scores: pd.DataFrame
     component_transformation_scores: pd.DataFrame
     retained_transformations: pd.DataFrame
+    provenance: pd.DataFrame
     summary: pd.DataFrame
 
 
@@ -1314,6 +1330,24 @@ def nonlinear_discovery_spec_from_case_study_config(
         replacement_selection_rule=str(section["replacement_selection_rule"]),
         identified_transformations_reference=int(section["identified_transformations"]),
         final_support_transformations_reference=int(section["final_support_transformations"]),
+        implementation_method=str(
+            section.get(
+                "public_implementation_method",
+                "residualized_parametric_transform_surrogate",
+            )
+        ),
+        implementation_status=str(
+            section.get("public_implementation_status", "source_backed_public_surrogate")
+        ),
+        source_workflow_reference=str(
+            section.get(
+                "source_workflow_reference",
+                "private_gam_nonlinear_discovery_workflow",
+            )
+        ),
+        source_workflow_equivalence_status=str(
+            section.get("source_workflow_equivalence_status", "not_yet_validated")
+        ),
     )
 
 
@@ -1422,6 +1456,7 @@ def discover_manuscript_nonlinear_transformations(
         ascending=[False, True],
         ignore_index=True,
     )
+    provenance = _build_nonlinear_provenance(spec)
     summary = _build_nonlinear_discovery_summary(
         n_training_rows=len(y_train),
         n_candidate_transformations=len(candidates),
@@ -1438,6 +1473,7 @@ def discover_manuscript_nonlinear_transformations(
         transformation_scores=transformation_scores,
         component_transformation_scores=component_scores,
         retained_transformations=retained_transformations,
+        provenance=provenance,
         summary=summary,
     )
 
@@ -1466,6 +1502,7 @@ def write_nonlinear_discovery_artifacts(
         "transformation_scores": result.transformation_scores,
         "component_transformation_scores": result.component_transformation_scores,
         "retained_transformations": result.retained_transformations,
+        "nonlinear_discovery_provenance": result.provenance,
         "nonlinear_discovery_summary": result.summary,
     }
     written: dict[str, Path] = {}
@@ -3300,6 +3337,30 @@ def _build_component_transformation_scores(
     )
 
 
+def _build_nonlinear_provenance(spec: NonlinearDiscoverySpec) -> pd.DataFrame:
+    """Build nonlinear-discovery provenance and manuscript-alignment status table."""
+    return pd.DataFrame(
+        [
+            {
+                "stage": "nonlinear_discovery",
+                "manuscript_method": spec.method,
+                "manuscript_curvature_rule": spec.curvature_rule,
+                "manuscript_replacement_selection_rule": spec.replacement_selection_rule,
+                "public_implementation_method": spec.implementation_method,
+                "public_implementation_status": spec.implementation_status,
+                "source_workflow_reference": spec.source_workflow_reference,
+                "source_workflow_equivalence_status": spec.source_workflow_equivalence_status,
+                "manuscript_identified_transformations_reference": int(
+                    spec.identified_transformations_reference
+                ),
+                "manuscript_final_support_transformations_reference": int(
+                    spec.final_support_transformations_reference
+                ),
+            }
+        ]
+    )
+
+
 def _build_nonlinear_discovery_summary(
     *,
     n_training_rows: int,
@@ -3317,6 +3378,9 @@ def _build_nonlinear_discovery_summary(
             {
                 "stage": "nonlinear_discovery",
                 "method": spec.method,
+                "public_implementation_method": spec.implementation_method,
+                "public_implementation_status": spec.implementation_status,
+                "source_workflow_equivalence_status": spec.source_workflow_equivalence_status,
                 "curvature_rule": spec.curvature_rule,
                 "replacement_selection_rule": spec.replacement_selection_rule,
                 "n_training_rows": int(n_training_rows),

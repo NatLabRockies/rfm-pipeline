@@ -301,7 +301,9 @@ gaps: interaction discovery does not yet implement tree-SHAP interactions, nonli
 not yet implement GAM EDF/p-value diagnostics, sparse selection has not yet been shown equivalent to
 the recovered de-biased-LASSO workflow, the final HC3 inferential filter now needs real-data
 verification, and final tables and figures are deterministic public artifacts rather than verified
-manuscript-exact reproductions.
+manuscript-exact reproductions. Interaction and nonlinear discovery now both write explicit
+provenance tables marking the public methods as surrogates with unvalidated private-workflow
+equivalence.
 Treat that audit as the current source of truth for manuscript-alignment claims.
 
 ### Empirical-null provenance reconciliation slice
@@ -313,3 +315,14 @@ source-script reference, and source-script equivalence status. The current statu
 conservative: `source_backed_public_surrogate` with `not_yet_validated` private-script equivalence.
 Do not describe this stage as exact reproduction of the recovered Delta/null-screening script until
 that script is available in the repo and validated against the public artifact outputs.
+
+### Nonlinear provenance reconciliation slice
+
+The nonlinear-discovery stage now writes `nonlinear_discovery_provenance.csv` next to the
+transformation scores, component scores, retained transformations, and summary table. The
+provenance ledger records the frozen GAM/EDF manuscript method, the public residualized parametric
+transform surrogate, the private GAM workflow reference, and the equivalence-validation status. The
+current status is intentionally conservative: `source_backed_public_surrogate` with
+`not_yet_validated` private-workflow equivalence. Do not describe this stage as exact reproduction
+of the manuscript GAM EDF/p-value workflow until that workflow is ported or externalized and
+validated against the public outputs.

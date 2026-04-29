@@ -131,13 +131,17 @@ The stage currently writes:
 The final Phase 3 source-backed notebook stage is
 `08_manuscript_tables_and_figures.ipynb`. It calls
 `bsm_rfm.run_final_manuscript_artifacts_stage(...)`, which recomputes the upstream stage outputs
-for the active runtime context, fits final OLS on the stable sparse-selection support, evaluates
-holdout macro nRMSE against the frozen `Y_train` normalization contract, and writes final model
+for the active runtime context, applies the frozen 95% HC3 Wald final inferential filter
+to the stable sparse-selection support, refits final OLS on retained terms, evaluates holdout
+macro nRMSE against the frozen `Y_train` normalization contract, and writes final model
 tables, manuscript-facing summary tables, figure source data, and dependency-free SVG assets.
 
 The stage currently writes under `final_manuscript_artifacts/`:
 
+- `final_model/prefilter_support_features.csv`
 - `final_model/final_support_features.csv`
+- `final_model/hc3_wald_intervals.csv`
+- `final_model/hc3_inferential_filter_summary.csv`
 - `final_model/final_ols_summary.csv`
 - `final_model/coefficient_matrix_raw_scale.csv`
 - `final_model/coefficient_matrix_standardized.csv`
@@ -163,7 +167,8 @@ manuscript-exact for every stage. The current scientific alignment ledger is
 deterministic residualized-product score rather than the frozen tree-SHAP interaction method, the
 nonlinear-discovery stage is a residualized parametric-transform score rather than GAM EDF/p-value
 diagnostics, sparse selection has not yet been proven equivalent to the recovered de-biased-LASSO
-workflow, and the final HC3 inferential filter is not yet implemented.
+workflow. The final HC3 Wald inferential filter is now implemented locally, but retained-feature
+counts and final coefficients still need verification against the private manuscript run.
 
 ## End-to-end Phase 3 reproduction chain
 

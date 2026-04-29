@@ -30,6 +30,10 @@ def test_final_artifact_spec_matches_frozen_case_study_contract() -> None:
     assert spec.bootstrap_count == 200
     assert spec.bootstrap_alpha == 0.05
     assert spec.random_seed == 123
+    assert spec.inferential_filter_interval_method == (
+        "hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs"
+    )
+    assert spec.inferential_filter_alpha == 0.05
 
 
 def test_run_final_manuscript_artifacts_stage_executes_demo_context() -> None:
@@ -45,7 +49,20 @@ def test_run_final_manuscript_artifacts_stage_executes_demo_context() -> None:
     assert final_artifacts.final_ols_summary.loc[0, "stage"] == (
         "final_ols_and_manuscript_artifacts"
     )
+    assert (
+        final_artifacts.final_ols_summary.loc[0, "n_prefilter_features"]
+        >= (final_artifacts.final_ols_summary.loc[0, "n_final_features"])
+    )
     assert final_artifacts.final_ols_summary.loc[0, "n_final_features"] >= 1
+    assert final_artifacts.hc3_wald_intervals["feature_name"].nunique() == len(
+        final_artifacts.prefilter_support_features
+    )
+    assert set(final_artifacts.hc3_wald_intervals["zero_compatible"].unique()) <= {
+        True,
+        False,
+    }
+    assert final_artifacts.hc3_inferential_filter_summary["hc3_retained_after_filter"].any()
+    assert final_artifacts.final_support_features["hc3_retained_after_filter"].all()
     assert set(final_artifacts.model_performance["model_name"]) == {
         "final_ols_demo",
         "final_ols_reference",
@@ -56,6 +73,9 @@ def test_run_final_manuscript_artifacts_stage_executes_demo_context() -> None:
         "figure_model_performance",
         "figure_support_composition",
     ]
+    assert result.artifact_paths["prefilter_support_features"].exists()
+    assert result.artifact_paths["hc3_wald_intervals"].exists()
+    assert result.artifact_paths["hc3_inferential_filter_summary"].exists()
     assert result.artifact_paths["model_performance"].exists()
     assert result.artifact_paths["workflow_stage_summary"].exists()
     assert result.artifact_paths["figure_model_performance_svg"].suffix == ".svg"

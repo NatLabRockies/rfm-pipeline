@@ -129,4 +129,6 @@ def test_run_sparse_selection_stability_stage_executes_demo_context() -> None:
 
     assert result.sparse_selection.summary.loc[0, "stage"] == "sparse_selection_and_stability"
     assert result.sparse_selection.summary.loc[0, "n_candidate_terms"] >= 1
+    assert result.sparse_selection.summary.loc[0, "n_final_stable_support_terms"] >= 1
+    assert not result.sparse_selection.final_stable_support.empty
     assert result.artifact_paths["support_candidates"].exists()

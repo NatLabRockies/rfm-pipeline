@@ -1,4 +1,4 @@
-# Manuscript runtime and notebook skeletons
+# Manuscript runtime and source-backed notebooks
 
 Phase 2 adds the execution layer that makes the manuscript notebooks runnable in both CI and local
 real-data mode.
@@ -28,7 +28,7 @@ The public helpers for the notebook layer are:
 - `bsm_rfm.build_manuscript_notebook_context(...)`
 - `bsm_rfm.manuscript_runtime_summary_table(...)`
 
-## Notebook skeletons
+## Notebook entrypoints
 
 The tracked manuscript notebooks now exist at the frozen Phase 1 paths under
 `notebooks/manuscript/`:

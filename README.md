@@ -143,9 +143,10 @@ The repo now freezes the manuscript reconstruction contract in `docs/manuscript_
 `configs/local/manuscript_paths.local.yml`, using `configs/manuscript_paths.template.yml` as the
 tracked template.
 
-Phase 2 adds tracked notebook skeletons under `notebooks/manuscript/` and runtime/path-resolution
-helpers in `bsm_rfm.manuscript_runtime` so the notebooks execute on deterministic demo data in CI
-and switch to real data once the local path override file is populated.
+Phase 2 added tracked manuscript notebook entrypoints under `notebooks/manuscript/` and
+runtime/path-resolution helpers in `bsm_rfm.manuscript_runtime` so the notebooks execute on
+deterministic demo data in CI and switch to real data once the local path override file is
+populated.
 
 Phase 3 has source-backed stages and an end-to-end reproduction chain in `bsm_rfm.manuscript_stages` for output conditioning,
 empirical-null screening, interaction discovery, nonlinear discovery, sparse selection with

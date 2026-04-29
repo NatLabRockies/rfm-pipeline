@@ -28,8 +28,8 @@ The repo must ultimately:
 
 - **Phase 0 complete**: manuscript contract freeze layer exists.
 - **Phase 1 complete**: manuscript data/runtime/notebook manifests and placeholder-path contract exist.
-- **Phase 2 functionally complete**: manuscript notebook skeletons, runtime/path-resolution utilities, demo-data fallback, and notebook execution support were added.
-- **Phase 3 slices 1-6 implemented in source**: output conditioning, empirical-null screening, interaction discovery, nonlinear discovery, sparse selection/stability filtering, and final manuscript table/figure regeneration now have source-backed stage functions, notebook entrypoints, deterministic demo execution, CSV handoff artifacts, and final SVG figure assets.
+- **Phase 2 complete**: manuscript notebook entrypoints, runtime/path-resolution utilities, demo-data fallback, and notebook execution support were added.
+- **Phase 3 source-backed workflow implemented**: output conditioning, empirical-null screening, interaction discovery, nonlinear discovery, sparse selection/stability filtering, final manuscript table/figure regeneration, the end-to-end reproduction chain, and the QA audit/smoke gate now have source-backed functions, notebook entrypoints, deterministic demo execution, CSV/SVG handoff artifacts, and regression tests.
 
 ### Important nuance about validation state
 
@@ -85,7 +85,7 @@ This layer freezes:
 
 ### Phase 2
 
-Files added/maintained around manuscript runtime and notebooks include:
+Files added/maintained around manuscript runtime and notebook entrypoints include:
 
 - `docs/manuscript_runtime.md`
 - `src/bsm_rfm/manuscript_runtime.py`
@@ -175,24 +175,14 @@ Do not claim anything passes unless it was actually re-run on the user's live re
 
 ## Next engineering priority after the live audit
 
-If the gate is clean after the live audit, the next highest-priority step is:
+If the gate is clean after the live audit, the next highest-priority step is final release hardening:
 
-### Phase 3 — implement the actual manuscript scientific stages
+1. remove stale Phase 2/Phase 3 wording from public docs,
+1. ensure the audited reproduction smoke task remains aligned with emitted QA checks,
+1. verify notebook, docs, package-build, and CI gates from the user's live Pixi environment,
+1. only then move to real-data dry-run issues that require local private artifact paths.
 
-In this order:
-
-1. exact output conditioning / reduced-response representation (implemented source-backed slice),
-1. empirical-null screening (implemented source-backed slice),
-1. interaction discovery (implemented source-backed slice),
-1. nonlinear transformation discovery (implemented source-backed slice),
-1. sparse selection and stability filtering (implemented source-backed slice),
-1. final manuscript tables and figures regeneration.
-
-These stages must be implemented according to the frozen manuscript contract, with:
-
-- demo-data execution support for CI,
-- real-data notebook entrypoints,
-- manuscript-count regression tests wherever feasible.
+The Phase 3 scientific stages are now implemented in source-backed demo/real-data entrypoints; future work should treat them as public contracts unless tests and documentation are updated together.
 
 ## Rules for future work
 
@@ -293,3 +283,10 @@ changes from producing a traceback when a required metric check is missing. The 
 reports missing metric checks cleanly, validates required check statuses, and only inspects the
 final holdout nRMSE value when the corresponding metric-check row is present. Regression tests cover
 missing, nonpositive, and nonnumeric final holdout nRMSE metric-check records.
+
+## Latest finalization continuation note
+
+The public manuscript documentation has been refreshed to describe the notebooks as source-backed
+entrypoints rather than Phase 2 skeletons. Keep this wording current: Phase 3 now has implemented
+stage functions, notebooks, final table/figure regeneration, an end-to-end reproduction chain, a QA
+audit layer, and a gate-level manuscript reproduction smoke task.

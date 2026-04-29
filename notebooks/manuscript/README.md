@@ -1,7 +1,8 @@
 # Manuscript notebooks
 
-This directory now contains the tracked Phase 2 notebook skeletons for the complete JDS BSM
-manuscript-reproduction workflow.
+This directory contains the tracked manuscript notebook entrypoints for the complete JDS BSM
+manuscript-reproduction workflow. The Phase 3 notebooks call source-backed stage functions and
+write deterministic handoff artifacts under the resolved manuscript output root.
 
 The execution order is frozen in `configs/manuscript_runtime.yml`.
 

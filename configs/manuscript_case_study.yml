@@ -62,6 +62,10 @@ case_study:
     method: tree_shap_interaction_values
     aggregation_rule: max_over_components_of_mean_absolute_shap_interaction
     aggregation_rule_status: frozen_repo_decision
+    public_implementation_method: residualized_product_permutation_surrogate
+    public_implementation_status: source_backed_public_surrogate
+    source_workflow_reference: private_tree_shap_interaction_workflow
+    source_workflow_equivalence_status: not_yet_validated
     null_threshold_quantile: 0.995
     retained_pairs: 367
 

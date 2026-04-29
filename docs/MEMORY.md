@@ -30,6 +30,7 @@ The repo must ultimately:
 - **Phase 1 complete**: manuscript data/runtime/notebook manifests and placeholder-path contract exist.
 - **Phase 2 complete**: manuscript notebook entrypoints, runtime/path-resolution utilities, demo-data fallback, and notebook execution support were added.
 - **Phase 3 source-backed workflow implemented**: output conditioning, empirical-null screening, interaction discovery, nonlinear discovery, sparse selection/stability filtering, final manuscript table/figure regeneration, the end-to-end reproduction chain, and the QA audit/smoke gate now have source-backed functions, notebook entrypoints, deterministic demo execution, CSV/SVG handoff artifacts, and regression tests.
+- **Interaction-discovery provenance added after empirical-null provenance**: the public interaction stage now records `public_implementation_method=residualized_product_permutation_surrogate`, `public_implementation_status=source_backed_public_surrogate`, `source_workflow_reference=private_tree_shap_interaction_workflow`, and `source_workflow_equivalence_status=not_yet_validated`. This reconciles the provenance gap but does not implement manuscript-exact tree-SHAP interactions.
 
 ### Important nuance about validation state
 

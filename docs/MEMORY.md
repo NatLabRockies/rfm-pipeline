@@ -298,6 +298,7 @@ scientific reproduction. They are executable source-backed entrypoints with dete
 artifacts and QA checks, but `docs/manuscript_alignment_audit.md` now records remaining exactness
 gaps: interaction discovery does not yet implement tree-SHAP interactions, nonlinear discovery does
 not yet implement GAM EDF/p-value diagnostics, sparse selection has not yet been shown equivalent to
-the recovered de-biased-LASSO workflow, the final HC3 inferential filter is missing, and final tables
-and figures are deterministic public artifacts rather than verified manuscript-exact reproductions.
+the recovered de-biased-LASSO workflow, the final HC3 inferential filter now needs real-data
+verification, and final tables and figures are deterministic public artifacts rather than verified
+manuscript-exact reproductions.
 Treat that audit as the current source of truth for manuscript-alignment claims.

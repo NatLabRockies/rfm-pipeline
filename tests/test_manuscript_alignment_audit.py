@@ -20,7 +20,7 @@ def test_alignment_audit_records_non_exact_stage_gaps() -> None:
         "GAM diagnostics",
         "residualized nonlinear contribution",
         "de-biased-LASSO",
-        "HC3 Wald inferential filter is not implemented",
+        "HC3 interval/drop rule is now implemented",
         "Not acceptable yet: **full exact reproduction of the manuscript workflow**",
     ]
     for phrase in required_phrases:
@@ -32,7 +32,8 @@ def test_runtime_docs_link_alignment_audit_and_do_not_overclaim() -> None:
     runtime = Path("docs/manuscript_runtime.md").read_text(encoding="utf-8")
     assert "docs/manuscript_alignment_audit.md" in runtime
     assert "executable does not mean\nmanuscript-exact" in runtime
-    assert "final HC3 inferential filter is not yet implemented" in runtime
+    assert "final HC3 Wald inferential filter is now implemented locally" in runtime
+    assert "still need verification against the private manuscript run" in runtime
 
 
 def test_readme_distinguishes_audited_scaffold_from_exact_reproduction() -> None:

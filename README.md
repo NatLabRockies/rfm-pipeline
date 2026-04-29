@@ -84,8 +84,8 @@ This should not yet be described as a full exact implementation of every manuscr
 `docs/manuscript_alignment_audit.md` is the current status ledger for which notebook stages are
 manuscript-exact, partially aligned, or deterministic public approximations. Higher-level
 reconciliation still remains for the notebook-derived feature-expansion stage, the interaction
-stage, the nonlinear-discovery stage, the final inferential filter, and exact manuscript table and
-figure reproduction.
+stage, the nonlinear-discovery stage, real-data verification of the final HC3 filter, and exact
+manuscript table and figure reproduction.
 
 The release-facing package metadata now records repository URLs, classifiers, and keywords, while the scientific scope boundary remains explicit: upstream Delta null screening is still exposed through a source-derived adapter, and the notebook-specific feature-expansion defaults are still only partially promoted into the canonical package path.
 
@@ -112,9 +112,10 @@ The release-facing package metadata now records repository URLs, classifiers, an
   retained PCA component, aggregates support across components, and writes deterministic
   subsample-stability diagnostics and final stable-support artifacts.
 
-- The final manuscript artifact stage now fits final OLS on the stable support, computes
-  deterministic holdout nRMSE with bootstrap uncertainty for demo execution, and writes
-  manuscript-facing CSV tables plus dependency-free SVG figure assets.
+- The final manuscript artifact stage now applies the frozen 95% HC3 Wald inferential filter
+  to the stable support, refits final OLS on retained terms, computes deterministic holdout
+  nRMSE with bootstrap uncertainty for demo execution, and writes manuscript-facing CSV tables
+  plus dependency-free SVG figure assets.
 
 ## Repository gate
 

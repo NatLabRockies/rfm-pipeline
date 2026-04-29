@@ -12,6 +12,7 @@ import hashlib
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from statistics import NormalDist
 from typing import Any
 
 import numpy as np
@@ -413,6 +414,10 @@ class FinalManuscriptArtifactsSpec:
         Two-sided bootstrap error level.
     random_seed
         Deterministic random seed for bootstrap resampling.
+    inferential_filter_interval_method
+        Frozen final inferential-filter rule from the manuscript contract.
+    inferential_filter_alpha
+        Two-sided error level for the HC3 Wald intervals.
     """
 
     final_predictor_count_reference: int
@@ -425,6 +430,10 @@ class FinalManuscriptArtifactsSpec:
     bootstrap_count: int = 200
     bootstrap_alpha: float = 0.05
     random_seed: int = 123
+    inferential_filter_interval_method: str = (
+        "hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs"
+    )
+    inferential_filter_alpha: float = 0.05
 
 
 @dataclass(frozen=True)
@@ -433,8 +442,14 @@ class FinalManuscriptArtifactsResult:
 
     Parameters
     ----------
+    prefilter_support_features
+        Sparse/stability support before applying the final HC3 inferential filter.
     final_support_features
-        Final selected support joined to feature-catalog metadata.
+        Final selected support after applying the HC3 inferential filter.
+    hc3_wald_intervals
+        Long-form per-output HC3 Wald interval diagnostics for each prefilter feature.
+    hc3_inferential_filter_summary
+        Per-feature summary of the final inferential-filter decision.
     final_ols_summary
         One-row summary of the final OLS fit and holdout uncertainty.
     model_performance
@@ -461,7 +476,10 @@ class FinalManuscriptArtifactsResult:
         One-row artifact-regeneration summary.
     """
 
+    prefilter_support_features: pd.DataFrame
     final_support_features: pd.DataFrame
+    hc3_wald_intervals: pd.DataFrame
+    hc3_inferential_filter_summary: pd.DataFrame
     final_ols_summary: pd.DataFrame
     model_performance: pd.DataFrame
     workflow_stage_summary: pd.DataFrame
@@ -1734,6 +1752,7 @@ def final_manuscript_artifacts_spec_from_case_study_config(
     """
     case_study = case_study_config["case_study"]
     final_model = case_study["final_model"]
+    inferential_filter = case_study["final_inferential_filter"]
     interface = case_study.get("interface", {})
     return FinalManuscriptArtifactsSpec(
         final_predictor_count_reference=int(final_model["final_predictor_count"]),
@@ -1746,6 +1765,7 @@ def final_manuscript_artifacts_spec_from_case_study_config(
         nrmse_min_range=float(final_model["nrmse_min_range"]),
         nrmse_reference_matrix=str(final_model["nrmse_reference_matrix"]),
         random_seed=int(interface.get("holdout_random_seed", 123)),
+        inferential_filter_interval_method=str(inferential_filter["interval_method"]),
     )
 
 
@@ -1797,19 +1817,52 @@ def regenerate_final_manuscript_artifacts(
         Materialized final-model, manuscript-table, and SVG figure artifacts.
     """
     _validate_final_manuscript_artifacts_spec(spec)
-    final_feature_names = _final_support_feature_names(sparse_selection.final_stable_support)
+    prefilter_feature_names = _final_support_feature_names(sparse_selection.final_stable_support)
+    prefilter_catalog = _feature_catalog_subset(feature_catalog, prefilter_feature_names)
+    prefilter_support_features = _build_final_support_features(
+        final_feature_names=prefilter_feature_names,
+        final_catalog=prefilter_catalog,
+        sparse_selection=sparse_selection,
+    )
+    prefilter_design = build_manuscript_feature_design(input_matrix, prefilter_catalog)
+    retained_outputs = list(conditioning.retained_output_names)
+    train_ids = _train_sample_ids(holdout_assignments)
+    holdout_ids = _holdout_sample_ids(holdout_assignments)
+    if holdout_ids.empty:
+        raise ValueError("Final manuscript artifacts require at least one holdout row.")
+    x_prefilter_train = _indexed_by_sample_id(
+        _align_table_by_sample_id(
+            prefilter_design,
+            train_ids,
+            prefilter_feature_names,
+            "prefilter final design",
+        ),
+        train_ids,
+    )
+    y_train = _indexed_by_sample_id(
+        _align_output_matrix(output_matrix, train_ids, retained_outputs),
+        train_ids,
+    )
+    hc3_wald_intervals, hc3_filter_summary = _build_hc3_inferential_filter_tables(
+        x_prefilter_train,
+        y_train,
+        alpha=spec.inferential_filter_alpha,
+        interval_method=spec.inferential_filter_interval_method,
+    )
+    final_feature_names = _hc3_retained_feature_names(hc3_filter_summary)
     final_catalog = _feature_catalog_subset(feature_catalog, final_feature_names)
     final_support_features = _build_final_support_features(
         final_feature_names=final_feature_names,
         final_catalog=final_catalog,
         sparse_selection=sparse_selection,
     )
+    final_support_features = final_support_features.merge(
+        hc3_filter_summary,
+        on="feature_name",
+        how="left",
+        validate="one_to_one",
+    )
     final_design = build_manuscript_feature_design(input_matrix, final_catalog)
-    retained_outputs = list(conditioning.retained_output_names)
-    train_ids = _train_sample_ids(holdout_assignments)
-    holdout_ids = _holdout_sample_ids(holdout_assignments)
-    if holdout_ids.empty:
-        raise ValueError("Final manuscript artifacts require at least one holdout row.")
     x_train = _indexed_by_sample_id(
         _align_table_by_sample_id(final_design, train_ids, final_feature_names, "final design"),
         train_ids,
@@ -1822,10 +1875,6 @@ def regenerate_final_manuscript_artifacts(
             "final holdout design",
         ),
         holdout_ids,
-    )
-    y_train = _indexed_by_sample_id(
-        _align_output_matrix(output_matrix, train_ids, retained_outputs),
-        train_ids,
     )
     y_holdout = _indexed_by_sample_id(
         _align_output_matrix(output_matrix, holdout_ids, retained_outputs),
@@ -1883,6 +1932,7 @@ def regenerate_final_manuscript_artifacts(
     final_ols_summary = _build_final_ols_summary(
         n_training_rows=len(x_train),
         n_holdout_rows=len(x_holdout),
+        n_prefilter_features=len(prefilter_feature_names),
         n_features=len(final_feature_names),
         n_outputs=len(retained_outputs),
         final_metric=final_metric,
@@ -1900,6 +1950,7 @@ def regenerate_final_manuscript_artifacts(
         interactions=interactions,
         nonlinear=nonlinear,
         sparse_selection=sparse_selection,
+        hc3_filter_summary=hc3_filter_summary,
         final_ols_summary=final_ols_summary,
         spec=spec,
     )
@@ -1925,14 +1976,19 @@ def regenerate_final_manuscript_artifacts(
         svg_figures=svg_figures,
     )
     summary = _build_final_artifact_summary(
+        prefilter_support_features=prefilter_support_features,
         final_support_features=final_support_features,
+        hc3_filter_summary=hc3_filter_summary,
         final_ols_summary=final_ols_summary,
         workflow_stage_summary=workflow_stage_summary,
         figure_specs=figure_specs,
         spec=spec,
     )
     return FinalManuscriptArtifactsResult(
+        prefilter_support_features=prefilter_support_features,
         final_support_features=final_support_features,
+        hc3_wald_intervals=hc3_wald_intervals,
+        hc3_inferential_filter_summary=hc3_filter_summary,
         final_ols_summary=final_ols_summary,
         model_performance=model_performance,
         workflow_stage_summary=workflow_stage_summary,
@@ -1974,9 +2030,21 @@ def write_final_manuscript_artifacts(
         root.mkdir(parents=True, exist_ok=True)
 
     tables = {
+        "prefilter_support_features": (
+            final_model_root / "prefilter_support_features.csv",
+            result.prefilter_support_features,
+        ),
         "final_support_features": (
             final_model_root / "final_support_features.csv",
             result.final_support_features,
+        ),
+        "hc3_wald_intervals": (
+            final_model_root / "hc3_wald_intervals.csv",
+            result.hc3_wald_intervals,
+        ),
+        "hc3_inferential_filter_summary": (
+            final_model_root / "hc3_inferential_filter_summary.csv",
+            result.hc3_inferential_filter_summary,
         ),
         "final_ols_summary": (
             final_model_root / "final_ols_summary.csv",
@@ -3807,6 +3875,12 @@ def _validate_final_manuscript_artifacts_spec(spec: FinalManuscriptArtifactsSpec
         raise ValueError(
             "Only Y_train nRMSE normalization is supported by the final artifact stage."
         )
+    if spec.inferential_filter_interval_method != (
+        "hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs"
+    ):
+        raise ValueError("Only the frozen 95% HC3 Wald final inferential filter is supported.")
+    if not 0.0 < spec.inferential_filter_alpha < 1.0:
+        raise ValueError("inferential_filter_alpha must be in the interval (0, 1).")
 
 
 def _final_support_feature_names(final_stable_support: pd.DataFrame) -> list[str]:
@@ -3881,10 +3955,121 @@ def _indexed_by_sample_id(frame: pd.DataFrame, sample_ids: pd.Series) -> pd.Data
     return indexed
 
 
+def _build_hc3_inferential_filter_tables(
+    x_train: pd.DataFrame,
+    y_train: pd.DataFrame,
+    *,
+    alpha: float,
+    interval_method: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Build per-output HC3 Wald intervals and feature-level filter decisions."""
+    x_numeric = x_train.apply(pd.to_numeric, errors="raise")
+    y_numeric = y_train.apply(pd.to_numeric, errors="raise")
+    if x_numeric.empty or y_numeric.empty:
+        raise ValueError("HC3 inferential filtering requires non-empty X and Y tables.")
+    if len(x_numeric) != len(y_numeric):
+        raise ValueError("HC3 inferential filtering requires aligned X and Y row counts.")
+    x_values = x_numeric.to_numpy(dtype=float)
+    y_values = y_numeric.to_numpy(dtype=float)
+    if not np.isfinite(x_values).all() or not np.isfinite(y_values).all():
+        raise ValueError("HC3 inferential filtering requires finite numeric values.")
+
+    design = np.column_stack([np.ones(len(x_numeric), dtype=float), x_values])
+    xtx_inv = np.linalg.pinv(design.T @ design)
+    beta = xtx_inv @ design.T @ y_values
+    fitted = design @ beta
+    residuals = y_values - fitted
+    leverages = np.einsum("ij,jk,ik->i", design, xtx_inv, design)
+    leverage_denominator = np.clip(1.0 - leverages, 1.0e-12, None)
+    z_value = NormalDist().inv_cdf(1.0 - alpha / 2.0)
+
+    interval_rows: list[dict[str, Any]] = []
+    feature_rows: list[dict[str, Any]] = []
+    feature_names = list(x_numeric.columns)
+    output_names = list(y_numeric.columns)
+    for feature_position, feature_name in enumerate(feature_names):
+        output_excludes_zero_count = 0
+        max_abs_t_statistic = 0.0
+        for output_position, output_name in enumerate(output_names):
+            scaled_residual = residuals[:, output_position] / leverage_denominator
+            meat = design.T @ ((scaled_residual**2)[:, np.newaxis] * design)
+            covariance = xtx_inv @ meat @ xtx_inv
+            coefficient = float(beta[feature_position + 1, output_position])
+            variance = max(float(covariance[feature_position + 1, feature_position + 1]), 0.0)
+            standard_error = math.sqrt(variance)
+            lower = coefficient - z_value * standard_error
+            upper = coefficient + z_value * standard_error
+            zero_compatible = lower <= 0.0 <= upper
+            excludes_zero = not zero_compatible
+            if excludes_zero:
+                output_excludes_zero_count += 1
+            t_statistic = coefficient / standard_error if standard_error > 0.0 else math.inf
+            if math.isfinite(t_statistic):
+                max_abs_t_statistic = max(max_abs_t_statistic, abs(t_statistic))
+            elif coefficient != 0.0:
+                max_abs_t_statistic = math.inf
+            interval_rows.append(
+                {
+                    "feature_name": str(feature_name),
+                    "output_name": str(output_name),
+                    "coefficient": coefficient,
+                    "hc3_standard_error": float(standard_error),
+                    "wald_z_value": float(z_value),
+                    "ci_lower": float(lower),
+                    "ci_upper": float(upper),
+                    "zero_compatible": bool(zero_compatible),
+                    "excludes_zero": bool(excludes_zero),
+                    "interval_method": interval_method,
+                    "alpha": float(alpha),
+                }
+            )
+        retained = output_excludes_zero_count > 0
+        feature_rows.append(
+            {
+                "feature_name": str(feature_name),
+                "n_outputs": int(len(output_names)),
+                "n_outputs_excluding_zero": int(output_excludes_zero_count),
+                "hc3_retained_after_filter": bool(retained),
+                "hc3_drop_reason": "retained_by_at_least_one_output"
+                if retained
+                else "zero_compatible_for_all_outputs",
+                "max_abs_hc3_t_statistic": float(max_abs_t_statistic),
+                "interval_method": interval_method,
+                "alpha": float(alpha),
+            }
+        )
+
+    intervals = pd.DataFrame(interval_rows)
+    summary = pd.DataFrame(feature_rows)
+    if not bool(summary["hc3_retained_after_filter"].any()):
+        raise ValueError(
+            "The HC3 final inferential filter removed every sparse/stable feature. "
+            "The final manuscript OLS stage requires at least one retained term."
+        )
+    return intervals, summary
+
+
+def _hc3_retained_feature_names(hc3_filter_summary: pd.DataFrame) -> list[str]:
+    """Return feature names retained by the final HC3 inferential filter."""
+    required = {"feature_name", "hc3_retained_after_filter"}
+    missing = required.difference(hc3_filter_summary.columns)
+    if missing:
+        raise ValueError(f"hc3_filter_summary missing required columns: {sorted(missing)}")
+    retained = hc3_filter_summary.loc[
+        hc3_filter_summary["hc3_retained_after_filter"].astype(bool),
+        "feature_name",
+    ].astype(str)
+    names = retained.tolist()
+    if not names:
+        raise ValueError("HC3 inferential filtering retained no final features.")
+    return names
+
+
 def _build_final_ols_summary(
     *,
     n_training_rows: int,
     n_holdout_rows: int,
+    n_prefilter_features: int,
     n_features: int,
     n_outputs: int,
     final_metric: dict[str, Any],
@@ -3898,7 +4083,9 @@ def _build_final_ols_summary(
                 "stage": "final_ols_and_manuscript_artifacts",
                 "n_training_rows": int(n_training_rows),
                 "n_holdout_rows": int(n_holdout_rows),
+                "n_prefilter_features": int(n_prefilter_features),
                 "n_final_features": int(n_features),
+                "n_hc3_removed_features": int(n_prefilter_features - n_features),
                 "n_retained_outputs": int(n_outputs),
                 "final_ols_holdout_nrmse": float(final_metric["point_estimate"]),
                 "final_ols_holdout_nrmse_ci_lower": float(final_metric["ci_lower"]),
@@ -3906,6 +4093,8 @@ def _build_final_ols_summary(
                 "null_mean_holdout_nrmse": float(null_metric["point_estimate"]),
                 "bootstrap_count": int(spec.bootstrap_count),
                 "bootstrap_alpha": float(spec.bootstrap_alpha),
+                "inferential_filter_interval_method": spec.inferential_filter_interval_method,
+                "inferential_filter_alpha": float(spec.inferential_filter_alpha),
                 "nrmse_denominator_definition": spec.nrmse_denominator_definition,
                 "nrmse_reference_matrix": spec.nrmse_reference_matrix,
                 "nrmse_min_range": float(spec.nrmse_min_range),
@@ -3994,6 +4183,7 @@ def _build_workflow_stage_summary(
     interactions: InteractionDiscoveryResult,
     nonlinear: NonlinearDiscoveryResult,
     sparse_selection: SparseSelectionStabilityResult,
+    hc3_filter_summary: pd.DataFrame,
     final_ols_summary: pd.DataFrame,
     spec: FinalManuscriptArtifactsSpec,
 ) -> pd.DataFrame:
@@ -4050,6 +4240,13 @@ def _build_workflow_stage_summary(
                 "recomputed_value": int(len(sparse_selection.final_stable_support)),
                 "manuscript_reference_value": int(spec.final_predictor_count_reference),
                 "artifact_family": "sparse_selection",
+            },
+            {
+                "stage": "final_inferential_filter",
+                "primary_quantity": "hc3_retained_terms",
+                "recomputed_value": int(hc3_filter_summary["hc3_retained_after_filter"].sum()),
+                "manuscript_reference_value": int(spec.final_predictor_count_reference),
+                "artifact_family": "final_manuscript_artifacts",
             },
             {
                 "stage": "final_ols",
@@ -4121,7 +4318,9 @@ def _build_figure_specs(
 
 def _build_final_artifact_summary(
     *,
+    prefilter_support_features: pd.DataFrame,
     final_support_features: pd.DataFrame,
+    hc3_filter_summary: pd.DataFrame,
     final_ols_summary: pd.DataFrame,
     workflow_stage_summary: pd.DataFrame,
     figure_specs: pd.DataFrame,
@@ -4132,7 +4331,14 @@ def _build_final_artifact_summary(
         [
             {
                 "stage": "final_manuscript_tables_and_figures",
+                "n_prefilter_support_features": int(len(prefilter_support_features)),
                 "n_final_support_features": int(len(final_support_features)),
+                "n_hc3_removed_features": int(
+                    len(prefilter_support_features) - len(final_support_features)
+                ),
+                "n_hc3_retained_features": int(
+                    hc3_filter_summary["hc3_retained_after_filter"].sum()
+                ),
                 "n_workflow_stage_rows": int(len(workflow_stage_summary)),
                 "n_figures": int(len(figure_specs)),
                 "final_ols_holdout_nrmse": float(

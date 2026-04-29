@@ -203,6 +203,14 @@ class InteractionDiscoverySpec:
         Number of response permutations used for the public deterministic null threshold.
     random_seed
         Deterministic random seed for the permutation sequence.
+    implementation_method
+        Public implementation method actually run by this package.
+    implementation_status
+        Alignment status for the public implementation relative to the manuscript method.
+    source_workflow_reference
+        Reference label for the manuscript interaction workflow to reconcile against.
+    source_workflow_equivalence_status
+        Validation status for equivalence to the manuscript interaction workflow.
     """
 
     method: str
@@ -211,6 +219,10 @@ class InteractionDiscoverySpec:
     retained_pairs_reference: int
     permutation_count_B: int
     random_seed: int = 123
+    implementation_method: str = "residualized_product_permutation_surrogate"
+    implementation_status: str = "source_backed_public_surrogate"
+    source_workflow_reference: str = "private_tree_shap_interaction_workflow"
+    source_workflow_equivalence_status: str = "not_yet_validated"
 
 
 @dataclass(frozen=True)
@@ -227,6 +239,9 @@ class InteractionDiscoveryResult:
         Per-pair summary of empirical-null interaction-score distributions.
     retained_pairs
         Retained interaction-pair table after thresholding.
+    provenance
+        One-row provenance table recording the manuscript method, public surrogate method, and
+        equivalence-validation status.
     summary
         One-row summary of the interaction-discovery stage.
     """
@@ -235,6 +250,7 @@ class InteractionDiscoveryResult:
     component_interaction_scores: pd.DataFrame
     interaction_null_summary: pd.DataFrame
     retained_pairs: pd.DataFrame
+    provenance: pd.DataFrame
     summary: pd.DataFrame
 
 
@@ -1062,6 +1078,21 @@ def interaction_discovery_spec_from_case_study_config(
         retained_pairs_reference=int(interaction["retained_pairs"]),
         permutation_count_B=int(empirical_null["permutation_count_B"]),
         random_seed=int(interface.get("holdout_random_seed", 123)),
+        implementation_method=str(
+            interaction.get(
+                "public_implementation_method",
+                "residualized_product_permutation_surrogate",
+            )
+        ),
+        implementation_status=str(
+            interaction.get("public_implementation_status", "source_backed_public_surrogate")
+        ),
+        source_workflow_reference=str(
+            interaction.get("source_workflow_reference", "private_tree_shap_interaction_workflow")
+        ),
+        source_workflow_equivalence_status=str(
+            interaction.get("source_workflow_equivalence_status", "not_yet_validated")
+        ),
     )
 
 
@@ -1161,6 +1192,7 @@ def discover_manuscript_interactions(
         ascending=[False, True],
         ignore_index=True,
     )
+    provenance = _build_interaction_provenance(spec)
     summary = _build_interaction_discovery_summary(
         n_training_rows=len(y_train),
         n_candidate_pairs=len(candidates),
@@ -1175,6 +1207,7 @@ def discover_manuscript_interactions(
         component_interaction_scores=component_scores,
         interaction_null_summary=null_summary,
         retained_pairs=retained_pairs,
+        provenance=provenance,
         summary=summary,
     )
 
@@ -1204,6 +1237,7 @@ def write_interaction_discovery_artifacts(
         "component_interaction_scores": result.component_interaction_scores,
         "interaction_null_summary": result.interaction_null_summary,
         "retained_interaction_pairs": result.retained_pairs,
+        "interaction_discovery_provenance": result.provenance,
         "interaction_discovery_summary": result.summary,
     }
     written: dict[str, Path] = {}
@@ -3882,6 +3916,24 @@ def _build_interaction_null_summary(
     )
 
 
+def _build_interaction_provenance(spec: InteractionDiscoverySpec) -> pd.DataFrame:
+    """Build interaction-discovery provenance and manuscript-alignment status table."""
+    return pd.DataFrame(
+        [
+            {
+                "stage": "interaction_discovery",
+                "manuscript_method": spec.method,
+                "manuscript_aggregation_rule": spec.aggregation_rule,
+                "public_implementation_method": spec.implementation_method,
+                "public_implementation_status": spec.implementation_status,
+                "source_workflow_reference": spec.source_workflow_reference,
+                "source_workflow_equivalence_status": spec.source_workflow_equivalence_status,
+                "manuscript_retained_pairs_reference": int(spec.retained_pairs_reference),
+            }
+        ]
+    )
+
+
 def _build_interaction_discovery_summary(
     *,
     n_training_rows: int,
@@ -3898,6 +3950,9 @@ def _build_interaction_discovery_summary(
             {
                 "stage": "interaction_discovery",
                 "method": spec.method,
+                "public_implementation_method": spec.implementation_method,
+                "public_implementation_status": spec.implementation_status,
+                "source_workflow_equivalence_status": spec.source_workflow_equivalence_status,
                 "aggregation_rule": spec.aggregation_rule,
                 "n_training_rows": int(n_training_rows),
                 "n_candidate_pairs": int(n_candidate_pairs),

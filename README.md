@@ -102,7 +102,9 @@ The release-facing package metadata now records repository URLs, classifiers, an
 
 - The manuscript interaction-discovery notebook now scores released catalog interaction pairs by
   residualized incremental contribution beyond their first-order factors and writes deterministic
-  pair-score, component-score, null-summary, and retained-pair artifacts.
+  pair-score, component-score, null-summary, retained-pair, and provenance artifacts. The
+  provenance marks this public implementation as a non-equivalent surrogate until the tree-SHAP
+  workflow is ported or externalized.
 
 - The manuscript nonlinear-discovery notebook now scores released catalog transformation terms by
   residualized incremental nonlinear contribution beyond each source first-order input and writes

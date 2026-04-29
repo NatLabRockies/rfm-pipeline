@@ -13,6 +13,7 @@ reproducibility_example
 scope_boundary
 manuscript_contract
 manuscript_data_contract
+debiased_lasso_contract
 manuscript_runtime
 manuscript_alignment_audit
 api

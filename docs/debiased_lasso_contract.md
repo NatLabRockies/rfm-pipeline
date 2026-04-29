@@ -4,37 +4,37 @@ This page freezes the implementation contract for the manuscript sparse-selectio
 
 ## Current status
 
-| Item | Contract value |
-| --- | --- |
-| Manuscript stage | `sparse_selection_and_stability` |
-| Public stage entrypoint | `select_manuscript_sparse_support` |
-| Current public method | `ebic_l1_component_union_with_subsample_stability` |
-| Target source workflow | `notebook_pca_debiased_lasso` |
-| Source artifact | `LASSO_to_OLS_v9.ipynb` |
-| Source artifact in public repo | `false` |
-| Exact implementation status | `contract_frozen_not_implemented` |
-| Equivalence status | `not_yet_validated` |
-| De-biasing definition status | `unresolved_requires_source_notebook_audit` |
+| Item                           | Contract value                                     |
+| ------------------------------ | -------------------------------------------------- |
+| Manuscript stage               | `sparse_selection_and_stability`                   |
+| Public stage entrypoint        | `select_manuscript_sparse_support`                 |
+| Current public method          | `ebic_l1_component_union_with_subsample_stability` |
+| Target source workflow         | `notebook_pca_debiased_lasso`                      |
+| Source artifact                | `LASSO_to_OLS_v9.ipynb`                            |
+| Source artifact in public repo | `false`                                            |
+| Exact implementation status    | `contract_frozen_not_implemented`                  |
+| Equivalence status             | `not_yet_validated`                                |
+| De-biasing definition status   | `unresolved_requires_source_notebook_audit`        |
 
 The public sparse-selection function is therefore a handoff-compatible surrogate, not the final manuscript-exact de-biased-LASSO implementation.
 
 ## Frozen recovered notebook facts
 
-| Quantity | Contract value |
-| --- | ---: |
-| Candidate inputs entering notebook sparse stage | 352 |
-| Flattened outputs before culling | 23,495 |
-| Outputs retained after culling | 9,782 |
-| Retained PCA component scores | 39 |
-| Training rows | 18,000 |
-| Holdout rows | 2,000 |
-| External holdout fraction | 0.10 |
-| LASSO mixing value `l1_ratio` | 1.00 |
-| EBIC `gamma` | 0.5 |
-| Recovered selected alpha fraction | 0.10 |
-| Recovered approximate selected absolute alpha | 2.8541 |
-| Recovered notebook selected-feature count | 346 |
-| Final support count after downstream filtering | 340 |
+| Quantity                                        | Contract value |
+| ----------------------------------------------- | -------------: |
+| Candidate inputs entering notebook sparse stage |            352 |
+| Flattened outputs before culling                |         23,495 |
+| Outputs retained after culling                  |          9,782 |
+| Retained PCA component scores                   |             39 |
+| Training rows                                   |         18,000 |
+| Holdout rows                                    |          2,000 |
+| External holdout fraction                       |           0.10 |
+| LASSO mixing value `l1_ratio`                   |           1.00 |
+| EBIC `gamma`                                    |            0.5 |
+| Recovered selected alpha fraction               |           0.10 |
+| Recovered approximate selected absolute alpha   |         2.8541 |
+| Recovered notebook selected-feature count       |            346 |
+| Final support count after downstream filtering  |            340 |
 
 The recovered fractional alpha grid is:
 

@@ -115,7 +115,9 @@ The release-facing package metadata now records repository URLs, classifiers, an
 
 - The manuscript sparse-selection/stability notebook now fits EBIC-selected L1 models per
   retained PCA component, aggregates support across components, and writes deterministic
-  subsample-stability diagnostics and final stable-support artifacts.
+  subsample-stability diagnostics, final stable-support artifacts, and provenance that marks
+  the public implementation as not-yet-validated against the recovered de-biased-LASSO
+  notebook workflow.
 
 - The final manuscript artifact stage now applies the frozen 95% HC3 Wald inferential filter
   to the stable support, refits final OLS on retained terms, computes deterministic holdout

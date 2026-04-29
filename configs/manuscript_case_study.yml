@@ -87,6 +87,12 @@ case_study:
     ebic_gamma: 0.5
     support_aggregation_rule: union_nonzero_support_across_retained_components
     support_aggregation_rule_status: frozen_repo_decision
+    public_implementation_method: ebic_l1_component_union_with_subsample_stability
+    public_implementation_status: source_backed_public_surrogate
+    source_workflow_reference: notebook_pca_debiased_lasso
+    source_artifact: LASSO_to_OLS_v9.ipynb
+    source_workflow_equivalence_status: not_yet_validated
+    source_selected_feature_count_reference: 346
 
   stability:
     resampling_scheme: 100_subsamples_of_80_percent_rows_without_replacement_seed_123

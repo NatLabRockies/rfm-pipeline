@@ -33,6 +33,12 @@ def test_sparse_selection_spec_matches_frozen_case_study_contract() -> None:
     assert spec.subsample_fraction == 0.80
     assert spec.jaccard_threshold == 0.75
     assert spec.spearman_threshold == 0.90
+    assert spec.implementation_method == "ebic_l1_component_union_with_subsample_stability"
+    assert spec.implementation_status == "source_backed_public_surrogate"
+    assert spec.source_workflow_reference == "notebook_pca_debiased_lasso"
+    assert spec.source_artifact == "LASSO_to_OLS_v9.ipynb"
+    assert spec.source_workflow_equivalence_status == "not_yet_validated"
+    assert spec.source_selected_feature_count_reference == 346
     assert spec.random_seed == 123
 
 
@@ -100,12 +106,17 @@ def test_sparse_selection_retains_stable_signal_feature_and_writes_artifacts(
         "component_coefficients",
         "component_model_selection",
         "final_stable_support",
+        "sparse_selection_provenance",
         "sparse_selection_summary",
         "stability_feature_summary",
         "stability_resample_summary",
         "support_candidates",
     ]
     assert paths["final_stable_support"].read_text(encoding="utf-8").startswith("feature_name")
+    provenance = pd.read_csv(paths["sparse_selection_provenance"])
+    assert provenance.loc[0, "public_implementation_status"] == ("source_backed_public_surrogate")
+    assert provenance.loc[0, "source_workflow_reference"] == "notebook_pca_debiased_lasso"
+    assert provenance.loc[0, "source_workflow_equivalence_status"] == "not_yet_validated"
 
 
 def test_run_sparse_selection_stability_stage_executes_demo_context() -> None:

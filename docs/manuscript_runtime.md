@@ -129,6 +129,7 @@ The stage currently writes:
 - `stability_resample_summary.csv`
 - `stability_feature_summary.csv`
 - `final_stable_support.csv`
+- `sparse_selection_provenance.csv`
 - `sparse_selection_summary.csv`
 
 ## Phase 3 final manuscript tables and figures stage
@@ -172,8 +173,9 @@ manuscript-exact for every stage. The current scientific alignment ledger is
 deterministic residualized-product score rather than the frozen tree-SHAP interaction method,
 with explicit provenance marking it as a public surrogate; the nonlinear-discovery stage is a
 residualized parametric-transform score with explicit provenance marking it as a public surrogate
-rather than GAM EDF/p-value diagnostics; sparse selection has not yet been proven equivalent to the
-recovered de-biased-LASSO workflow. The final HC3 Wald inferential filter is now implemented locally, but retained-feature
+rather than GAM EDF/p-value diagnostics; sparse selection writes explicit provenance marking
+the EBIC/L1 public implementation as not-yet-validated against the recovered de-biased-LASSO
+workflow. The final HC3 Wald inferential filter is now implemented locally, but retained-feature
 counts and final coefficients still need verification against the private manuscript run.
 
 ## End-to-end Phase 3 reproduction chain

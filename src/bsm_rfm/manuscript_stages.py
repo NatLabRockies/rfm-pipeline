@@ -374,6 +374,18 @@ class SparseSelectionStabilitySpec:
         Minimum mean support Jaccard similarity used for the stable-support flag.
     spearman_threshold
         Minimum mean feature-rank Spearman correlation used for the stable-rank flag.
+    implementation_method
+        Public sparse-selection implementation method used by this package.
+    implementation_status
+        Manuscript-alignment status for the public implementation.
+    source_workflow_reference
+        Recovered private/notebook workflow this stage is compared against.
+    source_workflow_equivalence_status
+        Whether equivalence to the recovered workflow has been validated.
+    source_artifact
+        Recovered notebook or script artifact referenced by the provenance record.
+    source_selected_feature_count_reference
+        Recovered selected-feature count for the source sparse-screening workflow.
     random_seed
         Deterministic random seed for stability subsampling.
     """
@@ -386,6 +398,12 @@ class SparseSelectionStabilitySpec:
     subsample_fraction: float
     jaccard_threshold: float
     spearman_threshold: float
+    implementation_method: str = "ebic_l1_component_union_with_subsample_stability"
+    implementation_status: str = "source_backed_public_surrogate"
+    source_workflow_reference: str = "notebook_pca_debiased_lasso"
+    source_workflow_equivalence_status: str = "not_yet_validated"
+    source_artifact: str = "LASSO_to_OLS_v9.ipynb"
+    source_selected_feature_count_reference: int = 346
     random_seed: int = 123
 
 
@@ -407,6 +425,9 @@ class SparseSelectionStabilityResult:
         Per-candidate selection-frequency and full-model importance diagnostics.
     final_stable_support
         Terms selected by the full-data sparse model and passing stability filters.
+    provenance
+        One-row provenance table describing the public implementation and recovered
+        de-biased-LASSO workflow equivalence status.
     summary
         One-row summary of the sparse-selection and stability stage.
     """
@@ -417,6 +438,7 @@ class SparseSelectionStabilityResult:
     stability_resample_summary: pd.DataFrame
     stability_feature_summary: pd.DataFrame
     final_stable_support: pd.DataFrame
+    provenance: pd.DataFrame
     summary: pd.DataFrame
 
 
@@ -1585,6 +1607,25 @@ def sparse_selection_stability_spec_from_case_study_config(
         subsample_fraction=fraction,
         jaccard_threshold=float(stability["jaccard_threshold"]),
         spearman_threshold=float(stability["spearman_threshold"]),
+        implementation_method=str(
+            sparse.get(
+                "public_implementation_method",
+                "ebic_l1_component_union_with_subsample_stability",
+            )
+        ),
+        implementation_status=str(
+            sparse.get("public_implementation_status", "source_backed_public_surrogate")
+        ),
+        source_workflow_reference=str(
+            sparse.get("source_workflow_reference", "notebook_pca_debiased_lasso")
+        ),
+        source_workflow_equivalence_status=str(
+            sparse.get("source_workflow_equivalence_status", "not_yet_validated")
+        ),
+        source_artifact=str(sparse.get("source_artifact", "LASSO_to_OLS_v9.ipynb")),
+        source_selected_feature_count_reference=int(
+            sparse.get("source_selected_feature_count_reference", 346)
+        ),
         random_seed=seed,
     )
 
@@ -1722,6 +1763,12 @@ def select_manuscript_sparse_support(
         mean_spearman=mean_spearman,
         spec=spec,
     )
+    provenance = _build_sparse_selection_provenance(
+        n_candidate_terms=len(candidate_names),
+        n_full_support_terms=int(full_support_mask.sum()),
+        n_final_stable_support_terms=len(final_stable_support),
+        spec=spec,
+    )
     return SparseSelectionStabilityResult(
         support_candidates=support_candidates,
         component_model_selection=component_model_selection,
@@ -1729,6 +1776,7 @@ def select_manuscript_sparse_support(
         stability_resample_summary=resample_summary,
         stability_feature_summary=stability_feature_summary,
         final_stable_support=final_stable_support,
+        provenance=provenance,
         summary=summary,
     )
 
@@ -1760,6 +1808,7 @@ def write_sparse_selection_stability_artifacts(
         "stability_resample_summary": result.stability_resample_summary,
         "stability_feature_summary": result.stability_feature_summary,
         "final_stable_support": result.final_stable_support,
+        "sparse_selection_provenance": result.provenance,
         "sparse_selection_summary": result.summary,
     }
     written: dict[str, Path] = {}
@@ -3164,6 +3213,10 @@ def _build_sparse_selection_summary(
                 "stage": "sparse_selection_and_stability",
                 "model_class": spec.model_class,
                 "support_aggregation_rule": spec.support_aggregation_rule,
+                "public_implementation_method": spec.implementation_method,
+                "public_implementation_status": spec.implementation_status,
+                "source_workflow_reference": spec.source_workflow_reference,
+                "source_workflow_equivalence_status": spec.source_workflow_equivalence_status,
                 "n_training_rows": int(n_training_rows),
                 "n_candidate_terms": int(n_candidate_terms),
                 "n_active_candidate_terms": int(n_active_candidate_terms),
@@ -3178,6 +3231,40 @@ def _build_sparse_selection_summary(
                 "mean_resample_spearman": float(mean_spearman),
                 "jaccard_threshold": float(spec.jaccard_threshold),
                 "spearman_threshold": float(spec.spearman_threshold),
+            }
+        ]
+    )
+
+
+def _build_sparse_selection_provenance(
+    *,
+    n_candidate_terms: int,
+    n_full_support_terms: int,
+    n_final_stable_support_terms: int,
+    spec: SparseSelectionStabilitySpec,
+) -> pd.DataFrame:
+    """Build the sparse-selection provenance and equivalence-status table."""
+    return pd.DataFrame(
+        [
+            {
+                "stage": "sparse_selection_and_stability",
+                "public_implementation_method": spec.implementation_method,
+                "public_implementation_status": spec.implementation_status,
+                "model_class": spec.model_class,
+                "source_workflow_reference": spec.source_workflow_reference,
+                "source_artifact": spec.source_artifact,
+                "source_workflow_equivalence_status": spec.source_workflow_equivalence_status,
+                "source_selected_feature_count_reference": int(
+                    spec.source_selected_feature_count_reference
+                ),
+                "current_candidate_term_count": int(n_candidate_terms),
+                "current_full_support_term_count": int(n_full_support_terms),
+                "current_final_stable_support_term_count": int(n_final_stable_support_terms),
+                "equivalence_note": (
+                    "Public release uses deterministic EBIC-selected L1 component models "
+                    "with stability filtering; equivalence to the recovered de-biased-LASSO "
+                    "notebook workflow has not yet been validated."
+                ),
             }
         ]
     )

@@ -326,3 +326,7 @@ current status is intentionally conservative: `source_backed_public_surrogate` w
 `not_yet_validated` private-workflow equivalence. Do not describe this stage as exact reproduction
 of the manuscript GAM EDF/p-value workflow until that workflow is ported or externalized and
 validated against the public outputs.
+
+## Sparse-selection provenance reconciliation
+
+The sparse-selection/stability stage now writes `sparse_selection/sparse_selection_provenance.csv` and carries public implementation/equivalence fields through the stage summary. The public implementation remains `ebic_l1_component_union_with_subsample_stability` and is explicitly marked `source_backed_public_surrogate` with `source_workflow_reference=notebook_pca_debiased_lasso`, `source_artifact=LASSO_to_OLS_v9.ipynb`, and `source_workflow_equivalence_status=not_yet_validated`. This is a provenance/equivalence-status hardening slice, not a port of the recovered de-biased-LASSO notebook workflow.

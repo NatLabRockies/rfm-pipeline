@@ -99,13 +99,16 @@ The fourth Phase 3 source-backed notebook stage is `05_nonlinear_discovery.ipynb
 `bsm_rfm.run_nonlinear_discovery_stage(...)`, which reads nonlinear-discovery metadata from the
 frozen case-study contract, uses the released feature catalog as the authoritative transformation
 candidate source, residualizes each supported transformation against its source first-order input,
-and scores the incremental nonlinear contribution against retained PCA component scores.
+and scores the incremental nonlinear contribution against retained PCA component scores. This is
+a public surrogate for the frozen GAM EDF/p-value workflow and writes explicit provenance marking
+that equivalence is not yet validated.
 
 The stage currently writes:
 
 - `transformation_scores.csv`
 - `component_transformation_scores.csv`
 - `retained_transformations.csv`
+- `nonlinear_discovery_provenance.csv`
 - `nonlinear_discovery_summary.csv`
 
 ## Phase 3 sparse-selection and stability stage
@@ -167,10 +170,10 @@ The tracked notebooks are executable and source-backed, but executable does not 
 manuscript-exact for every stage. The current scientific alignment ledger is
 `docs/manuscript_alignment_audit.md`. In particular, the interaction-discovery stage is a
 deterministic residualized-product score rather than the frozen tree-SHAP interaction method,
-with explicit provenance marking it as a public surrogate; the
-nonlinear-discovery stage is a residualized parametric-transform score rather than GAM EDF/p-value
-diagnostics, sparse selection has not yet been proven equivalent to the recovered de-biased-LASSO
-workflow. The final HC3 Wald inferential filter is now implemented locally, but retained-feature
+with explicit provenance marking it as a public surrogate; the nonlinear-discovery stage is a
+residualized parametric-transform score with explicit provenance marking it as a public surrogate
+rather than GAM EDF/p-value diagnostics; sparse selection has not yet been proven equivalent to the
+recovered de-biased-LASSO workflow. The final HC3 Wald inferential filter is now implemented locally, but retained-feature
 counts and final coefficients still need verification against the private manuscript run.
 
 ## End-to-end Phase 3 reproduction chain

@@ -83,9 +83,10 @@ The repo now includes a tested workflow foundation and executable manuscript-sta
 This should not yet be described as a full exact implementation of every manuscript method.
 `docs/manuscript_alignment_audit.md` is the current status ledger for which notebook stages are
 manuscript-exact, partially aligned, or deterministic public approximations. Higher-level
-reconciliation still remains for the notebook-derived feature-expansion stage, the interaction
-stage, the nonlinear-discovery stage, real-data verification of the final HC3 filter, and exact
-manuscript table and figure reproduction.
+reconciliation still remains for the notebook-derived feature-expansion stage, real-data
+verification of the final HC3 filter, and exact manuscript table and figure reproduction. The
+interaction and nonlinear stages now write explicit provenance ledgers, but their public surrogate
+methods are not yet manuscript-exact.
 
 The release-facing package metadata now records repository URLs, classifiers, and keywords, while the scientific scope boundary remains explicit: upstream Delta null screening is still exposed through a source-derived adapter, and the notebook-specific feature-expansion defaults are still only partially promoted into the canonical package path.
 
@@ -108,7 +109,9 @@ The release-facing package metadata now records repository URLs, classifiers, an
 
 - The manuscript nonlinear-discovery notebook now scores released catalog transformation terms by
   residualized incremental nonlinear contribution beyond each source first-order input and writes
-  deterministic transformation-score, component-score, and retained-transformation artifacts.
+  deterministic transformation-score, component-score, retained-transformation, and provenance
+  artifacts. The provenance marks this public implementation as a non-equivalent surrogate until
+  the GAM EDF/p-value workflow is ported or externalized.
 
 - The manuscript sparse-selection/stability notebook now fits EBIC-selected L1 models per
   retained PCA component, aggregates support across components, and writes deterministic

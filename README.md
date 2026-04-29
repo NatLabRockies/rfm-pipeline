@@ -71,7 +71,7 @@ This package now covers the foundational and workflow-level utilities needed for
 - visualization-side artifact loading
 
 The scientific workflow is no longer only documented at the screening/final-fit/export boundary.
-The repo now includes a tested canonical workflow foundation that performs:
+The repo now includes a tested workflow foundation and executable manuscript-stage scaffold that performs:
 
 - upstream null-screening delegation to the recovered source script
 - source-backed manuscript output-conditioning, empirical-null, interaction-discovery, nonlinear-discovery, sparse-selection/stability, and final table/figure stages
@@ -80,7 +80,12 @@ The repo now includes a tested canonical workflow foundation that performs:
 - holdout bootstrap nRMSE evaluation
 - canonical post-fit artifact assembly and on-disk export writing
 
-Higher-level reconciliation still remains for the notebook-derived feature-expansion stage: the repo now exposes an explicit, tested feature-expansion contract, but the notebook-specific recovered specification has not yet been fully ported into a canonical source-driven default. Broader case-study-specific artifact provenance reconciliation also remains.
+This should not yet be described as a full exact implementation of every manuscript method.
+`docs/manuscript_alignment_audit.md` is the current status ledger for which notebook stages are
+manuscript-exact, partially aligned, or deterministic public approximations. Higher-level
+reconciliation still remains for the notebook-derived feature-expansion stage, the interaction
+stage, the nonlinear-discovery stage, the final inferential filter, and exact manuscript table and
+figure reproduction.
 
 The release-facing package metadata now records repository URLs, classifiers, and keywords, while the scientific scope boundary remains explicit: upstream Delta null screening is still exposed through a source-derived adapter, and the notebook-specific feature-expansion defaults are still only partially promoted into the canonical package path.
 
@@ -153,5 +158,7 @@ empirical-null screening, interaction discovery, nonlinear discovery, sparse sel
 stability filtering, and final manuscript table/figure regeneration. The
 `02_output_conditioning.ipynb` through `08_manuscript_tables_and_figures.ipynb` notebooks now run
 deterministic stage functions and write handoff artifacts under the resolved manuscript output root.
+The chain is executable and QA-audited, but the manuscript-alignment audit records remaining
+scientific exactness gaps before the repo should claim complete manuscript reproduction.
 `run_manuscript_reproduction_audit_stage(...)` wraps the full chain with a QA layer that writes
 `reproduction_audit/artifact_manifest.csv`, `metric_checks.csv`, and `audit_summary.csv`.

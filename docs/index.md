@@ -14,6 +14,7 @@ scope_boundary
 manuscript_contract
 manuscript_data_contract
 manuscript_runtime
+manuscript_alignment_audit
 api
 workflow_audit
 module_plan

@@ -155,6 +155,16 @@ The stage currently writes under `final_manuscript_artifacts/`:
 `07_final_ols_and_bundle_export.ipynb` uses the same stage to display and validate final-model
 artifacts before the manuscript-facing table and figure notebook consumes them.
 
+## Scientific alignment status
+
+The tracked notebooks are executable and source-backed, but executable does not mean
+manuscript-exact for every stage. The current scientific alignment ledger is
+`docs/manuscript_alignment_audit.md`. In particular, the interaction-discovery stage is a
+deterministic residualized-product score rather than the frozen tree-SHAP interaction method, the
+nonlinear-discovery stage is a residualized parametric-transform score rather than GAM EDF/p-value
+diagnostics, sparse selection has not yet been proven equivalent to the recovered de-biased-LASSO
+workflow, and the final HC3 inferential filter is not yet implemented.
+
 ## End-to-end Phase 3 reproduction chain
 
 For local reproduction runs that should emit every Phase 3 artifact family from one context, use

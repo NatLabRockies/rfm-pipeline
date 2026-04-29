@@ -290,3 +290,14 @@ The public manuscript documentation has been refreshed to describe the notebooks
 entrypoints rather than Phase 2 skeletons. Keep this wording current: Phase 3 now has implemented
 stage functions, notebooks, final table/figure regeneration, an end-to-end reproduction chain, a QA
 audit layer, and a gate-level manuscript reproduction smoke task.
+
+## Latest alignment-audit correction
+
+The repo should not yet claim that all manuscript notebooks are complete in the sense of exact
+scientific reproduction. They are executable source-backed entrypoints with deterministic demo
+artifacts and QA checks, but `docs/manuscript_alignment_audit.md` now records remaining exactness
+gaps: interaction discovery does not yet implement tree-SHAP interactions, nonlinear discovery does
+not yet implement GAM EDF/p-value diagnostics, sparse selection has not yet been shown equivalent to
+the recovered de-biased-LASSO workflow, the final HC3 inferential filter is missing, and final tables
+and figures are deterministic public artifacts rather than verified manuscript-exact reproductions.
+Treat that audit as the current source of truth for manuscript-alignment claims.

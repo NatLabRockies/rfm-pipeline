@@ -49,6 +49,10 @@ case_study:
   empirical_null_screen:
     statistic: coefficient_row_l2_norm
     statistic_status: frozen_from_manuscript
+    public_implementation_method: coefficient_row_l2_permutation
+    public_implementation_status: source_backed_public_surrogate
+    source_script_reference: private_delta_null_screening_script
+    source_script_equivalence_status: not_yet_validated
     permutation_count_B: 200
     permutation_count_status: frozen_source_derived_repo_decision
     bh_q_screen: 0.10

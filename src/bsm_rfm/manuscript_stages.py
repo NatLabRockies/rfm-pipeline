@@ -117,6 +117,14 @@ class EmpiricalNullScreeningSpec:
         Benjamini--Hochberg false-discovery-rate threshold for screening.
     retained_terms_reference
         Manuscript-reported retained-term count for the full case study.
+    implementation_method
+        Public implementation used by this repository for empirical-null screening.
+    implementation_status
+        Alignment status of the public implementation relative to the manuscript contract.
+    source_script_reference
+        Name or identifier for the private/upstream screening script, if known.
+    source_script_equivalence_status
+        Validation status against the private/upstream screening script.
     random_seed
         Deterministic random seed for the permutation sequence.
     """
@@ -125,6 +133,10 @@ class EmpiricalNullScreeningSpec:
     permutation_count_B: int
     bh_q_screen: float
     retained_terms_reference: int
+    implementation_method: str = "coefficient_row_l2_permutation"
+    implementation_status: str = "source_backed_public_surrogate"
+    source_script_reference: str = "private_delta_null_screening_script"
+    source_script_equivalence_status: str = "not_yet_validated"
     random_seed: int = 123
 
 
@@ -142,6 +154,9 @@ class EmpiricalNullScreeningResult:
         Per-feature summary of the permutation-null statistic distribution.
     retained_terms
         Retained term table after BH screening.
+    provenance
+        One-row provenance table describing the public implementation and private-script
+        equivalence status.
     summary
         One-row summary of the screening stage.
     """
@@ -150,6 +165,7 @@ class EmpiricalNullScreeningResult:
     component_coefficients: pd.DataFrame
     permutation_null_summary: pd.DataFrame
     retained_terms: pd.DataFrame
+    provenance: pd.DataFrame
     summary: pd.DataFrame
 
 
@@ -781,6 +797,18 @@ def empirical_null_screening_spec_from_case_study_config(
         permutation_count_B=int(section["permutation_count_B"]),
         bh_q_screen=float(section["bh_q_screen"]),
         retained_terms_reference=int(section["retained_terms"]),
+        implementation_method=str(
+            section.get("public_implementation_method", "coefficient_row_l2_permutation")
+        ),
+        implementation_status=str(
+            section.get("public_implementation_status", "source_backed_public_surrogate")
+        ),
+        source_script_reference=str(
+            section.get("source_script_reference", "private_delta_null_screening_script")
+        ),
+        source_script_equivalence_status=str(
+            section.get("source_script_equivalence_status", "not_yet_validated")
+        ),
         random_seed=int(interface.get("holdout_random_seed", 123)),
     )
 
@@ -926,11 +954,13 @@ def screen_manuscript_empirical_null_terms(
         min_p_value=float(p_values.min()),
         spec=spec,
     )
+    provenance = _build_empirical_null_screening_provenance(spec)
     return EmpiricalNullScreeningResult(
         feature_screening_statistics=feature_stats,
         component_coefficients=component_coefficients,
         permutation_null_summary=null_summary,
         retained_terms=retained_terms,
+        provenance=provenance,
         summary=summary,
     )
 
@@ -960,6 +990,7 @@ def write_empirical_null_screening_artifacts(
         "component_coefficients": result.component_coefficients,
         "permutation_null_summary": result.permutation_null_summary,
         "retained_terms": result.retained_terms,
+        "empirical_null_provenance": result.provenance,
         "empirical_null_screen_summary": result.summary,
     }
     written: dict[str, Path] = {}
@@ -3658,7 +3689,31 @@ def _build_empirical_null_screening_summary(
                 "n_retained_terms": int(n_retained_terms),
                 "min_empirical_p_value": float(min_p_value),
                 "manuscript_retained_terms_reference": int(spec.retained_terms_reference),
+                "implementation_method": spec.implementation_method,
+                "implementation_status": spec.implementation_status,
+                "source_script_equivalence_status": spec.source_script_equivalence_status,
                 "random_seed": int(spec.random_seed),
+            }
+        ]
+    )
+
+
+def _build_empirical_null_screening_provenance(
+    spec: EmpiricalNullScreeningSpec,
+) -> pd.DataFrame:
+    """Build the empirical-null provenance ledger for manuscript alignment audits."""
+    return pd.DataFrame(
+        [
+            {
+                "stage": "empirical_null_screening",
+                "manuscript_contract_statistic": spec.statistic,
+                "public_implementation_method": spec.implementation_method,
+                "public_implementation_status": spec.implementation_status,
+                "source_script_reference": spec.source_script_reference,
+                "source_script_equivalence_status": spec.source_script_equivalence_status,
+                "permutation_count_B": spec.permutation_count_B,
+                "bh_q_screen": spec.bh_q_screen,
+                "retained_terms_reference": spec.retained_terms_reference,
             }
         ]
     )

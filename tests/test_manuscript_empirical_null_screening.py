@@ -113,12 +113,16 @@ def test_empirical_null_screening_retains_train_signal_and_writes_artifacts(
     paths = write_empirical_null_screening_artifacts(result, tmp_path)
     assert sorted(paths) == [
         "component_coefficients",
+        "empirical_null_provenance",
         "empirical_null_screen_summary",
         "feature_screening_statistics",
         "permutation_null_summary",
         "retained_terms",
     ]
     assert paths["retained_terms"].read_text(encoding="utf-8").startswith("feature_name")
+    provenance_text = paths["empirical_null_provenance"].read_text(encoding="utf-8")
+    assert "source_backed_public_surrogate" in provenance_text
+    assert "not_yet_validated" in provenance_text
 
 
 def test_run_empirical_null_screening_stage_executes_demo_context() -> None:

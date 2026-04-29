@@ -302,3 +302,13 @@ the recovered de-biased-LASSO workflow, the final HC3 inferential filter now nee
 verification, and final tables and figures are deterministic public artifacts rather than verified
 manuscript-exact reproductions.
 Treat that audit as the current source of truth for manuscript-alignment claims.
+
+### Empirical-null provenance reconciliation slice
+
+The empirical-null screening stage now writes `empirical_null_provenance.csv` next to the screening
+statistics, coefficients, permutation-null summaries, retained terms, and summary table. The
+provenance ledger records the public implementation method, public implementation status, private
+source-script reference, and source-script equivalence status. The current status is intentionally
+conservative: `source_backed_public_surrogate` with `not_yet_validated` private-script equivalence.
+Do not describe this stage as exact reproduction of the recovered Delta/null-screening script until
+that script is available in the repo and validated against the public artifact outputs.

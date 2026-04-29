@@ -32,9 +32,13 @@ def test_resolve_manuscript_runtime_falls_back_to_demo_without_local_paths() -> 
 def test_demo_artifacts_validate_and_load(tmp_path: Path) -> None:
     paths = write_demo_manuscript_artifacts(tmp_path)
     tables = load_manuscript_artifact_tables(paths)
+    inputs = tables["case_study_input_matrix"]
+
     assert validate_manuscript_artifact_tables(tables) == []
-    assert tables["case_study_input_matrix"].shape[0] == 12
-    assert tables["fixed_holdout_assignments"]["split"].tolist().count("holdout") == 3
+    assert inputs.shape[0] == 80
+    assert tables["fixed_holdout_assignments"]["split"].tolist().count("holdout") == 16
+    assert (inputs["x2"] > -1.0).all()
+    assert abs(inputs["x1"].corr(inputs["x2"])) < 0.95
 
 
 def test_notebook_context_and_summary_table_are_executable() -> None:

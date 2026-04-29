@@ -114,22 +114,29 @@ def unresolved_manuscript_placeholders(paths: dict[str, str]) -> tuple[str, ...]
 def write_demo_manuscript_artifacts(root: Path) -> dict[str, Path]:
     """Write a deterministic toy dataset matching the manuscript artifact contract."""
     root.mkdir(parents=True, exist_ok=True)
-    sample_ids = list(range(1, 13))
+    sample_ids = list(range(1, 81))
+    x1 = pd.Series([(value - 39.5) / 10.0 for value in range(80)], name="x1")
+    x2 = pd.Series(
+        [0.1 + float((value * 7) % 17) / 10.0 for value in range(80)],
+        name="x2",
+    )
+    afsc = pd.Series([value % 2 for value in range(80)], name="AFSC")
+    uaeoro = pd.Series([(value // 2) % 2 for value in range(80)], name="UAEORO")
     input_matrix = pd.DataFrame(
         {
             "sample_id": sample_ids,
-            "x1": [float(value) for value in range(12)],
-            "x2": [0.5 * value for value in range(12)],
-            "AFSC": [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1],
-            "UAEORO": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+            "x1": x1,
+            "x2": x2,
+            "AFSC": afsc,
+            "UAEORO": uaeoro,
         }
     )
     output_matrix = pd.DataFrame(
         {
             "sample_id": sample_ids,
-            "y1": 1.0 + 2.0 * input_matrix["x1"] - 1.0 * input_matrix["x2"],
-            "y2": -0.5 + 0.75 * input_matrix["x1"] + 0.5 * input_matrix["x2"],
-            "y3": 2.0 + 0.25 * input_matrix["x1"] + 0.1 * input_matrix["AFSC"],
+            "y1": 1.0 + 12.0 * x1 + 0.10 * x2,
+            "y2": -0.5 - 10.0 * x1 + 0.25 * afsc,
+            "y3": 2.0 + 8.0 * x1 + 0.25 * uaeoro,
         }
     )
     input_metadata = pd.DataFrame(
@@ -172,7 +179,7 @@ def write_demo_manuscript_artifacts(root: Path) -> dict[str, Path]:
     holdout = pd.DataFrame(
         {
             "sample_id": sample_ids,
-            "split": ["train"] * 9 + ["holdout"] * 3,
+            "split": ["train"] * 64 + ["holdout"] * 16,
         }
     )
 

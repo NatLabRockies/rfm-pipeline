@@ -65,7 +65,7 @@ The second Phase 3 source-backed notebook stage is `03_empirical_null_screen.ipy
 `bsm_rfm.run_empirical_null_screening_stage(...)`, which materializes the tracked feature
 catalog, uses the retained PCA component scores as the screening response, computes the
 frozen coefficient-row-norm statistic, estimates featurewise empirical-null p-values from
-deterministic response permutations, and applies the frozen Benjamini--Hochberg threshold.
+deterministic response permutations, applies the frozen Benjamini--Hochberg threshold, and writes a provenance table that distinguishes the public surrogate from the private Delta-null screening script.
 
 The stage currently writes:
 
@@ -73,6 +73,7 @@ The stage currently writes:
 - `component_coefficients.csv`
 - `permutation_null_summary.csv`
 - `retained_terms.csv`
+- `empirical_null_provenance.csv`
 - `empirical_null_screen_summary.csv`
 
 ## Phase 3 interaction-discovery stage

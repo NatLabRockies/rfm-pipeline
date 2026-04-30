@@ -48,6 +48,12 @@ Targeted validation should be run first for the changed area. Relevant Pixi task
 Use `./test_repo.sh --fix` only when formatting, Markdown normalization, notebook hygiene fixes, and
 transient cleanup are intended.
 
+## Latest Validation Record
+
+- `./test_repo.sh --check`: passed after adding this manifest and its contract tests.
+- GitHub Actions CI run for PR #2: passed before merge.
+- Pre-commit hooks and the pre-push full repository gate passed before PR #2 was opened.
+
 ## Completed Work
 
 - Phase 0 manuscript contract freeze exists in `docs/manuscript_contract.md`,
@@ -76,7 +82,7 @@ transient cleanup are intended.
 - [x] Maintain a canonical repository gate in `test_repo.sh`.
 - [x] Align CI around the local repository gate.
 - [x] Add this engineering manifest as the authoritative planning document.
-- [ ] Run and record a fresh full `./test_repo.sh --check` after manifest changes.
+- [x] Run and record a fresh full `./test_repo.sh --check` after manifest changes.
 - [ ] Keep planning docs synchronized when manuscript-stage status changes.
 
 ### P1 - Release-Hardening And Public Contract Stability

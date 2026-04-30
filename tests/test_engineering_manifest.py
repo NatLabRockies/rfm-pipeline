@@ -25,6 +25,20 @@ def test_engineering_manifest_records_current_completed_work() -> None:
         assert phrase in text
 
 
+def test_engineering_manifest_records_latest_full_gate() -> None:
+    """The manifest should record the latest full local and CI validation state."""
+    text = MANIFEST_PATH.read_text(encoding="utf-8")
+    required_phrases = [
+        "## Latest Validation Record",
+        "`./test_repo.sh --check`: passed",
+        "GitHub Actions CI run for PR #2: passed",
+        "- [x] Run and record a fresh full `./test_repo.sh --check` after manifest changes.",
+    ]
+
+    for phrase in required_phrases:
+        assert phrase in text
+
+
 def test_engineering_manifest_records_remaining_exactness_gaps() -> None:
     """The manifest should preserve the known manuscript-exactness boundaries."""
     text = MANIFEST_PATH.read_text(encoding="utf-8")

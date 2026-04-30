@@ -34,3 +34,19 @@ def test_public_manuscript_docs_describe_source_backed_reproduction_chain() -> N
 
     assert "source-backed stage functions" in notebook_readme
     assert "deterministic handoff artifacts" in notebook_readme
+
+
+def test_module_plan_records_manuscript_runtime_and_stage_modules() -> None:
+    """The live module map should stay synchronized with manuscript-stage implementation."""
+    module_plan = Path("docs/module_plan.md").read_text(encoding="utf-8")
+    required_snippets = [
+        "`bsm_rfm.manuscript_data_contract`",
+        "`bsm_rfm.manuscript_runtime`",
+        "`bsm_rfm.manuscript_stages`",
+        "run_manuscript_reproduction_audit_stage",
+        "docs/manuscript_alignment_audit.md",
+        "source-backed executable scaffold",
+    ]
+
+    for snippet in required_snippets:
+        assert snippet in module_plan

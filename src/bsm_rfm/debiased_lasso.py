@@ -13,7 +13,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import MultiTaskLasso
+from sklearn.linear_model import Lasso, MultiTaskLasso
 from sklearn.preprocessing import StandardScaler
 
 
@@ -189,3 +189,100 @@ def compute_debiased_lasso_artifacts(
     }
 
     return artifacts
+
+
+# ---------------------------------------------------------------------------
+# Nodewise LASSO precision estimation, debias correction, and z-tests
+# ---------------------------------------------------------------------------
+
+
+def nodewise_precision(X, alpha_node: float = 0.1, max_iter: int = 1000):
+    """Estimate approximate precision rows via nodewise Lasso.
+
+    Returns
+    -------
+    Theta : np.ndarray
+        Approximate precision rows (p x p) where row j stores theta_j.
+    tau2 : np.ndarray
+        Residual variances from nodewise regressions (p,).
+    """
+    Xf = pd.DataFrame(X).apply(pd.to_numeric, errors="raise")
+    n, p = Xf.shape
+    scaler = StandardScaler(with_mean=True, with_std=True)
+    Xs = scaler.fit_transform(Xf.values)
+
+    Theta = np.zeros((p, p), dtype=float)
+    tau2 = np.zeros(p, dtype=float)
+
+    for j in range(p):
+        mask = [k for k in range(p) if k != j]
+        X_other = Xs[:, mask]
+        y = Xs[:, j]
+
+        model = Lasso(alpha=float(alpha_node), fit_intercept=False, max_iter=int(max_iter))
+        model.fit(X_other, y)
+        gamma = model.coef_
+
+        resid = y - X_other @ gamma
+        tau2_j = float(np.mean(resid**2))
+        tau2[j] = tau2_j
+
+        inv_tau = 1.0 / tau2_j if tau2_j > 0 else 0.0
+        Theta[j, j] = inv_tau
+        Theta[j, mask] = -gamma * inv_tau
+
+    return Theta, tau2
+
+
+def debias_coeffs_batched(X, Y, B_hat, Theta):
+    """Compute debiased coefficients and per-response variance estimates.
+
+    Parameters
+    ----------
+    X, Y
+        Data frames or array-likes with shapes (n, p) and (n, q).
+    B_hat : array-like
+        Penalized coefficient estimate with shape (p, q).
+    Theta : np.ndarray
+        Approximate precision matrix rows (p x p).
+
+    Returns
+    -------
+    B_tilde : np.ndarray
+        Debiased coefficient estimates (p, q).
+    sigma2 : np.ndarray
+        Per-response residual variance estimates (q,).
+    """
+    Xf = pd.DataFrame(X).apply(pd.to_numeric, errors="raise")
+    Yf = pd.DataFrame(Y).apply(pd.to_numeric, errors="raise")
+
+    n = Xf.shape[0]
+    U = Yf.values - Xf.values @ B_hat  # n x q
+
+    correction = Theta @ (Xf.values.T @ U) / float(max(1, n))
+    B_tilde = B_hat + correction
+
+    sigma2 = np.sum(U**2, axis=0) / float(max(1, n))
+
+    return B_tilde, sigma2
+
+
+def ztests_from_debias_scores(B_tilde, Theta, Sigma_hat, sigma2, n):
+    """Compute z-statistics and two-sided p-values for debiased coefficients.
+
+    Sigma_hat is the empirical feature covariance scaled by 1/n (p x p).
+    """
+    p, q = B_tilde.shape
+    z = np.zeros((p, q), dtype=float)
+    pvals = np.ones((p, q), dtype=float)
+
+    for j in range(p):
+        v = float(Theta[j, :].dot(Sigma_hat).dot(Theta[j, :].T))
+        for k in range(q):
+            var = float(sigma2[k]) * v / float(max(1, n))
+            sd = math.sqrt(var) if var > 0 else 1e-12
+            zval = float(B_tilde[j, k]) / sd
+            z[j, k] = zval
+            pvals[j, k] = 2.0 * (1.0 - 0.5 * (1.0 + math.erf(abs(zval) / math.sqrt(2.0))))
+
+    return z, pvals

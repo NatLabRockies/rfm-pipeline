@@ -170,7 +170,8 @@ def ztests_from_debias_scores(
     v = np.empty(p, dtype=float)
     for j in range(p):
         th = Theta[j : j + 1, :].reshape(1, p)
-        v_j = float(th @ Sigma_hat @ th.T)
+        # Extract scalar from 1x1 matrix result
+        v_j = float((th @ Sigma_hat @ th.T).item())
         v[j] = max(v_j, 0.0)
 
     var = (v[:, None] * sigma2[None, :]) / float(n)

@@ -4,6 +4,12 @@ This page freezes the implementation contract for the manuscript sparse-selectio
 
 ## Current status
 
+- Contract-only: The de-biased LASSO implementation in src/bsm_rfm/debiased_lasso.py is an implementation attempt based on recovered notebook artifacts, but it is not yet validated against the original notebook outputs. Until the notebook validation and provenance checks are complete, the repository treats the de-biased LASSO as a contract-only specification. Do not treat current code as the exact manuscript implementation.
+
+- Public surrogate: The public sparse-selection workflow remains an EBIC/L1 surrogate with stability diagnostics; the de-biased LASSO helpers are provided for testing and development but are not claimed to reproduce manuscript-run deterministic artifacts.
+
+## Current status
+
 | Item                           | Contract value                                     |
 | ------------------------------ | -------------------------------------------------- |
 | Manuscript stage               | `sparse_selection_and_stability`                   |

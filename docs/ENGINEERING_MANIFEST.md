@@ -52,6 +52,7 @@ transient cleanup are intended.
 
 - `./test_repo.sh --check`: passed on `codex/sparse-selection-guardrail` after adding guardrail
   test and manifest updates.
+- Local implementation of ablation table and per-output nRMSE present on commit `be16de6` (current main HEAD); full local gate currently fails due to an unformatted/untracked manuscript file `docs/manuscripts/jds_bsm_v4_revision_notes.md`.
 - GitHub Actions CI run for PR #5: passed before merge (commit `64a97e1`).
 
 ## Completed Work
@@ -116,7 +117,7 @@ transient cleanup are intended.
 These items strengthen the evidentiary basis for the staged workflow and are required before the
 manuscript can claim the workflow is well-supported rather than merely reported to work.
 
-- [ ] **Ablation table**: add a compact multi-model comparison to quantify each stage's contribution.
+- [x] **Ablation table**: add a compact multi-model comparison to quantify each stage's contribution.
   Required baselines:
 
   - mean-only baseline (intercept only);
@@ -129,7 +130,7 @@ manuscript can claim the workflow is well-supported rather than merely reported 
     Output: holdout nRMSE per model, a ranked comparison table, and a test asserting the final OLS
     refit is not worse than the mean-only baseline on the demo fixture.
 
-- [ ] **Output-wise performance summaries**: a single aggregate nRMSE can hide bad performance on
+- [x] **Output-wise performance summaries**: a single aggregate nRMSE can hide bad performance on
   small-magnitude, volatile, or policy-relevant outputs. Required additions:
 
   - quantiles (e.g. p10, p25, p50, p75, p90) of per-output holdout nRMSE;

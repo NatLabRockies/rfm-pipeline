@@ -30,6 +30,9 @@ def test_debiased_lasso_artifact_keys_and_shapes():
     X, Y = make_toy_data()
 
     # The public contract: compute_debiased_lasso_artifacts returns a dict containing:
+
+    if dl is None:
+        pytest.fail("debiased_lasso module missing; implement compute_debiased_lasso_artifacts")
     # - 'alpha_path': list or array of alpha fractions tested (len > 1)
     # - 'ebic_scores': array of same length as alpha_path
     # - 'alo_kkt': dict with keys 'alo' and 'kkt_margin' each arrays matching alpha_path

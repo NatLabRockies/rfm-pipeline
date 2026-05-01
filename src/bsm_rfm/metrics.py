@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+import pandas as pd
 
 
 def macro_nrmse_with_ref(
@@ -166,3 +167,63 @@ def make_null_mean_prediction(Y_train: np.ndarray, n_rows: int) -> np.ndarray:
     Y_train = np.asarray(Y_train, dtype=np.float64)
     mu = np.nanmean(Y_train, axis=0)
     return np.repeat(mu[None, :], int(n_rows), axis=0)
+
+
+def per_output_nrmse_frame(
+    Y_true: np.ndarray,
+    Y_pred: np.ndarray,
+    Y_ref: np.ndarray,
+    output_names: list[str],
+    *,
+    min_range: float = 1e-6,
+) -> pd.DataFrame:
+    """Return per-output nRMSE as a DataFrame.
+
+    Parameters
+    ----------
+    Y_true
+        Observed outputs for the evaluation set, shape ``(n_rows, n_outputs)``.
+    Y_pred
+        Predicted outputs for the evaluation set, shape matching ``Y_true``.
+    Y_ref
+        Reference matrix whose columnwise ranges define the normalization denominator.
+    output_names
+        Names of the output columns, length must equal ``n_outputs``.
+    min_range
+        Minimum allowable reference range for a column to be included in the macro average.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per output with columns ``output_name``, ``rmse``, ``ref_range``,
+        ``nrmse``, and ``included_in_macro``.
+
+    Raises
+    ------
+    ValueError
+        Raised when ``output_names`` length does not match the number of output columns.
+    """
+    Y_true = np.asarray(Y_true, dtype=np.float64)
+    Y_pred = np.asarray(Y_pred, dtype=np.float64)
+    Y_ref = np.asarray(Y_ref, dtype=np.float64)
+
+    n_outputs = Y_true.shape[1] if Y_true.ndim == 2 else 1
+    if len(output_names) != n_outputs:
+        raise ValueError(
+            f"output_names length ({len(output_names)}) does not match n_outputs ({n_outputs})."
+        )
+
+    rmse = np.sqrt(np.mean((Y_true - Y_pred) ** 2, axis=0))
+    ref_range = np.nanmax(Y_ref, axis=0) - np.nanmin(Y_ref, axis=0)
+    included = ref_range >= min_range
+    nrmse = np.where(included, rmse / np.where(included, ref_range, 1.0), float("nan"))
+
+    return pd.DataFrame(
+        {
+            "output_name": output_names,
+            "rmse": rmse.tolist(),
+            "ref_range": ref_range.tolist(),
+            "nrmse": nrmse.tolist(),
+            "included_in_macro": included.tolist(),
+        }
+    )

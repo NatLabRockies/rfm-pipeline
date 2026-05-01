@@ -50,9 +50,9 @@ transient cleanup are intended.
 
 ## Latest Validation Record
 
-- `./test_repo.sh --check`: passed after adding this manifest and its contract tests.
-- GitHub Actions CI run for PR #2: passed before merge.
-- Pre-commit hooks and the pre-push full repository gate passed before PR #2 was opened.
+- `./test_repo.sh --check`: passed on `codex/sparse-selection-guardrail` after adding guardrail
+  test and manifest updates.
+- GitHub Actions CI run for PR #5: passed before merge (commit `64a97e1`).
 
 ## Completed Work
 
@@ -83,7 +83,10 @@ transient cleanup are intended.
 - [x] Align CI around the local repository gate.
 - [x] Add this engineering manifest as the authoritative planning document.
 - [x] Run and record a fresh full `./test_repo.sh --check` after manifest changes.
-- [ ] Keep planning docs synchronized when manuscript-stage status changes.
+- [x] Keep planning docs synchronized when manuscript-stage status changes.
+- [x] Add explicit CI/local parity guardrail test for demo sparse-selection
+  `final_stable_support` non-emptiness with diagnostic failure messages
+  (`test_demo_sparse_selection_final_stable_support_nonempty_ci_parity_guard`).
 
 ### P1 - Release-Hardening And Public Contract Stability
 
@@ -108,7 +111,34 @@ transient cleanup are intended.
 - [ ] Complete one-to-one manuscript table and figure verification against manuscript labels,
   source artifacts, and expected values.
 
-### P3 - Optional Hardening
+### P3 - Scientific Evidence and Workflow Justification
+
+These items strengthen the evidentiary basis for the staged workflow and are required before the
+manuscript can claim the workflow is well-supported rather than merely reported to work.
+
+- [ ] **Ablation table**: add a compact multi-model comparison to quantify each stage's contribution.
+  Required baselines:
+
+  - mean-only baseline (intercept only);
+  - main-effects-only OLS (all first-order inputs, no screening);
+  - screened-only OLS (empirical-null survivors, no sparse selection);
+  - penalized model (EBIC/L1 selected, before HC3 filter);
+  - final OLS refit (current manuscript endpoint);
+  - optional: no-interaction variant (sparse selection on first-order terms only);
+  - optional: no-nonlinearity variant (sparse selection excluding transformation terms).
+    Output: holdout nRMSE per model, a ranked comparison table, and a test asserting the final OLS
+    refit is not worse than the mean-only baseline on the demo fixture.
+
+- [ ] **Output-wise performance summaries**: a single aggregate nRMSE can hide bad performance on
+  small-magnitude, volatile, or policy-relevant outputs. Required additions:
+
+  - quantiles (e.g. p10, p25, p50, p75, p90) of per-output holdout nRMSE;
+  - worst-output diagnostics (top-K outputs by nRMSE, flagged by name/module);
+  - performance stratified by output family or BSM module where module labels are available.
+    Output: a `per_output_nrmse_summary.csv` artifact and SVG diagnostic, gated by a test asserting
+    median per-output nRMSE is finite and positive on the demo fixture.
+
+### P4 - Optional Hardening
 
 - [ ] Decide whether CI should continue rebuilding docs after `./test_repo.sh --ci`, since the gate
   already includes docs.

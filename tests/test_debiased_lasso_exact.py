@@ -33,13 +33,15 @@ def test_debiased_lasso_artifact_keys_and_shapes():
 
     if dl is None:
         pytest.fail("debiased_lasso module missing; implement compute_debiased_lasso_artifacts")
-    # - 'alpha_path': list or array of alpha fractions tested (len > 1)
-    # - 'ebic_scores': array of same length as alpha_path
-    # - 'alo_kkt': dict with keys 'alo' and 'kkt_margin' each arrays matching alpha_path
-    # - 'component_coeffs': a list (length r) of 2D arrays (p x ) for per-component coefficients
-    # - 'debiased_coeffs': 2D array (p x q)
-    # - 'debiased_pvalues': 2D array (p x q)
-    # - 'final_stable_support': list of selected predictor names (non-empty)
 
-    with pytest.raises(NotImplementedError):
-        dl.compute_debiased_lasso_artifacts(X, Y)
+    # The public contract: compute_debiased_lasso_artifacts returns a dict containing:
+    res = dl.compute_debiased_lasso_artifacts(X, Y)
+    assert isinstance(res, dict)
+    assert "alpha_path" in res and len(res["alpha_path"]) > 1
+    assert "ebic_scores" in res and len(res["ebic_scores"]) == len(res["alpha_path"])
+    assert "alo_kkt" in res and set(["alo", "kkt_margin"]).issubset(set(res["alo_kkt"].keys()))
+    assert "component_coeffs" in res and isinstance(res["component_coeffs"], list)
+    assert "debiased_coeffs" in res and res["debiased_coeffs"].shape == (X.shape[1], Y.shape[1])
+    assert "debiased_pvalues" in res and res["debiased_pvalues"].shape == (X.shape[1], Y.shape[1])
+    assert "final_stable_support" in res and isinstance(res["final_stable_support"], list)
+    assert len(res["final_stable_support"]) > 0

@@ -25,7 +25,7 @@ from .final_ols import (
     make_standardization_frame,
     predict_final_ols,
 )
-from .metrics import bootstrap_macro_nrmse_ci, make_null_mean_prediction
+from .metrics import bootstrap_macro_nrmse_ci, make_null_mean_prediction, per_output_nrmse_frame
 
 
 @dataclass(frozen=True)
@@ -561,6 +561,9 @@ class FinalManuscriptArtifactsResult:
     figure_support_composition_data: pd.DataFrame
     figure_specs: pd.DataFrame
     svg_figures: dict[str, str]
+    ablation_table: pd.DataFrame
+    per_output_nrmse: pd.DataFrame
+    per_output_nrmse_summary: pd.DataFrame
     summary: pd.DataFrame
 
 
@@ -1920,6 +1923,200 @@ def final_manuscript_artifacts_spec_from_case_study_config(
     )
 
 
+def _fit_ablation_ols_nrmse(
+    feature_names: list[str],
+    feature_catalog: pd.DataFrame,
+    input_matrix: pd.DataFrame,
+    train_ids: pd.Series,
+    holdout_ids: pd.Series,
+    y_train: pd.DataFrame,
+    y_holdout: pd.DataFrame,
+    null_predictions: np.ndarray,
+    spec: FinalManuscriptArtifactsSpec,
+) -> dict[str, Any]:
+    """Fit an OLS ablation model and return a performance row dict.
+
+    Falls back to null-mean predictions when ``feature_names`` is empty or
+    when no requested features appear in the materialized design.
+    """
+    if not feature_names:
+        predictions: np.ndarray = null_predictions
+        n_features = 0
+    else:
+        catalog_sub = _feature_catalog_subset(feature_catalog, feature_names)
+        design = build_manuscript_feature_design(input_matrix, catalog_sub)
+        names_present = [n for n in feature_names if n in design.columns]
+        if not names_present:
+            predictions = null_predictions
+            n_features = 0
+        else:
+            x_tr = _indexed_by_sample_id(
+                _align_table_by_sample_id(design, train_ids, names_present, "abl_train"),
+                train_ids,
+            )
+            x_ho = _indexed_by_sample_id(
+                _align_table_by_sample_id(design, holdout_ids, names_present, "abl_holdout"),
+                holdout_ids,
+            )
+            fit = fit_final_ols(x_tr, y_train)
+            predictions = predict_final_ols(fit, x_ho).to_numpy(dtype=float)
+            n_features = len(names_present)
+
+    metric = bootstrap_macro_nrmse_ci(
+        y_holdout.to_numpy(dtype=float),
+        predictions,
+        y_train.to_numpy(dtype=float),
+        min_range=spec.nrmse_min_range,
+        n_boot=spec.bootstrap_count,
+        alpha=spec.bootstrap_alpha,
+        random_state=spec.random_seed,
+    )
+    return {
+        "n_features": n_features,
+        "nrmse": metric["point_estimate"],
+        "ci_lower": metric["ci_lower"],
+        "ci_upper": metric["ci_upper"],
+    }
+
+
+def _compute_ablation_table(
+    feature_catalog: pd.DataFrame,
+    input_matrix: pd.DataFrame,
+    train_ids: pd.Series,
+    holdout_ids: pd.Series,
+    y_train: pd.DataFrame,
+    y_holdout: pd.DataFrame,
+    screening_retained_terms: pd.DataFrame,
+    prefilter_feature_names: list[str],
+    final_feature_names: list[str],
+    null_predictions: np.ndarray,
+    final_metric: dict[str, Any],
+    spec: FinalManuscriptArtifactsSpec,
+) -> pd.DataFrame:
+    """Build a five-row ablation performance table.
+
+    Models (in workflow order):
+    - ``null_mean``: training-mean baseline
+    - ``main_effects_ols``: OLS on all first-order catalog features
+    - ``screened_ols``: OLS on empirical-null screened features
+    - ``penalized_ols``: OLS on sparse/stability support before HC3 filter
+    - ``final_ols``: OLS on HC3-filtered final support
+    """
+    common_kwargs: dict[str, Any] = dict(
+        feature_catalog=feature_catalog,
+        input_matrix=input_matrix,
+        train_ids=train_ids,
+        holdout_ids=holdout_ids,
+        y_train=y_train,
+        y_holdout=y_holdout,
+        null_predictions=null_predictions,
+        spec=spec,
+    )
+
+    null_metric = bootstrap_macro_nrmse_ci(
+        y_holdout.to_numpy(dtype=float),
+        null_predictions,
+        y_train.to_numpy(dtype=float),
+        min_range=spec.nrmse_min_range,
+        n_boot=spec.bootstrap_count,
+        alpha=spec.bootstrap_alpha,
+        random_state=spec.random_seed,
+    )
+
+    first_order_names = list(
+        feature_catalog.loc[
+            feature_catalog["feature_type"].astype(str).str.lower() == "first_order",
+            "feature_name",
+        ]
+    )
+    screened_names = list(screening_retained_terms["feature_name"])
+
+    rows = [
+        {
+            "model_name": "null_mean",
+            "n_features": 0,
+            "nrmse": null_metric["point_estimate"],
+            "ci_lower": null_metric["ci_lower"],
+            "ci_upper": null_metric["ci_upper"],
+        },
+        {
+            "model_name": "main_effects_ols",
+            **_fit_ablation_ols_nrmse(first_order_names, **common_kwargs),
+        },
+        {
+            "model_name": "screened_ols",
+            **_fit_ablation_ols_nrmse(screened_names, **common_kwargs),
+        },
+        {
+            "model_name": "penalized_ols",
+            **_fit_ablation_ols_nrmse(prefilter_feature_names, **common_kwargs),
+        },
+        {
+            "model_name": "final_ols",
+            "n_features": len(final_feature_names),
+            "nrmse": final_metric["point_estimate"],
+            "ci_lower": final_metric["ci_lower"],
+            "ci_upper": final_metric["ci_upper"],
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def _build_per_output_nrmse_summary(per_output_df: pd.DataFrame) -> pd.DataFrame:
+    """Summarise per-output nRMSE with quantiles and worst-output diagnostics.
+
+    Returns a single-row DataFrame with columns:
+    ``n_total``, ``n_included``, ``p10``, ``p25``, ``p50``, ``p75``, ``p90``,
+    and up to three worst-output pairs ``worst_1_name`` / ``worst_1_nrmse`` etc.
+    """
+    included = per_output_df.loc[per_output_df["included_in_macro"]].copy()
+    n_total = int(len(per_output_df))
+    n_included = int(len(included))
+
+    if n_included == 0:
+        row: dict[str, Any] = {
+            "n_total": n_total,
+            "n_included": 0,
+            "p10": float("nan"),
+            "p25": float("nan"),
+            "p50": float("nan"),
+            "p75": float("nan"),
+            "p90": float("nan"),
+        }
+        for rank in range(1, 4):
+            row[f"worst_{rank}_name"] = None
+            row[f"worst_{rank}_nrmse"] = float("nan")
+        return pd.DataFrame([row])
+
+    nrmse_vals = included["nrmse"].to_numpy(dtype=float)
+    quantiles = (
+        float(np.nanquantile(nrmse_vals, 0.10)),
+        float(np.nanquantile(nrmse_vals, 0.25)),
+        float(np.nanquantile(nrmse_vals, 0.50)),
+        float(np.nanquantile(nrmse_vals, 0.75)),
+        float(np.nanquantile(nrmse_vals, 0.90)),
+    )
+
+    worst = included.nlargest(min(3, n_included), "nrmse").reset_index(drop=True)
+    row = {
+        "n_total": n_total,
+        "n_included": n_included,
+        "p10": quantiles[0],
+        "p25": quantiles[1],
+        "p50": quantiles[2],
+        "p75": quantiles[3],
+        "p90": quantiles[4],
+    }
+    for rank in range(1, 4):
+        if rank - 1 < len(worst):
+            row[f"worst_{rank}_name"] = worst.loc[rank - 1, "output_name"]
+            row[f"worst_{rank}_nrmse"] = float(worst.loc[rank - 1, "nrmse"])
+        else:
+            row[f"worst_{rank}_name"] = None
+            row[f"worst_{rank}_nrmse"] = float("nan")
+    return pd.DataFrame([row])
+
+
 def regenerate_final_manuscript_artifacts(
     input_matrix: pd.DataFrame,
     output_matrix: pd.DataFrame,
@@ -2057,6 +2254,30 @@ def regenerate_final_manuscript_artifacts(
         random_state=spec.random_seed,
     )
 
+    ablation_table = _compute_ablation_table(
+        feature_catalog=feature_catalog,
+        input_matrix=input_matrix,
+        train_ids=train_ids,
+        holdout_ids=holdout_ids,
+        y_train=y_train,
+        y_holdout=y_holdout,
+        screening_retained_terms=screening.retained_terms,
+        prefilter_feature_names=list(prefilter_feature_names),
+        final_feature_names=list(final_feature_names),
+        null_predictions=null_predictions,
+        final_metric=final_metric,
+        spec=spec,
+    )
+
+    per_output_nrmse = per_output_nrmse_frame(
+        y_holdout.to_numpy(dtype=float),
+        final_predictions.to_numpy(dtype=float),
+        y_train.to_numpy(dtype=float),
+        output_names=list(retained_outputs),
+        min_range=spec.nrmse_min_range,
+    )
+    per_output_nrmse_summary = _build_per_output_nrmse_summary(per_output_nrmse)
+
     coefficient_matrix_raw_scale = make_coefficient_matrix_frame(
         final_fit.coef_raw_scale,
         output_names=list(final_fit.output_names),
@@ -2151,6 +2372,9 @@ def regenerate_final_manuscript_artifacts(
         figure_support_composition_data=figure_support_composition_data,
         figure_specs=figure_specs,
         svg_figures=svg_figures,
+        ablation_table=ablation_table,
+        per_output_nrmse=per_output_nrmse,
+        per_output_nrmse_summary=per_output_nrmse_summary,
         summary=summary,
     )
 
@@ -2221,6 +2445,12 @@ def write_final_manuscript_artifacts(
         "workflow_stage_summary": (
             table_root / "workflow_stage_summary.csv",
             result.workflow_stage_summary,
+        ),
+        "ablation_table": (table_root / "ablation_table.csv", result.ablation_table),
+        "per_output_nrmse": (table_root / "per_output_nrmse.csv", result.per_output_nrmse),
+        "per_output_nrmse_summary": (
+            table_root / "per_output_nrmse_summary.csv",
+            result.per_output_nrmse_summary,
         ),
         "figure_model_performance_data": (
             figure_root / "figure_model_performance_data.csv",

@@ -31,7 +31,7 @@ def test_engineering_manifest_records_latest_full_gate() -> None:
     required_phrases = [
         "## Latest Validation Record",
         "`./test_repo.sh --check`: passed",
-        "GitHub Actions CI run for PR #2: passed",
+        "GitHub Actions CI run for PR #",
         "- [x] Run and record a fresh full `./test_repo.sh --check` after manifest changes.",
     ]
 

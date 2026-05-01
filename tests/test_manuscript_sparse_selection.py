@@ -132,3 +132,53 @@ def test_run_sparse_selection_stability_stage_executes_demo_context() -> None:
     assert result.sparse_selection.summary.loc[0, "n_final_stable_support_terms"] >= 1
     assert not result.sparse_selection.final_stable_support.empty
     assert result.artifact_paths["support_candidates"].exists()
+
+
+def test_demo_sparse_selection_final_stable_support_nonempty_ci_parity_guard() -> None:
+    """Guardrail: demo fixture must produce non-empty final_stable_support on all platforms.
+
+    This test exists to catch the CI/local parity failure mode where GitHub Linux produced
+    empty final_stable_support while macOS tests passed.  It fires before downstream
+    final-artifact and reproduction-chain tests can obscure the root cause.
+    """
+    context = build_manuscript_notebook_context(
+        Path.cwd(),
+        "06_sparse_selection_and_stability.ipynb",
+    )
+
+    result = run_sparse_selection_stability_stage(context)
+    ss = result.sparse_selection
+
+    summary = ss.summary.loc[0]
+    n_candidates = int(summary["n_candidate_terms"])
+    n_full = int(summary["n_full_support_terms"])
+    n_final = int(summary["n_final_stable_support_terms"])
+
+    feat = ss.stability_feature_summary
+    mean_jaccard = float(feat["mean_resample_jaccard"].mean()) if len(feat) else float("nan")
+    mean_spearman = float(feat["mean_resample_spearman"].mean()) if len(feat) else float("nan")
+    passes_jaccard = bool(feat["passes_jaccard_threshold"].all()) if len(feat) else False
+    passes_spearman = bool(feat["passes_spearman_threshold"].all()) if len(feat) else False
+
+    diagnostic = (
+        f"n_candidate_terms={n_candidates}, "
+        f"n_full_support_terms={n_full}, "
+        f"n_final_stable_support_terms={n_final}, "
+        f"mean_resample_jaccard={mean_jaccard:.3f}, "
+        f"mean_resample_spearman={mean_spearman:.3f}, "
+        f"all_pass_jaccard={passes_jaccard}, "
+        f"all_pass_spearman={passes_spearman}"
+    )
+
+    assert n_candidates > 0, f"No candidate terms reached sparse selection. {diagnostic}"
+    assert n_full > 0, (
+        f"EBIC/L1 full support is empty — no feature survived L1 selection on any component. "
+        f"{diagnostic}"
+    )
+    assert n_final > 0, (
+        f"final_stable_support is empty after stability filtering — "
+        f"check Jaccard/Spearman thresholds or fixture signal strength. {diagnostic}"
+    )
+    assert not ss.final_stable_support.empty, (
+        f"final_stable_support DataFrame is empty. {diagnostic}"
+    )

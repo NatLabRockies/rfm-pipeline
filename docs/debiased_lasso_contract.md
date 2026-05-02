@@ -19,7 +19,7 @@ This page freezes the implementation contract for the manuscript sparse-selectio
 | Current public method          | `ebic_l1_component_union_with_subsample_stability` |
 | Target source workflow         | `notebook_pca_debiased_lasso`                      |
 | Source artifact                | `LASSO_to_OLS_v9.ipynb`                            |
-| Source artifact in public repo | `false`                                            |
+| Source artifact in public repo | `true`                                             |
 | Exact implementation status    | `contract_frozen_not_implemented`                  |
 | Equivalence status             | `not_yet_validated`                                |
 | De-biasing definition status   | `unresolved_requires_source_notebook_audit`        |
@@ -50,7 +50,7 @@ The recovered fractional alpha grid is:
 0.75, 0.50, 0.25, 0.10, 0.05, 0.02, 0.01
 ```
 
-The recovered model-selection description is **EBIC-guided sparse path search with ALO/KKT diagnostics**. The exact de-biasing estimator definition is not frozen because the public repo zip does not contain `LASSO_to_OLS_v9.ipynb`.
+The recovered model-selection description is **EBIC-guided sparse path search with ALO/KKT diagnostics**. The source notebook `LASSO_to_OLS_v9.ipynb` has been located in `docs/final_scripts_from_hpc/`; the exact de-biasing estimator definition will be frozen after executing and validating the notebook outputs against the public implementation.
 
 ## Required implementation boundary
 

@@ -4,9 +4,11 @@ This page freezes the implementation contract for the manuscript sparse-selectio
 
 ## Current status
 
-- Contract-only: The de-biased LASSO implementation in src/bsm_rfm/debiased_lasso.py is an implementation attempt based on recovered notebook artifacts, but it is not yet validated against the original notebook outputs. Until the notebook validation and provenance checks are complete, the repository treats the de-biased LASSO as a contract-only specification. Do not treat current code as the exact manuscript implementation.
+- Implementation present: The repository now includes a deterministic, test-focused de-biased-LASSO implementation at src/bsm_rfm/debiased_lasso.py. This implementation is exercised by unit tests and golden fixtures that validate deterministic behavior on synthetic toy data (see tests/test_debiased_lasso_regression.py and tests/test_debiased_lasso_golden_compare.py).
 
-- Public surrogate: The public sparse-selection workflow remains an EBIC/L1 surrogate with stability diagnostics; the de-biased LASSO helpers are provided for testing and development but are not claimed to reproduce manuscript-run deterministic artifacts.
+- Validation scope: The current tests exercise numeric shapes, stability of support selection on strong synthetic signal, and reproducibility against locally generated golden fixtures. However, the implementation has NOT yet been validated against the original manuscript notebook outputs; provenance and notebook recovery are still required before claiming manuscript-exact equivalence.
+
+- Public surrogate: The sparse-selection workflow continues to use an EBIC/L1 surrogate with stability diagnostics for the public manuscript handoff. The de-biasing helpers are available as a reproducible, test-validated artifact for downstream use and further auditing.
 
 ## Current status
 

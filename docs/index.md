@@ -14,6 +14,7 @@ scope_boundary
 manuscript_contract
 manuscript_data_contract
 debiased_lasso_contract
+debiased_lasso_exactness_audit
 manuscript_runtime
 ENGINEERING_MANIFEST
 manuscript_alignment_audit

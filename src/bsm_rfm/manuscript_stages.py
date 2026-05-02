@@ -1814,6 +1814,26 @@ def write_sparse_selection_stability_artifacts(
         "sparse_selection_provenance": result.provenance,
         "sparse_selection_summary": result.summary,
     }
+
+    # Consolidated diagnostics for quick CI/local parity inspection
+    summary_row = result.summary.iloc[0]
+    diagnostics = {
+        "n_candidate_terms": int(summary_row["n_candidate_terms"]),
+        "n_full_support_terms": int(summary_row["n_full_support_terms"]),
+        "n_final_stable_support_terms": int(summary_row["n_final_stable_support_terms"]),
+        "mean_resample_jaccard": float(summary_row["mean_resample_jaccard"]),
+        "mean_resample_spearman": float(summary_row["mean_resample_spearman"]),
+        "jaccard_threshold": float(summary_row["jaccard_threshold"]),
+        "spearman_threshold": float(summary_row["spearman_threshold"]),
+        "passes_jaccard_threshold": float(summary_row["mean_resample_jaccard"])
+        >= float(summary_row["jaccard_threshold"]),
+        "passes_spearman_threshold": float(summary_row["mean_resample_spearman"])
+        >= float(summary_row["spearman_threshold"]),
+        "final_stable_support_nonempty": bool(len(result.final_stable_support) > 0),
+    }
+    diagnostics_df = pd.DataFrame([diagnostics])
+    tables["sparse_selection_diagnostics"] = diagnostics_df
+
     written: dict[str, Path] = {}
     for name, table in tables.items():
         path = stage_root / f"{name}.csv"

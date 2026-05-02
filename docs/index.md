@@ -22,4 +22,6 @@ api
 workflow_audit
 module_plan
 manuscript_summary_log
+final_scripts_from_hpc/README
+final_scripts_from_hpc/MEMORY
 ```

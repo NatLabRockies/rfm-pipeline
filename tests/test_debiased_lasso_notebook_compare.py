@@ -22,7 +22,11 @@ def _extract_funcs_from_notebook(nb_path: Path) -> dict:
     nb = json.loads(nb_path.read_text(encoding="utf-8"))
     import_lines = []
     func_cells = []
-    targets = ("def nodewise_precision", "def debias_coeffs_batched", "def ztests_from_debias_scores")
+    targets = (
+        "def nodewise_precision",
+        "def debias_coeffs_batched",
+        "def ztests_from_debias_scores",
+    )
 
     for cell in nb.get("cells", []):
         if cell.get("cell_type") != "code":
@@ -42,9 +46,13 @@ def _extract_funcs_from_notebook(nb_path: Path) -> dict:
         # collect any cell that defines our targets
         if any(t in src for t in targets):
             # remove future imports inside function cells
-            cleaned_lines = [l for l in src.splitlines() if "from __future__" not in l]
+            cleaned_lines = [line for line in src.splitlines() if "from __future__" not in line]
             # drop heavy or plotting imports from function cells
-            cleaned_lines = [l for l in cleaned_lines if ("statsmodels" not in l and "matplotlib" not in l and "plt" not in l)]
+            cleaned_lines = [
+                line
+                for line in cleaned_lines
+                if ("statsmodels" not in line and "matplotlib" not in line and "plt" not in line)
+            ]
             cleaned = "\n".join(cleaned_lines)
             func_cells.append(cleaned)
 
@@ -59,7 +67,13 @@ def _extract_funcs_from_notebook(nb_path: Path) -> dict:
     code = "\n".join(uniq_imports + ["\n# ---- extracted functions ----\n"] + func_cells)
     env: dict = {}
     # provide minimal globals
-    exec("import numpy as np\nimport pandas as pd\nfrom sklearn.linear_model import Lasso\nfrom scipy import stats\n", env)
+    imports = (
+        "import numpy as np\n"
+        "import pandas as pd\n"
+        "from sklearn.linear_model import Lasso\n"
+        "from scipy import stats\n"
+    )
+    exec(imports, env)
     exec(code, env)
     return env
 

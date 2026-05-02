@@ -106,6 +106,7 @@ def test_sparse_selection_retains_stable_signal_feature_and_writes_artifacts(
         "component_coefficients",
         "component_model_selection",
         "final_stable_support",
+        "sparse_selection_diagnostics",
         "sparse_selection_provenance",
         "sparse_selection_summary",
         "stability_feature_summary",

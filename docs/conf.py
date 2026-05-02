@@ -44,7 +44,7 @@ napoleon_google_docstring = False
 # descriptions during autodoc indexing.
 napoleon_use_ivar = True
 autodoc_typehints = "description"
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "MEMORY.md"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "MEMORY.md", "final_scripts_from_hpc/*"]
 html_theme = "alabaster"
 source_suffix = {
     ".rst": "restructuredtext",

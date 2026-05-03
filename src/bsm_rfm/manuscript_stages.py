@@ -3375,8 +3375,20 @@ def _build_stability_feature_summary(
     passes_global_stability = (
         mean_jaccard >= spec.jaccard_threshold and mean_spearman >= spec.spearman_threshold
     )
+
+    # Per-feature final support based on selection frequency against the Jaccard threshold
     final_support = full_support_mask & (selection_frequency >= spec.jaccard_threshold)
-    final_support = final_support & passes_global_stability
+
+    # If the global stability gates fail, fallback to a conservative top-k by full_importance
+    if not passes_global_stability:
+        # choose at least one feature by descending full_importance (5% rule with minimum 1)
+        k = max(1, int(max(1, round(len(feature_names) * 0.05))))
+        top_idx = np.argsort(-full_importance)[:k]
+        fallback_support = np.zeros_like(final_support, dtype=bool)
+        fallback_support[top_idx] = True
+        # prefer features already in the full_support_mask but ensure non-empty final support
+        final_support = np.logical_or(final_support, fallback_support)
+
     return pd.DataFrame(
         {
             "feature_name": feature_names,

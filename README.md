@@ -67,6 +67,7 @@ This package now covers the foundational and workflow-level utilities needed for
 - explicit feature-expansion specification and materialization utilities
 - selected-feature structure parsing
 - nRMSE helpers and bootstrap summaries
+- Ablation-table experiment and per-output nRMSE summaries integrated into final manuscript artifacts; see docs/ENGINEERING_MANIFEST.md and tests/test_manuscript_final_artifacts.py.
 - artifact manifest helpers
 - visualization-side artifact loading
 

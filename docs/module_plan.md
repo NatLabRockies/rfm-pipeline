@@ -20,6 +20,7 @@ This page records the live package modules and what they currently cover.
   - final OLS fitting, prediction, evaluation summary, and canonical post-fit artifact assembly
 - `bsm_rfm.metrics`
   - macro nRMSE and bootstrap confidence-interval helpers
+  - per-output nRMSE frame and ablation helpers used by final manuscript artifacts
 - `bsm_rfm.features`
   - selected-feature parser and transformation-name utilities
 - `bsm_rfm.artifacts`

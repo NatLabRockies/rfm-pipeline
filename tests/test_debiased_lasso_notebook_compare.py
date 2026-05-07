@@ -85,8 +85,7 @@ def test_notebook_vs_public_nodewise_debias_basic(tmp_path):
         "    else:\n"
         "        Xdf = pd.DataFrame(X)\n"
         "    Theta, tau2 = dl.nodewise_precision(Xdf, alpha_node=alpha_node)\n"
-        "    import numpy as _np\n"
-        "    return _np.asarray(Theta), _np.asarray(tau2)\n\n"
+        "    return np.asarray(Theta), np.asarray(tau2)\n\n"
         "def debias_coeffs_batched(X, Y, B_hat, Theta, batch=32):\n"
         "    Xdf = pd.DataFrame(X)\n"
         "    Ydf = pd.DataFrame(Y)\n"
@@ -95,8 +94,7 @@ def test_notebook_vs_public_nodewise_debias_basic(tmp_path):
         "    try:\n"
         "        return dl.ztests_from_debias_scores(*args, **kwargs)\n"
         "    except Exception:\n"
-        "        import numpy as _np\n"
-        "        return _np.zeros(1)\n"
+        "        return np.zeros(1)\n"
     )
 
     nb = {

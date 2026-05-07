@@ -81,6 +81,18 @@ Status: mapping complete, manuscript-value verification pending.
 | Figure 1 (model performance figure)                              | `final_manuscript_artifacts/figures/figure_model_performance_data.csv` and `final_manuscript_artifacts/figures/figure_model_performance.svg`     | Artifact mapping complete; plotted values/layout still require manuscript-side verification. |
 | Figure 2 (final-support composition figure)                      | `final_manuscript_artifacts/figures/figure_support_composition_data.csv` and `final_manuscript_artifacts/figures/figure_support_composition.svg` | Artifact mapping complete; plotted values/layout still require manuscript-side verification. |
 
+## Private-run verification evidence ledger
+
+| Verification target               | Public artifact source                                                                                                                           | Expected private evidence artifact                           | Verification status          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ | ---------------------------- |
+| HC3 retained-feature count parity | `final_manuscript_artifacts/tables/workflow_stage_summary.csv` (`n_final_features`)                                                              | Private manuscript-run final OLS support-count export        | pending private-run evidence |
+| HC3 dropped-feature count parity  | `final_manuscript_artifacts/tables/hc3_inferential_filter_summary.csv` (`n_prefilter_features` - `n_final_features`)                             | Private manuscript-run HC3 inferential-filter summary export | pending private-run evidence |
+| Final coefficient parity          | `final_manuscript_artifacts/tables/final_model_coefficients.csv`                                                                                 | Private manuscript-run final OLS coefficient table           | pending private-run evidence |
+| Table 1 value parity              | `final_manuscript_artifacts/tables/workflow_stage_summary.csv`                                                                                   | Frozen manuscript Table 1 source table                       | pending private-run evidence |
+| Table 2 value parity              | `final_manuscript_artifacts/tables/model_performance.csv`                                                                                        | Frozen manuscript Table 2 source table                       | pending private-run evidence |
+| Figure 1 value/layout parity      | `final_manuscript_artifacts/figures/figure_model_performance_data.csv` and `final_manuscript_artifacts/figures/figure_model_performance.svg`     | Frozen manuscript Figure 1 plotting data and exported figure | pending private-run evidence |
+| Figure 2 value/layout parity      | `final_manuscript_artifacts/figures/figure_support_composition_data.csv` and `final_manuscript_artifacts/figures/figure_support_composition.svg` | Frozen manuscript Figure 2 plotting data and exported figure | pending private-run evidence |
+
 ## Recent updates (internal)
 
 - Removed tracked recovered HPC notebooks from docs/final_scripts_from_hpc; these remain reference-only and are now ignored by .gitignore.

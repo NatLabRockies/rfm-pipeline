@@ -76,3 +76,23 @@ def test_alignment_audit_externalizes_interaction_and_nonlinear_source_artifacts
     ]
     for phrase in required_phrases:
         assert phrase in audit
+
+
+def test_alignment_audit_tracks_private_run_verification_evidence_requirements() -> None:
+    """HC3/table/figure parity gaps should list required private-run evidence artifacts."""
+    audit = Path("docs/manuscript_alignment_audit.md").read_text(encoding="utf-8")
+    required_phrases = [
+        "## Private-run verification evidence ledger",
+        "HC3 retained-feature count parity",
+        "HC3 dropped-feature count parity",
+        "Final coefficient parity",
+        "Table 1 value parity",
+        "Table 2 value parity",
+        "Figure 1 value/layout parity",
+        "Figure 2 value/layout parity",
+        "Expected private evidence artifact",
+        "Verification status",
+        "pending private-run evidence",
+    ]
+    for phrase in required_phrases:
+        assert phrase in audit

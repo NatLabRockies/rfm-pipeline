@@ -51,3 +51,8 @@ pixi run pytest -q tests/test_manuscript_documentation_contract.py tests/test_ma
   - `pixi run pytest -q tests/test_manuscript_alignment_audit.py` (expected fail before doc update, then pass)
   - `pixi run pytest -q tests/test_manuscript_documentation_contract.py tests/test_manuscript_alignment_audit.py` (pass)
   - `./test_repo.sh --check` (pass)
+- Git actions:
+  - Created branch `codex/p1-upstream-artifact-externalization`
+  - Committed `ba97399` with slice-scoped files only
+  - Pushed branch to `origin/codex/p1-upstream-artifact-externalization`
+  - Opened PR `#32` (`Externalize interaction/nonlinear manuscript-only artifacts`)

@@ -8,7 +8,7 @@ Define the authoritative implementation plan for Copilot and human developers.
 
 - Profile: set by `config/agent_policy.yaml`
 - Current milestone: stabilize and validate manuscript-reproduction workflow
-- Current slice: externalize private-run verification evidence requirements
+- Current slice: externalize empirical-null upstream manuscript-only artifact dependency
 
 ## Non-negotiable constraints
 
@@ -56,6 +56,7 @@ Define the authoritative implementation plan for Copilot and human developers.
 - Added explicit manuscript Table/Figure-to-artifact mapping in the alignment audit.
 - Added explicit upstream-artifact externalization entries for interaction/nonlinear stages in the alignment audit.
 - Added explicit private-run verification evidence ledger for HC3 parity, final coefficients, and table/figure value-layout parity.
+- Added explicit empirical-null manuscript-only upstream workflow dependency (`null_distribution.py` / Delta-null).
 
 ## Latest Validation Record
 

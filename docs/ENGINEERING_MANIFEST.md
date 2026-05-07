@@ -8,7 +8,7 @@ Define the authoritative implementation plan for Copilot and human developers.
 
 - Profile: set by `config/agent_policy.yaml`
 - Current milestone: stabilize and validate manuscript-reproduction workflow
-- Current slice: externalize empirical-null upstream manuscript-only artifact dependency
+- Current slice: externalize de-biased-LASSO upstream manuscript-only artifact dependency
 
 ## Non-negotiable constraints
 
@@ -57,6 +57,7 @@ Define the authoritative implementation plan for Copilot and human developers.
 - Added explicit upstream-artifact externalization entries for interaction/nonlinear stages in the alignment audit.
 - Added explicit private-run verification evidence ledger for HC3 parity, final coefficients, and table/figure value-layout parity.
 - Added explicit empirical-null manuscript-only upstream workflow dependency (`null_distribution.py` / Delta-null).
+- Added explicit de-biased-LASSO manuscript-only upstream workflow dependency (`LASSO_to_OLS_v9.ipynb`).
 
 ## Latest Validation Record
 

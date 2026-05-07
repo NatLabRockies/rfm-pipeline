@@ -71,6 +71,8 @@ def test_alignment_audit_externalizes_interaction_and_nonlinear_source_artifacts
         "empirical-null screening stage",
         "null_distribution.py",
         "Delta-null workflow",
+        "de-biased-LASSO selection stage",
+        "LASSO_to_OLS_v9.ipynb",
         "interaction-discovery stage",
         "nonlinear-discovery stage",
         "private_tree_shap_interaction_workflow",

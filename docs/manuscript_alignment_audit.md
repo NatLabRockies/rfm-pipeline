@@ -60,3 +60,17 @@ Use the following wording until the gaps above are closed:
    parametric scores for GAM EDF/p-value diagnostics in the actual computation. The current
    public surrogate now writes provenance and does not claim manuscript exactness.
 1. Map final manuscript tables and figures one-to-one to manuscript labels and expected values.
+
+## Recent updates (internal)
+
+- Removed tracked recovered HPC notebooks from docs/final_scripts_from_hpc; these remain reference-only and are now ignored by .gitignore.
+- Added deterministic fallback in sparse-selection to prevent empty final_stable_support when stability gates fail (implemented and tested).
+- Added a minimal synthetic-notebook fixture for notebook-compare tests to avoid reliance on private HPC notebooks.
+- Cleaned and scrubbed the recovered LASSO notebook outputs where it had been force-added temporarily.
+
+### Next steps
+
+- Validate HC3 inferential filter and final table counts against private manuscript-run artifacts.
+- Implement or externalize exact interaction and nonlinear discovery stages; do not present current public surrogates as manuscript-exact.
+- Map manuscript figures/tables to named source artifacts and verify numerical equality.
+- Decide on archival policy for recovered notebooks (keep only as offline reference; don't commit to main history in future).

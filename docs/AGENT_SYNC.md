@@ -1,15 +1,15 @@
 # Agent Sync
 
 repo: NatLabRockies/bsm-public-rf
-branch: codex/p1-upstream-artifact-externalization
+branch: codex/p1-empirical-null-externalization
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
 current_milestone: close manuscript exactness gaps tracked in the alignment audit
-current_slice: externalize private-run verification evidence requirements
+current_slice: externalize empirical-null upstream manuscript-only artifact dependency
 slice_status: completed
 last_validation: `./test_repo.sh --check` passed
-next_slice: validate empirical-null screening equivalence against recovered Delta-null workflow or externalize retained-term artifact source of truth
+next_slice: externalize de-biased-LASSO upstream manuscript-only artifact dependency and required verification evidence
 
 ## Blocked items
 
@@ -29,7 +29,7 @@ next_slice: validate empirical-null screening equivalence against recovered Delt
 ## Targeted tests
 
 ```bash
-pixi run pytest -q tests/test_manuscript_alignment_audit.py -k private_run_verification_evidence_requirements
+pixi run pytest -q tests/test_manuscript_alignment_audit.py -k externalizes_interaction_and_nonlinear_source_artifacts
 pixi run pytest -q tests/test_manuscript_documentation_contract.py tests/test_manuscript_alignment_audit.py
 pixi run pytest -q tests/test_engineering_manifest.py tests/test_manuscript_alignment_audit.py
 ```
@@ -42,16 +42,15 @@ pixi run pytest -q tests/test_engineering_manifest.py tests/test_manuscript_alig
 
 ## Latest slice update
 
-- Added `## Private-run verification evidence ledger` in
-  `docs/manuscript_alignment_audit.md` to explicitly enumerate pending private-run evidence for:
-  HC3 retained/dropped-feature parity, final coefficient parity, and manuscript Table/Figure parity.
-- Added a contract test in `tests/test_manuscript_alignment_audit.py` to prevent removal/regression
-  of the private-run evidence ledger section.
+- Added empirical-null stage entry under `## Externalized manuscript-only upstream artifacts` in
+  `docs/manuscript_alignment_audit.md` to explicitly name recovered
+  `null_distribution.py` / Delta-null workflow dependence and public-repo artifact unavailability.
+- Expanded the externalization contract test in `tests/test_manuscript_alignment_audit.py`
+  to require empirical-null upstream-source disclosure alongside interaction/nonlinear entries.
 - Validation run sequence:
-  - `pixi run pytest -q tests/test_manuscript_alignment_audit.py -k private_run_verification_evidence_requirements` (expected fail before doc update, then pass)
+  - `pixi run pytest -q tests/test_manuscript_alignment_audit.py -k externalizes_interaction_and_nonlinear_source_artifacts` (expected fail before doc update, then pass)
   - `pixi run pytest -q tests/test_manuscript_documentation_contract.py tests/test_manuscript_alignment_audit.py` (pass)
   - `pixi run pytest -q tests/test_engineering_manifest.py tests/test_manuscript_alignment_audit.py` (pass)
   - `./test_repo.sh --check` (pass)
 - Git actions:
-  - Continue on branch `codex/p1-upstream-artifact-externalization`
-  - Existing open PR: `#32` (`Externalize interaction/nonlinear manuscript-only artifacts`)
+  - Created branch `codex/p1-empirical-null-externalization` from clean `main`

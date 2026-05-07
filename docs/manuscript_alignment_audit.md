@@ -61,6 +61,17 @@ Use the following wording until the gaps above are closed:
    public surrogate now writes provenance and does not claim manuscript exactness.
 1. Map final manuscript tables and figures one-to-one to manuscript labels and expected values.
 
+## Manuscript table and figure artifact map
+
+Status: mapping complete, manuscript-value verification pending.
+
+| Manuscript label                                                 | Public artifact source                                                                                                                           | Current verification status                                                                  |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Table 1 (workflow stage counts and retained support progression) | `final_manuscript_artifacts/tables/workflow_stage_summary.csv`                                                                                   | Artifact mapping complete; values still require private manuscript-run verification.         |
+| Table 2 (holdout performance summary)                            | `final_manuscript_artifacts/tables/model_performance.csv`                                                                                        | Artifact mapping complete; values still require private manuscript-run verification.         |
+| Figure 1 (model performance figure)                              | `final_manuscript_artifacts/figures/figure_model_performance_data.csv` and `final_manuscript_artifacts/figures/figure_model_performance.svg`     | Artifact mapping complete; plotted values/layout still require manuscript-side verification. |
+| Figure 2 (final-support composition figure)                      | `final_manuscript_artifacts/figures/figure_support_composition_data.csv` and `final_manuscript_artifacts/figures/figure_support_composition.svg` | Artifact mapping complete; plotted values/layout still require manuscript-side verification. |
+
 ## Recent updates (internal)
 
 - Removed tracked recovered HPC notebooks from docs/final_scripts_from_hpc; these remain reference-only and are now ignored by .gitignore.

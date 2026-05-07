@@ -42,3 +42,22 @@ def test_readme_distinguishes_audited_scaffold_from_exact_reproduction() -> None
     assert "should not yet be described as a full exact implementation" in readme
     assert "scientific exactness gaps" in readme
     assert "docs/manuscript_alignment_audit.md" in readme
+
+
+def test_alignment_audit_maps_final_tables_and_figures_to_named_artifacts() -> None:
+    """The alignment audit must include a concrete table/figure to artifact mapping."""
+    audit = Path("docs/manuscript_alignment_audit.md").read_text(encoding="utf-8")
+    required_phrases = [
+        "## Manuscript table and figure artifact map",
+        "Table 1",
+        "Table 2",
+        "Figure 1",
+        "Figure 2",
+        "final_manuscript_artifacts/tables/workflow_stage_summary.csv",
+        "final_manuscript_artifacts/tables/model_performance.csv",
+        "final_manuscript_artifacts/figures/figure_model_performance_data.csv",
+        "final_manuscript_artifacts/figures/figure_support_composition_data.csv",
+        "Status: mapping complete, manuscript-value verification pending.",
+    ]
+    for phrase in required_phrases:
+        assert phrase in audit

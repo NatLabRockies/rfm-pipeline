@@ -17,7 +17,12 @@ debiased_lasso_contract
 debiased_lasso_exactness_audit
 manuscript_runtime
 ENGINEERING_MANIFEST
+AGENT_SYNC
+CAVEMAN_CONTEXT
+decision_log
 manuscript_alignment_audit
+review_register
+scope_backlog
 api
 workflow_audit
 module_plan

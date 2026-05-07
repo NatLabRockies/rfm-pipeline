@@ -1,0 +1,12 @@
+autonomy_tier: 3
+profile: autonomous
+require_pixi: true
+allow_git_execution: true
+allow_destructive_git: true
+allow_pr_execution: true
+allow_branch_deletion: true
+allow_dependency_changes: false
+allow_manifest_updates: true
+allow_agent_sync_updates: true
+allow_full_gate: true
+allow_multi_slice_milestones: true

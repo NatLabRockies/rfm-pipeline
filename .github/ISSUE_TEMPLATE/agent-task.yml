@@ -1,0 +1,93 @@
+name: Agent task
+about: A bounded Copilot agent task tied to the engineering manifest
+labels: [agent-task]
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: What should the agent accomplish?
+      placeholder: Implement the next engineering-manifest slice for ...
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Required context
+      description: Files the agent must read before planning or editing.
+      value: |
+        - AGENTS.md
+        - README.md
+        - MEMORY.md
+        - docs/ENGINEERING_MANIFEST.md
+        - docs/AGENT_SYNC.md
+        - config/agent_policy.yaml
+        - pixi.toml
+        - test_repo.sh
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Include files in scope, files out of scope, and non-goals.
+      value: |
+        In scope:
+        - ...
+
+        Out of scope:
+        - ...
+
+        Non-goals:
+        - Do not add new functionality outside this task.
+        - Do not add compatibility shims.
+        - Do not weaken tests.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Verifiable criteria for completion.
+      value: |
+        - [ ] Focused tests added or updated first.
+        - [ ] Targeted tests pass.
+        - [ ] Full repo gate passes at checkpoint.
+        - [ ] docs/AGENT_SYNC.md updated.
+        - [ ] Engineering manifest updated if status changed.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation commands
+      value: |
+        pixi install --locked
+        pixi run pytest -q <targeted tests>
+        ./test_repo.sh --fix
+        ./test_repo.sh
+    validations:
+      required: true
+  - type: dropdown
+    id: autonomy
+    attributes:
+      label: Autonomy tier
+      options:
+        - request-scoped
+        - autonomous milestone
+    validations:
+      required: true
+  - type: textarea
+    id: stop
+    attributes:
+      label: Stop conditions
+      value: |
+        Stop and ask before:
+        - scope increase
+        - public API/schema/data contract change
+        - dependency change
+        - destructive Git action not allowed by policy
+        - compatibility shim
+        - repeated validation failure after two repair attempts
+    validations:
+      required: true

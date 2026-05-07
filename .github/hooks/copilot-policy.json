@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "python3 scripts/copilot_tool_policy.py",
+        "cwd": ".",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}

@@ -61,3 +61,18 @@ def test_alignment_audit_maps_final_tables_and_figures_to_named_artifacts() -> N
     ]
     for phrase in required_phrases:
         assert phrase in audit
+
+
+def test_alignment_audit_externalizes_interaction_and_nonlinear_source_artifacts() -> None:
+    """Interaction/nonlinear exactness blockers should name upstream source artifacts."""
+    audit = Path("docs/manuscript_alignment_audit.md").read_text(encoding="utf-8")
+    required_phrases = [
+        "## Externalized manuscript-only upstream artifacts",
+        "interaction-discovery stage",
+        "nonlinear-discovery stage",
+        "private_tree_shap_interaction_workflow",
+        "private_gam_nonlinear_discovery_workflow",
+        "Source artifact availability in this public repo: no",
+    ]
+    for phrase in required_phrases:
+        assert phrase in audit

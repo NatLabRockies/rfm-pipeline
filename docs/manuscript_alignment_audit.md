@@ -61,6 +61,15 @@ Use the following wording until the gaps above are closed:
    public surrogate now writes provenance and does not claim manuscript exactness.
 1. Map final manuscript tables and figures one-to-one to manuscript labels and expected values.
 
+## Externalized manuscript-only upstream artifacts
+
+- interaction-discovery stage
+  - Source workflow reference: `private_tree_shap_interaction_workflow`
+  - Source artifact availability in this public repo: no
+- nonlinear-discovery stage
+  - Source workflow reference: `private_gam_nonlinear_discovery_workflow`
+  - Source artifact availability in this public repo: no
+
 ## Manuscript table and figure artifact map
 
 Status: mapping complete, manuscript-value verification pending.

@@ -1,15 +1,15 @@
 # Agent Sync
 
 repo: NatLabRockies/bsm-public-rf
-branch: codex/p1-table-figure-mapping
+branch: codex/p1-upstream-artifact-externalization
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
 current_milestone: close manuscript exactness gaps tracked in the alignment audit
-current_slice: map manuscript tables/figures to concrete release artifacts
+current_slice: externalize interaction/nonlinear upstream manuscript-only artifacts
 slice_status: completed
 last_validation: `./test_repo.sh --check` passed
-next_slice: continue P1 exactness-gap closure (interaction/nonlinear externalization or verification)
+next_slice: continue P1 exactness-gap closure with private-run verification evidence for HC3/figure-table parity
 
 ## Blocked items
 
@@ -30,6 +30,7 @@ next_slice: continue P1 exactness-gap closure (interaction/nonlinear externaliza
 
 ```bash
 pixi run pytest -q tests/test_manuscript_alignment_audit.py
+pixi run pytest -q tests/test_manuscript_documentation_contract.py tests/test_manuscript_alignment_audit.py
 ```
 
 ## Full gate
@@ -40,6 +41,13 @@ pixi run pytest -q tests/test_manuscript_alignment_audit.py
 
 ## Latest slice update
 
-- Added a one-to-one mapping section in `docs/manuscript_alignment_audit.md` from manuscript
-  Table/Figure labels to emitted `final_manuscript_artifacts/` table/figure source-data files.
-- Added a contract test to keep that map present and explicit in future edits.
+- Added `## Externalized manuscript-only upstream artifacts` in
+  `docs/manuscript_alignment_audit.md` to explicitly name interaction-discovery and
+  nonlinear-discovery manuscript-only source workflow references and mark public-repo artifact
+  availability as "no".
+- Added a contract test in `tests/test_manuscript_alignment_audit.py` to prevent removal of this
+  externalization ledger section.
+- Validation run sequence:
+  - `pixi run pytest -q tests/test_manuscript_alignment_audit.py` (expected fail before doc update, then pass)
+  - `pixi run pytest -q tests/test_manuscript_documentation_contract.py tests/test_manuscript_alignment_audit.py` (pass)
+  - `./test_repo.sh --check` (pass)

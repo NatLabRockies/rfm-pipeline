@@ -66,6 +66,9 @@ Use the following wording until the gaps above are closed:
 - empirical-null screening stage
   - Source workflow reference: recovered `null_distribution.py` / Delta-null workflow
   - Source artifact availability in this public repo: no
+- de-biased-LASSO selection stage
+  - Source workflow reference: recovered `LASSO_to_OLS_v9.ipynb` workflow
+  - Source artifact availability in this public repo: no
 - interaction-discovery stage
   - Source workflow reference: `private_tree_shap_interaction_workflow`
   - Source artifact availability in this public repo: no

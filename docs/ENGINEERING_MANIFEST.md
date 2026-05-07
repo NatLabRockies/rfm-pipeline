@@ -8,7 +8,7 @@ Define the authoritative implementation plan for Copilot and human developers.
 
 - Profile: set by `config/agent_policy.yaml`
 - Current milestone: stabilize and validate manuscript-reproduction workflow
-- Current slice: restore gate/doc contract alignment and clear validation blockers
+- Current slice: map final manuscript tables/figures to concrete release artifacts
 
 ## Non-negotiable constraints
 
@@ -53,6 +53,7 @@ Define the authoritative implementation plan for Copilot and human developers.
 - Phase 3 source-backed stage chain is in place and documented.
 - QA audit layer is published at `docs/manuscript_alignment_audit.md`.
 - `manuscript-reproduction-smoke` is part of the validation task chain.
+- Added explicit manuscript Table/Figure-to-artifact mapping in the alignment audit.
 
 ## Latest Validation Record
 

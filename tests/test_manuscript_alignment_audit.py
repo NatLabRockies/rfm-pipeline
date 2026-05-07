@@ -68,6 +68,9 @@ def test_alignment_audit_externalizes_interaction_and_nonlinear_source_artifacts
     audit = Path("docs/manuscript_alignment_audit.md").read_text(encoding="utf-8")
     required_phrases = [
         "## Externalized manuscript-only upstream artifacts",
+        "empirical-null screening stage",
+        "null_distribution.py",
+        "Delta-null workflow",
         "interaction-discovery stage",
         "nonlinear-discovery stage",
         "private_tree_shap_interaction_workflow",

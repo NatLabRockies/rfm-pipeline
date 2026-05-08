@@ -7,7 +7,10 @@ This documentation site is built from the live package source and the repository
 :caption: Contents
 
 overview
+setup_and_first_run
 quickstart
+configuration_reference
+artifact_reference
 export_bundle
 reproducibility_example
 scope_boundary

@@ -2,6 +2,41 @@
 
 This repository provides the tested package modules, documentation, and repository gate for the BSM reduced-form modeling workflow.
 
+## **For a New User: Start Here**
+
+You can run the complete workflow end-to-end from scratch in ~15 minutes with no prior setup.
+
+### Quick Start (Demo Mode)
+
+No data files needed—uses built-in synthetic data:
+
+```bash
+git clone https://github.com/NatLabRockies/bsm-public-rf.git
+cd bsm-public-rf
+curl -fsSL https://pixi.sh/install.sh | bash  # Install Pixi (one-time)
+pixi install --locked                           # Setup environment (~3 min)
+PYTHONPATH=src python examples/end_to_end_reproducibility.py \
+  --output-dir artifacts/my-first-run \
+  --run-manuscript-chain \
+  --manuscript-output-dir artifacts/my-first-run/manuscript
+```
+
+**Result:** All 9 workflow stages execute, producing tables, figures, and QA audit in `artifacts/my-first-run/manuscript/`.
+
+### Three Execution Paths
+
+| Path            | Use                             | Time    | Data Required             |
+| --------------- | ------------------------------- | ------- | ------------------------- |
+| **Demo**        | First run, validation           | ~2 min  | None (built-in)           |
+| **Real Data**   | Full case study on your machine | ~10 min | Your local files + config |
+| **Custom Data** | Apply to new dataset            | Varies  | Your dataset              |
+
+### Comprehensive Setup Guide
+
+For step-by-step instructions with troubleshooting, **see [`docs/setup_and_first_run.md`](docs/setup_and_first_run.md)**.
+
+______________________________________________________________________
+
 ## Environment management
 
 The repository is designed around Pixi. The canonical local and CI entrypoint is:
@@ -30,6 +65,31 @@ To repair formatting and notebook hygiene before committing:
 ## Documentation
 
 The package documentation is built with Sphinx and MyST. Public Python APIs are expected to use NumPy-style docstrings.
+
+### Documentation Index
+
+**Getting Started**
+
+- [`docs/setup_and_first_run.md`](docs/setup_and_first_run.md) — **Start here.** Step-by-step setup with three execution paths (demo, real data, custom data), troubleshooting, and what to expect.
+- [`docs/quickstart.md`](docs/quickstart.md) — Minimal code example of the canonical workflow API.
+- [`docs/overview.md`](docs/overview.md) — Repository structure and standards.
+
+**Workflow and Data**
+
+- [`docs/manuscript_runtime.md`](docs/manuscript_runtime.md) — How the 9 notebook stages work, runtime resolution (demo vs. real data), all stage outputs.
+- [`docs/configuration_reference.md`](docs/configuration_reference.md) — Configuration files, field-by-field reference, how to set up local paths.
+- [`docs/artifact_reference.md`](docs/artifact_reference.md) — All artifacts produced by each stage, CSV column descriptions, expected value ranges.
+
+**Scientific Details**
+
+- [`docs/manuscript_alignment_audit.md`](docs/manuscript_alignment_audit.md) — Which stages are manuscript-exact vs. approximations. **Read before interpreting results.**
+- [`docs/debiased_lasso_contract.md`](docs/debiased_lasso_contract.md) — De-biased-LASSO implementation status and frozen contract.
+- [`docs/manuscript_contract.md`](docs/manuscript_contract.md) — Frozen manuscript computational contract.
+
+**API and Examples**
+
+- [`docs/module_plan.md`](docs/module_plan.md) — Public API reference by module.
+- `examples/end_to_end_reproducibility.py` — Runnable minimal example (also the demo entry point).
 
 ## End-to-end reproducibility example
 

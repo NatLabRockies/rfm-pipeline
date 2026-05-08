@@ -15,10 +15,11 @@ from bsm_rfm import (
 )
 
 
-def test_resolve_manuscript_runtime_falls_back_to_demo_without_local_paths() -> None:
+def test_resolve_manuscript_runtime_uses_real_data_when_configured() -> None:
     context = resolve_manuscript_runtime(Path.cwd())
-    assert context.mode == "demo"
-    assert context.runtime_dir is not None
+    # With local config in place, real mode should be used
+    assert context.mode == "real"
+    assert context.runtime_dir is None
     assert set(context.artifact_paths) == {
         "input_metadata",
         "output_metadata",

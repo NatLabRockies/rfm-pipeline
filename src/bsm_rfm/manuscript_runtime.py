@@ -17,10 +17,12 @@ from .manuscript_data_contract import (
 )
 
 _ARTIFACT_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
-    "input_metadata": ("input_name", "input_kind", "units"),
-    "output_metadata": ("output_name", "year", "units"),
-    "case_study_input_matrix": ("sample_id", "x1", "x2", "AFSC", "UAEORO"),
-    "case_study_output_matrix": ("sample_id", "y1", "y2", "y3"),
+    # Metadata: require only name columns; other columns optional
+    "input_metadata": ("input_name",),
+    "output_metadata": ("output_name",),
+    # Real high-dimensional data: accept arbitrary feature/output columns
+    "case_study_input_matrix": (),  # Validated in notebooks
+    "case_study_output_matrix": (),  # Validated in notebooks
     "manuscript_feature_catalog": ("feature_name", "feature_type", "origin"),
     "fixed_holdout_assignments": ("sample_id", "split"),
 }

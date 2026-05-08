@@ -18,9 +18,23 @@ from bsm_rfm import (
 from bsm_rfm.manuscript_runtime import ManuscriptRuntimeContext
 
 
-def test_resolve_manuscript_runtime_uses_real_data_when_configured() -> None:
+def test_resolve_manuscript_runtime_uses_real_data_when_configured(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    paths = write_demo_manuscript_artifacts(tmp_path / "real-data")
+    template = {name: str(path) for name, path in paths.items()}
+    template["output_root"] = str(tmp_path / "real-output")
+    monkeypatch.setattr(
+        "bsm_rfm.manuscript_runtime.load_manuscript_paths_template",
+        lambda _: template,
+    )
+    monkeypatch.setattr(
+        "bsm_rfm.manuscript_runtime.load_manuscript_local_override",
+        lambda _: {},
+    )
+
     context = resolve_manuscript_runtime(Path.cwd())
-    # With local config in place, real mode should be used
     assert context.mode == "real"
     assert context.runtime_dir is None
     assert set(context.artifact_paths) == {

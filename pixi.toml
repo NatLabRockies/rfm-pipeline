@@ -20,6 +20,8 @@ pyyaml = ">=6"
 setuptools = ">=68"
 wheel = ">=0.45"
 pre-commit = ">=3.8"
+jupyterlab = ">=4.5.7,<5"
+pixi-kernel = ">=0.7.1,<0.8"
 
 [pypi-dependencies]
 build = ">=1.2"

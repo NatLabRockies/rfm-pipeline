@@ -25,6 +25,7 @@ next_slice: run manuscript workflow on larger real-data surface (higher output/c
 - `tests/test_manuscript_interaction_discovery.py`
 - `tests/test_manuscript_final_artifacts.py`
 - `tools/run_300_sample_validation.py`
+- `tests/test_manuscript_runtime.py`
 - `docs/AGENT_SYNC.md`
 - `docs/ENGINEERING_MANIFEST.md`
 
@@ -53,6 +54,8 @@ pixi run env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_
 - Added focused parser tests for these overrides:
   `test_interaction_discovery_spec_accepts_optional_runtime_overrides` and
   `test_final_artifact_spec_accepts_optional_runtime_overrides`.
+- Hardened runtime resolution test to be CI-stable by constructing a temporary fully-resolved
+  artifact config via monkeypatch instead of assuming machine-local real-data overrides exist.
 - Added and validated `tools/run_300_sample_validation.py` full-chain runner for the 300-sample
   dataset with deterministic validation-time caps:
   - interaction null permutations: 5

@@ -15,8 +15,8 @@ def test_discover_manuscript_interactions_surrogate():
     f1 = rs.normal(size=n)
     input_matrix = pd.DataFrame({"sample_id": np.arange(n), "f0": f0, "f1": f1})
 
-    # feature catalog with one interaction candidate
-    feature_catalog = pd.DataFrame({"feature_name": ["f0:f1"]})
+    # feature catalog is no longer the interaction candidate source in dynamic mode
+    feature_catalog = pd.DataFrame({"feature_name": ["f0", "f1"]})
 
     # all rows are train
     holdout_assignments = pd.DataFrame({"sample_id": np.arange(n), "split": ["train"] * n})
@@ -25,8 +25,13 @@ def test_discover_manuscript_interactions_surrogate():
     pc0 = f0 * f1 + rs.normal(scale=0.01, size=n)
     pca_scores = pd.DataFrame({"sample_id": np.arange(n), "pc0": pc0})
 
-    # empty retained terms table (no upstream filtering)
-    retained_terms = pd.DataFrame({"feature_name": []})
+    # dynamic interaction discovery now consumes retained first-order terms from Stage 2
+    retained_terms = pd.DataFrame(
+        {
+            "feature_name": ["f0", "f1"],
+            "feature_type": ["numeric", "numeric"],
+        }
+    )
 
     spec = InteractionDiscoverySpec(
         method="tree_shap_interaction_values",

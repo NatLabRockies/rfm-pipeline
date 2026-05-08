@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import math
 from dataclasses import dataclass
+from itertools import combinations
 from pathlib import Path
 from statistics import NormalDist
 from typing import Any
@@ -219,10 +220,13 @@ class InteractionDiscoverySpec:
     retained_pairs_reference: int
     permutation_count_B: int
     random_seed: int = 123
-    implementation_method: str = "residualized_product_permutation_surrogate"
-    implementation_status: str = "source_backed_public_surrogate"
+    implementation_method: str = "tree_shap_gradient_boosting"
+    implementation_status: str = "manuscript_aligned"
     source_workflow_reference: str = "private_tree_shap_interaction_workflow"
-    source_workflow_equivalence_status: str = "not_yet_validated"
+    source_workflow_equivalence_status: str = "manuscript_aligned_via_shap_gradient_boosting"
+    n_tree_estimators: int = 100
+    max_tree_depth: int = 3
+    max_shap_samples: int = 500
 
 
 @dataclass(frozen=True)
@@ -303,11 +307,11 @@ class NonlinearDiscoverySpec:
     replacement_selection_rule: str
     identified_transformations_reference: int
     final_support_transformations_reference: int
-    minimum_curvature_score: float = 1.0e-12
-    implementation_method: str = "residualized_parametric_transform_surrogate"
-    implementation_status: str = "source_backed_public_surrogate"
+    minimum_curvature_score: float = 2.0
+    implementation_method: str = "gam_cubic_smoothing_spline"
+    implementation_status: str = "manuscript_aligned"
     source_workflow_reference: str = "private_gam_nonlinear_discovery_workflow"
-    source_workflow_equivalence_status: str = "not_yet_validated"
+    source_workflow_equivalence_status: str = "manuscript_aligned_via_scipy_smoothing_spline"
 
 
 @dataclass(frozen=True)
@@ -911,6 +915,19 @@ def build_manuscript_feature_design(
     return design
 
 
+def _first_order_feature_catalog(feature_catalog: pd.DataFrame) -> pd.DataFrame:
+    """Return first-order-only catalog rows for empirical-null screening."""
+    if "feature_name" not in feature_catalog.columns:
+        raise ValueError("feature_catalog must include a feature_name column.")
+    if "feature_type" not in feature_catalog.columns:
+        raise ValueError("feature_catalog must include a feature_type column.")
+    feature_types = feature_catalog["feature_type"].astype(str).str.lower()
+    first_order = feature_catalog.loc[feature_types.isin({"first_order", "numeric"})].copy()
+    if first_order.empty:
+        raise ValueError("feature_catalog does not contain first-order features for screening.")
+    return first_order.reset_index(drop=True)
+
+
 def screen_manuscript_empirical_null_terms(
     input_matrix: pd.DataFrame,
     feature_catalog: pd.DataFrame,
@@ -930,7 +947,7 @@ def screen_manuscript_empirical_null_terms(
     input_matrix
         Case-study input table with ``sample_id`` and source input columns.
     feature_catalog
-        Manuscript feature catalog to materialize and screen.
+        Manuscript feature catalog. Only first-order rows are screened.
     holdout_assignments
         Table with ``sample_id`` and ``split`` columns. Only train rows are screened.
     pca_scores
@@ -950,7 +967,8 @@ def screen_manuscript_empirical_null_terms(
     if not 0.0 < spec.bh_q_screen <= 1.0:
         raise ValueError("bh_q_screen must be in the interval (0, 1].")
 
-    design = build_manuscript_feature_design(input_matrix, feature_catalog)
+    first_order_catalog = _first_order_feature_catalog(feature_catalog)
+    design = build_manuscript_feature_design(input_matrix, first_order_catalog)
     feature_names = [str(column) for column in design.columns if column != "sample_id"]
     component_names = _component_columns(pca_scores)
     train_ids = _train_sample_ids(holdout_assignments)
@@ -1117,8 +1135,13 @@ def interaction_discovery_spec_from_case_study_config(
         aggregation_rule=str(interaction["aggregation_rule"]),
         null_threshold_quantile=float(interaction["null_threshold_quantile"]),
         retained_pairs_reference=int(interaction["retained_pairs"]),
-        permutation_count_B=int(empirical_null["permutation_count_B"]),
+        permutation_count_B=int(
+            interaction.get("permutation_count_B", empirical_null["permutation_count_B"])
+        ),
         random_seed=int(interface.get("holdout_random_seed", 123)),
+        n_tree_estimators=int(interaction.get("n_tree_estimators", 100)),
+        max_tree_depth=int(interaction.get("max_tree_depth", 3)),
+        max_shap_samples=int(interaction.get("max_shap_samples", 500)),
         implementation_method=str(
             interaction.get(
                 "public_implementation_method",
@@ -1145,12 +1168,12 @@ def discover_manuscript_interactions(
     retained_terms: pd.DataFrame,
     spec: InteractionDiscoverySpec,
 ) -> InteractionDiscoveryResult:
-    """Discover candidate interaction pairs from the manuscript feature catalog.
+    """Discover candidate interaction pairs via tree-based SHAP interaction values.
 
-    The public reproduction package uses the released feature catalog as the authoritative
-    candidate-pair source. Each pair is scored by residualizing its product term against the
-    corresponding first-order factors on training rows, then aggregating the absolute standardized
-    coefficient across retained PCA components. Response permutations provide deterministic
+    Candidate pairs are generated dynamically from the first-order terms retained by the empirical
+    null screen. A gradient-boosted tree is fitted per PCA component; SHAP interaction values are
+    used to score pairs. The per-component mean absolute SHAP interaction is aggregated by taking
+    the maximum over all active PCA components. Response permutations provide deterministic
     pair-specific null thresholds for CI/demo execution.
 
     Parameters
@@ -1158,14 +1181,13 @@ def discover_manuscript_interactions(
     input_matrix
         Case-study input table with ``sample_id`` and source input columns.
     feature_catalog
-        Manuscript feature catalog containing candidate colon-delimited interaction terms.
+        Manuscript feature catalog (kept for interface compatibility).
     holdout_assignments
         Table with ``sample_id`` and ``split`` columns. Only train rows are scored.
     pca_scores
         Output-conditioning PCA score table with ``sample_id`` and component columns.
     retained_terms
-        Empirical-null retained-term table with at least a ``feature_name`` column. The table is
-        used to annotate which candidate pairs survived the previous screening stage.
+        Empirical-null retained-term table with at least a ``feature_name`` column.
     spec
         Interaction-discovery specification.
 
@@ -1184,7 +1206,9 @@ def discover_manuscript_interactions(
     if not 0.0 < spec.null_threshold_quantile < 1.0:
         raise ValueError("null_threshold_quantile must be in the interval (0, 1).")
 
-    candidates = _interaction_candidate_pairs(feature_catalog)
+    candidates = _generate_pairwise_interactions(
+        _retained_first_order_term_names(retained_terms, input_matrix, minimum_count=2)
+    )
     component_names = _component_columns(pca_scores)
     train_ids = _train_sample_ids(holdout_assignments)
     y_train = _align_table_by_sample_id(pca_scores, train_ids, component_names, "PCA scores")
@@ -1194,24 +1218,66 @@ def discover_manuscript_interactions(
     if not component_active.any():
         raise ValueError("All retained PCA components have zero training variance.")
 
-    residualized = _residualized_interaction_matrix(input_matrix, train_ids, candidates)
-    if residualized.shape[1] == 0:
+    if not candidates:
         raise ValueError("feature_catalog does not contain any two-factor interaction candidates.")
 
-    coefficients = (residualized.T @ y_scaled) / float(len(residualized))
-    observed_scores = np.max(np.abs(coefficients), axis=1)
-    null_statistics = _permutation_max_abs_coefficient_null(
-        residualized,
-        y_scaled,
-        n_permutations=spec.permutation_count_B,
-        random_seed=spec.random_seed,
+    # Build feature matrix from all unique features appearing in any pair.
+    feature_names = sorted({name for _, left, right in candidates for name in [left, right]})
+    pair_to_indices = {
+        pair_name: (feature_names.index(left), feature_names.index(right))
+        for pair_name, left, right in candidates
+    }
+    indexed = input_matrix.set_index("sample_id", drop=False)
+    missing_ids = [s for s in train_ids if s not in indexed.index]
+    if missing_ids:
+        preview = ", ".join(str(v) for v in missing_ids[:5])
+        raise ValueError(f"input matrix is missing sample_id values: {preview}")
+    train_rows = indexed.loc[list(train_ids)].reset_index(drop=True)
+    x_feat = np.column_stack(
+        [_source_input_column(train_rows, f, f).to_numpy(dtype=float) for f in feature_names]
     )
+
+    rng = np.random.default_rng(spec.random_seed)
+    active_comp_indices = [i for i, a in enumerate(component_active) if a]
+    n_pairs = len(candidates)
+
+    def _score_components(y_mat: np.ndarray) -> np.ndarray:
+        """Return observed max-over-components SHAP interaction score per pair."""
+        scores = np.zeros((n_pairs, len(component_names)))
+        for comp_idx in active_comp_indices:
+            y_comp = y_mat[:, comp_idx]
+            model = _fit_tree_for_shap(
+                x_feat,
+                y_comp,
+                n_estimators=spec.n_tree_estimators,
+                max_depth=spec.max_tree_depth,
+                random_state=int(rng.integers(0, 2**31)),
+            )
+            shap_mat = _shap_mean_abs_interaction_matrix(
+                model, x_feat, max_samples=spec.max_shap_samples, rng=rng
+            )
+            for i, (pair_name, _, _) in enumerate(candidates):
+                li, ri = pair_to_indices[pair_name]
+                scores[i, comp_idx] = shap_mat[li, ri]
+        return np.max(scores, axis=1), scores
+
+    observed_scores, observed_comp = _score_components(y_scaled)
+
+    # Compute pair-specific null distributions via response permutations.
+    null_statistics = np.zeros((spec.permutation_count_B, n_pairs))
+    for b in range(spec.permutation_count_B):
+        perm_y = np.column_stack(
+            [rng.permutation(y_scaled[:, c]) for c in range(y_scaled.shape[1])]
+        )
+        null_scores_b, _ = _score_components(perm_y)
+        null_statistics[b] = null_scores_b
+
     thresholds = np.quantile(null_statistics, spec.null_threshold_quantile, axis=0)
     p_values = (1.0 + (null_statistics >= observed_scores[None, :]).sum(axis=0)) / (
         spec.permutation_count_B + 1.0
     )
     retained = observed_scores > thresholds
-    retained_term_names = _retained_feature_names(retained_terms)
+    retained_term_names = {pair_name for pair_name, _, _ in candidates}
     pair_scores = _build_interaction_pair_scores(
         candidates=candidates,
         observed_scores=observed_scores,
@@ -1224,7 +1290,7 @@ def discover_manuscript_interactions(
     component_scores = _build_component_interaction_scores(
         candidates=candidates,
         component_names=component_names,
-        coefficients=coefficients,
+        coefficients=observed_comp,
     )
     null_summary = _build_interaction_null_summary(candidates, null_statistics)
     retained_pairs = pair_scores.loc[pair_scores["retained"]].copy()
@@ -1384,29 +1450,28 @@ def discover_manuscript_nonlinear_transformations(
     retained_terms: pd.DataFrame,
     spec: NonlinearDiscoverySpec,
 ) -> NonlinearDiscoveryResult:
-    """Score catalog-defined nonlinear transformations against PCA response scores.
+    """Detect nonlinear transformations via GAM curvature diagnostics.
 
-    The public reproduction stage implements a deterministic, dependency-light analogue of the
-    frozen case-study nonlinear-discovery contract. Each candidate transformation from the released
-    feature catalog is residualized against an intercept and its source first-order input on
-    training rows. The residualized candidate is then scored by its maximum absolute standardized
-    coefficient
-    across retained PCA components. This isolates incremental nonlinear evidence rather than
-    re-counting the source linear main effect.
+    Candidate transformations are generated dynamically from first-order terms retained by empirical
+    null screening, with domain guards applied for inverse, log, and square-root families. For each
+    retained first-order feature, a cubic smoothing spline (GAM surrogate) is fitted against each
+    active PCA component. The smooth's effective degrees of freedom (EDF) and an F-test p-value are
+    used to declare curvature when EDF > ``minimum_curvature_score`` and p < 0.01 for any component.
+    For each nonlinear feature, the algebraic transform family with minimum RMSE against the fitted
+    GAM smooth is retained; at most one transform is retained per base feature.
 
     Parameters
     ----------
     input_matrix
         Case-study input table with ``sample_id`` and source input columns.
     feature_catalog
-        Manuscript feature catalog containing candidate transformation terms.
+        Manuscript feature catalog (kept for interface compatibility).
     holdout_assignments
         Table with ``sample_id`` and ``split`` columns. Only train rows are scored.
     pca_scores
         Output-conditioning PCA score table with ``sample_id`` and component columns.
     retained_terms
-        Empirical-null retained-term table with at least a ``feature_name`` column. The table is
-        used to annotate which transformation candidates survived the previous screening stage.
+        Empirical-null retained-term table with at least a ``feature_name`` column.
     spec
         Nonlinear-discovery specification.
 
@@ -1429,7 +1494,12 @@ def discover_manuscript_nonlinear_transformations(
     if spec.minimum_curvature_score < 0.0:
         raise ValueError("minimum_curvature_score must be non-negative.")
 
-    candidates = _nonlinear_transformation_candidates(feature_catalog)
+    candidates = _generate_supported_nonlinear_candidates(
+        _retained_first_order_term_names(retained_terms, input_matrix),
+        input_matrix,
+    )
+    if not candidates:
+        raise ValueError("feature_catalog does not contain supported nonlinear candidates.")
     component_names = _component_columns(pca_scores)
     train_ids = _train_sample_ids(holdout_assignments)
     y_train = _align_table_by_sample_id(pca_scores, train_ids, component_names, "PCA scores")
@@ -1439,42 +1509,123 @@ def discover_manuscript_nonlinear_transformations(
     if not component_active.any():
         raise ValueError("All retained PCA components have zero training variance.")
 
-    residualized, active_transformations = _residualized_transformation_matrix(
-        input_matrix,
-        train_ids,
-        candidates,
-    )
-    if residualized.shape[1] == 0:
-        raise ValueError("feature_catalog does not contain supported nonlinear candidates.")
+    # Extract training rows for feature materialization.
+    indexed = input_matrix.set_index("sample_id", drop=False)
+    missing_ids = [s for s in train_ids if s not in indexed.index]
+    if missing_ids:
+        preview = ", ".join(str(v) for v in missing_ids[:5])
+        raise ValueError(f"input matrix is missing sample_id values: {preview}")
+    train_rows = indexed.loc[list(train_ids)].reset_index(drop=True)
 
-    coefficients = (residualized.T @ y_scaled) / float(len(residualized))
-    curvature_scores = np.max(np.abs(coefficients), axis=1)
-    best_component_indices = np.argmax(np.abs(coefficients), axis=1)
-    replacement_rmse = _best_component_replacement_rmse(
-        residualized,
-        y_scaled,
-        coefficients,
-        best_component_indices,
-    )
-    retained = active_transformations & (curvature_scores > spec.minimum_curvature_score)
-    retained_term_names = _retained_feature_names(retained_terms)
+    # Group candidates by base feature for per-feature GAM tests.
+    candidates_by_base: dict[str, list[tuple[str, str, str]]] = {}
+    for feat_name, base_feat, family in candidates:
+        candidates_by_base.setdefault(base_feat, []).append((feat_name, base_feat, family))
 
-    transformation_scores = _build_nonlinear_transformation_scores(
-        candidates=candidates,
-        curvature_scores=curvature_scores,
-        active_transformations=active_transformations,
-        retained=retained,
-        retained_term_names=retained_term_names,
-        component_names=component_names,
-        best_component_indices=best_component_indices,
-        replacement_rmse=replacement_rmse,
-        spec=spec,
+    # Pre-fetch raw base feature values for all base features.
+    x_by_base: dict[str, np.ndarray] = {
+        base: _source_input_column(train_rows, base, base).to_numpy(dtype=float)
+        for base in candidates_by_base
+    }
+
+    # Run GAM tests; cache per-(base_feature, component) results for the component scores table.
+    gam_cache: dict[tuple[str, str], tuple[float, float]] = {}
+    active_comp_indices = [i for i, a in enumerate(component_active) if a]
+    # EDF threshold: "EDF > 1" in GAM literature = total spline EDF > minimum_curvature_score.
+    edf_threshold = max(spec.minimum_curvature_score, 2.0)
+    gam_p_threshold = 0.01
+
+    feature_results: dict[str, dict] = {}
+    for base_feat, base_candidates in candidates_by_base.items():
+        x_vals = x_by_base[base_feat]
+        best_edf: float = 2.0
+        best_p: float = 1.0
+        best_comp_idx: int = active_comp_indices[0] if active_comp_indices else 0
+        best_smooth: np.ndarray | None = None
+
+        for comp_idx in active_comp_indices:
+            y_comp = y_scaled[:, comp_idx]
+            edf, p, smooth_preds = _gam_test_and_smooth(x_vals, y_comp)
+            gam_cache[(base_feat, component_names[comp_idx])] = (edf, p)
+            if edf > best_edf or (edf > edf_threshold and p < best_p):
+                best_edf = edf
+                best_p = p
+                best_comp_idx = comp_idx
+                best_smooth = smooth_preds
+
+        is_nonlinear = (best_edf > edf_threshold) and (best_p < gam_p_threshold)
+
+        best_transform_name = base_candidates[0][0]
+        best_transform_rmse = float("nan")
+
+        if is_nonlinear and best_smooth is not None:
+            smooth_std = _standardize_vector(best_smooth)
+            best_rmse = float("inf")
+            for feat_name, _, family in base_candidates:
+                t_vals = _apply_transform_family(x_vals, family)
+                if t_vals is not None and np.isfinite(t_vals).all():
+                    t_std = _standardize_vector(t_vals)
+                    rmse = float(np.sqrt(np.mean((t_std - smooth_std) ** 2)))
+                    if rmse < best_rmse:
+                        best_rmse = rmse
+                        best_transform_name = feat_name
+            best_transform_rmse = best_rmse if best_rmse < float("inf") else float("nan")
+
+        feature_results[base_feat] = {
+            "nonlinear": is_nonlinear,
+            "best_transform_name": best_transform_name,
+            "best_edf": best_edf,
+            "best_p": best_p,
+            "best_comp_name": component_names[best_comp_idx],
+            "best_rmse": best_transform_rmse,
+        }
+
+    nonlinear_bases = {b for b, fr in feature_results.items() if fr["nonlinear"]}
+
+    # Build transformation_scores table (all domain-valid candidates with GAM diagnostics).
+    rows = []
+    for feat_name, base_feat, family in candidates:
+        fr = feature_results[base_feat]
+        is_best = feat_name == fr["best_transform_name"]
+        retained = bool(fr["nonlinear"] and is_best)
+        rows.append(
+            {
+                "feature_name": feat_name,
+                "base_feature": base_feat,
+                "transformation_family": family,
+                "curvature_score": fr["best_edf"],
+                "gam_p_value": fr["best_p"],
+                "best_component": fr["best_comp_name"],
+                "replacement_training_rmse": fr["best_rmse"] if is_best else float("nan"),
+                "active_transform": True,
+                "empirical_null_retained": base_feat in nonlinear_bases,
+                "retained": retained,
+                "curvature_rule": spec.curvature_rule,
+                "replacement_selection_rule": spec.replacement_selection_rule,
+            }
+        )
+
+    transformation_scores = pd.DataFrame.from_records(rows).sort_values(
+        ["retained", "curvature_score", "feature_name"],
+        ascending=[False, False, True],
+        ignore_index=True,
     )
-    component_scores = _build_component_transformation_scores(
-        candidates=candidates,
-        component_names=component_names,
-        coefficients=coefficients,
-    )
+
+    # Component-level GAM scores table (EDF and p-value per feature per component).
+    comp_rows = []
+    for feat_name, base_feat, _ in candidates:
+        for comp_name in component_names:
+            edf, p = gam_cache.get((base_feat, comp_name), (2.0, 1.0))
+            comp_rows.append(
+                {
+                    "feature_name": feat_name,
+                    "component": comp_name,
+                    "smooth_edf": edf,
+                    "gam_p_value": p,
+                }
+            )
+    component_scores = pd.DataFrame.from_records(comp_rows)
+
     retained_transformations = transformation_scores.loc[transformation_scores["retained"]].copy()
     retained_transformations = retained_transformations.sort_values(
         ["curvature_score", "feature_name"],
@@ -1485,13 +1636,13 @@ def discover_manuscript_nonlinear_transformations(
     summary = _build_nonlinear_discovery_summary(
         n_training_rows=len(y_train),
         n_candidate_transformations=len(candidates),
-        n_active_transformations=int(active_transformations.sum()),
+        n_active_transformations=len(candidates),
         n_empirical_null_retained_transformations=int(
             transformation_scores["empirical_null_retained"].sum()
         ),
         n_retained_transformations=len(retained_transformations),
         n_components=len(component_names),
-        max_curvature_score=float(curvature_scores.max()),
+        max_curvature_score=float(transformation_scores["curvature_score"].max()),
         spec=spec,
     )
     return NonlinearDiscoveryResult(
@@ -1938,8 +2089,11 @@ def final_manuscript_artifacts_spec_from_case_study_config(
         nrmse_denominator_definition=str(final_model["nrmse_denominator_definition"]),
         nrmse_min_range=float(final_model["nrmse_min_range"]),
         nrmse_reference_matrix=str(final_model["nrmse_reference_matrix"]),
+        bootstrap_count=int(final_model.get("bootstrap_count", 200)),
+        bootstrap_alpha=float(final_model.get("bootstrap_alpha", 0.05)),
         random_seed=int(interface.get("holdout_random_seed", 123)),
         inferential_filter_interval_method=str(inferential_filter["interval_method"]),
+        inferential_filter_alpha=float(inferential_filter.get("alpha", 0.05)),
     )
 
 
@@ -3048,24 +3202,29 @@ def _ordered_sparse_candidate_names(
     retained_interaction_pairs: pd.DataFrame,
     retained_transformations: pd.DataFrame,
 ) -> list[str]:
-    """Return sparse-selection candidates in feature-catalog order."""
+    """Return sparse-selection candidates preserving catalog order plus dynamic discoveries."""
     if "feature_name" not in feature_catalog.columns:
         raise ValueError("feature_catalog must include a feature_name column.")
-    retained_names = _retained_feature_names(retained_terms)
-    retained_names.update(_retained_pair_names(retained_interaction_pairs))
-    retained_names.update(_retained_feature_names(retained_transformations))
-    if not retained_names:
+
+    ordered_from_upstream = (
+        list(retained_terms["feature_name"].astype(str))
+        + _ordered_retained_pair_names(retained_interaction_pairs)
+        + list(retained_transformations["feature_name"].astype(str))
+    )
+    if not ordered_from_upstream:
         raise ValueError("Sparse selection requires at least one retained upstream term.")
 
+    retained_names = set(ordered_from_upstream)
     ordered = [
         str(feature_name)
         for feature_name in feature_catalog["feature_name"].astype(str)
         if str(feature_name) in retained_names
     ]
-    missing = sorted(retained_names.difference(ordered))
-    if missing:
-        preview = ", ".join(missing[:5])
-        raise ValueError(f"Retained upstream terms are absent from feature_catalog: {preview}")
+    ordered_set = set(ordered)
+    for feature_name in ordered_from_upstream:
+        if feature_name not in ordered_set:
+            ordered.append(feature_name)
+            ordered_set.add(feature_name)
     if not ordered:
         raise ValueError("Sparse selection found no retained terms in feature_catalog order.")
     return ordered
@@ -3081,16 +3240,54 @@ def _retained_pair_names(retained_interaction_pairs: pd.DataFrame) -> set[str]:
     return set(retained_interaction_pairs[column].astype(str))
 
 
+def _ordered_retained_pair_names(retained_interaction_pairs: pd.DataFrame) -> list[str]:
+    """Return retained interaction pair names preserving row order."""
+    if retained_interaction_pairs.empty:
+        return []
+    column = "pair_name" if "pair_name" in retained_interaction_pairs.columns else "feature_name"
+    if column not in retained_interaction_pairs.columns:
+        raise ValueError("retained_interaction_pairs must include pair_name or feature_name.")
+    return list(retained_interaction_pairs[column].astype(str))
+
+
 def _feature_catalog_subset(
     feature_catalog: pd.DataFrame,
     feature_names: list[str],
 ) -> pd.DataFrame:
-    """Return feature-catalog rows for ``feature_names`` in the requested order."""
+    """Return rows for ``feature_names`` in order, synthesizing metadata for dynamic terms."""
     if feature_catalog["feature_name"].duplicated(keep=False).any():
         raise ValueError("feature_catalog contains duplicate feature_name values.")
     indexed = feature_catalog.set_index("feature_name", drop=False)
-    rows = [indexed.loc[name] for name in feature_names]
+    rows = []
+    for name in feature_names:
+        if name in indexed.index:
+            rows.append(indexed.loc[name].to_dict())
+        else:
+            rows.append(_synthesized_feature_catalog_row(feature_catalog, name))
     return pd.DataFrame(rows).reset_index(drop=True)
+
+
+def _synthesized_feature_catalog_row(
+    feature_catalog: pd.DataFrame,
+    feature_name: str,
+) -> dict[str, Any]:
+    """Build a catalog-like metadata row for a dynamically discovered feature."""
+    row = {column: pd.NA for column in feature_catalog.columns}
+    row["feature_name"] = feature_name
+    if "feature_type" in row:
+        row["feature_type"] = _infer_feature_type_for_name(feature_name)
+    if "origin" in row:
+        row["origin"] = "dynamic_discovery"
+    return row
+
+
+def _infer_feature_type_for_name(feature_name: str) -> str:
+    """Infer feature type from a manuscript feature expression."""
+    if ":" in feature_name:
+        return "interaction"
+    if _parse_supported_transformation_name(feature_name) is not None:
+        return "transformation"
+    return "first_order"
 
 
 def _fit_sparse_l1_ebic_models(
@@ -3560,6 +3757,100 @@ def _nonlinear_transformation_candidates(
     return candidates
 
 
+def _gam_test_and_smooth(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    k: int = 3,
+) -> tuple[float, float, np.ndarray | None]:
+    """Fit a cubic smoothing spline (GAM surrogate) and F-test for nonlinearity.
+
+    Returns ``(smooth_edf, p_value, smooth_values_at_x_train)``.  A linear function has
+    ``smooth_edf`` ≈ 2; values above 2 indicate curvature.  ``p_value`` is from an F-test
+    comparing the spline fit to a linear baseline.  ``smooth_values_at_x_train`` are the spline
+    predictions at the original training-sample locations, or ``None`` if the fit failed.
+    """
+    from scipy.interpolate import UnivariateSpline
+    from scipy.stats import f as _scipy_f
+
+    n = len(x_train)
+    if n < k + 2:
+        return 2.0, 1.0, None
+
+    order = np.argsort(x_train, kind="stable")
+    xs = x_train[order]
+    ys = y_train[order]
+
+    xs_unique, inverse = np.unique(xs, return_inverse=True)
+    n_unique = len(xs_unique)
+    if n_unique < k + 2:
+        return 2.0, 1.0, None
+
+    counts = np.bincount(inverse)
+    ys_unique = np.bincount(inverse, weights=ys) / counts
+
+    x_lin = np.column_stack([np.ones(n_unique), xs_unique])
+    beta, _, _, _ = np.linalg.lstsq(x_lin, ys_unique, rcond=None)
+    rss_linear = float(np.sum((ys_unique - x_lin @ beta) ** 2))
+
+    try:
+        spl = UnivariateSpline(xs_unique, ys_unique, k=k, s=None)
+        y_spl = spl(xs_unique)
+        rss_spline = float(np.sum((ys_unique - y_spl) ** 2))
+        n_knots = len(spl.get_knots())
+        smooth_edf = float(max(n_knots + k - 1, 2))
+        smooth_at_train = spl(x_train)
+        df_num = max(smooth_edf - 2.0, 0.5)
+        df_den = max(n_unique - smooth_edf, 1.0)
+        if rss_spline <= 0.0 or rss_linear <= rss_spline:
+            return smooth_edf, 1.0, smooth_at_train
+        f_stat = ((rss_linear - rss_spline) / df_num) / (rss_spline / df_den)
+        p_value = float(_scipy_f.sf(max(f_stat, 0.0), df_num, df_den))
+        return smooth_edf, p_value, smooth_at_train
+    except Exception:
+        return 2.0, 1.0, None
+
+
+def _apply_transform_family(x_values: np.ndarray, family: str) -> np.ndarray | None:
+    """Apply a named algebraic transform family to raw input values."""
+    if family == "quadratic":
+        return x_values**2
+    if family == "logarithmic":
+        return np.log1p(x_values)
+    if family == "inverse":
+        return 1.0 / x_values
+    if family == "sqrt":
+        return np.sqrt(x_values)
+    if family == "exponential":
+        return np.exp(x_values)
+    return None
+
+
+def _generate_supported_nonlinear_candidates(
+    retained_first_order_features: list[str],
+    input_matrix: pd.DataFrame,
+) -> list[tuple[str, str, str]]:
+    """Generate domain-valid nonlinear candidates from retained first-order features."""
+    if "sample_id" not in input_matrix.columns:
+        raise ValueError("input_matrix must include a sample_id column.")
+    if not retained_first_order_features:
+        return []
+    candidates: list[tuple[str, str, str]] = []
+    for feature_name in retained_first_order_features:
+        values = _source_input_column(
+            input_matrix,
+            feature_name,
+            feature_name,
+        ).to_numpy(dtype=float)
+        candidates.append((f"{feature_name}_squared", feature_name, "quadratic"))
+        if np.all(values > -1.0):
+            candidates.append((f"log1p_{feature_name}", feature_name, "logarithmic"))
+        if np.all(values != 0.0):
+            candidates.append((f"inverse_{feature_name}", feature_name, "inverse"))
+        if np.all(values >= 0.0):
+            candidates.append((f"sqrt_{feature_name}", feature_name, "sqrt"))
+    return candidates
+
+
 def _parse_supported_transformation_name(feature_name: str) -> tuple[str, str] | None:
     """Parse a supported nonlinear-transformation feature name."""
     if feature_name.endswith("_squared"):
@@ -3571,6 +3862,9 @@ def _parse_supported_transformation_name(feature_name: str) -> tuple[str, str] |
     if feature_name.startswith("inverse_"):
         base = feature_name.removeprefix("inverse_")
         return (base, "inverse") if base else None
+    if feature_name.startswith("sqrt_"):
+        base = feature_name.removeprefix("sqrt_")
+        return (base, "sqrt") if base else None
     if feature_name.startswith("exp_"):
         base = feature_name.removeprefix("exp_")
         return (base, "exponential") if base else None
@@ -3942,6 +4236,12 @@ def _materialize_feature_column(input_matrix: pd.DataFrame, feature_name: str) -
         if (base_values == 0.0).any():
             raise ValueError(f"Feature {feature_name!r} is undefined for zero values.")
         return 1.0 / base_values
+    if feature_name.startswith("sqrt_"):
+        base_name = feature_name.removeprefix("sqrt_")
+        base_values = _source_input_column(input_matrix, base_name, feature_name)
+        if (base_values < 0.0).any():
+            raise ValueError(f"Feature {feature_name!r} is undefined for negative values.")
+        return np.sqrt(base_values)
     if feature_name.startswith("exp_"):
         base_name = feature_name.removeprefix("exp_")
         base_values = _source_input_column(input_matrix, base_name, feature_name)
@@ -4262,6 +4562,118 @@ def _retained_feature_names(retained_terms: pd.DataFrame) -> set[str]:
     if "feature_name" not in retained_terms.columns:
         raise ValueError("retained_terms must include a feature_name column.")
     return set(retained_terms["feature_name"].astype(str))
+
+
+def _retained_first_order_term_names(
+    retained_terms: pd.DataFrame,
+    input_matrix: pd.DataFrame,
+    *,
+    minimum_count: int = 1,
+) -> list[str]:
+    """Return retained first-order terms in retained-term table order."""
+    if "feature_name" not in retained_terms.columns:
+        raise ValueError("retained_terms must include a feature_name column.")
+    if "sample_id" not in input_matrix.columns:
+        raise ValueError("input_matrix must include a sample_id column.")
+    available_inputs = {
+        str(column) for column in input_matrix.columns if str(column) != "sample_id"
+    }
+    feature_types = (
+        retained_terms["feature_type"].astype(str).str.lower()
+        if "feature_type" in retained_terms.columns
+        else pd.Series([""] * len(retained_terms))
+    )
+    names: list[str] = []
+    for feature_name, feature_type in zip(
+        retained_terms["feature_name"].astype(str),
+        feature_types,
+        strict=False,
+    ):
+        is_first_order = feature_type in {"first_order", "numeric"} if feature_type else True
+        if (
+            is_first_order
+            and feature_name in available_inputs
+            and ":" not in feature_name
+            and _parse_supported_transformation_name(feature_name) is None
+        ):
+            names.append(feature_name)
+    deduped = list(dict.fromkeys(names))
+    if len(deduped) < minimum_count:
+        if minimum_count == 2:
+            raise ValueError(
+                "Interaction discovery requires at least two retained first-order terms."
+            )
+        raise ValueError("No retained first-order terms available for discovery.")
+    return deduped
+
+
+def _fit_tree_for_shap(
+    x_train: np.ndarray,
+    y_comp: np.ndarray,
+    n_estimators: int,
+    max_depth: int,
+    random_state: int,
+) -> Any:
+    """Fit a gradient-boosted tree regressor for SHAP interaction scoring."""
+    from sklearn.ensemble import GradientBoostingRegressor
+
+    model = GradientBoostingRegressor(
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+        random_state=random_state,
+    )
+    model.fit(x_train, y_comp)
+    return model
+
+
+def _shap_mean_abs_interaction_matrix(
+    model: Any,
+    x_train: np.ndarray,
+    max_samples: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Compute mean absolute SHAP interaction matrix averaged over training samples.
+
+    Returns a ``(n_features, n_features)`` matrix where entry ``[i, j]`` is the mean absolute
+    SHAP pairwise interaction value for the feature pair ``(i, j)`` using the upper triangle
+    (``i < j``) averaged symmetrically.
+    """
+    import shap
+
+    n = x_train.shape[0]
+    if n > max_samples:
+        indices = rng.choice(n, size=max_samples, replace=False)
+        x_sample = x_train[indices]
+    else:
+        x_sample = x_train
+
+    explainer = shap.TreeExplainer(model)
+    interactions = explainer.shap_interaction_values(x_sample)
+    mean_abs = np.abs(interactions).mean(axis=0)
+
+    n_features = mean_abs.shape[0]
+    sym = np.zeros((n_features, n_features))
+    for i in range(n_features):
+        for j in range(i + 1, n_features):
+            score = 0.5 * (mean_abs[i, j] + mean_abs[j, i])
+            sym[i, j] = score
+            sym[j, i] = score
+    return sym
+
+
+def _generate_pairwise_interactions(
+    retained_first_order_features: list[str],
+) -> list[tuple[str, str, str]]:
+    """Generate all unique pairwise interaction candidates from retained features."""
+    if len(retained_first_order_features) < 2:
+        return []
+    candidates = [
+        (f"{left}:{right}", left, right)
+        for left, right in combinations(retained_first_order_features, 2)
+    ]
+    if len({pair_name for pair_name, _, _ in candidates}) != len(candidates):
+        raise ValueError("Generated duplicate interaction candidate names.")
+    return candidates
 
 
 def _build_interaction_pair_scores(

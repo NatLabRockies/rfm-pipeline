@@ -51,3 +51,4 @@ source_suffix = {
     ".md": "markdown",
 }
 master_doc = "index"
+myst_heading_anchors = 3

@@ -106,7 +106,7 @@ def test_empirical_null_screening_retains_train_signal_and_writes_artifacts(
 
     assert "x_signal" in retained
     assert result.summary.loc[0, "n_training_rows"] == 16
-    assert result.summary.loc[0, "n_candidate_terms"] == 3
+    assert result.summary.loc[0, "n_candidate_terms"] == 2
     assert result.summary.loc[0, "n_permutations"] == 49
     assert result.summary.loc[0, "manuscript_retained_terms_reference"] == 349
 
@@ -125,6 +125,51 @@ def test_empirical_null_screening_retains_train_signal_and_writes_artifacts(
     assert "not_yet_validated" in provenance_text
 
 
+def test_empirical_null_screening_uses_only_first_order_terms() -> None:
+    sample_ids = list(range(1, 21))
+    x_signal = [float(value) for value in range(20)]
+    x_noise = [0.0, 3.0, 1.0, 4.0, 2.0] * 4
+    inputs = pd.DataFrame(
+        {
+            "sample_id": sample_ids,
+            "x_signal": x_signal,
+            "x_noise": x_noise,
+        }
+    )
+    catalog = pd.DataFrame(
+        {
+            "feature_name": ["x_signal", "x_noise", "x_signal:x_noise"],
+            "feature_type": ["first_order", "first_order", "interaction"],
+        }
+    )
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 16 + ["holdout"] * 4})
+    pca_scores = pd.DataFrame(
+        {
+            "sample_id": sample_ids,
+            "PC1": [2.0 * value for value in x_signal],
+            "PC2": [0.25 * value for value in x_signal],
+        }
+    )
+    spec = EmpiricalNullScreeningSpec(
+        statistic="coefficient_row_l2_norm",
+        permutation_count_B=19,
+        bh_q_screen=0.20,
+        retained_terms_reference=349,
+        random_seed=123,
+    )
+
+    result = screen_manuscript_empirical_null_terms(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        spec,
+    )
+
+    screened_names = set(result.feature_screening_statistics["feature_name"])
+    assert screened_names == {"x_signal", "x_noise"}
+
+
 def test_run_empirical_null_screening_stage_executes_demo_context() -> None:
     context = build_manuscript_notebook_context(
         Path.cwd(),
@@ -134,5 +179,5 @@ def test_run_empirical_null_screening_stage_executes_demo_context() -> None:
     result = run_empirical_null_screening_stage(context)
 
     assert result.screening.summary.loc[0, "stage"] == "empirical_null_screening"
-    assert result.screening.summary.loc[0, "n_candidate_terms"] == 7
+    assert result.screening.summary.loc[0, "n_candidate_terms"] == 4
     assert result.artifact_paths["retained_terms"].exists()

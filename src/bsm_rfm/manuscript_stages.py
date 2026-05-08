@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import math
 from dataclasses import dataclass
+from itertools import combinations
 from pathlib import Path
 from statistics import NormalDist
 from typing import Any
@@ -911,6 +912,19 @@ def build_manuscript_feature_design(
     return design
 
 
+def _first_order_feature_catalog(feature_catalog: pd.DataFrame) -> pd.DataFrame:
+    """Return first-order-only catalog rows for empirical-null screening."""
+    if "feature_name" not in feature_catalog.columns:
+        raise ValueError("feature_catalog must include a feature_name column.")
+    if "feature_type" not in feature_catalog.columns:
+        raise ValueError("feature_catalog must include a feature_type column.")
+    feature_types = feature_catalog["feature_type"].astype(str).str.lower()
+    first_order = feature_catalog.loc[feature_types.isin({"first_order", "numeric"})].copy()
+    if first_order.empty:
+        raise ValueError("feature_catalog does not contain first-order features for screening.")
+    return first_order.reset_index(drop=True)
+
+
 def screen_manuscript_empirical_null_terms(
     input_matrix: pd.DataFrame,
     feature_catalog: pd.DataFrame,
@@ -930,7 +944,7 @@ def screen_manuscript_empirical_null_terms(
     input_matrix
         Case-study input table with ``sample_id`` and source input columns.
     feature_catalog
-        Manuscript feature catalog to materialize and screen.
+        Manuscript feature catalog. Only first-order rows are screened.
     holdout_assignments
         Table with ``sample_id`` and ``split`` columns. Only train rows are screened.
     pca_scores
@@ -950,7 +964,8 @@ def screen_manuscript_empirical_null_terms(
     if not 0.0 < spec.bh_q_screen <= 1.0:
         raise ValueError("bh_q_screen must be in the interval (0, 1].")
 
-    design = build_manuscript_feature_design(input_matrix, feature_catalog)
+    first_order_catalog = _first_order_feature_catalog(feature_catalog)
+    design = build_manuscript_feature_design(input_matrix, first_order_catalog)
     feature_names = [str(column) for column in design.columns if column != "sample_id"]
     component_names = _component_columns(pca_scores)
     train_ids = _train_sample_ids(holdout_assignments)
@@ -1145,27 +1160,26 @@ def discover_manuscript_interactions(
     retained_terms: pd.DataFrame,
     spec: InteractionDiscoverySpec,
 ) -> InteractionDiscoveryResult:
-    """Discover candidate interaction pairs from the manuscript feature catalog.
+    """Discover candidate interaction pairs from retained first-order terms.
 
-    The public reproduction package uses the released feature catalog as the authoritative
-    candidate-pair source. Each pair is scored by residualizing its product term against the
-    corresponding first-order factors on training rows, then aggregating the absolute standardized
-    coefficient across retained PCA components. Response permutations provide deterministic
-    pair-specific null thresholds for CI/demo execution.
+    Candidate pairs are generated dynamically from the first-order terms retained by the empirical
+    null screen. Each pair is scored by residualizing its product term against the corresponding
+    first-order factors on training rows, then aggregating the absolute standardized coefficient
+    across retained PCA components. Response permutations provide deterministic pair-specific null
+    thresholds for CI/demo execution.
 
     Parameters
     ----------
     input_matrix
         Case-study input table with ``sample_id`` and source input columns.
     feature_catalog
-        Manuscript feature catalog containing candidate colon-delimited interaction terms.
+        Manuscript feature catalog (kept for interface compatibility).
     holdout_assignments
         Table with ``sample_id`` and ``split`` columns. Only train rows are scored.
     pca_scores
         Output-conditioning PCA score table with ``sample_id`` and component columns.
     retained_terms
-        Empirical-null retained-term table with at least a ``feature_name`` column. The table is
-        used to annotate which candidate pairs survived the previous screening stage.
+        Empirical-null retained-term table with at least a ``feature_name`` column.
     spec
         Interaction-discovery specification.
 
@@ -1184,7 +1198,9 @@ def discover_manuscript_interactions(
     if not 0.0 < spec.null_threshold_quantile < 1.0:
         raise ValueError("null_threshold_quantile must be in the interval (0, 1).")
 
-    candidates = _interaction_candidate_pairs(feature_catalog)
+    candidates = _generate_pairwise_interactions(
+        _retained_first_order_term_names(retained_terms, input_matrix, minimum_count=2)
+    )
     component_names = _component_columns(pca_scores)
     train_ids = _train_sample_ids(holdout_assignments)
     y_train = _align_table_by_sample_id(pca_scores, train_ids, component_names, "PCA scores")
@@ -1211,7 +1227,7 @@ def discover_manuscript_interactions(
         spec.permutation_count_B + 1.0
     )
     retained = observed_scores > thresholds
-    retained_term_names = _retained_feature_names(retained_terms)
+    retained_term_names = {pair_name for pair_name, _, _ in candidates}
     pair_scores = _build_interaction_pair_scores(
         candidates=candidates,
         observed_scores=observed_scores,
@@ -1384,29 +1400,26 @@ def discover_manuscript_nonlinear_transformations(
     retained_terms: pd.DataFrame,
     spec: NonlinearDiscoverySpec,
 ) -> NonlinearDiscoveryResult:
-    """Score catalog-defined nonlinear transformations against PCA response scores.
+    """Score dynamically generated nonlinear transformations against PCA scores.
 
-    The public reproduction stage implements a deterministic, dependency-light analogue of the
-    frozen case-study nonlinear-discovery contract. Each candidate transformation from the released
-    feature catalog is residualized against an intercept and its source first-order input on
-    training rows. The residualized candidate is then scored by its maximum absolute standardized
-    coefficient
-    across retained PCA components. This isolates incremental nonlinear evidence rather than
-    re-counting the source linear main effect.
+    Candidate transformations are generated dynamically from first-order terms retained by empirical
+    null screening, with domain guards applied for inverse, log, and square-root families. Each
+    candidate is residualized against an intercept and its source first-order input on training
+    rows. The residualized candidate is then scored by its maximum absolute standardized coefficient
+    across retained PCA components.
 
     Parameters
     ----------
     input_matrix
         Case-study input table with ``sample_id`` and source input columns.
     feature_catalog
-        Manuscript feature catalog containing candidate transformation terms.
+        Manuscript feature catalog (kept for interface compatibility).
     holdout_assignments
         Table with ``sample_id`` and ``split`` columns. Only train rows are scored.
     pca_scores
         Output-conditioning PCA score table with ``sample_id`` and component columns.
     retained_terms
-        Empirical-null retained-term table with at least a ``feature_name`` column. The table is
-        used to annotate which transformation candidates survived the previous screening stage.
+        Empirical-null retained-term table with at least a ``feature_name`` column.
     spec
         Nonlinear-discovery specification.
 
@@ -1429,7 +1442,10 @@ def discover_manuscript_nonlinear_transformations(
     if spec.minimum_curvature_score < 0.0:
         raise ValueError("minimum_curvature_score must be non-negative.")
 
-    candidates = _nonlinear_transformation_candidates(feature_catalog)
+    candidates = _generate_supported_nonlinear_candidates(
+        _retained_first_order_term_names(retained_terms, input_matrix),
+        input_matrix,
+    )
     component_names = _component_columns(pca_scores)
     train_ids = _train_sample_ids(holdout_assignments)
     y_train = _align_table_by_sample_id(pca_scores, train_ids, component_names, "PCA scores")
@@ -1457,7 +1473,7 @@ def discover_manuscript_nonlinear_transformations(
         best_component_indices,
     )
     retained = active_transformations & (curvature_scores > spec.minimum_curvature_score)
-    retained_term_names = _retained_feature_names(retained_terms)
+    retained_term_names = {feature_name for feature_name, _, _ in candidates}
 
     transformation_scores = _build_nonlinear_transformation_scores(
         candidates=candidates,
@@ -3048,24 +3064,29 @@ def _ordered_sparse_candidate_names(
     retained_interaction_pairs: pd.DataFrame,
     retained_transformations: pd.DataFrame,
 ) -> list[str]:
-    """Return sparse-selection candidates in feature-catalog order."""
+    """Return sparse-selection candidates preserving catalog order plus dynamic discoveries."""
     if "feature_name" not in feature_catalog.columns:
         raise ValueError("feature_catalog must include a feature_name column.")
-    retained_names = _retained_feature_names(retained_terms)
-    retained_names.update(_retained_pair_names(retained_interaction_pairs))
-    retained_names.update(_retained_feature_names(retained_transformations))
-    if not retained_names:
+
+    ordered_from_upstream = (
+        list(retained_terms["feature_name"].astype(str))
+        + _ordered_retained_pair_names(retained_interaction_pairs)
+        + list(retained_transformations["feature_name"].astype(str))
+    )
+    if not ordered_from_upstream:
         raise ValueError("Sparse selection requires at least one retained upstream term.")
 
+    retained_names = set(ordered_from_upstream)
     ordered = [
         str(feature_name)
         for feature_name in feature_catalog["feature_name"].astype(str)
         if str(feature_name) in retained_names
     ]
-    missing = sorted(retained_names.difference(ordered))
-    if missing:
-        preview = ", ".join(missing[:5])
-        raise ValueError(f"Retained upstream terms are absent from feature_catalog: {preview}")
+    ordered_set = set(ordered)
+    for feature_name in ordered_from_upstream:
+        if feature_name not in ordered_set:
+            ordered.append(feature_name)
+            ordered_set.add(feature_name)
     if not ordered:
         raise ValueError("Sparse selection found no retained terms in feature_catalog order.")
     return ordered
@@ -3081,16 +3102,54 @@ def _retained_pair_names(retained_interaction_pairs: pd.DataFrame) -> set[str]:
     return set(retained_interaction_pairs[column].astype(str))
 
 
+def _ordered_retained_pair_names(retained_interaction_pairs: pd.DataFrame) -> list[str]:
+    """Return retained interaction pair names preserving row order."""
+    if retained_interaction_pairs.empty:
+        return []
+    column = "pair_name" if "pair_name" in retained_interaction_pairs.columns else "feature_name"
+    if column not in retained_interaction_pairs.columns:
+        raise ValueError("retained_interaction_pairs must include pair_name or feature_name.")
+    return list(retained_interaction_pairs[column].astype(str))
+
+
 def _feature_catalog_subset(
     feature_catalog: pd.DataFrame,
     feature_names: list[str],
 ) -> pd.DataFrame:
-    """Return feature-catalog rows for ``feature_names`` in the requested order."""
+    """Return rows for ``feature_names`` in order, synthesizing metadata for dynamic terms."""
     if feature_catalog["feature_name"].duplicated(keep=False).any():
         raise ValueError("feature_catalog contains duplicate feature_name values.")
     indexed = feature_catalog.set_index("feature_name", drop=False)
-    rows = [indexed.loc[name] for name in feature_names]
+    rows = []
+    for name in feature_names:
+        if name in indexed.index:
+            rows.append(indexed.loc[name].to_dict())
+        else:
+            rows.append(_synthesized_feature_catalog_row(feature_catalog, name))
     return pd.DataFrame(rows).reset_index(drop=True)
+
+
+def _synthesized_feature_catalog_row(
+    feature_catalog: pd.DataFrame,
+    feature_name: str,
+) -> dict[str, Any]:
+    """Build a catalog-like metadata row for a dynamically discovered feature."""
+    row = {column: pd.NA for column in feature_catalog.columns}
+    row["feature_name"] = feature_name
+    if "feature_type" in row:
+        row["feature_type"] = _infer_feature_type_for_name(feature_name)
+    if "origin" in row:
+        row["origin"] = "dynamic_discovery"
+    return row
+
+
+def _infer_feature_type_for_name(feature_name: str) -> str:
+    """Infer feature type from a manuscript feature expression."""
+    if ":" in feature_name:
+        return "interaction"
+    if _parse_supported_transformation_name(feature_name) is not None:
+        return "transformation"
+    return "first_order"
 
 
 def _fit_sparse_l1_ebic_models(
@@ -3560,6 +3619,32 @@ def _nonlinear_transformation_candidates(
     return candidates
 
 
+def _generate_supported_nonlinear_candidates(
+    retained_first_order_features: list[str],
+    input_matrix: pd.DataFrame,
+) -> list[tuple[str, str, str]]:
+    """Generate domain-valid nonlinear candidates from retained first-order features."""
+    if "sample_id" not in input_matrix.columns:
+        raise ValueError("input_matrix must include a sample_id column.")
+    if not retained_first_order_features:
+        return []
+    candidates: list[tuple[str, str, str]] = []
+    for feature_name in retained_first_order_features:
+        values = _source_input_column(
+            input_matrix,
+            feature_name,
+            feature_name,
+        ).to_numpy(dtype=float)
+        candidates.append((f"{feature_name}_squared", feature_name, "quadratic"))
+        if np.all(values > -1.0):
+            candidates.append((f"log1p_{feature_name}", feature_name, "logarithmic"))
+        if np.all(values != 0.0):
+            candidates.append((f"inverse_{feature_name}", feature_name, "inverse"))
+        if np.all(values >= 0.0):
+            candidates.append((f"sqrt_{feature_name}", feature_name, "sqrt"))
+    return candidates
+
+
 def _parse_supported_transformation_name(feature_name: str) -> tuple[str, str] | None:
     """Parse a supported nonlinear-transformation feature name."""
     if feature_name.endswith("_squared"):
@@ -3571,6 +3656,9 @@ def _parse_supported_transformation_name(feature_name: str) -> tuple[str, str] |
     if feature_name.startswith("inverse_"):
         base = feature_name.removeprefix("inverse_")
         return (base, "inverse") if base else None
+    if feature_name.startswith("sqrt_"):
+        base = feature_name.removeprefix("sqrt_")
+        return (base, "sqrt") if base else None
     if feature_name.startswith("exp_"):
         base = feature_name.removeprefix("exp_")
         return (base, "exponential") if base else None
@@ -3942,6 +4030,12 @@ def _materialize_feature_column(input_matrix: pd.DataFrame, feature_name: str) -
         if (base_values == 0.0).any():
             raise ValueError(f"Feature {feature_name!r} is undefined for zero values.")
         return 1.0 / base_values
+    if feature_name.startswith("sqrt_"):
+        base_name = feature_name.removeprefix("sqrt_")
+        base_values = _source_input_column(input_matrix, base_name, feature_name)
+        if (base_values < 0.0).any():
+            raise ValueError(f"Feature {feature_name!r} is undefined for negative values.")
+        return np.sqrt(base_values)
     if feature_name.startswith("exp_"):
         base_name = feature_name.removeprefix("exp_")
         base_values = _source_input_column(input_matrix, base_name, feature_name)
@@ -4262,6 +4356,64 @@ def _retained_feature_names(retained_terms: pd.DataFrame) -> set[str]:
     if "feature_name" not in retained_terms.columns:
         raise ValueError("retained_terms must include a feature_name column.")
     return set(retained_terms["feature_name"].astype(str))
+
+
+def _retained_first_order_term_names(
+    retained_terms: pd.DataFrame,
+    input_matrix: pd.DataFrame,
+    *,
+    minimum_count: int = 1,
+) -> list[str]:
+    """Return retained first-order terms in retained-term table order."""
+    if "feature_name" not in retained_terms.columns:
+        raise ValueError("retained_terms must include a feature_name column.")
+    if "sample_id" not in input_matrix.columns:
+        raise ValueError("input_matrix must include a sample_id column.")
+    available_inputs = {
+        str(column) for column in input_matrix.columns if str(column) != "sample_id"
+    }
+    feature_types = (
+        retained_terms["feature_type"].astype(str).str.lower()
+        if "feature_type" in retained_terms.columns
+        else pd.Series([""] * len(retained_terms))
+    )
+    names: list[str] = []
+    for feature_name, feature_type in zip(
+        retained_terms["feature_name"].astype(str),
+        feature_types,
+        strict=False,
+    ):
+        is_first_order = feature_type in {"first_order", "numeric"} if feature_type else True
+        if (
+            is_first_order
+            and feature_name in available_inputs
+            and ":" not in feature_name
+            and _parse_supported_transformation_name(feature_name) is None
+        ):
+            names.append(feature_name)
+    deduped = list(dict.fromkeys(names))
+    if len(deduped) < minimum_count:
+        if minimum_count == 2:
+            raise ValueError(
+                "Interaction discovery requires at least two retained first-order terms."
+            )
+        raise ValueError("No retained first-order terms available for discovery.")
+    return deduped
+
+
+def _generate_pairwise_interactions(
+    retained_first_order_features: list[str],
+) -> list[tuple[str, str, str]]:
+    """Generate all unique pairwise interaction candidates from retained features."""
+    if len(retained_first_order_features) < 2:
+        return []
+    candidates = [
+        (f"{left}:{right}", left, right)
+        for left, right in combinations(retained_first_order_features, 2)
+    ]
+    if len({pair_name for pair_name, _, _ in candidates}) != len(candidates):
+        raise ValueError("Generated duplicate interaction candidate names.")
+    return candidates
 
 
 def _build_interaction_pair_scores(

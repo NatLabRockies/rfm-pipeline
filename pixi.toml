@@ -7,7 +7,9 @@ platforms = ["osx-arm64", "osx-64", "linux-64", "win-64"]
 python = "3.12.*"
 numpy = ">=2"
 pandas = ">=2"
+pyarrow = ">=17"
 scikit-learn = ">=1.5"
+shap = ">=0.44"
 pytest = ">=8"
 ruff = ">=0.6"
 mdformat = ">=0.7"
@@ -57,3 +59,7 @@ markdown-check = "python -m tools.check_markdown"
 lint = "ruff check ."
 format-check = "ruff format . --check"
 unit-tests = "pytest -q"
+
+# Manuscript reproduction workflows
+manuscript-reproduce = "env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 python scripts/run_manuscript_reproduction.py"
+manuscript-preprocess = "python scripts/preprocess_multiindex_data.py"

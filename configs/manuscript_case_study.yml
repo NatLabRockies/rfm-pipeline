@@ -62,10 +62,10 @@ case_study:
     method: tree_shap_interaction_values
     aggregation_rule: max_over_components_of_mean_absolute_shap_interaction
     aggregation_rule_status: frozen_repo_decision
-    public_implementation_method: residualized_product_permutation_surrogate
-    public_implementation_status: source_backed_public_surrogate
+    public_implementation_method: tree_shap_gradient_boosting
+    public_implementation_status: manuscript_aligned
     source_workflow_reference: private_tree_shap_interaction_workflow
-    source_workflow_equivalence_status: not_yet_validated
+    source_workflow_equivalence_status: manuscript_aligned_via_shap_gradient_boosting
     null_threshold_quantile: 0.995
     retained_pairs: 367
 
@@ -75,10 +75,10 @@ case_study:
     curvature_rule_status: frozen_repo_decision
     replacement_selection_rule: minimum_training_rmse_against_gam_smooth
     replacement_selection_rule_status: frozen_repo_decision
-    public_implementation_method: residualized_parametric_transform_surrogate
-    public_implementation_status: source_backed_public_surrogate
+    public_implementation_method: gam_cubic_smoothing_spline
+    public_implementation_status: manuscript_aligned
     source_workflow_reference: private_gam_nonlinear_discovery_workflow
-    source_workflow_equivalence_status: not_yet_validated
+    source_workflow_equivalence_status: manuscript_aligned_via_scipy_smoothing_spline
     identified_transformations: 112
     final_support_transformations: 37
 

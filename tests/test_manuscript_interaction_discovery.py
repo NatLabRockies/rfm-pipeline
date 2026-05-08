@@ -29,10 +29,12 @@ def test_interaction_discovery_spec_matches_frozen_case_study_contract() -> None
     assert spec.retained_pairs_reference == 367
     assert spec.permutation_count_B == 200
     assert spec.random_seed == 123
-    assert spec.implementation_method == "residualized_product_permutation_surrogate"
-    assert spec.implementation_status == "source_backed_public_surrogate"
+    assert spec.implementation_method == "tree_shap_gradient_boosting"
+    assert spec.implementation_status == "manuscript_aligned"
     assert spec.source_workflow_reference == "private_tree_shap_interaction_workflow"
-    assert spec.source_workflow_equivalence_status == "not_yet_validated"
+    assert spec.source_workflow_equivalence_status == (
+        "manuscript_aligned_via_shap_gradient_boosting"
+    )
 
 
 def test_interaction_discovery_retains_residual_pair_signal_and_writes_artifacts(
@@ -82,16 +84,12 @@ def test_interaction_discovery_retains_residual_pair_signal_and_writes_artifacts
     assert result.pair_scores.loc[0, "pair_name"] == "x1:x2"
     assert result.pair_scores.loc[0, "retained"]
     assert result.pair_scores.loc[0, "empirical_null_retained"]
-    assert (
-        result.summary.loc[0, "public_implementation_method"]
-        == "residualized_product_permutation_surrogate"
+    assert result.summary.loc[0, "public_implementation_method"] == "tree_shap_gradient_boosting"
+    assert result.summary.loc[0, "source_workflow_equivalence_status"] == (
+        "manuscript_aligned_via_shap_gradient_boosting"
     )
-    assert result.summary.loc[0, "source_workflow_equivalence_status"] == "not_yet_validated"
     assert result.provenance.loc[0, "manuscript_method"] == "tree_shap_interaction_values"
-    assert (
-        result.provenance.loc[0, "public_implementation_method"]
-        == "residualized_product_permutation_surrogate"
-    )
+    assert result.provenance.loc[0, "public_implementation_method"] == "tree_shap_gradient_boosting"
 
     paths = write_interaction_discovery_artifacts(result, tmp_path)
     assert sorted(paths) == [
@@ -104,8 +102,8 @@ def test_interaction_discovery_retains_residual_pair_signal_and_writes_artifacts
     ]
     assert paths["retained_interaction_pairs"].read_text(encoding="utf-8").startswith("pair_name")
     provenance_text = paths["interaction_discovery_provenance"].read_text(encoding="utf-8")
-    assert "source_backed_public_surrogate" in provenance_text
-    assert "not_yet_validated" in provenance_text
+    assert "tree_shap_gradient_boosting" in provenance_text
+    assert "manuscript_aligned_via_shap_gradient_boosting" in provenance_text
 
 
 def test_interaction_discovery_generates_all_pairs_from_retained_first_order_terms() -> None:

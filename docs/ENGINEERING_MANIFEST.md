@@ -2,7 +2,7 @@
 
 **Repository**: bsm-public-rf
 **Primary Goal**: Exact replication of manuscript workflow methodology
-**Status**: Critical implementation gap discovered - P0 FIX IN PROGRESS
+**Status**: Core workflow gap closed; 300-sample full-chain validation completed
 **Last Updated**: 2026-05-08
 
 ## 🚨 CRITICAL PRIORITY: Workflow Implementation Fix
@@ -28,10 +28,10 @@ Current implementation does NOT match manuscript methodology documented in:
 1. **Stage 2**: ✅ now screens first-order-only catalog rows (`first_order`/`numeric`)
 1. **Stage 3**: ✅ now generates interaction pairs dynamically from retained first-order terms
 1. **Stage 4**: ✅ now generates nonlinear candidates dynamically from retained first-order terms
-1. **Remaining gap**: workflow logic gap closed for sparse/final dynamic-term integration; full-gate
-   completion is currently blocked by unrelated repo-hygiene whitespace findings.
+1. **Remaining gap**: manuscript-reference count reconciliation on larger real-data surfaces remains;
+   workflow execution path and gate validation now complete.
 
-**Result**: Cannot replicate manuscript workflow AT ALL.
+**Result**: End-to-end workflow now executes and validates on the 300-sample test dataset.
 
 ### Fix Plan
 
@@ -48,7 +48,7 @@ Run `SELECT * FROM todos` to see current task breakdown.
 - ✅ Phase 1: Analysis and design
 - ✅ Phase 2: Refactor Stages 2, 3, 4
 - ✅ Phase 3: Integration and testing
-- ⏳ Phase 4: Validation (repo-hygiene cleanup pending outside workflow logic)
+- ✅ Phase 4: Validation (300-sample full-chain run + full gate pass)
 
 ### Phase 3 source-backed stage chain
 
@@ -87,14 +87,14 @@ Run `SELECT * FROM todos` to see current task breakdown.
 ## Latest Validation Record
 
 - `./test_repo.sh --check`: passed
+- `pixi run env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 python tools/run_300_sample_validation.py`: passed (full stage chain + QA audit pass; artifacts under `artifacts/validation_300_sample/`)
 - GitHub Actions CI run for PR #: pending/update-after-pr
 - [x] Run and record a fresh full `./test_repo.sh --check` after manifest changes.
 
 ## Next Steps
 
-1. Read `docs/WORKFLOW_FIX_PLAN.md`
-1. Begin Phase 1 analysis
-1. Focus on correctness over speed
-1. Test on 300-sample dataset for fast iteration
+1. Re-run the validation script with progressively relaxed runtime caps (output/component/permutation) to quantify convergence toward manuscript reference counts.
+1. Execute the same validation path on the larger real-data surface and record retained-count deltas in `docs/manuscript_alignment_audit.md`.
+1. Confirm CI run status for this slice and keep `docs/AGENT_SYNC.md` aligned with branch/PR state.
 
 **This is the PRIMARY purpose of the repository. Everything else is secondary.**

@@ -37,6 +37,33 @@ def test_interaction_discovery_spec_matches_frozen_case_study_contract() -> None
     )
 
 
+def test_interaction_discovery_spec_accepts_optional_runtime_overrides() -> None:
+    config = {
+        "case_study": {
+            "interface": {"holdout_random_seed": 456},
+            "empirical_null_screen": {"permutation_count_B": 11},
+            "interaction_discovery": {
+                "method": "tree_shap_interaction_values",
+                "aggregation_rule": "max_over_components_of_mean_absolute_shap_interaction",
+                "null_threshold_quantile": 0.9,
+                "retained_pairs": 12,
+                "permutation_count_B": 13,
+                "n_tree_estimators": 17,
+                "max_tree_depth": 2,
+                "max_shap_samples": 41,
+            },
+        }
+    }
+
+    spec = interaction_discovery_spec_from_case_study_config(config)
+
+    assert spec.permutation_count_B == 13
+    assert spec.random_seed == 456
+    assert spec.n_tree_estimators == 17
+    assert spec.max_tree_depth == 2
+    assert spec.max_shap_samples == 41
+
+
 def test_interaction_discovery_retains_residual_pair_signal_and_writes_artifacts(
     tmp_path: Path,
 ) -> None:

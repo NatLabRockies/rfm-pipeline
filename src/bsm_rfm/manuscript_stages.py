@@ -1135,8 +1135,13 @@ def interaction_discovery_spec_from_case_study_config(
         aggregation_rule=str(interaction["aggregation_rule"]),
         null_threshold_quantile=float(interaction["null_threshold_quantile"]),
         retained_pairs_reference=int(interaction["retained_pairs"]),
-        permutation_count_B=int(empirical_null["permutation_count_B"]),
+        permutation_count_B=int(
+            interaction.get("permutation_count_B", empirical_null["permutation_count_B"])
+        ),
         random_seed=int(interface.get("holdout_random_seed", 123)),
+        n_tree_estimators=int(interaction.get("n_tree_estimators", 100)),
+        max_tree_depth=int(interaction.get("max_tree_depth", 3)),
+        max_shap_samples=int(interaction.get("max_shap_samples", 500)),
         implementation_method=str(
             interaction.get(
                 "public_implementation_method",
@@ -2084,8 +2089,11 @@ def final_manuscript_artifacts_spec_from_case_study_config(
         nrmse_denominator_definition=str(final_model["nrmse_denominator_definition"]),
         nrmse_min_range=float(final_model["nrmse_min_range"]),
         nrmse_reference_matrix=str(final_model["nrmse_reference_matrix"]),
+        bootstrap_count=int(final_model.get("bootstrap_count", 200)),
+        bootstrap_alpha=float(final_model.get("bootstrap_alpha", 0.05)),
         random_seed=int(interface.get("holdout_random_seed", 123)),
         inferential_filter_interval_method=str(inferential_filter["interval_method"]),
+        inferential_filter_alpha=float(inferential_filter.get("alpha", 0.05)),
     )
 
 

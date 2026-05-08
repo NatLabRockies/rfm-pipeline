@@ -1,15 +1,15 @@
 # Agent Sync
 
 repo: NatLabRockies/bsm-public-rf
-branch: main
+branch: copilot/manuscript-phase3-integration
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: close manuscript exactness gaps tracked in the alignment audit
-current_slice: implement manuscript-exact interaction discovery (tree-SHAP) and nonlinear discovery (GAM)
+current_milestone: validate end-to-end manuscript workflow on 300-sample test dataset
+current_slice: complete validation runtime path and full-gate checkpoint
 slice_status: complete
-last_validation: full gate `./test_repo.sh --check` passes (exit code 0); all unit, workflow, manuscript-reproduction-smoke, and notebook tests pass
-next_slice: validate retained pair/transform counts against manuscript reference values once real data are available
+last_validation: 300-sample full stage-chain validation script completes in ~56s with QA audit pass and full gate `./test_repo.sh --check` passes
+next_slice: run manuscript workflow on larger real-data surface (higher output/component caps) and reconcile retained-count deltas vs manuscript references
 
 ## Blocked items
 
@@ -21,22 +21,21 @@ next_slice: validate retained pair/transform counts against manuscript reference
 
 ## Files in scope
 
-- `configs/local/manuscript_paths.local.yml`
-- `src/bsm_rfm/manuscript_runtime.py`
 - `src/bsm_rfm/manuscript_stages.py`
-- `tests/test_manuscript_empirical_null_screening.py`
 - `tests/test_manuscript_interaction_discovery.py`
-- `tests/test_manuscript_nonlinear_discovery.py`
-- `tests/test_manuscript_runtime.py`
-- `tests/test_manuscript_sparse_selection.py`
+- `tests/test_manuscript_final_artifacts.py`
+- `tools/run_300_sample_validation.py`
 - `docs/AGENT_SYNC.md`
 - `docs/ENGINEERING_MANIFEST.md`
-- `docs/review_register.md`
 
 ## Targeted tests
 
 ```bash
-pixi run env PYTHONPATH=src pytest -q tests/test_manuscript_empirical_null_screening.py tests/test_manuscript_interaction_discovery.py tests/test_manuscript_nonlinear_discovery.py -k 'not executes_demo_context'
+pixi run pytest -q tests/test_manuscript_interaction_discovery.py -k 'spec'
+pixi run pytest -q tests/test_manuscript_final_artifacts.py -k 'spec'
+pixi run pytest -q tests/test_manuscript_interaction_discovery.py
+pixi run pytest -q tests/test_manuscript_reproduction_chain.py tests/test_manuscript_reproduction_audit.py
+pixi run env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 python tools/run_300_sample_validation.py
 ```
 
 ## Full gate
@@ -47,22 +46,27 @@ pixi run env PYTHONPATH=src pytest -q tests/test_manuscript_empirical_null_scree
 
 ## Latest slice update
 
-- Stage 2 updated to screen first-order-only catalog rows (`first_order`/`numeric`) before
-  empirical-null testing.
-- Stage 3 updated to generate interaction candidates dynamically from retained first-order terms
-  (`C(n,2)` generation) instead of reading pre-specified interaction rows from catalog.
-- Stage 4 updated to generate nonlinear candidates dynamically from retained first-order terms with
-  domain-guarded transform families (`quadratic`, `log1p`, `inverse`, `sqrt`).
-- Added square-root transform parsing/materialization (`sqrt_<feature>`).
-- Runtime context now auto-falls back to deterministic demo artifacts when real local overrides
-  produce incompatible input/output/holdout sample-id universes, preventing `output_matrix is missing sample_id values` chain failures.
-- Sparse/final integration now accepts dynamically discovered interaction/nonlinear terms absent
-  from static feature catalogs by synthesizing catalog metadata rows and preserving deterministic
-  candidate ordering.
-- Added focused sparse-selection coverage for dynamic terms absent from catalog.
-- Updated demo-stage expectations to match manuscript-first behavior (Stage 2 first-order-only
-  candidate count and dynamic Stage 4 transformation count).
-- Broader manuscript-stage validations completed:
-  - `pixi run env PYTHONPATH=src pytest -q tests/test_manuscript_runtime.py tests/test_manuscript_output_conditioning.py tests/test_manuscript_empirical_null_screening.py tests/test_manuscript_interaction_discovery.py tests/test_manuscript_nonlinear_discovery.py tests/test_manuscript_sparse_selection.py tests/test_manuscript_final_artifacts.py tests/test_manuscript_reproduction_chain.py tests/test_manuscript_reproduction_audit.py`
+- Added optional interaction runtime overrides in case-study config parsing:
+  `permutation_count_B`, `n_tree_estimators`, `max_tree_depth`, `max_shap_samples`.
+- Added optional final-artifact runtime overrides in case-study config parsing:
+  `bootstrap_count`, `bootstrap_alpha`, and inferential-filter `alpha`.
+- Added focused parser tests for these overrides:
+  `test_interaction_discovery_spec_accepts_optional_runtime_overrides` and
+  `test_final_artifact_spec_accepts_optional_runtime_overrides`.
+- Added and validated `tools/run_300_sample_validation.py` full-chain runner for the 300-sample
+  dataset with deterministic validation-time caps:
+  - interaction null permutations: 5
+  - tree estimators: 20
+  - SHAP sample cap: 80
+  - empirical-null B: 20, BH q: 1.0
+  - stability resamples: 8
+  - final bootstrap count: 20
+  - output-column cap: 300
+  - holdout split normalization (`test`/`validation` → `holdout`)
+- 300-sample validation run completed end-to-end:
+  - elapsed: ~56s
+  - QA audit summary: `qa_status=pass`, `n_artifacts=51`, `n_missing_artifacts=0`,
+    `n_empty_artifacts=0`, `n_failed_metric_checks=0`
+  - artifacts written under `artifacts/validation_300_sample/`
 - Milestone checkpoint gate:
-  - `./test_repo.sh --check` ❌ `repo-hygiene` trailing-whitespace findings in unrelated files still block full-gate completion.
+  - `./test_repo.sh --check` ✅ pass

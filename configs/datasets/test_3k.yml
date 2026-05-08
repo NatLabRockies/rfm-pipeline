@@ -1,0 +1,10 @@
+# Test dataset configuration (3000 samples, 10% test split)
+# Full catalog with 352 first-order + 61,776 pairwise interaction candidates
+
+case_study_input_matrix: /Users/dhetting/src/bsm-public-rf/artifacts/test_dataset_3k/X.parquet
+case_study_output_matrix: /Users/dhetting/src/bsm-public-rf/artifacts/test_dataset_3k/Y.parquet
+input_metadata: /Users/dhetting/src/bsm-public-rf/docs/final_scripts_from_hpc/model_artifacts/final_ols_model/postfit_diagnostics/all_input_metadata.parquet
+output_metadata: /Users/dhetting/src/bsm-public-rf/docs/final_scripts_from_hpc/model_artifacts/final_ols_model/postfit_diagnostics/output_metadata.parquet
+manuscript_feature_catalog: /Users/dhetting/src/bsm-public-rf/artifacts/full_feature_catalog_with_interactions.parquet
+fixed_holdout_assignments: /Users/dhetting/src/bsm-public-rf/artifacts/test_dataset_3k/holdout_assignments.parquet
+output_root: /Users/dhetting/src/bsm-public-rf/artifacts/test_3k_output

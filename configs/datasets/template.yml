@@ -1,0 +1,15 @@
+# Example template for creating your own dataset config
+# Copy this file and fill in your paths
+
+# Input/output data matrices (must have sample_id column as first column)
+case_study_input_matrix: /path/to/your/X.parquet
+case_study_output_matrix: /path/to/your/Y.parquet
+
+# Metadata files describing the data
+input_metadata: /path/to/your/input_metadata.parquet
+output_metadata: /path/to/your/output_metadata.parquet
+manuscript_feature_catalog: /path/to/your/feature_catalog.parquet
+fixed_holdout_assignments: /path/to/your/holdout_assignments.parquet
+
+# Optional: default output directory (can be overridden with --output-dir)
+output_root: /path/to/your/output/directory

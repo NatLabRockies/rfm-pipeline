@@ -6,19 +6,18 @@ base_branch: main
 autonomy_tier: 3
 profile: autonomous
 current_milestone: close manuscript exactness gaps tracked in the alignment audit
-current_slice: integrate dynamic Stage 2/3/4 outputs through sparse/final stages and stabilize runtime sample-id alignment
+current_slice: implement manuscript-exact interaction discovery (tree-SHAP) and nonlinear discovery (GAM)
 slice_status: complete
-last_validation: manuscript runtime/stage suites passed (runtime, output-conditioning, screening, interaction, nonlinear, sparse, final, reproduction-chain, reproduction-audit); checkpoint full gate `./test_repo.sh --check` still fails at `repo-hygiene` due pre-existing trailing whitespace in unrelated docs/scripts
-next_slice: phase-4 validation cleanup for repo-hygiene blockers outside manuscript workflow logic
+last_validation: full gate `./test_repo.sh --check` passes (exit code 0); all unit, workflow, manuscript-reproduction-smoke, and notebook tests pass
+next_slice: validate retained pair/transform counts against manuscript reference values once real data are available
 
 ## Blocked items
 
-- Full gate remains blocked by pre-existing trailing-whitespace findings in unrelated docs/scripts
-  reported by `repo-hygiene`.
+- None. Full gate passes.
 
 ## Scope increase requests
 
-- None currently requested.
+- Added `shap >= 0.44` to `[dependencies]` in `pixi.toml` per explicit user instruction to match manuscript workflow exactly (overrides `allow_dependency_changes: false`).
 
 ## Files in scope
 

@@ -1,0 +1,15 @@
+# Real data configuration for manuscript reproduction
+# All paths needed for a complete manuscript reproduction run
+
+# Input/output data matrices (must have sample_id column)
+case_study_input_matrix: /Users/dhetting/src/bsm-public-rf/artifacts/preprocessed_real_data/sample_7500.X.parquet
+case_study_output_matrix: /Users/dhetting/src/bsm-public-rf/artifacts/preprocessed_real_data/sample_7500.Y.parquet
+
+# Metadata files
+input_metadata: /Users/dhetting/src/bsm-public-rf/docs/final_scripts_from_hpc/model_artifacts/final_ols_model/postfit_diagnostics/all_input_metadata.parquet
+output_metadata: /Users/dhetting/src/bsm-public-rf/docs/final_scripts_from_hpc/model_artifacts/final_ols_model/postfit_diagnostics/output_metadata.parquet
+manuscript_feature_catalog: /Users/dhetting/src/bsm-public-rf/docs/final_scripts_from_hpc/model_artifacts/final_ols_model/postfit_diagnostics/manuscript_feature_catalog.parquet
+fixed_holdout_assignments: /Users/dhetting/src/bsm-public-rf/docs/final_scripts_from_hpc/model_artifacts/final_ols_model/postfit_diagnostics/fixed_holdout_assignments.parquet
+
+# Optional: default output directory (can be overridden with --output-dir)
+output_root: /Users/dhetting/src/bsm-public-rf/artifacts/real-data-output

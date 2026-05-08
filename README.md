@@ -95,6 +95,54 @@ The package documentation is built with Sphinx and MyST. Public Python APIs are 
 
 A deterministic toy example is included at `examples/end_to_end_reproducibility.py`. It runs the canonical workflow, writes a post-fit bundle, and reloads the written artifacts from disk. The toy holdout responses include a fixed deterministic residual so the printed holdout nRMSE is nonzero. It can also run the complete demo manuscript-reproduction stage chain and write every Phase 3 artifact family plus a reproduction audit with artifact hashes and metric QA checks.
 
+### Config-Driven Manuscript Reproduction (Recommended)
+
+**For running against real data or custom datasets**, use the simple config-driven workflow:
+
+```bash
+# One-line command with a config file
+pixi run manuscript-reproduce --config configs/datasets/real_data.yml
+
+# Or with custom output directory
+pixi run manuscript-reproduce --config configs/datasets/real_data.yml --output-dir artifacts/my-run
+```
+
+**Quick Start:**
+
+1. Create a config file (copy `configs/datasets/template.yml`)
+1. Edit it to point to your data files
+1. Run: `pixi run manuscript-reproduce --config your-config.yml`
+
+**Config File Format:**
+
+```yaml
+case_study_input_matrix: /path/to/X.parquet
+case_study_output_matrix: /path/to/Y.parquet
+input_metadata: /path/to/input_metadata.parquet
+output_metadata: /path/to/output_metadata.parquet
+manuscript_feature_catalog: /path/to/feature_catalog.parquet
+fixed_holdout_assignments: /path/to/holdout_assignments.parquet
+output_root: /path/to/output  # optional
+```
+
+**Documentation:**
+
+- `MANUSCRIPT_QUICK_START.md` - Quick reference
+- `SIMPLE_CONFIG_SUMMARY.md` - Config system explanation
+- `docs/RUNNING_MANUSCRIPT_REPRODUCTION.md` - Complete guide
+
+**To preprocess raw data with MultiIndex:**
+
+```bash
+pixi run manuscript-preprocess \
+  --input-x /path/to/raw_X.parquet \
+  --input-y /path/to/raw_Y.parquet \
+  --output-x artifacts/preprocessed/X.parquet \
+  --output-y artifacts/preprocessed/Y.parquet
+```
+
+### Toy Example (Original Demo)
+
 Run the canonical workflow example from the repo source tree with:
 
 ```bash

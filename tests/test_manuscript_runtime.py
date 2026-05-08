@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
+
 from bsm_rfm import (
     build_manuscript_notebook_context,
     load_manuscript_artifact_tables,
@@ -13,12 +15,28 @@ from bsm_rfm import (
     validate_manuscript_artifact_tables,
     write_demo_manuscript_artifacts,
 )
+from bsm_rfm.manuscript_runtime import ManuscriptRuntimeContext
 
 
-def test_resolve_manuscript_runtime_falls_back_to_demo_without_local_paths() -> None:
+def test_resolve_manuscript_runtime_uses_real_data_when_configured(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    paths = write_demo_manuscript_artifacts(tmp_path / "real-data")
+    template = {name: str(path) for name, path in paths.items()}
+    template["output_root"] = str(tmp_path / "real-output")
+    monkeypatch.setattr(
+        "bsm_rfm.manuscript_runtime.load_manuscript_paths_template",
+        lambda _: template,
+    )
+    monkeypatch.setattr(
+        "bsm_rfm.manuscript_runtime.load_manuscript_local_override",
+        lambda _: {},
+    )
+
     context = resolve_manuscript_runtime(Path.cwd())
-    assert context.mode == "demo"
-    assert context.runtime_dir is not None
+    assert context.mode == "real"
+    assert context.runtime_dir is None
     assert set(context.artifact_paths) == {
         "input_metadata",
         "output_metadata",
@@ -64,3 +82,30 @@ def test_manuscript_notebook_files_exist_in_frozen_order() -> None:
     notebook_root = Path("notebooks/manuscript")
     for notebook_name in manuscript_notebook_order():
         assert (notebook_root / notebook_name).exists()
+
+
+def test_build_notebook_context_falls_back_to_demo_for_incompatible_real_sample_ids(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bad_paths = write_demo_manuscript_artifacts(tmp_path / "bad-real")
+    holdout = pd.read_csv(bad_paths["fixed_holdout_assignments"])
+    holdout["sample_id"] = holdout["sample_id"].astype(int) + 100_000
+    holdout.to_csv(bad_paths["fixed_holdout_assignments"], index=False)
+
+    runtime = ManuscriptRuntimeContext(
+        mode="real",
+        repo_root=Path.cwd(),
+        artifact_paths=bad_paths,
+        output_root=tmp_path / "bad-real-output",
+        unresolved_placeholders=(),
+        local_override_used=True,
+        runtime_dir=None,
+    )
+    monkeypatch.setattr("bsm_rfm.manuscript_runtime.resolve_manuscript_runtime", lambda _: runtime)
+
+    context = build_manuscript_notebook_context(Path.cwd(), manuscript_notebook_order()[0])
+
+    assert context.runtime.mode == "demo"
+    assert context.runtime.runtime_dir is not None
+    assert len(context.tables["case_study_input_matrix"]) == 80

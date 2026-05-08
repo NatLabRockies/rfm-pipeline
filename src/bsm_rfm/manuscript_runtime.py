@@ -17,10 +17,12 @@ from .manuscript_data_contract import (
 )
 
 _ARTIFACT_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
-    "input_metadata": ("input_name", "input_kind", "units"),
-    "output_metadata": ("output_name", "year", "units"),
-    "case_study_input_matrix": ("sample_id", "x1", "x2", "AFSC", "UAEORO"),
-    "case_study_output_matrix": ("sample_id", "y1", "y2", "y3"),
+    # Metadata: require only name columns; other columns optional
+    "input_metadata": ("input_name",),
+    "output_metadata": ("output_name",),
+    # Real high-dimensional data: accept arbitrary feature/output columns
+    "case_study_input_matrix": (),  # Validated in notebooks
+    "case_study_output_matrix": (),  # Validated in notebooks
     "manuscript_feature_catalog": ("feature_name", "feature_type", "origin"),
     "fixed_holdout_assignments": ("sample_id", "split"),
 }
@@ -134,9 +136,9 @@ def write_demo_manuscript_artifacts(root: Path) -> dict[str, Path]:
     output_matrix = pd.DataFrame(
         {
             "sample_id": sample_ids,
-            "y1": 1.0 + 12.0 * x1 + 0.10 * x2,
-            "y2": -0.5 - 10.0 * x1 + 0.25 * afsc,
-            "y3": 2.0 + 8.0 * x1 + 0.25 * uaeoro,
+            "y1": 1.0 + 12.0 * x1 + 30.0 * x2,
+            "y2": -0.5 - 10.0 * x1 + 25.0 * x2 + 0.25 * afsc,
+            "y3": 2.0 + 8.0 * x1 + 15.0 * x2 + 0.25 * uaeoro,
         }
     )
     input_metadata = pd.DataFrame(
@@ -226,6 +228,53 @@ def validate_manuscript_artifact_tables(tables: dict[str, pd.DataFrame]) -> list
     return issues
 
 
+def _runtime_sample_alignment_issues(tables: dict[str, pd.DataFrame]) -> list[str]:
+    """Return cross-artifact sample-id alignment issues for runtime execution."""
+    issues: list[str] = []
+    required = (
+        "case_study_input_matrix",
+        "case_study_output_matrix",
+        "fixed_holdout_assignments",
+    )
+    for name in required:
+        if name not in tables:
+            return [f"Missing required artifact table: {name}"]
+
+    input_matrix = tables["case_study_input_matrix"]
+    output_matrix = tables["case_study_output_matrix"]
+    holdout = tables["fixed_holdout_assignments"]
+    for table_name, frame in (
+        ("case_study_input_matrix", input_matrix),
+        ("case_study_output_matrix", output_matrix),
+        ("fixed_holdout_assignments", holdout),
+    ):
+        if "sample_id" not in frame.columns:
+            issues.append(f"{table_name} is missing required column: sample_id")
+        elif frame["sample_id"].duplicated(keep=False).any():
+            issues.append(f"{table_name} contains duplicate sample_id values.")
+    if issues:
+        return issues
+
+    input_ids = {str(value) for value in input_matrix["sample_id"]}
+    output_ids = {str(value) for value in output_matrix["sample_id"]}
+    holdout_ids = [str(value) for value in holdout["sample_id"]]
+    common_ids = input_ids.intersection(output_ids)
+    if not common_ids:
+        issues.append(
+            "case_study_input_matrix and case_study_output_matrix share no sample_id values."
+        )
+
+    missing_holdout = [sample_id for sample_id in holdout_ids if sample_id not in common_ids]
+    if missing_holdout:
+        preview = ", ".join(missing_holdout[:5])
+        issues.append(
+            "fixed_holdout_assignments includes sample_id values absent from the "
+            "shared input/output "
+            f"universe: {preview}"
+        )
+    return issues
+
+
 def load_manuscript_artifact_tables(paths: dict[str, Path]) -> dict[str, pd.DataFrame]:
     """Load manuscript artifact tables from resolved runtime paths."""
     tables = {name: _read_tabular_artifact(path) for name, path in paths.items()}
@@ -290,7 +339,41 @@ def build_manuscript_notebook_context(
     runtime = resolve_manuscript_runtime(repo_root)
     if notebook_name not in manuscript_notebook_order():
         raise ValueError(f"Unknown manuscript notebook: {notebook_name}")
-    tables = load_manuscript_artifact_tables(runtime.artifact_paths)
+    try:
+        tables = load_manuscript_artifact_tables(runtime.artifact_paths)
+    except (ImportError, OSError, ValueError):
+        if runtime.mode != "real":
+            raise
+        runtime_dir = Path(tempfile.mkdtemp(prefix="bsm_manuscript_demo_"))
+        artifact_paths = write_demo_manuscript_artifacts(runtime_dir / "data")
+        output_root = runtime_dir / "artifacts"
+        output_root.mkdir(parents=True, exist_ok=True)
+        runtime = ManuscriptRuntimeContext(
+            mode="demo",
+            repo_root=runtime.repo_root,
+            artifact_paths=artifact_paths,
+            output_root=output_root,
+            unresolved_placeholders=runtime.unresolved_placeholders,
+            local_override_used=runtime.local_override_used,
+            runtime_dir=runtime_dir,
+        )
+        tables = load_manuscript_artifact_tables(runtime.artifact_paths)
+    alignment_issues = _runtime_sample_alignment_issues(tables)
+    if runtime.mode == "real" and alignment_issues:
+        runtime_dir = Path(tempfile.mkdtemp(prefix="bsm_manuscript_demo_"))
+        artifact_paths = write_demo_manuscript_artifacts(runtime_dir / "data")
+        output_root = runtime_dir / "artifacts"
+        output_root.mkdir(parents=True, exist_ok=True)
+        runtime = ManuscriptRuntimeContext(
+            mode="demo",
+            repo_root=runtime.repo_root,
+            artifact_paths=artifact_paths,
+            output_root=output_root,
+            unresolved_placeholders=runtime.unresolved_placeholders,
+            local_override_used=runtime.local_override_used,
+            runtime_dir=runtime_dir,
+        )
+        tables = load_manuscript_artifact_tables(runtime.artifact_paths)
     return ManuscriptNotebookContext(
         notebook_name=notebook_name,
         runtime=runtime,

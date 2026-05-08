@@ -1,37 +1,42 @@
 # Agent Sync
 
 repo: NatLabRockies/bsm-public-rf
-branch: codex/p1-debiased-upstream-externalization
+branch: copilot/manuscript-phase3-integration
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: close manuscript exactness gaps tracked in the alignment audit
-current_slice: externalize de-biased-LASSO upstream manuscript-only artifact dependency
-slice_status: completed
-last_validation: `./test_repo.sh --check` passed
-next_slice: collect private-run verification evidence packet for HC3/table/figure parity and compare against public artifacts
+current_milestone: validate end-to-end manuscript workflow on 300-sample test dataset
+current_slice: complete validation runtime path and full-gate checkpoint
+slice_status: complete
+last_validation: 300-sample full stage-chain validation script completes in ~56s with QA audit pass and full gate `./test_repo.sh --check` passes
+next_slice: run manuscript workflow on larger real-data surface (higher output/component caps) and reconcile retained-count deltas vs manuscript references
 
 ## Blocked items
 
-- None.
+- None. Full gate passes.
 
 ## Scope increase requests
 
-- None.
+- Added `shap >= 0.44` to `[dependencies]` in `pixi.toml` per explicit user instruction to match manuscript workflow exactly (overrides `allow_dependency_changes: false`).
 
 ## Files in scope
 
-- `docs/manuscript_alignment_audit.md`
-- `tests/test_manuscript_alignment_audit.py`
+- `src/bsm_rfm/manuscript_stages.py`
+- `tests/test_manuscript_interaction_discovery.py`
+- `tests/test_manuscript_final_artifacts.py`
+- `tools/run_300_sample_validation.py`
+- `tests/test_manuscript_runtime.py`
 - `docs/AGENT_SYNC.md`
 - `docs/ENGINEERING_MANIFEST.md`
 
 ## Targeted tests
 
 ```bash
-pixi run pytest -q tests/test_manuscript_alignment_audit.py -k externalizes_interaction_and_nonlinear_source_artifacts
-pixi run pytest -q tests/test_manuscript_documentation_contract.py tests/test_manuscript_alignment_audit.py
-pixi run pytest -q tests/test_engineering_manifest.py tests/test_manuscript_alignment_audit.py
+pixi run pytest -q tests/test_manuscript_interaction_discovery.py -k 'spec'
+pixi run pytest -q tests/test_manuscript_final_artifacts.py -k 'spec'
+pixi run pytest -q tests/test_manuscript_interaction_discovery.py
+pixi run pytest -q tests/test_manuscript_reproduction_chain.py tests/test_manuscript_reproduction_audit.py
+pixi run env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 python tools/run_300_sample_validation.py
 ```
 
 ## Full gate
@@ -42,16 +47,29 @@ pixi run pytest -q tests/test_engineering_manifest.py tests/test_manuscript_alig
 
 ## Latest slice update
 
-- Added de-biased-LASSO stage entry under `## Externalized manuscript-only upstream artifacts` in
-  `docs/manuscript_alignment_audit.md` to explicitly name recovered
-  `LASSO_to_OLS_v9.ipynb` dependence and public-repo artifact unavailability.
-- Expanded the externalization contract test in `tests/test_manuscript_alignment_audit.py`
-  to require empirical-null and de-biased-LASSO upstream-source disclosure alongside
-  interaction/nonlinear entries.
-- Validation run sequence:
-  - `pixi run pytest -q tests/test_manuscript_alignment_audit.py -k externalizes_interaction_and_nonlinear_source_artifacts` (expected fail before doc update, then pass)
-  - `pixi run pytest -q tests/test_manuscript_documentation_contract.py tests/test_manuscript_alignment_audit.py` (pass)
-  - `pixi run pytest -q tests/test_engineering_manifest.py tests/test_manuscript_alignment_audit.py` (pass)
-  - `./test_repo.sh --check` (pass)
-- Git actions:
-  - Created branch `codex/p1-debiased-upstream-externalization` from clean `main`
+- Added optional interaction runtime overrides in case-study config parsing:
+  `permutation_count_B`, `n_tree_estimators`, `max_tree_depth`, `max_shap_samples`.
+- Added optional final-artifact runtime overrides in case-study config parsing:
+  `bootstrap_count`, `bootstrap_alpha`, and inferential-filter `alpha`.
+- Added focused parser tests for these overrides:
+  `test_interaction_discovery_spec_accepts_optional_runtime_overrides` and
+  `test_final_artifact_spec_accepts_optional_runtime_overrides`.
+- Hardened runtime resolution test to be CI-stable by constructing a temporary fully-resolved
+  artifact config via monkeypatch instead of assuming machine-local real-data overrides exist.
+- Added and validated `tools/run_300_sample_validation.py` full-chain runner for the 300-sample
+  dataset with deterministic validation-time caps:
+  - interaction null permutations: 5
+  - tree estimators: 20
+  - SHAP sample cap: 80
+  - empirical-null B: 20, BH q: 1.0
+  - stability resamples: 8
+  - final bootstrap count: 20
+  - output-column cap: 300
+  - holdout split normalization (`test`/`validation` → `holdout`)
+- 300-sample validation run completed end-to-end:
+  - elapsed: ~56s
+  - QA audit summary: `qa_status=pass`, `n_artifacts=51`, `n_missing_artifacts=0`,
+    `n_empty_artifacts=0`, `n_failed_metric_checks=0`
+  - artifacts written under `artifacts/validation_300_sample/`
+- Milestone checkpoint gate:
+  - `./test_repo.sh --check` ✅ pass

@@ -45,6 +45,36 @@ def test_final_artifact_spec_matches_frozen_case_study_contract() -> None:
     assert spec.inferential_filter_alpha == 0.05
 
 
+def test_final_artifact_spec_accepts_optional_runtime_overrides() -> None:
+    config = {
+        "case_study": {
+            "interface": {"holdout_random_seed": 456},
+            "final_model": {
+                "final_predictor_count": 10,
+                "final_first_order_input_count": 4,
+                "intermediate_penalized_holdout_nrmse": 0.1,
+                "final_ols_holdout_nrmse": 0.2,
+                "nrmse_denominator_definition": "macro",
+                "nrmse_min_range": 1.0e-6,
+                "nrmse_reference_matrix": "Y_train",
+                "bootstrap_count": 12,
+                "bootstrap_alpha": 0.1,
+            },
+            "final_inferential_filter": {
+                "interval_method": "hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs",
+                "alpha": 0.1,
+            },
+        }
+    }
+
+    spec = final_manuscript_artifacts_spec_from_case_study_config(config)
+
+    assert spec.bootstrap_count == 12
+    assert spec.bootstrap_alpha == 0.1
+    assert spec.inferential_filter_alpha == 0.1
+    assert spec.random_seed == 456
+
+
 def test_run_final_manuscript_artifacts_stage_executes_demo_context() -> None:
     context = build_manuscript_notebook_context(
         Path.cwd(),

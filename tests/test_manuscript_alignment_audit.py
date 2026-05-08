@@ -14,14 +14,13 @@ def test_alignment_audit_records_non_exact_stage_gaps() -> None:
     """The repo must not silently claim exactness for known approximation stages."""
     audit = Path("docs/manuscript_alignment_audit.md").read_text(encoding="utf-8")
     required_phrases = [
-        "should **not** yet claim",
-        "tree-based models with SHAP interaction values",
-        "residualized product-term contribution",
-        "GAM diagnostics",
-        "residualized nonlinear contribution",
+        "tree-based SHAP interaction values",
+        "GAM EDF > 1 / p < 0.01",
         "de-biased-LASSO",
         "HC3 interval/drop rule is now implemented",
         "Not acceptable yet: **full exact reproduction of the manuscript workflow**",
+        "manuscript_aligned_via_shap_gradient_boosting",
+        "manuscript_aligned_via_scipy_smoothing_spline",
     ]
     for phrase in required_phrases:
         assert phrase in audit
@@ -64,7 +63,8 @@ def test_alignment_audit_maps_final_tables_and_figures_to_named_artifacts() -> N
 
 
 def test_alignment_audit_externalizes_interaction_and_nonlinear_source_artifacts() -> None:
-    """Interaction/nonlinear exactness blockers should name upstream source artifacts."""
+    """Remaining externalized stages should name upstream source artifacts; implemented stages
+    should record their manuscript alignment status."""
     audit = Path("docs/manuscript_alignment_audit.md").read_text(encoding="utf-8")
     required_phrases = [
         "## Externalized manuscript-only upstream artifacts",
@@ -73,11 +73,10 @@ def test_alignment_audit_externalizes_interaction_and_nonlinear_source_artifacts
         "Delta-null workflow",
         "de-biased-LASSO selection stage",
         "LASSO_to_OLS_v9.ipynb",
-        "interaction-discovery stage",
-        "nonlinear-discovery stage",
-        "private_tree_shap_interaction_workflow",
-        "private_gam_nonlinear_discovery_workflow",
         "Source artifact availability in this public repo: no",
+        "tree_shap_gradient_boosting",
+        "gam_cubic_smoothing_spline",
+        "Manuscript aligned",
     ]
     for phrase in required_phrases:
         assert phrase in audit

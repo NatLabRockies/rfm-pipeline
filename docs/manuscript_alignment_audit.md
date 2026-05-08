@@ -96,6 +96,6 @@ Status: mapping complete, manuscript-value verification pending.
 ### Next steps
 
 - Validate HC3 inferential filter and final table counts against private manuscript-run artifacts.
-- Implement or externalize exact interaction and nonlinear discovery stages; do not present current public surrogates as manuscript-exact.
+- Validate empirical-null screening equivalence against the recovered Delta-null script.
 - Map manuscript figures/tables to named source artifacts and verify numerical equality.
 - Decide on archival policy for recovered notebooks (keep only as offline reference; don't commit to main history in future).

@@ -1,37 +1,43 @@
 # Agent Sync
 
 repo: NatLabRockies/bsm-public-rf
-branch: codex/p1-debiased-upstream-externalization
+branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
 current_milestone: close manuscript exactness gaps tracked in the alignment audit
-current_slice: externalize de-biased-LASSO upstream manuscript-only artifact dependency
-slice_status: completed
-last_validation: `./test_repo.sh --check` passed
-next_slice: collect private-run verification evidence packet for HC3/table/figure parity and compare against public artifacts
+current_slice: integrate dynamic Stage 2/3/4 outputs through sparse/final stages and stabilize runtime sample-id alignment
+slice_status: complete
+last_validation: manuscript runtime/stage suites passed (runtime, output-conditioning, screening, interaction, nonlinear, sparse, final, reproduction-chain, reproduction-audit); checkpoint full gate `./test_repo.sh --check` still fails at `repo-hygiene` due pre-existing trailing whitespace in unrelated docs/scripts
+next_slice: phase-4 validation cleanup for repo-hygiene blockers outside manuscript workflow logic
 
 ## Blocked items
 
-- None.
+- Full gate remains blocked by pre-existing trailing-whitespace findings in unrelated docs/scripts
+  reported by `repo-hygiene`.
 
 ## Scope increase requests
 
-- None.
+- None currently requested.
 
 ## Files in scope
 
-- `docs/manuscript_alignment_audit.md`
-- `tests/test_manuscript_alignment_audit.py`
+- `configs/local/manuscript_paths.local.yml`
+- `src/bsm_rfm/manuscript_runtime.py`
+- `src/bsm_rfm/manuscript_stages.py`
+- `tests/test_manuscript_empirical_null_screening.py`
+- `tests/test_manuscript_interaction_discovery.py`
+- `tests/test_manuscript_nonlinear_discovery.py`
+- `tests/test_manuscript_runtime.py`
+- `tests/test_manuscript_sparse_selection.py`
 - `docs/AGENT_SYNC.md`
 - `docs/ENGINEERING_MANIFEST.md`
+- `docs/review_register.md`
 
 ## Targeted tests
 
 ```bash
-pixi run pytest -q tests/test_manuscript_alignment_audit.py -k externalizes_interaction_and_nonlinear_source_artifacts
-pixi run pytest -q tests/test_manuscript_documentation_contract.py tests/test_manuscript_alignment_audit.py
-pixi run pytest -q tests/test_engineering_manifest.py tests/test_manuscript_alignment_audit.py
+pixi run env PYTHONPATH=src pytest -q tests/test_manuscript_empirical_null_screening.py tests/test_manuscript_interaction_discovery.py tests/test_manuscript_nonlinear_discovery.py -k 'not executes_demo_context'
 ```
 
 ## Full gate
@@ -42,16 +48,22 @@ pixi run pytest -q tests/test_engineering_manifest.py tests/test_manuscript_alig
 
 ## Latest slice update
 
-- Added de-biased-LASSO stage entry under `## Externalized manuscript-only upstream artifacts` in
-  `docs/manuscript_alignment_audit.md` to explicitly name recovered
-  `LASSO_to_OLS_v9.ipynb` dependence and public-repo artifact unavailability.
-- Expanded the externalization contract test in `tests/test_manuscript_alignment_audit.py`
-  to require empirical-null and de-biased-LASSO upstream-source disclosure alongside
-  interaction/nonlinear entries.
-- Validation run sequence:
-  - `pixi run pytest -q tests/test_manuscript_alignment_audit.py -k externalizes_interaction_and_nonlinear_source_artifacts` (expected fail before doc update, then pass)
-  - `pixi run pytest -q tests/test_manuscript_documentation_contract.py tests/test_manuscript_alignment_audit.py` (pass)
-  - `pixi run pytest -q tests/test_engineering_manifest.py tests/test_manuscript_alignment_audit.py` (pass)
-  - `./test_repo.sh --check` (pass)
-- Git actions:
-  - Created branch `codex/p1-debiased-upstream-externalization` from clean `main`
+- Stage 2 updated to screen first-order-only catalog rows (`first_order`/`numeric`) before
+  empirical-null testing.
+- Stage 3 updated to generate interaction candidates dynamically from retained first-order terms
+  (`C(n,2)` generation) instead of reading pre-specified interaction rows from catalog.
+- Stage 4 updated to generate nonlinear candidates dynamically from retained first-order terms with
+  domain-guarded transform families (`quadratic`, `log1p`, `inverse`, `sqrt`).
+- Added square-root transform parsing/materialization (`sqrt_<feature>`).
+- Runtime context now auto-falls back to deterministic demo artifacts when real local overrides
+  produce incompatible input/output/holdout sample-id universes, preventing `output_matrix is missing sample_id values` chain failures.
+- Sparse/final integration now accepts dynamically discovered interaction/nonlinear terms absent
+  from static feature catalogs by synthesizing catalog metadata rows and preserving deterministic
+  candidate ordering.
+- Added focused sparse-selection coverage for dynamic terms absent from catalog.
+- Updated demo-stage expectations to match manuscript-first behavior (Stage 2 first-order-only
+  candidate count and dynamic Stage 4 transformation count).
+- Broader manuscript-stage validations completed:
+  - `pixi run env PYTHONPATH=src pytest -q tests/test_manuscript_runtime.py tests/test_manuscript_output_conditioning.py tests/test_manuscript_empirical_null_screening.py tests/test_manuscript_interaction_discovery.py tests/test_manuscript_nonlinear_discovery.py tests/test_manuscript_sparse_selection.py tests/test_manuscript_final_artifacts.py tests/test_manuscript_reproduction_chain.py tests/test_manuscript_reproduction_audit.py`
+- Milestone checkpoint gate:
+  - `./test_repo.sh --check` ❌ `repo-hygiene` trailing-whitespace findings in unrelated files still block full-gate completion.

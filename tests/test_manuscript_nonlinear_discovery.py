@@ -43,14 +43,19 @@ def test_nonlinear_discovery_retains_residual_quadratic_signal_and_writes_artifa
     inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1})
     catalog = pd.DataFrame(
         {
-            "feature_name": ["x1", "x1_squared"],
-            "feature_type": ["first_order", "transformation"],
-            "origin": ["test", "test"],
+            "feature_name": ["x1"],
+            "feature_type": ["first_order"],
+            "origin": ["test"],
         }
     )
     holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 32 + ["holdout"] * 8})
     pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": quadratic_signal})
-    retained_terms = pd.DataFrame({"feature_name": ["x1_squared"]})
+    retained_terms = pd.DataFrame(
+        {
+            "feature_name": ["x1"],
+            "feature_type": ["first_order"],
+        }
+    )
     spec = NonlinearDiscoverySpec(
         method="gam_plus_restricted_parametric_replacement",
         curvature_rule="edf_gt_1_and_smooth_pvalue_lt_0p01",
@@ -97,6 +102,46 @@ def test_nonlinear_discovery_retains_residual_quadratic_signal_and_writes_artifa
     assert "not_yet_validated" in provenance_text
 
 
+def test_nonlinear_discovery_generates_supported_transforms_from_retained_terms() -> None:
+    sample_ids = list(range(1, 41))
+    x1 = [float(value) for value in range(1, 41)]
+    pca_signal = [value**2 for value in x1]
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1})
+    catalog = pd.DataFrame({"feature_name": ["x1"], "feature_type": ["first_order"]})
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 32 + ["holdout"] * 8})
+    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
+    retained_terms = pd.DataFrame(
+        {
+            "feature_name": ["x1"],
+            "feature_type": ["first_order"],
+        }
+    )
+    spec = NonlinearDiscoverySpec(
+        method="gam_plus_restricted_parametric_replacement",
+        curvature_rule="edf_gt_1_and_smooth_pvalue_lt_0p01",
+        replacement_selection_rule="minimum_training_rmse_against_gam_smooth",
+        identified_transformations_reference=112,
+        final_support_transformations_reference=37,
+    )
+
+    result = discover_manuscript_nonlinear_transformations(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        spec,
+    )
+
+    assert set(result.transformation_scores["feature_name"]) == {
+        "inverse_x1",
+        "log1p_x1",
+        "sqrt_x1",
+        "x1_squared",
+    }
+    assert result.summary.loc[0, "n_candidate_transformations"] == 4
+
+
 def test_run_nonlinear_discovery_stage_executes_demo_context() -> None:
     context = build_manuscript_notebook_context(
         Path.cwd(),
@@ -106,6 +151,6 @@ def test_run_nonlinear_discovery_stage_executes_demo_context() -> None:
     result = run_nonlinear_discovery_stage(context)
 
     assert result.nonlinear.summary.loc[0, "stage"] == "nonlinear_discovery"
-    assert result.nonlinear.summary.loc[0, "n_candidate_transformations"] == 2
+    assert result.nonlinear.summary.loc[0, "n_candidate_transformations"] == 6
     assert result.artifact_paths["transformation_scores"].exists()
     assert result.artifact_paths["nonlinear_discovery_provenance"].exists()

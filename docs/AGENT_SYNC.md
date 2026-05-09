@@ -1,15 +1,15 @@
 # Agent Sync
 
 repo: NatLabRockies/bsm-public-rf
-branch: copilot/manuscript-phase3-integration
+branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: validate end-to-end manuscript workflow on 300-sample test dataset
-current_slice: complete validation runtime path and full-gate checkpoint
+current_milestone: performance optimization — parallelize slow stages, chunked OLS, large-dataset readiness
+current_slice: complete — committed 6cca1e3, pushed to main
 slice_status: complete
-last_validation: 300-sample full stage-chain validation script completes in ~56s with QA audit pass and full gate `./test_repo.sh --check` passes
-next_slice: run manuscript workflow on larger real-data surface (higher output/component caps) and reconcile retained-count deltas vs manuscript references
+last_validation: full gate `./test_repo.sh --check` passes; 19 targeted tests pass; commit 6cca1e3 pushed
+next_slice: run 300-sample validation with n_jobs=-1 to verify parallel speedup end-to-end; then consider larger-dataset smoke test
 
 ## Blocked items
 

@@ -5,19 +5,41 @@ branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: performance optimization — parallelize slow stages, chunked OLS, large-dataset readiness
-current_slice: complete — committed 6cca1e3, pushed to main
-slice_status: complete
-last_validation: full gate `./test_repo.sh --check` passes; 19 targeted tests pass; commit 6cca1e3 pushed
-next_slice: run 300-sample validation with n_jobs=-1 to verify parallel speedup end-to-end; then consider larger-dataset smoke test
+current_milestone: performance optimization — parallelize slow stages, chunked OLS, large-dataset readiness (IN PROGRESS)
+current_slice: run parallel validation on 300-sample subset; validate artifacts against manuscript references
+slice_status: in_progress (parallel workflow executing; ETA 2-4 hours)
+last_validation: full gate `./test_repo.sh --check` passes; parallel runner initialized; `pixi run python tools/run_300_sample_validation.py --no-caps` started
+next_slice: await parallel run completion; validate output artifact counts against manuscript (39 components, 349 terms, 367 pairs, 112 nonlinear transforms)
 
 ## Blocked items
 
-- None. Full gate passes.
+- Refactor milestone (config-driven unified entry point) BLOCKED until 300-sample parallel run validates and artifacts confirmed
 
 ## Scope increase requests
 
 - Added `shap >= 0.44` to `[dependencies]` in `pixi.toml` per explicit user instruction to match manuscript workflow exactly (overrides `allow_dependency_changes: false`).
+
+## Queued: Phase 5 Refactor (Config-Driven Unified Entry Point)
+
+**Status**: Planning complete; implementation blocked on 300-sample validation
+
+**Scope**: Eliminate script-specific hardcoding by creating single entry point with config files
+
+**Key deliverables**:
+
+- `tools/run_manuscript_pipeline.py` — unified entry point accepting config YAML
+- `src/bsm_rfm/config_parser.py` — config schema + loading
+- `configs/` directory — 3+ example configs (fast, no-caps, serial, full-dataset)
+- `docs/CONFIGURATION_REFERENCE.md` — config schema documentation
+- `docs/REFACTOR_CONFIG_DRIVEN_DESIGN.md` — full design document (created; see file)
+
+**Validation gate**: Parallel run must complete with all artifacts passing QA audit before refactor starts
+
+**7 todos created** (query: `SELECT * FROM todos WHERE id LIKE 'refactor-%'`)
+
+**Est. effort**: 6-8 hours (post-validation)
+
+**Design doc**: See `docs/REFACTOR_CONFIG_DRIVEN_DESIGN.md` for architecture, migration steps, and configs layout
 
 ## Files in scope
 

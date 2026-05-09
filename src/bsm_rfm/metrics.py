@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 
 
 def macro_nrmse_with_ref(
@@ -62,6 +63,7 @@ def bootstrap_macro_nrmse_ci(
     alpha: float = 0.05,
     random_state: int = 123,
     sample_size: int | None = None,
+    n_jobs: int = 1,
 ) -> dict[str, Any]:
     """Estimate a percentile bootstrap interval for macro nRMSE.
 
@@ -83,6 +85,10 @@ def bootstrap_macro_nrmse_ci(
         Seed for bootstrap resampling.
     sample_size
         Optional bootstrap draw size. Defaults to the number of evaluation rows.
+    n_jobs
+        Number of parallel jobs for bootstrap replicates. ``1`` runs serially;
+        ``-1`` uses all available CPUs. Row-index draws are pre-generated before
+        parallelization so results are bit-identical regardless of ``n_jobs``.
 
     Returns
     -------
@@ -113,15 +119,20 @@ def bootstrap_macro_nrmse_ci(
     if draw_size <= 0:
         raise ValueError("sample_size must be positive.")
 
+    # Pre-generate all row-index draws so results are deterministic regardless of n_jobs.
     rng = np.random.RandomState(random_state)
-    boot = np.empty(int(n_boot), dtype=np.float64)
-    for boot_index in range(int(n_boot)):
-        idx = rng.randint(0, n_rows, size=draw_size)
-        boot[boot_index], _, _ = macro_nrmse_with_ref(
-            Y_true[idx],
-            Y_pred[idx],
-            Y_ref,
-            min_range=min_range,
+    idx_draws = rng.randint(0, n_rows, size=(int(n_boot), draw_size))
+
+    def _one_replicate(idx: np.ndarray) -> float:
+        val, _, _ = macro_nrmse_with_ref(Y_true[idx], Y_pred[idx], Y_ref, min_range=min_range)
+        return val
+
+    if n_jobs == 1:
+        boot = np.array([_one_replicate(idx) for idx in idx_draws], dtype=np.float64)
+    else:
+        boot = np.array(
+            Parallel(n_jobs=n_jobs)(delayed(_one_replicate)(idx) for idx in idx_draws),
+            dtype=np.float64,
         )
 
     valid = np.isfinite(boot)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import warnings
 from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
@@ -19,6 +20,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import Lasso
 from sklearn.utils.extmath import randomized_svd
 from tqdm import tqdm
@@ -499,6 +501,9 @@ class FinalManuscriptArtifactsSpec:
         Frozen final inferential-filter rule from the manuscript contract.
     inferential_filter_alpha
         Two-sided error level for the HC3 Wald intervals.
+    n_jobs
+        Number of parallel workers for bootstrap CI computation. ``1`` is serial;
+        ``-1`` uses all available CPUs.
     """
 
     final_predictor_count_reference: int
@@ -515,6 +520,7 @@ class FinalManuscriptArtifactsSpec:
         "hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs"
     )
     inferential_filter_alpha: float = 0.05
+    n_jobs: int = 1
 
 
 @dataclass(frozen=True)
@@ -2081,6 +2087,7 @@ def final_manuscript_artifacts_spec_from_case_study_config(
     final_model = case_study["final_model"]
     inferential_filter = case_study["final_inferential_filter"]
     interface = case_study.get("interface", {})
+    runtime = case_study.get("runtime", {})
     return FinalManuscriptArtifactsSpec(
         final_predictor_count_reference=int(final_model["final_predictor_count"]),
         final_first_order_input_count_reference=int(final_model["final_first_order_input_count"]),
@@ -2096,6 +2103,7 @@ def final_manuscript_artifacts_spec_from_case_study_config(
         random_seed=int(interface.get("holdout_random_seed", 123)),
         inferential_filter_interval_method=str(inferential_filter["interval_method"]),
         inferential_filter_alpha=float(inferential_filter.get("alpha", 0.05)),
+        n_jobs=int(runtime.get("n_jobs", 1)),
     )
 
 
@@ -2109,18 +2117,29 @@ def _fit_ablation_ols_nrmse(
     y_holdout: pd.DataFrame,
     null_predictions: np.ndarray,
     spec: FinalManuscriptArtifactsSpec,
+    *,
+    prebuilt_design: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
     """Fit an OLS ablation model and return a performance row dict.
 
     Falls back to null-mean predictions when ``feature_names`` is empty or
     when no requested features appear in the materialized design.
+
+    Parameters
+    ----------
+    prebuilt_design
+        Optional pre-materialized design matrix (e.g. a superset built by the caller).
+        When provided, columns are subset to ``feature_names`` without rebuilding.
     """
     if not feature_names:
         predictions: np.ndarray = null_predictions
         n_features = 0
     else:
-        catalog_sub = _feature_catalog_subset(feature_catalog, feature_names)
-        design = build_manuscript_feature_design(input_matrix, catalog_sub)
+        if prebuilt_design is not None:
+            design = prebuilt_design
+        else:
+            catalog_sub = _feature_catalog_subset(feature_catalog, feature_names)
+            design = build_manuscript_feature_design(input_matrix, catalog_sub)
         names_present = [n for n in feature_names if n in design.columns]
         if not names_present:
             predictions = null_predictions
@@ -2146,6 +2165,7 @@ def _fit_ablation_ols_nrmse(
         n_boot=spec.bootstrap_count,
         alpha=spec.bootstrap_alpha,
         random_state=spec.random_seed,
+        n_jobs=spec.n_jobs,
     )
     return {
         "n_features": n_features,
@@ -2177,18 +2197,11 @@ def _compute_ablation_table(
     - ``screened_ols``: OLS on empirical-null screened features
     - ``penalized_ols``: OLS on sparse/stability support before HC3 filter
     - ``final_ols``: OLS on HC3-filtered final support
-    """
-    common_kwargs: dict[str, Any] = dict(
-        feature_catalog=feature_catalog,
-        input_matrix=input_matrix,
-        train_ids=train_ids,
-        holdout_ids=holdout_ids,
-        y_train=y_train,
-        y_holdout=y_holdout,
-        null_predictions=null_predictions,
-        spec=spec,
-    )
 
+    The design matrix is built once from the union of all ablation feature sets and
+    subset per model, avoiding redundant materialization of interaction and nonlinear
+    feature columns.
+    """
     null_metric = bootstrap_macro_nrmse_ci(
         y_holdout.to_numpy(dtype=float),
         null_predictions,
@@ -2197,6 +2210,7 @@ def _compute_ablation_table(
         n_boot=spec.bootstrap_count,
         alpha=spec.bootstrap_alpha,
         random_state=spec.random_seed,
+        n_jobs=spec.n_jobs,
     )
 
     first_order_names = list(
@@ -2206,6 +2220,25 @@ def _compute_ablation_table(
         ]
     )
     screened_names = list(screening_retained_terms["feature_name"])
+
+    # Build one superset design covering all ablation models; subset columns per model.
+    all_ablation_names = list(
+        dict.fromkeys(first_order_names + screened_names + prefilter_feature_names)
+    )
+    superset_catalog = _feature_catalog_subset(feature_catalog, all_ablation_names)
+    superset_design = build_manuscript_feature_design(input_matrix, superset_catalog)
+
+    common_kwargs: dict[str, Any] = dict(
+        feature_catalog=feature_catalog,
+        input_matrix=input_matrix,
+        train_ids=train_ids,
+        holdout_ids=holdout_ids,
+        y_train=y_train,
+        y_holdout=y_holdout,
+        null_predictions=null_predictions,
+        spec=spec,
+        prebuilt_design=superset_design,
+    )
 
     rows = [
         {
@@ -2415,6 +2448,7 @@ def regenerate_final_manuscript_artifacts(
         n_boot=spec.bootstrap_count,
         alpha=spec.bootstrap_alpha,
         random_state=spec.random_seed,
+        n_jobs=spec.n_jobs,
     )
     null_predictions = make_null_mean_prediction(
         y_train.to_numpy(dtype=float),
@@ -2428,6 +2462,7 @@ def regenerate_final_manuscript_artifacts(
         n_boot=spec.bootstrap_count,
         alpha=spec.bootstrap_alpha,
         random_state=spec.random_seed,
+        n_jobs=spec.n_jobs,
     )
 
     ablation_table = _compute_ablation_table(
@@ -3374,7 +3409,9 @@ def _select_component_lasso_by_ebic(
     active_count = int(active_features.sum())
     if active_count == 0:
         return _zero_component_selection(n_features, y_scaled)
-    alpha_max = float(np.max(np.abs(x_scaled[:, active_features].T @ y_scaled)) / n_rows)
+    x_active = x_scaled[:, active_features]
+    xy_active = x_active.T @ y_scaled
+    alpha_max = float(np.max(np.abs(xy_active)) / n_rows)
     if alpha_max <= 0.0:
         return _zero_component_selection(n_features, y_scaled)
 
@@ -3388,20 +3425,24 @@ def _select_component_lasso_by_ebic(
         support_size=0,
         gamma=spec.ebic_gamma,
     )
+    estimator = Lasso(
+        fit_intercept=False,
+        max_iter=10000,
+        tol=1.0e-6,
+        selection="cyclic",
+        warm_start=True,
+        precompute=x_active.T @ x_active,
+    )
     for alpha in alphas:
-        estimator = Lasso(
-            alpha=float(alpha),
-            fit_intercept=False,
-            max_iter=10000,
-            tol=1.0e-6,
-            selection="cyclic",
-        )
-        estimator.fit(x_scaled, y_scaled)
-        coefficients = np.asarray(estimator.coef_, dtype=float)
-        coefficients[~active_features] = 0.0
-        prediction = x_scaled @ coefficients
+        estimator.set_params(alpha=float(alpha))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=ConvergenceWarning)
+            estimator.fit(x_active, y_scaled)
+        coefficients = np.zeros(n_features, dtype=float)
+        coefficients[active_features] = np.asarray(estimator.coef_, dtype=float)
+        prediction = x_active @ np.asarray(estimator.coef_, dtype=float)
         rss = float(np.sum((y_scaled - prediction) ** 2))
-        support_size = int(np.sum(np.abs(coefficients) > 0.0))
+        support_size = int(np.sum(np.abs(estimator.coef_) > 0.0))
         ebic = _extended_bic(
             rss=max(rss, np.finfo(float).tiny),
             n_rows=n_rows,

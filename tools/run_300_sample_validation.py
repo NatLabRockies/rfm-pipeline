@@ -5,6 +5,7 @@ Compare public-stage outputs against manuscript reference values.
 
 from __future__ import annotations
 
+import argparse
 import copy
 import sys
 import time
@@ -34,7 +35,8 @@ MANUSCRIPT = {
 }
 
 DATA_ROOT = REPO_ROOT / "artifacts" / "test_dataset_300"
-OUTPUT_ROOT = REPO_ROOT / "artifacts" / "validation_300_sample"
+DEFAULT_OUTPUT_ROOT = REPO_ROOT / "artifacts" / "validation_300_sample"
+NO_CAPS_OUTPUT_ROOT = REPO_ROOT / "artifacts" / "validation_300_sample_no_caps"
 VALIDATION_OUTPUT_COLUMN_LIMIT = 300
 FAST_VALIDATION_OVERRIDES = {
     "case_study": {
@@ -66,12 +68,12 @@ class _FakeContext:
     runtime: _FakeRuntime
 
 
-def load_tables() -> dict:
+def load_tables(output_column_limit: int | None) -> dict:
     """Load 300-sample validation inputs and normalize holdout labels."""
     y = pd.read_parquet(DATA_ROOT / "Y.parquet")
     y_cols = [c for c in y.columns if c != "sample_id"]
-    if len(y_cols) > VALIDATION_OUTPUT_COLUMN_LIMIT:
-        y = y[["sample_id", *y_cols[:VALIDATION_OUTPUT_COLUMN_LIMIT]]]
+    if output_column_limit is not None and len(y_cols) > output_column_limit:
+        y = y[["sample_id", *y_cols[:output_column_limit]]]
     holdout = pd.read_parquet(DATA_ROOT / "holdout_assignments.parquet").copy()
     holdout["split"] = (
         holdout["split"]
@@ -122,32 +124,65 @@ def apply_fast_validation_overrides(config: dict) -> dict:
     return config
 
 
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--no-caps",
+        action="store_true",
+        help="Run the validator with no runtime caps or test-time overrides.",
+    )
+    parser.add_argument(
+        "--output-root",
+        type=Path,
+        default=None,
+        help="Optional output directory override.",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
     """Execute the full stage chain and print validation diagnostics."""
+    args = parse_args()
+    output_root = (
+        args.output_root
+        if args.output_root is not None
+        else (NO_CAPS_OUTPUT_ROOT if args.no_caps else DEFAULT_OUTPUT_ROOT)
+    )
+    output_column_limit = None if args.no_caps else VALIDATION_OUTPUT_COLUMN_LIMIT
     t0 = time.perf_counter()
-    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    output_root.mkdir(parents=True, exist_ok=True)
 
     hr("300-sample validation run")
-    config = apply_fast_validation_overrides(load_manuscript_case_study_config(REPO_ROOT))
-    tables = load_tables()
+    config = load_manuscript_case_study_config(REPO_ROOT)
+    if not args.no_caps:
+        config = apply_fast_validation_overrides(config)
+    else:
+        # Enable full parallelism in no-caps mode.
+        config = copy.deepcopy(config)
+        config.setdefault("case_study", {}).setdefault("runtime", {})["n_jobs"] = -1
+    tables = load_tables(output_column_limit=output_column_limit)
     X = tables["case_study_input_matrix"]
     Y = tables["case_study_output_matrix"]
     holdout = tables["fixed_holdout_assignments"]
     n_train = (holdout["split"] == "train").sum()
     print(f"  X: {X.shape}  Y: {Y.shape}  train rows: {n_train}")
-    print(f"  Output root: {OUTPUT_ROOT}")
-    print(
-        "  Runtime overrides: interaction permutation_count_B=5, n_tree_estimators=20,"
-        " max_shap_samples=80, retained_components=10, empirical_null_B=20,"
-        " empirical_null_q=1.0, stability_subsamples=8,"
-        f" final_bootstrap_count=20, output_column_limit={VALIDATION_OUTPUT_COLUMN_LIMIT}"
-    )
+    print(f"  Output root: {output_root}")
+    if args.no_caps:
+        print("  Runtime overrides: none (no-caps mode)")
+    else:
+        print(
+            "  Runtime overrides: interaction permutation_count_B=5, n_tree_estimators=20,"
+            " max_shap_samples=80, retained_components=10, empirical_null_B=20,"
+            " empirical_null_q=1.0, stability_subsamples=8,"
+            f" final_bootstrap_count=20, output_column_limit={VALIDATION_OUTPUT_COLUMN_LIMIT}"
+        )
     sys.stdout.flush()
 
     ctx = _FakeContext(
         case_study_config=config,
         tables=tables,
-        runtime=_FakeRuntime(output_root=OUTPUT_ROOT),
+        runtime=_FakeRuntime(output_root=output_root),
     )
 
     print(
@@ -244,7 +279,7 @@ def main() -> None:
     # ── Run audit ─────────────────────────────────────────────────────────────
     hr("QA audit")
     try:
-        audit = audit_manuscript_reproduction_outputs(chain, OUTPUT_ROOT)
+        audit = audit_manuscript_reproduction_outputs(chain, output_root)
         audit_pass = audit.all_checks_passed if hasattr(audit, "all_checks_passed") else None
         if audit.summary is not None:
             print(audit.summary.to_string(index=False))
@@ -257,7 +292,7 @@ def main() -> None:
         print("  All counts within 30% of manuscript reference ✓")
     else:
         print("  Some counts deviate >30% from manuscript reference — review above !")
-    print(f"\n  Artifacts written to: {OUTPUT_ROOT}\n")
+    print(f"\n  Artifacts written to: {output_root}\n")
 
 
 if __name__ == "__main__":

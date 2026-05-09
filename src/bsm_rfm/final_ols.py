@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
+from tqdm import tqdm
 
 from .artifacts import PipelineManifest, make_metadata_frame
 from .data import align_xy
@@ -252,7 +253,12 @@ def postfit_artifact_table() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def fit_final_ols(X: pd.DataFrame, Y: pd.DataFrame) -> FinalOLSFitResult:
+def fit_final_ols(
+    X: pd.DataFrame,
+    Y: pd.DataFrame,
+    *,
+    output_batch_size: int | None = None,
+) -> FinalOLSFitResult:
     """Fit the canonical final OLS model on aligned raw-scale inputs and outputs.
 
     Parameters
@@ -261,6 +267,10 @@ def fit_final_ols(X: pd.DataFrame, Y: pd.DataFrame) -> FinalOLSFitResult:
         Final retained feature matrix in raw units.
     Y
         Modeled output matrix in raw units.
+    output_batch_size
+        When set, solve the OLS in batches of this many output columns and stack the
+        results. Useful when Y has many columns that would not fit in a full coefficient
+        matrix in memory. ``None`` (default) processes all columns in a single call.
 
     Returns
     -------
@@ -274,22 +284,38 @@ def fit_final_ols(X: pd.DataFrame, Y: pd.DataFrame) -> FinalOLSFitResult:
     X_values = X_numeric.to_numpy(dtype=float)
     Y_values = Y_numeric.to_numpy(dtype=float)
 
-    model = LinearRegression(fit_intercept=True)
-    model.fit(X_values, Y_values)
-
     x_scaler = StandardScaler().fit(X_values)
     y_scaler = StandardScaler().fit(Y_values)
-
-    coef_raw = np.asarray(model.coef_, dtype=float)
-    if coef_raw.ndim == 1:
-        coef_raw = coef_raw[np.newaxis, :]
-    intercept_raw = np.asarray(model.intercept_, dtype=float)
-    intercept_raw = np.atleast_1d(intercept_raw)
 
     x_means = np.asarray(x_scaler.mean_, dtype=float)
     x_scales = np.asarray(x_scaler.scale_, dtype=float)
     y_means = np.asarray(y_scaler.mean_, dtype=float)
     y_scales = np.asarray(y_scaler.scale_, dtype=float)
+
+    n_outputs = Y_values.shape[1]
+    if output_batch_size is None or output_batch_size >= n_outputs:
+        model = LinearRegression(fit_intercept=True)
+        model.fit(X_values, Y_values)
+        coef_raw = np.asarray(model.coef_, dtype=float)
+        if coef_raw.ndim == 1:
+            coef_raw = coef_raw[np.newaxis, :]
+        intercept_raw = np.atleast_1d(np.asarray(model.intercept_, dtype=float))
+    else:
+        # Solve output columns in batches to avoid materializing the full coef matrix.
+        coef_batches = []
+        intercept_batches = []
+        batches = range(0, n_outputs, output_batch_size)
+        for start in tqdm(batches, desc="OLS output batches", leave=False):
+            end = min(start + output_batch_size, n_outputs)
+            batch_model = LinearRegression(fit_intercept=True)
+            batch_model.fit(X_values, Y_values[:, start:end])
+            batch_coef = np.asarray(batch_model.coef_, dtype=float)
+            if batch_coef.ndim == 1:
+                batch_coef = batch_coef[np.newaxis, :]
+            coef_batches.append(batch_coef)
+            intercept_batches.append(np.atleast_1d(np.asarray(batch_model.intercept_, dtype=float)))
+        coef_raw = np.vstack(coef_batches)
+        intercept_raw = np.concatenate(intercept_batches)
 
     coef_standardized = coef_raw * (x_scales[np.newaxis, :] / y_scales[:, np.newaxis])
     intercept_standardized = (intercept_raw + coef_raw @ x_means - y_means) / y_scales

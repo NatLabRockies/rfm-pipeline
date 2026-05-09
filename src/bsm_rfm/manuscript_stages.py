@@ -18,7 +18,10 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from sklearn.linear_model import Lasso
+from sklearn.utils.extmath import randomized_svd
+from tqdm import tqdm
 
 from .final_ols import (
     fit_final_ols,
@@ -139,6 +142,7 @@ class EmpiricalNullScreeningSpec:
     source_script_reference: str = "private_delta_null_screening_script"
     source_script_equivalence_status: str = "not_yet_validated"
     random_seed: int = 123
+    n_jobs: int = 1
 
 
 @dataclass(frozen=True)
@@ -227,6 +231,7 @@ class InteractionDiscoverySpec:
     n_tree_estimators: int = 100
     max_tree_depth: int = 3
     max_shap_samples: int = 500
+    n_jobs: int = 1
 
 
 @dataclass(frozen=True)
@@ -312,6 +317,7 @@ class NonlinearDiscoverySpec:
     implementation_status: str = "manuscript_aligned"
     source_workflow_reference: str = "private_gam_nonlinear_discovery_workflow"
     source_workflow_equivalence_status: str = "manuscript_aligned_via_scipy_smoothing_spline"
+    n_jobs: int = 1
 
 
 @dataclass(frozen=True)
@@ -409,6 +415,7 @@ class SparseSelectionStabilitySpec:
     source_artifact: str = "LASSO_to_OLS_v9.ipynb"
     source_selected_feature_count_reference: int = 346
     random_seed: int = 123
+    n_jobs: int = 1
 
 
 @dataclass(frozen=True)
@@ -853,6 +860,7 @@ def empirical_null_screening_spec_from_case_study_config(
     """
     section = case_study_config["case_study"]["empirical_null_screen"]
     interface = case_study_config["case_study"].get("interface", {})
+    runtime = case_study_config["case_study"].get("runtime", {})
     return EmpiricalNullScreeningSpec(
         statistic=str(section["statistic"]),
         permutation_count_B=int(section["permutation_count_B"]),
@@ -871,6 +879,7 @@ def empirical_null_screening_spec_from_case_study_config(
             section.get("source_script_equivalence_status", "not_yet_validated")
         ),
         random_seed=int(interface.get("holdout_random_seed", 123)),
+        n_jobs=int(runtime.get("n_jobs", 1)),
     )
 
 
@@ -990,6 +999,7 @@ def screen_manuscript_empirical_null_terms(
         y_scaled,
         n_permutations=spec.permutation_count_B,
         random_seed=spec.random_seed,
+        n_jobs=spec.n_jobs,
     )
     null_statistics[:, ~feature_active] = 0.0
     p_values = (1.0 + (null_statistics >= observed[None, :]).sum(axis=0)) / (
@@ -1130,6 +1140,7 @@ def interaction_discovery_spec_from_case_study_config(
     interaction = case_study["interaction_discovery"]
     empirical_null = case_study["empirical_null_screen"]
     interface = case_study.get("interface", {})
+    runtime = case_study.get("runtime", {})
     return InteractionDiscoverySpec(
         method=str(interaction["method"]),
         aggregation_rule=str(interaction["aggregation_rule"]),
@@ -1157,6 +1168,7 @@ def interaction_discovery_spec_from_case_study_config(
         source_workflow_equivalence_status=str(
             interaction.get("source_workflow_equivalence_status", "not_yet_validated")
         ),
+        n_jobs=int(runtime.get("n_jobs", 1)),
     )
 
 
@@ -1240,37 +1252,44 @@ def discover_manuscript_interactions(
     rng = np.random.default_rng(spec.random_seed)
     active_comp_indices = [i for i, a in enumerate(component_active) if a]
     n_pairs = len(candidates)
+    n_comp = len(component_names)
 
-    def _score_components(y_mat: np.ndarray) -> np.ndarray:
-        """Return observed max-over-components SHAP interaction score per pair."""
-        scores = np.zeros((n_pairs, len(component_names)))
-        for comp_idx in active_comp_indices:
-            y_comp = y_mat[:, comp_idx]
-            model = _fit_tree_for_shap(
-                x_feat,
-                y_comp,
-                n_estimators=spec.n_tree_estimators,
-                max_depth=spec.max_tree_depth,
-                random_state=int(rng.integers(0, 2**31)),
-            )
-            shap_mat = _shap_mean_abs_interaction_matrix(
-                model, x_feat, max_samples=spec.max_shap_samples, rng=rng
-            )
-            for i, (pair_name, _, _) in enumerate(candidates):
-                li, ri = pair_to_indices[pair_name]
-                scores[i, comp_idx] = shap_mat[li, ri]
-        return np.max(scores, axis=1), scores
+    # Pre-generate all permuted response matrices and per-call seeds.
+    seeds = [int(rng.integers(0, 2**31)) for _ in range(spec.permutation_count_B + 1)]
+    y_matrices: list[np.ndarray] = [y_scaled]
+    for _ in range(spec.permutation_count_B):
+        y_matrices.append(
+            np.column_stack([rng.permutation(y_scaled[:, c]) for c in range(y_scaled.shape[1])])
+        )
 
-    observed_scores, observed_comp = _score_components(y_scaled)
+    _score_kwargs = dict(
+        x_feat=x_feat,
+        n_pairs=n_pairs,
+        n_comp=n_comp,
+        active_comp_indices=active_comp_indices,
+        pair_to_indices=pair_to_indices,
+        candidates=candidates,
+        n_estimators=spec.n_tree_estimators,
+        max_depth=spec.max_tree_depth,
+        max_shap_samples=spec.max_shap_samples,
+    )
 
-    # Compute pair-specific null distributions via response permutations.
+    jobs = (
+        delayed(_score_interaction_permutation)(y_mat, seed=s, **_score_kwargs)
+        for y_mat, s in zip(y_matrices, seeds, strict=True)
+    )
+    all_results = list(
+        tqdm(
+            Parallel(n_jobs=spec.n_jobs, return_as="generator")(jobs),
+            total=len(y_matrices),
+            desc="interaction scoring",
+        )
+    )
+
+    observed_scores, observed_comp = all_results[0]
     null_statistics = np.zeros((spec.permutation_count_B, n_pairs))
     for b in range(spec.permutation_count_B):
-        perm_y = np.column_stack(
-            [rng.permutation(y_scaled[:, c]) for c in range(y_scaled.shape[1])]
-        )
-        null_scores_b, _ = _score_components(perm_y)
-        null_statistics[b] = null_scores_b
+        null_statistics[b] = all_results[b + 1][0]
 
     thresholds = np.quantile(null_statistics, spec.null_threshold_quantile, axis=0)
     p_values = (1.0 + (null_statistics >= observed_scores[None, :]).sum(axis=0)) / (
@@ -1415,6 +1434,7 @@ def nonlinear_discovery_spec_from_case_study_config(
         Typed nonlinear-discovery specification.
     """
     section = case_study_config["case_study"]["nonlinear_discovery"]
+    runtime = case_study_config["case_study"].get("runtime", {})
     return NonlinearDiscoverySpec(
         method=str(section["method"]),
         curvature_rule=str(section["curvature_rule"]),
@@ -1439,6 +1459,7 @@ def nonlinear_discovery_spec_from_case_study_config(
         source_workflow_equivalence_status=str(
             section.get("source_workflow_equivalence_status", "not_yet_validated")
         ),
+        n_jobs=int(runtime.get("n_jobs", 1)),
     )
 
 
@@ -1528,57 +1549,36 @@ def discover_manuscript_nonlinear_transformations(
         for base in candidates_by_base
     }
 
-    # Run GAM tests; cache per-(base_feature, component) results for the component scores table.
+    # Run GAM tests in parallel; each base feature is independent.
     gam_cache: dict[tuple[str, str], tuple[float, float]] = {}
     active_comp_indices = [i for i, a in enumerate(component_active) if a]
-    # EDF threshold: "EDF > 1" in GAM literature = total spline EDF > minimum_curvature_score.
     edf_threshold = max(spec.minimum_curvature_score, 2.0)
     gam_p_threshold = 0.01
 
+    base_feat_list = list(candidates_by_base.keys())
+    jobs = (
+        delayed(_score_one_nonlinear_feature)(
+            base_feat,
+            candidates_by_base[base_feat],
+            x_by_base[base_feat],
+            y_scaled,
+            component_names,
+            active_comp_indices,
+            edf_threshold,
+            gam_p_threshold,
+        )
+        for base_feat in base_feat_list
+    )
+
     feature_results: dict[str, dict] = {}
-    for base_feat, base_candidates in candidates_by_base.items():
-        x_vals = x_by_base[base_feat]
-        best_edf: float = 2.0
-        best_p: float = 1.0
-        best_comp_idx: int = active_comp_indices[0] if active_comp_indices else 0
-        best_smooth: np.ndarray | None = None
-
-        for comp_idx in active_comp_indices:
-            y_comp = y_scaled[:, comp_idx]
-            edf, p, smooth_preds = _gam_test_and_smooth(x_vals, y_comp)
-            gam_cache[(base_feat, component_names[comp_idx])] = (edf, p)
-            if edf > best_edf or (edf > edf_threshold and p < best_p):
-                best_edf = edf
-                best_p = p
-                best_comp_idx = comp_idx
-                best_smooth = smooth_preds
-
-        is_nonlinear = (best_edf > edf_threshold) and (best_p < gam_p_threshold)
-
-        best_transform_name = base_candidates[0][0]
-        best_transform_rmse = float("nan")
-
-        if is_nonlinear and best_smooth is not None:
-            smooth_std = _standardize_vector(best_smooth)
-            best_rmse = float("inf")
-            for feat_name, _, family in base_candidates:
-                t_vals = _apply_transform_family(x_vals, family)
-                if t_vals is not None and np.isfinite(t_vals).all():
-                    t_std = _standardize_vector(t_vals)
-                    rmse = float(np.sqrt(np.mean((t_std - smooth_std) ** 2)))
-                    if rmse < best_rmse:
-                        best_rmse = rmse
-                        best_transform_name = feat_name
-            best_transform_rmse = best_rmse if best_rmse < float("inf") else float("nan")
-
-        feature_results[base_feat] = {
-            "nonlinear": is_nonlinear,
-            "best_transform_name": best_transform_name,
-            "best_edf": best_edf,
-            "best_p": best_p,
-            "best_comp_name": component_names[best_comp_idx],
-            "best_rmse": best_transform_rmse,
-        }
+    for base_feat, feat_result, cache_entries in tqdm(
+        Parallel(n_jobs=spec.n_jobs, return_as="generator")(jobs),
+        total=len(base_feat_list),
+        desc="nonlinear feature tests",
+    ):
+        feature_results[base_feat] = feat_result
+        for key, val in cache_entries:
+            gam_cache[key] = val
 
     nonlinear_bases = {b for b, fr in feature_results.items() if fr["nonlinear"]}
 
@@ -1751,6 +1751,7 @@ def sparse_selection_stability_spec_from_case_study_config(
     case_study = case_study_config["case_study"]
     sparse = case_study["sparse_selection"]
     stability = case_study["stability"]
+    runtime = case_study.get("runtime", {})
     count, fraction, seed = _parse_stability_resampling_scheme(str(stability["resampling_scheme"]))
     return SparseSelectionStabilitySpec(
         model_class=str(sparse["model_class"]),
@@ -1781,6 +1782,7 @@ def sparse_selection_stability_spec_from_case_study_config(
             sparse.get("source_selected_feature_count_reference", 346)
         ),
         random_seed=seed,
+        n_jobs=int(runtime.get("n_jobs", 1)),
     )
 
 
@@ -3475,44 +3477,86 @@ def _run_stability_resamples(
     n_rows = len(x_scaled)
     subsample_size = max(2, int(math.floor(n_rows * spec.subsample_fraction)))
     subsample_size = min(subsample_size, n_rows)
+
+    # Pre-generate all row-index draws so results are deterministic regardless of n_jobs.
+    all_row_indices = [
+        np.sort(rng.choice(n_rows, size=subsample_size, replace=False))
+        for _ in range(spec.subsample_count)
+    ]
+
+    jobs = (
+        delayed(_run_one_stability_resample)(
+            resample_id,
+            row_indices,
+            x_scaled,
+            y_scaled,
+            feature_names,
+            component_names,
+            spec,
+            active_features,
+            full_support_mask,
+            full_importance,
+        )
+        for resample_id, row_indices in enumerate(all_row_indices, start=1)
+    )
+
     support_rows = []
     importance_rows = []
     summary_rows = []
-    for resample_id in range(1, spec.subsample_count + 1):
-        row_indices = np.sort(rng.choice(n_rows, size=subsample_size, replace=False))
-        selected = _fit_sparse_l1_ebic_models(
-            x_scaled[row_indices, :],
-            y_scaled[row_indices, :],
-            feature_names=feature_names,
-            component_names=component_names,
-            spec=spec,
-            active_features=active_features,
-        )
-        coefficients = selected["coefficient_matrix"]
-        support_mask = np.any(np.abs(coefficients) > 0.0, axis=1)
-        importance = np.max(np.abs(coefficients), axis=1)
+    for support_mask, importance, summary_row in tqdm(
+        Parallel(n_jobs=spec.n_jobs, return_as="generator")(jobs),
+        total=spec.subsample_count,
+        desc="stability resamples",
+    ):
         support_rows.append(support_mask)
         importance_rows.append(importance)
-        summary_rows.append(
-            {
-                "resample_id": resample_id,
-                "subsample_size": int(subsample_size),
-                "selected_support_size": int(support_mask.sum()),
-                "jaccard_with_full_support": _jaccard_similarity(
-                    full_support_mask,
-                    support_mask,
-                ),
-                "spearman_with_full_importance": _spearman_rank_correlation(
-                    full_importance,
-                    importance,
-                ),
-            }
-        )
+        summary_rows.append(summary_row)
+
+    # Sort by resample_id to restore deterministic order after parallel execution.
+    summary_rows.sort(key=lambda r: r["resample_id"])
+    order = [r["resample_id"] - 1 for r in summary_rows]
+    support_rows = [support_rows[i] for i in order]
+    importance_rows = [importance_rows[i] for i in order]
+
     return (
         pd.DataFrame.from_records(summary_rows),
         np.vstack(support_rows),
         np.vstack(importance_rows),
     )
+
+
+def _run_one_stability_resample(
+    resample_id: int,
+    row_indices: np.ndarray,
+    x_scaled: np.ndarray,
+    y_scaled: np.ndarray,
+    feature_names: list[str],
+    component_names: list[str],
+    spec: SparseSelectionStabilitySpec,
+    active_features: np.ndarray,
+    full_support_mask: np.ndarray,
+    full_importance: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Run one deterministic sparse-selection stability resample and return its diagnostics."""
+    selected = _fit_sparse_l1_ebic_models(
+        x_scaled[row_indices, :],
+        y_scaled[row_indices, :],
+        feature_names=feature_names,
+        component_names=component_names,
+        spec=spec,
+        active_features=active_features,
+    )
+    coefficients = selected["coefficient_matrix"]
+    support_mask = np.any(np.abs(coefficients) > 0.0, axis=1)
+    importance = np.max(np.abs(coefficients), axis=1)
+    summary_row = {
+        "resample_id": resample_id,
+        "subsample_size": int(len(row_indices)),
+        "selected_support_size": int(support_mask.sum()),
+        "jaccard_with_full_support": _jaccard_similarity(full_support_mask, support_mask),
+        "spearman_with_full_importance": _spearman_rank_correlation(full_importance, importance),
+    }
+    return support_mask, importance, summary_row
 
 
 def _jaccard_similarity(left: np.ndarray, right: np.ndarray) -> float:
@@ -3808,6 +3852,66 @@ def _gam_test_and_smooth(
         return smooth_edf, p_value, smooth_at_train
     except Exception:
         return 2.0, 1.0, None
+
+
+def _score_one_nonlinear_feature(
+    base_feat: str,
+    base_candidates: list[tuple[str, str, str]],
+    x_vals: np.ndarray,
+    y_scaled: np.ndarray,
+    component_names: list[str],
+    active_comp_indices: list[int],
+    edf_threshold: float,
+    gam_p_threshold: float,
+) -> tuple[str, dict, list[tuple[tuple[str, str], tuple[float, float]]]]:
+    """Test one base feature for nonlinearity across all active PCA components.
+
+    Returns ``(base_feat, feature_result, gam_cache_entries)`` where ``gam_cache_entries`` is a
+    list of ``((base_feat, comp_name), (edf, p))`` pairs for reassembly into the cache.
+    """
+    best_edf: float = 2.0
+    best_p: float = 1.0
+    best_comp_idx: int = active_comp_indices[0] if active_comp_indices else 0
+    best_smooth: np.ndarray | None = None
+    cache_entries: list[tuple[tuple[str, str], tuple[float, float]]] = []
+
+    for comp_idx in active_comp_indices:
+        y_comp = y_scaled[:, comp_idx]
+        edf, p, smooth_preds = _gam_test_and_smooth(x_vals, y_comp)
+        cache_entries.append(((base_feat, component_names[comp_idx]), (edf, p)))
+        if edf > best_edf or (edf > edf_threshold and p < best_p):
+            best_edf = edf
+            best_p = p
+            best_comp_idx = comp_idx
+            best_smooth = smooth_preds
+
+    is_nonlinear = (best_edf > edf_threshold) and (best_p < gam_p_threshold)
+
+    best_transform_name = base_candidates[0][0]
+    best_transform_rmse = float("nan")
+
+    if is_nonlinear and best_smooth is not None:
+        smooth_std = _standardize_vector(best_smooth)
+        best_rmse = float("inf")
+        for feat_name, _, family in base_candidates:
+            t_vals = _apply_transform_family(x_vals, family)
+            if t_vals is not None and np.isfinite(t_vals).all():
+                t_std = _standardize_vector(t_vals)
+                rmse = float(np.sqrt(np.mean((t_std - smooth_std) ** 2)))
+                if rmse < best_rmse:
+                    best_rmse = rmse
+                    best_transform_name = feat_name
+        best_transform_rmse = best_rmse if best_rmse < float("inf") else float("nan")
+
+    feature_result = {
+        "nonlinear": is_nonlinear,
+        "best_transform_name": best_transform_name,
+        "best_edf": best_edf,
+        "best_p": best_p,
+        "best_comp_name": component_names[best_comp_idx],
+        "best_rmse": best_transform_rmse,
+    }
+    return base_feat, feature_result, cache_entries
 
 
 def _apply_transform_family(x_values: np.ndarray, family: str) -> np.ndarray | None:
@@ -4145,8 +4249,10 @@ def _fit_pca_reduction(
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Fit train-only PCA loadings and score all rows."""
     matrix = standardized_train.to_numpy(dtype=float)
-    _, singular_values, vt = np.linalg.svd(matrix, full_matrices=False)
-    eigenvalues = singular_values**2 / max(matrix.shape[0] - 1, 1)
+    n_train, n_outputs = matrix.shape
+    k = min(spec.retained_components + 10, n_train, n_outputs)
+    _, singular_values, vt = randomized_svd(matrix, n_components=k, random_state=0)
+    eigenvalues = singular_values**2 / max(n_train - 1, 1)
     total_variance = float(eigenvalues.sum())
     if total_variance <= 0.0:
         raise ValueError("Retained outputs have zero total standardized variance.")
@@ -4315,15 +4421,30 @@ def _permutation_row_norm_null(
     *,
     n_permutations: int,
     random_seed: int,
+    n_jobs: int = 1,
 ) -> np.ndarray:
     """Compute featurewise coefficient-row-norm statistics under response permutations."""
     rng = np.random.default_rng(random_seed)
-    null_statistics = np.zeros((n_permutations, x_scaled.shape[1]), dtype=float)
+    seeds = [int(rng.integers(0, 2**31)) for _ in range(n_permutations)]
     n_rows = float(len(x_scaled))
-    for index in range(n_permutations):
-        permuted = y_scaled[rng.permutation(len(y_scaled)), :]
+
+    def _one_permutation(seed: int) -> np.ndarray:
+        local_rng = np.random.default_rng(seed)
+        permuted = y_scaled[local_rng.permutation(len(y_scaled)), :]
         coefficients = (x_scaled.T @ permuted) / n_rows
-        null_statistics[index, :] = np.linalg.norm(coefficients, axis=1)
+        return np.linalg.norm(coefficients, axis=1)
+
+    null_statistics = np.zeros((n_permutations, x_scaled.shape[1]), dtype=float)
+    jobs = (delayed(_one_permutation)(s) for s in seeds)
+    for i, row in enumerate(
+        tqdm(
+            Parallel(n_jobs=n_jobs, return_as="generator")(jobs),
+            total=n_permutations,
+            desc="null screen permutations",
+            leave=False,
+        )
+    ):
+        null_statistics[i] = row
     return null_statistics
 
 
@@ -4659,6 +4780,44 @@ def _shap_mean_abs_interaction_matrix(
             sym[i, j] = score
             sym[j, i] = score
     return sym
+
+
+def _score_interaction_permutation(
+    y_mat: np.ndarray,
+    x_feat: np.ndarray,
+    n_pairs: int,
+    n_comp: int,
+    active_comp_indices: list[int],
+    pair_to_indices: dict[str, tuple[int, int]],
+    candidates: list[tuple[str, str, str]],
+    n_estimators: int,
+    max_depth: int,
+    max_shap_samples: int,
+    seed: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Fit GBTs and score SHAP interactions for one (possibly permuted) response matrix.
+
+    Returns ``(max_scores, component_scores)`` where ``max_scores`` has shape ``(n_pairs,)``
+    and ``component_scores`` has shape ``(n_pairs, n_comp)``.
+    """
+    rng = np.random.default_rng(seed)
+    scores = np.zeros((n_pairs, n_comp))
+    for comp_idx in active_comp_indices:
+        y_comp = y_mat[:, comp_idx]
+        model = _fit_tree_for_shap(
+            x_feat,
+            y_comp,
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            random_state=int(rng.integers(0, 2**31)),
+        )
+        shap_mat = _shap_mean_abs_interaction_matrix(
+            model, x_feat, max_samples=max_shap_samples, rng=rng
+        )
+        for i, (_, _, _) in enumerate(candidates):
+            li, ri = pair_to_indices[candidates[i][0]]
+            scores[i, comp_idx] = shap_mat[li, ri]
+    return np.max(scores, axis=1), scores
 
 
 def _generate_pairwise_interactions(

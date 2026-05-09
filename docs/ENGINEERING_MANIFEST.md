@@ -3,7 +3,7 @@
 **Repository**: bsm-public-rf
 **Primary Goal**: Exact replication of manuscript workflow methodology
 **Status**: Core workflow gap closed; 300-sample full-chain validation completed
-**Last Updated**: 2026-05-08
+**Last Updated**: 2026-05-09
 
 ## 🚨 CRITICAL PRIORITY: Workflow Implementation Fix
 
@@ -92,6 +92,44 @@ Run `SELECT * FROM todos` to see current task breakdown.
 - [x] Run and record a fresh full `./test_repo.sh --check` after manifest changes.
 
 ## Next Steps
+
+### Phase 5 (QUEUED): Unified Configuration-Driven Workflow Entry Point
+
+**Problem**: Multiple validation scripts hardcode dataset paths, caps, and parallelization logic:
+
+- `tools/run_300_sample_validation.py` — 300-sample with caps/no-caps modes
+- Future: CI mode, full-dataset mode, etc.
+
+**Solution**: Single entry point + config files
+
+**Scope**:
+
+1. Define unified config schema (dataset, output cap, n_jobs, all algorithm params)
+1. Implement `run_manuscript_pipeline.py` accepting config file
+1. Create configs for: 300-sample (fast), 300-sample (full), full-manuscript, CI modes
+1. Migrate `run_300_sample_validation.py` to use new runner
+1. Update `MANUSCRIPT_WORKFLOW_REFERENCE.md` with new entry point
+
+**Blockers**:
+
+- MUST wait for 300-sample parallel run to complete (in progress, ETA ~2-4 hours)
+- MUST validate artifacts against manuscript references before proceeding
+
+**When to start**: Only after artifacts confirmed and checked in
+
+**Acceptance criteria**:
+
+- [x] Waiting for 300-sample run + artifact validation
+- [ ] Single `run_manuscript_pipeline.py` accepts config YAML
+- [ ] Config schema documented in `docs/CONFIGURATION_REFERENCE.md`
+- [ ] 3+ example configs created: 300-sample-fast, 300-sample-full, full-manuscript
+- [ ] All 7 refactor todos completed
+- [ ] Full gate passes
+- [ ] Commit pushed to main
+
+**Estimated**: 6-8 hours once validation complete
+
+______________________________________________________________________
 
 1. Re-run the validation script with progressively relaxed runtime caps (output/component/permutation) to quantify convergence toward manuscript reference counts.
 1. Execute the same validation path on the larger real-data surface and record retained-count deltas in `docs/manuscript_alignment_audit.md`.

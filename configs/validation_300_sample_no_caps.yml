@@ -1,0 +1,41 @@
+# Full validation run (100 resamples, full components, parallel)
+# For comprehensive testing and 300-sample reproducibility baseline
+# Run with: pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_no_caps.yml
+
+dataset:
+  type: "synthetic_300_sample"
+
+algorithm:
+  variance_threshold: 0.90
+
+runtime:
+  n_jobs: -1  # All CPUs
+  output_batch_size: null
+
+stages:
+  empirical_null_screening:
+    n_permutations: 1000
+    bh_q_threshold: 0.10
+  interaction_discovery:
+    n_tree_estimators: 100
+    max_tree_depth: 10
+    p_threshold: 0.05
+  nonlinear_discovery:
+    edf_threshold: 2.5
+    transform_families: ["spline", "poly", "log"]
+  sparse_selection:
+    n_stability_subsamples: 100
+    subsample_fraction: 1.0
+    lasso_alpha_percentile: 50
+  final_artifacts:
+    bootstrap_count: 200
+    bootstrap_alpha: 0.05
+
+validation:
+  fast_mode: false
+  fast_mode_overrides: {}
+
+output:
+  artifact_dir: "./artifacts/validation_300_sample_no_caps/"
+  seed: 123
+  verbose: true

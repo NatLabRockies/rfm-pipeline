@@ -204,3 +204,25 @@ pixi run manuscript-reproduce --output-dir artifacts/real-data-run-$(date +%Y%m%
 - `examples/end_to_end_reproducibility.py` - Toy data example
 - `tools/check_manuscript_reproduction.py` - Smoke test for manuscript reproduction
 - `docs/manuscript_runtime.md` - Technical details on the runtime system
+
+## Parallel Execution with Thread Limiting
+
+When running with `n_jobs=-1` (all CPUs), you must limit threads for each worker to prevent memory exhaustion and worker crashes. Use environment variables:
+
+```bash
+# Required for parallel execution (n_jobs=-1)
+env \
+  OMP_NUM_THREADS=1 \
+  OPENBLAS_NUM_THREADS=1 \
+  MKL_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 \
+  VECLIB_MAXIMUM_THREADS=1 \
+  JOBLIB_TEMP_FOLDER=/tmp/joblib \
+  pixi run python tools/run_300_sample_validation.py --no-caps
+```
+
+**Why**: Each joblib worker spawns multiple threads for numpy/scipy operations. Without limiting these, thread count = (n_workers × threads_per_worker), which can exceed physical cores and cause memory pressure.
+
+**Error if missing**: `joblib.externals.loky.process_executor.TerminatedWorkerError: A worker process managed by the executor was unexpectedly terminated`
+
+**Alternative**: Use `n_jobs=2` or `n_jobs=4` instead of `-1` for fewer, more stable workers.

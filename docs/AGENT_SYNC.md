@@ -1,43 +1,42 @@
 # Agent Sync
 
 repo: NatLabRockies/bsm-public-rf
-branch: feat/unified-config-runner
-base_branch: perf/ablation-bootstrap-speedup
+branch: main
+base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: Phase 5 — unified config-driven entry point (IN PROGRESS)
-current_slice: build config schema, entry point, tests, and example configs
-slice_status: in_progress (config module, entry point, tests done; integration pending)
-last_validation: unit tests pass (7/7); config loader works; ruff formatting done
-next_slice: integrate with manuscript_stages; run full gate; commit and create PR
+current_milestone: Phase 5 — unified config-driven entry point (MERGED)
+current_slice: cleanup and documentation
+slice_status: merged (both perf and feat branches merged to main)
+last_validation: full gate runs; 300-sample process killed
+next_slice: integration with manuscript_stages.py (awaiting next agent)
 
 ## Blocked items
 
-- Full integration test suite (many slow integration tests; running separately)
+- Integration tests (run separately; many are slow)
+- Full integration with manuscript_stages.py (awaiting next agent)
 
-## Queued: Phase 5 Refactor (Config-Driven Unified Entry Point)
+## Completed: Phase 5 Refactor (Config-Driven Unified Entry Point)
 
-**Status**: Implementation in progress (config schema complete, entry point + tests done)
+**Status**: ✅ Merged to main (both branches)
 
-**Scope**: Eliminate script-specific hardcoding by creating single entry point with config files
+**Deliverables** (ALL COMPLETE):
 
-**Key deliverables** (DONE):
-
-- ✅ `src/bsm_rfm/config.py` — typed config dataclasses (DatasetConfig, AlgorithmConfig, RuntimeConfig, StagesConfig, etc.)
-- ✅ `tools/run_manuscript_pipeline.py` — unified entry point accepting config YAML (integration pending)
+- ✅ `src/bsm_rfm/config.py` — typed config dataclasses
+- ✅ `tools/run_manuscript_pipeline.py` — unified entry point (integration pending)
 - ✅ `configs/` directory — 3 example configs (validation_300_sample_fast, validation_300_sample_no_caps, validation_300_sample_serial)
 - ✅ `tests/test_config_loader.py` — 7 unit tests (all pass)
 - ✅ `configs/README.md` — quick user guide
+- ✅ `docs/PHASE5_CONFIG_DRIVEN_IMPLEMENTATION.md` — comprehensive summary
+- ✅ Merged to main with 2 merge commits
 
-**Key deliverables** (TODO):
+**Branch history**:
 
-- [ ] Integrate with `manuscript_stages.run_manuscript_reproduction_stage_chain()`
-- [ ] Full gate passes
-- [ ] Commit + PR
+- feat/unified-config-runner (2 commits, 1,026 lines) — merged
+- perf/ablation-bootstrap-speedup (6 commits total, +368 lines) — merged
+- Both deleted locally; available on origin for reference
 
-**Design**: See `docs/REFACTOR_CONFIG_DRIVEN_DESIGN.md` for full architecture
-
-**Est. effort**: 2 more hours (integration + final testing)
+**Next phase**: Integration with manuscript_stages.py (2-4 hours work, not started)
 
 ## Files in scope
 

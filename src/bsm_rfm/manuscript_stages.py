@@ -1290,7 +1290,7 @@ def discover_manuscript_interactions(
     )
     all_results = list(
         tqdm(
-            Parallel(n_jobs=spec.n_jobs, return_as="generator")(jobs),
+            Parallel(n_jobs=spec.n_jobs)(jobs),
             total=len(y_matrices),
             desc="interaction scoring",
         )
@@ -3549,7 +3549,7 @@ def _run_stability_resamples(
     importance_rows = []
     summary_rows = []
     for support_mask, importance, summary_row in tqdm(
-        Parallel(n_jobs=spec.n_jobs, return_as="generator")(jobs),
+        Parallel(n_jobs=spec.n_jobs)(jobs),
         total=spec.subsample_count,
         desc="stability resamples",
     ):
@@ -4483,7 +4483,7 @@ def _permutation_row_norm_null(
     jobs = (delayed(_one_permutation)(s) for s in seeds)
     for i, row in enumerate(
         tqdm(
-            Parallel(n_jobs=n_jobs, return_as="generator")(jobs),
+            Parallel(n_jobs=n_jobs)(jobs),
             total=n_permutations,
             desc="null screen permutations",
             leave=False,

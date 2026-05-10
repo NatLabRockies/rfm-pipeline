@@ -4480,15 +4480,9 @@ def _permutation_row_norm_null(
         return np.linalg.norm(coefficients, axis=1)
 
     null_statistics = np.zeros((n_permutations, x_scaled.shape[1]), dtype=float)
-    jobs = (delayed(_one_permutation)(s) for s in seeds)
-    for i, row in enumerate(
-        tqdm(
-            Parallel(n_jobs=n_jobs)(jobs),
-            total=n_permutations,
-            desc="null screen permutations",
-            leave=False,
-        )
-    ):
+    jobs = [delayed(_one_permutation)(s) for s in seeds]
+    results = Parallel(n_jobs=n_jobs)(jobs)
+    for i, row in enumerate(results):
         null_statistics[i] = row
     return null_statistics
 

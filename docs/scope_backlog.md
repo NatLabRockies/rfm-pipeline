@@ -2,6 +2,19 @@
 
 Record useful but out-of-scope discoveries. Do not implement these unless promoted into the engineering manifest or explicitly requested.
 
+## P0 POST-VALIDATION: Remove legacy dataset-specific scripts and adapters
+
+- Source / why noticed: Phase 5 refactor goal is to replace all hardcoded dataset scripts (run_300_sample_validation.py, etc.) with config-driven unified entry point. Now that integration is complete and unified entry point is running, legacy code is redundant.
+- Reason / justification: This is a new repo with no external users; we do not need to maintain old poor designs or backward compatibility. Removing legacy adapters and scripts will clean up codebase, reduce confusion, and remove multiple entry points. Clean design is: one command (`tools/run_manuscript_pipeline.py`), many configs.
+- Blocks current slice: No (validation running with new entry point; old scripts not in use)
+- Priority estimate: High — must be done before merge to production/release
+- Affected files/modules: `tools/run_300_sample_validation.py`, `src/bsm_rfm/manuscript_runtime.py` (legacy config loader), legacy config loading patterns in `manuscript_stages.py` if any
+- Risk if ignored: Codebase confusion; multiple entry points; users may accidentally run old scripts; outdated documentation
+- Tests required if promoted: Verify all tests pass with legacy code removed; ensure unified entry point covers all cases that old scripts covered
+- Recommendation: Promote to next milestone (Phase 6) immediately after 300-sample validation completes and artifacts are validated. Should be straightforward cleanup: delete old scripts, verify tests still pass, update docs to point only to unified entry point.
+
+______________________________________________________________________
+
 ## Candidate: Parallelize and cache final-stage ablation table computation
 
 - Source / why noticed: Observed during 300-sample no-caps validation run (2026-05-09). Final stage ran for 5+ hours due to ablation table construction.

@@ -527,10 +527,12 @@ bash ./test_repo.sh --check
 
 ```bash
 # Serial mode (baseline, single-threaded)
-time pixi run python tools/run_300_sample_validation.py
+time pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_smoke.yml
 
 # Parallel mode (all CPUs)
-time pixi run python tools/run_300_sample_validation.py --no-caps
+time env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
+  pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_no_caps.yml
 
 # Expected: 2-4× wall-time speedup on 4+ core machine
 ```
@@ -725,24 +727,24 @@ ______________________________________________________________________
 
 ## Key Files: Quick Reference
 
-| File                                 | Purpose                       | Modified in Optimization? | Key Lines                                                                                                    |
-| ------------------------------------ | ----------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `src/bsm_rfm/manuscript_stages.py`   | Core 6-stage pipeline         | **Yes**                   | 1-50 (imports), 200-250 (specs), 750 (randomized_svd), 1100-4200 (parallelized stages), 4500+ (spec parsers) |
-| `src/bsm_rfm/final_ols.py`           | Final OLS fitting             | **Yes**                   | 1-20 (imports), 40-100 (chunked OLS logic)                                                                   |
-| `tools/run_300_sample_validation.py` | Validation harness            | **Yes**                   | n_jobs injection at runtime; --no-caps flag handling                                                         |
-| `configs/manuscript_case_study.yml`  | Algorithm parameters (frozen) | **No**                    | All params read-only; n_jobs injected programmatically                                                       |
-| `docs/AGENT_SYNC.md`                 | Repo state tracking           | **Yes**                   | Updated with completion status & next steps                                                                  |
-| `tests/test_manuscript*.py`          | Validation tests (all pass)   | **No**                    | All 19 tests verify correctness with parallel code                                                           |
-| `pixi.toml`                          | Dependencies                  | **No**                    | joblib 1.5.2, tqdm 4.65.0 already present                                                                    |
+| File                                | Purpose                       | Modified in Optimization? | Key Lines                                                                                                    |
+| ----------------------------------- | ----------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `src/bsm_rfm/manuscript_stages.py`  | Core 6-stage pipeline         | **Yes**                   | 1-50 (imports), 200-250 (specs), 750 (randomized_svd), 1100-4200 (parallelized stages), 4500+ (spec parsers) |
+| `src/bsm_rfm/final_ols.py`          | Final OLS fitting             | **Yes**                   | 1-20 (imports), 40-100 (chunked OLS logic)                                                                   |
+| `tools/run_manuscript_pipeline.py`  | Unified config-driven runner  | **Yes**                   | config loading, stage-chain orchestration, run-state markers                                                 |
+| `configs/manuscript_case_study.yml` | Algorithm parameters (frozen) | **No**                    | All params read-only; n_jobs injected programmatically                                                       |
+| `docs/AGENT_SYNC.md`                | Repo state tracking           | **Yes**                   | Updated with completion status & next steps                                                                  |
+| `tests/test_manuscript*.py`         | Validation tests (all pass)   | **No**                    | All 19 tests verify correctness with parallel code                                                           |
+| `pixi.toml`                         | Dependencies                  | **No**                    | joblib 1.5.2, tqdm 4.65.0 already present                                                                    |
 
 ______________________________________________________________________
 
 ## Git Commits Reference
 
-| Commit  | Message                                                                            | Files Changed                                                    | Session  |
-| ------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------- | -------- |
-| 6cca1e3 | `perf: parallelize slow pipeline stages with joblib+tqdm; chunked OLS for large Y` | manuscript_stages.py, final_ols.py, run_300_sample_validation.py | 967840f9 |
-| b702f4d | `docs: update AGENT_SYNC with performance optimization completion`                 | docs/AGENT_SYNC.md                                               | 967840f9 |
+| Commit  | Message                                                                            | Files Changed                                                  | Session  |
+| ------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------- | -------- |
+| 6cca1e3 | `perf: parallelize slow pipeline stages with joblib+tqdm; chunked OLS for large Y` | manuscript_stages.py, final_ols.py, run_manuscript_pipeline.py | 967840f9 |
+| b702f4d | `docs: update AGENT_SYNC with performance optimization completion`                 | docs/AGENT_SYNC.md                                             | 967840f9 |
 
 Both commits on **main branch**, ready for production.
 
@@ -750,7 +752,7 @@ ______________________________________________________________________
 
 ## Next Steps for Future Development
 
-1. **Benchmark parallelization**: Run `pixi run python tools/run_300_sample_validation.py --no-caps` and measure wall time vs serial. Target: 2-4× speedup on 4+ cores.
+1. **Benchmark parallelization**: Run `env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_no_caps.yml` and measure wall time vs serial. Target: 2-4× speedup on 4+ cores.
 
 1. **Profile memory usage**: Use `memory_profiler` to track peak memory with randomized_svd and chunked OLS. Verify memory efficiency gains.
 

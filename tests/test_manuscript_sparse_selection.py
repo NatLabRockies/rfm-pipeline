@@ -173,6 +173,76 @@ def test_sparse_selection_materializes_dynamic_terms_absent_from_static_catalog(
     assert support_candidates.loc["inverse_x2", "feature_type"] == "transformation"
 
 
+def test_sparse_selection_applies_deterministic_top_k_candidate_cap() -> None:
+    sample_ids = list(range(1, 61))
+    x1 = [float(index) for index in range(60)]
+    x2 = [float((index % 5) + 1) for index in range(60)]
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2})
+    catalog = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2"],
+            "feature_type": ["first_order", "first_order"],
+            "origin": ["test", "test"],
+        }
+    )
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 48 + ["holdout"] * 12})
+    pca_scores = pd.DataFrame(
+        {
+            "sample_id": sample_ids,
+            "PC1": [
+                2.0 * x1_value + 1.5 * x2_value for x1_value, x2_value in zip(x1, x2, strict=True)
+            ],
+        }
+    )
+    retained_terms = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2"],
+            "empirical_p_value": [1.0e-6, 0.2],
+            "observed_statistic": [100.0, 1.0],
+        }
+    )
+    retained_pairs = pd.DataFrame(
+        {
+            "pair_name": ["x1:x2"],
+            "empirical_p_value": [0.05],
+            "observed_score": [2.0],
+        }
+    )
+    retained_transformations = pd.DataFrame(
+        {
+            "feature_name": ["inverse_x2"],
+            "empirical_p_value": [0.9],
+            "curvature_score": [0.1],
+        }
+    )
+    spec = SparseSelectionStabilitySpec(
+        model_class="l1_penalized_linear_model_per_retained_component",
+        ebic_gamma=0.5,
+        support_aggregation_rule="union_nonzero_support_across_retained_components",
+        resampling_scheme="8_subsamples_of_80_percent_rows_without_replacement_seed_123",
+        subsample_count=8,
+        subsample_fraction=0.80,
+        jaccard_threshold=0.50,
+        spearman_threshold=0.50,
+        random_seed=123,
+        max_candidate_terms=2,
+    )
+
+    result = select_manuscript_sparse_support(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        retained_pairs,
+        retained_transformations,
+        spec,
+    )
+
+    assert int(result.summary.loc[0, "n_candidate_terms"]) == 2
+    assert set(result.support_candidates["feature_name"]) == {"x1", "x1:x2"}
+
+
 def test_run_sparse_selection_stability_stage_executes_demo_context() -> None:
     context = build_manuscript_notebook_context(
         Path.cwd(),

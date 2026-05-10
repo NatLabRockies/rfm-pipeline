@@ -76,6 +76,18 @@ def parse_args() -> argparse.Namespace:
         default=15,
         help="Progress poll interval while command is running",
     )
+    parser.add_argument(
+        "--start-stage",
+        choices=STAGE_DIRS,
+        default=None,
+        help="Optional stage to start from (resume from existing artifacts).",
+    )
+    parser.add_argument(
+        "--stop-stage",
+        choices=STAGE_DIRS,
+        default=None,
+        help="Optional stage to stop after for partial/debug runs.",
+    )
     return parser.parse_args()
 
 
@@ -103,6 +115,10 @@ def main() -> int:
     cmd = [sys.executable, "tools/run_manuscript_pipeline.py", str(config_path)]
     if args.output_dir:
         cmd.extend(["--output-dir", args.output_dir])
+    if args.start_stage:
+        cmd.extend(["--start-stage", args.start_stage])
+    if args.stop_stage:
+        cmd.extend(["--stop-stage", args.stop_stage])
 
     metadata = {
         "run_id": run_id,

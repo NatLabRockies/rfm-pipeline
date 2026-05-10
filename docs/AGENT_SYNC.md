@@ -5,11 +5,11 @@ branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: Phase 6 cleanup + performance optimization complete; Phase 7 planning
-current_slice: 300-sample no-caps validation in progress (stage 3/6, ~2h remaining); performance optimizations completed
-slice_status: waiting (300-sample interaction scoring stage running, 1/1000 done)
-last_validation: Full gate passed after Phase 6 cleanup (commit f3152bc); perf optimization tested (commit d4d5787)
-next_slice: After 300-sample completes: validate artifacts, then decide Phase 7 scope (full-dataset scaling or other)
+current_milestone: Phase 7 performance hardening and scaling instrumentation
+current_slice: Implemented stage-window resume/stop flow, sparse top-K capping, runtime diagnostics, and OOM fallback controls
+slice_status: in_progress (uncapped 300-sample scale run active via tracked workflow)
+last_validation: `./test_repo.sh --check` passed after runner/stage hardening changes; targeted pytest suites passing
+next_slice: finish uncapped scale run, collect stage-runtime diagnostics, and calibrate 3k/10k/full scaling windows
 
 ## Completed: Phase 5 Integration (Config-Driven Entry Point)
 
@@ -85,6 +85,26 @@ python tools/monitor_validation_timing.py artifacts/validation_300_sample_no_cap
 - **Benefit**: Eliminates pandas fragmentation warnings, cleaner code, same numerical output
 - **Validation**: All manuscript tests pass; smoke config runs cleanly
 - **Impact**: ~300 warnings eliminated per run; faster memory allocation
+
+## Completed: Phase 7 Performance Hardening (Current Slice)
+
+**Status**: ✅ IMPLEMENTED — validation complete, uncapped run monitoring continues
+
+**Deliverables**:
+
+- ✅ Added deterministic sparse candidate top-K cap (`max_candidate_terms`) to prevent sparse-stage blowups
+- ✅ Added runtime OOM controls: `runtime.max_loaded_table_mb` + `runtime.oom_output_cap`
+- ✅ Reworked pipeline runner for stage-window execution:
+  - `--start-stage` for resume from existing artifacts
+  - `--stop-stage` for partial/debug execution
+- ✅ Added runtime diagnostics artifact:
+  - `runtime_diagnostics/stage_runtime_summary.csv` with per-stage elapsed time + stage counters
+- ✅ Added joblib/loky runtime stabilization in runner (`JOBLIB_TEMP_FOLDER`, `LOKY_MAX_CPU_COUNT`)
+- ✅ Removed generator-based parallel consumption in nonlinear/stability loops to reduce backend fragility
+- ✅ Verified partial+resume flow:
+  - `output_conditioning → nonlinear_discovery`
+  - resumed `sparse_selection → final_manuscript_artifacts`
+  - both complete successfully and produce markers/artifacts
 
 ## Phase 7 Planning (Pending 300-sample completion)
 

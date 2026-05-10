@@ -88,6 +88,7 @@ Run `SELECT * FROM todos` to see current task breakdown.
 
 - `./test_repo.sh --check`: passed
 - `env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_no_caps.yml`: in progress (full stage chain, no-caps, artifacts under `artifacts/validation_300_sample_no_caps/`)
+- `pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_smoke.yml --output-dir /tmp/runner_stage_test --stop-stage nonlinear_discovery` and resume with `--start-stage sparse_selection --stop-stage final_manuscript_artifacts`: passed (stage-window resume flow verified)
 - GitHub Actions CI run for PR #: pending/update-after-pr
 - [x] Run and record a fresh full `./test_repo.sh --check` after manifest changes.
 
@@ -122,6 +123,19 @@ Run `SELECT * FROM todos` to see current task breakdown.
 1. [x] Update doc references in ENGINEERING_MANIFEST.md
 1. [ ] Run full gate to confirm no tests break
 1. [ ] Commit cleanup updates
+
+### Phase 7 (IN PROGRESS): Performance Hardening + OOM-Ready Scaling
+
+**Objective**: Keep workflow reproducible while controlling runtime/memory blowups on larger datasets.
+
+**Current work**:
+
+1. [x] Add per-stage timing/counter artifacts (`runtime_diagnostics/stage_runtime_summary.csv`)
+1. [x] Add deterministic sparse top-K candidate cap (`stages.sparse_selection.max_candidate_terms`)
+1. [x] Add stage-window controls (`--start-stage`, `--stop-stage`) for resumable execution
+1. [x] Add OOM fallback controls (`runtime.max_loaded_table_mb`, `runtime.oom_output_cap`)
+1. [x] Stabilize parallel runner behavior for loky/joblib on long runs
+1. [ ] Complete uncapped scale run + document stage-wise scaling estimates for 3k/10k/full
 
 ______________________________________________________________________
 

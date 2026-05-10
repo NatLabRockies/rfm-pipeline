@@ -418,6 +418,7 @@ class SparseSelectionStabilitySpec:
     source_selected_feature_count_reference: int = 346
     random_seed: int = 123
     n_jobs: int = 1
+    max_candidate_terms: int | None = None
 
 
 @dataclass(frozen=True)
@@ -1581,8 +1582,9 @@ def discover_manuscript_nonlinear_transformations(
     )
 
     feature_results: dict[str, dict] = {}
+    nonlinear_results = Parallel(n_jobs=spec.n_jobs)(jobs)
     for base_feat, feat_result, cache_entries in tqdm(
-        Parallel(n_jobs=spec.n_jobs, return_as="generator")(jobs),
+        nonlinear_results,
         total=len(base_feat_list),
         desc="nonlinear feature tests",
     ):
@@ -1793,6 +1795,11 @@ def sparse_selection_stability_spec_from_case_study_config(
         ),
         random_seed=seed,
         n_jobs=int(runtime.get("n_jobs", 1)),
+        max_candidate_terms=(
+            int(sparse["max_candidate_terms"])
+            if sparse.get("max_candidate_terms") is not None
+            else None
+        ),
     )
 
 
@@ -1844,6 +1851,13 @@ def select_manuscript_sparse_support(
         retained_terms=retained_terms,
         retained_interaction_pairs=retained_interaction_pairs,
         retained_transformations=retained_transformations,
+    )
+    candidate_names = _apply_sparse_candidate_cap(
+        ordered_candidates=candidate_names,
+        retained_terms=retained_terms,
+        retained_interaction_pairs=retained_interaction_pairs,
+        retained_transformations=retained_transformations,
+        max_candidate_terms=spec.max_candidate_terms,
     )
     candidate_catalog = _feature_catalog_subset(feature_catalog, candidate_names)
     design = build_manuscript_feature_design(input_matrix, candidate_catalog)
@@ -3234,6 +3248,8 @@ def _validate_sparse_selection_spec(spec: SparseSelectionStabilitySpec) -> None:
         raise ValueError("jaccard_threshold must be in the interval [0, 1].")
     if not -1.0 <= spec.spearman_threshold <= 1.0:
         raise ValueError("spearman_threshold must be in the interval [-1, 1].")
+    if spec.max_candidate_terms is not None and spec.max_candidate_terms < 1:
+        raise ValueError("max_candidate_terms must be positive when provided.")
 
 
 def _ordered_sparse_candidate_names(
@@ -3269,6 +3285,59 @@ def _ordered_sparse_candidate_names(
     if not ordered:
         raise ValueError("Sparse selection found no retained terms in feature_catalog order.")
     return ordered
+
+
+def _apply_sparse_candidate_cap(
+    *,
+    ordered_candidates: list[str],
+    retained_terms: pd.DataFrame,
+    retained_interaction_pairs: pd.DataFrame,
+    retained_transformations: pd.DataFrame,
+    max_candidate_terms: int | None,
+) -> list[str]:
+    """Apply deterministic top-K sparse candidate capping from upstream stage strengths."""
+    if max_candidate_terms is None or len(ordered_candidates) <= max_candidate_terms:
+        return ordered_candidates
+
+    strengths: dict[str, tuple[float, float]] = {}
+
+    def _ingest(table: pd.DataFrame, name_column: str) -> None:
+        if table.empty or name_column not in table.columns:
+            return
+        for _, row in table.iterrows():
+            name = str(row[name_column])
+            p_value = float(row.get("empirical_p_value", 1.0))
+            p_value = max(p_value, 1.0e-300)
+            primary = -math.log10(p_value)
+            secondary = max(
+                float(row.get("observed_statistic", 0.0)),
+                float(row.get("observed_score", 0.0)),
+                float(row.get("curvature_score", 0.0)),
+            )
+            candidate_strength = (primary, secondary)
+            existing = strengths.get(name)
+            if existing is None or candidate_strength > existing:
+                strengths[name] = candidate_strength
+
+    _ingest(retained_terms, "feature_name")
+    pair_name_column = (
+        "pair_name" if "pair_name" in retained_interaction_pairs.columns else "feature_name"
+    )
+    _ingest(retained_interaction_pairs, pair_name_column)
+    _ingest(retained_transformations, "feature_name")
+
+    indexed = list(enumerate(ordered_candidates))
+    ranked = sorted(
+        indexed,
+        key=lambda item: (
+            strengths.get(item[1], (0.0, 0.0))[0],
+            strengths.get(item[1], (0.0, 0.0))[1],
+            -item[0],
+        ),
+        reverse=True,
+    )
+    selected = {name for _, name in ranked[:max_candidate_terms]}
+    return [name for name in ordered_candidates if name in selected]
 
 
 def _retained_pair_names(retained_interaction_pairs: pd.DataFrame) -> set[str]:
@@ -3548,8 +3617,9 @@ def _run_stability_resamples(
     support_rows = []
     importance_rows = []
     summary_rows = []
+    resample_results = Parallel(n_jobs=spec.n_jobs)(jobs)
     for support_mask, importance, summary_row in tqdm(
-        Parallel(n_jobs=spec.n_jobs)(jobs),
+        resample_results,
         total=spec.subsample_count,
         desc="stability resamples",
     ):

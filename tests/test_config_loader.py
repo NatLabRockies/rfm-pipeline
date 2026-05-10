@@ -51,7 +51,12 @@ class TestLoadConfig:
                 {
                     "dataset": {"type": "synthetic_300_sample", "path": "./data/test/"},
                     "algorithm": {"variance_threshold": 0.95, "retained_components": 20},
-                    "runtime": {"n_jobs": -1, "output_batch_size": 500},
+                    "runtime": {
+                        "n_jobs": -1,
+                        "output_batch_size": 500,
+                        "max_loaded_table_mb": 4096.0,
+                        "oom_output_cap": 5000,
+                    },
                     "stages": {
                         "empirical_null_screening": {
                             "n_permutations": 500,
@@ -61,7 +66,10 @@ class TestLoadConfig:
                             "p_threshold": 0.01,
                             "n_tree_estimators": 200,
                         },
-                        "sparse_selection": {"n_stability_subsamples": 50},
+                        "sparse_selection": {
+                            "n_stability_subsamples": 50,
+                            "max_candidate_terms": 1000,
+                        },
                         "final_artifacts": {"bootstrap_count": 100},
                     },
                     "output": {"artifact_dir": "./artifacts/full/", "seed": 42},
@@ -75,7 +83,10 @@ class TestLoadConfig:
                 assert config.dataset.type == "synthetic_300_sample"
                 assert config.algorithm.retained_components == 20
                 assert config.runtime.n_jobs == -1
+                assert config.runtime.max_loaded_table_mb == 4096.0
+                assert config.runtime.oom_output_cap == 5000
                 assert config.stages.empirical_null_screening.n_permutations == 500
+                assert config.stages.sparse_selection.max_candidate_terms == 1000
                 assert config.output.seed == 42
             finally:
                 Path(f.name).unlink()

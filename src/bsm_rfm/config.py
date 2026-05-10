@@ -39,6 +39,10 @@ class RuntimeConfig:
     """Parallel workers: 1=serial, -1=all CPUs."""
     output_batch_size: int | None = None
     """Batch size for final OLS; None=no batching."""
+    max_loaded_table_mb: float | None = None
+    """Optional max memory budget (MB) for loaded X+Y+catalog+holdout tables."""
+    oom_output_cap: int | None = None
+    """If budget exceeded, reload outputs with this cap instead of failing."""
 
 
 @dataclass
@@ -83,6 +87,8 @@ class SparseStageConfig:
     """Fraction of data per resample."""
     lasso_alpha_percentile: int = 50
     """LASSO alpha selection percentile."""
+    max_candidate_terms: int | None = None
+    """Optional deterministic top-K candidate cap before sparse stability."""
 
 
 @dataclass

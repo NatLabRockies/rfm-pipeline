@@ -5,11 +5,11 @@ branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: Phase 5 — unified config-driven entry point (MERGED)
-current_slice: cleanup and documentation
-slice_status: merged (both perf and feat branches merged to main)
-last_validation: full gate runs; 300-sample process killed
-next_slice: integration with manuscript_stages.py (awaiting next agent)
+current_milestone: 300-sample validation run (IN PROGRESS)
+current_slice: validate full manuscript pipeline against 300-sample dataset with timing tracking
+slice_status: running (validation started 2026-05-09 19:14; ETA 10-15 hours)
+last_validation: Full gate passed; branches merged to main; validation restarted
+next_slice: collect timing data; validate artifacts; unblock next integration phase
 
 ## Blocked items
 

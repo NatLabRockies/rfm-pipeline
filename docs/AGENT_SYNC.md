@@ -5,11 +5,11 @@ branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: Debugged run termination; stabilized preflight + no-caps launch workflow
-current_slice: validate with capped smoke config, then run 300-sample no-caps in persistent mode
-slice_status: ready (smoke config passes; runner now writes explicit run state markers)
-last_validation: Full gate passed after runner hardening, smoke config, and legacy script cleanup
-next_slice: launch no-caps run detached and monitor run_complete/run_failed markers
+current_milestone: Phase 6 cleanup + performance optimization complete; Phase 7 planning
+current_slice: 300-sample no-caps validation in progress (stage 3/6, ~2h remaining); performance optimizations completed
+slice_status: waiting (300-sample interaction scoring stage running, 1/1000 done)
+last_validation: Full gate passed after Phase 6 cleanup (commit f3152bc); perf optimization tested (commit d4d5787)
+next_slice: After 300-sample completes: validate artifacts, then decide Phase 7 scope (full-dataset scaling or other)
 
 ## Completed: Phase 5 Integration (Config-Driven Entry Point)
 
@@ -56,10 +56,55 @@ python tools/monitor_validation_timing.py artifacts/validation_300_sample_no_cap
 
 ## Next immediate actions
 
-1. **Start 300-sample validation** with unified entry point
-1. **Track per-stage timing** for documentation
-1. **Validate artifacts** match manuscript expectations
-1. **Update ENGINEERING_MANIFEST** with timing predictions
+1. **Monitor 300-sample validation** — currently on stage 3/6 (interaction scoring); ~2h remaining at current pace
+1. **After 300-sample completes**: Validate artifacts (check all 6 stage directories, verify feature counts, timing data)
+1. **Phase 7 decision**: Based on 300-sample results, determine next priority:
+   - Full-dataset validation (if 300-sample passes and timings are acceptable)
+   - Manuscript table/figure comparison against private reference values
+   - Additional performance optimization if stages are bottlenecked
+
+## Completed: Phase 6 (Cleanup Legacy Adapters & Documentation)
+
+**Status**: ✅ COMPLETE — Cleanup complete, perf optimization added (commits f3152bc, d4d5787)
+
+**Deliverables**:
+
+- ✅ Deleted legacy scripts: `run_300_sample_validation.py`, `run_fast_validation.py`
+- ✅ Updated doc references: MANUSCRIPT_WORKFLOW_REFERENCE.md, ENGINEERING_MANIFEST.md
+- ✅ Performance optimization: replaced repeated DataFrame column assignments with batch `pd.concat()`
+- ✅ Eliminated ~300 fragmentation warnings per run
+- ✅ Smoke config runs 12s with 0 warnings (was 300+)
+- ✅ All tests passing (config loader, interaction discovery, final artifacts)
+- ✅ Full gate passed (exit 0)
+
+## Completed: Phase 6 Performance Optimization
+
+**DataFrame Construction** (commit d4d5787):
+
+- **Change**: Replaced loop-based `design[col] = value` with batch `pd.concat(feature_df, axis=1)`
+- **Benefit**: Eliminates pandas fragmentation warnings, cleaner code, same numerical output
+- **Validation**: All manuscript tests pass; smoke config runs cleanly
+- **Impact**: ~300 warnings eliminated per run; faster memory allocation
+
+## Phase 7 Planning (Pending 300-sample completion)
+
+**Goal**: Validate 300-sample artifacts and scale to full dataset
+
+**Phase 7a: Artifact Validation** (when 300-sample completes):
+
+1. Check all 6 stage directories exist (output_conditioning through final_artifacts)
+1. Verify feature retention counts match expectations (~63 first-order, ~248 interactions, ~41 nonlinear)
+1. Extract per-stage timing data; update documentation
+1. Create validation report comparing against manuscript reference values
+
+**Phase 7b: Full-Dataset Scaling** (conditional on Phase 7a passing):
+
+1. Create `validation_full_manuscript.yml` config with real-data paths
+1. Run full-dataset validation (1000 perms, 100 resamples, 200 bootstraps)
+1. Compare timing against 300-sample linear scaling predictions
+1. Validate manuscript table/figure outputs against private reference values
+
+**Estimated scope**: 4-6 hours (depends on 300-sample completion time and artifact validation findings)
 
 ## Files in scope
 

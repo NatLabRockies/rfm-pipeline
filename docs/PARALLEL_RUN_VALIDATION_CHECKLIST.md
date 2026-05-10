@@ -80,7 +80,7 @@ ______________________________________________________________________
 
 Check `qa_audit_summary.json`:
 
-```json
+```text
 {
   "qa_status": "pass|fail",
   "n_artifacts": "<count>",

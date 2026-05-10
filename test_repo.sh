@@ -21,6 +21,7 @@ VALIDATION_TASKS=(
   format-check
   markdown-check
   notebook-check
+  notebook-workflow-check
   compile-check
   unit-tests
   workflow-tests

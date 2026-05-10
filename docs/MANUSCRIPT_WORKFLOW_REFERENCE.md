@@ -39,22 +39,28 @@ ______________________________________________________________________
 
 ### Where Parallelism Is Controlled
 
-**Source of truth**: `tools/run_300_sample_validation.py` script with `--no-caps` flag
+**Source of truth**: config files + `tools/run_manuscript_pipeline.py`
 
 ```bash
-# Serial mode (default)
-pixi run python tools/run_300_sample_validation.py
+# Serial mode
+pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_serial.yml
 
 # Parallel mode (all CPUs)
-pixi run python tools/run_300_sample_validation.py --no-caps
+pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_no_caps.yml
+```
+
+For tracked long runs:
+
+```bash
+pixi run workflow-run -- --config configs/validation_300_sample_no_caps.yml
 ```
 
 **How it works**:
 
-1. `run_300_sample_validation.py` loads `configs/manuscript_case_study.yml` (frozen algorithm params)
-1. If `--no-caps` flag set, injects `{"runtime": {"n_jobs": -1}}` into config dict **before** passing to pipeline
-1. All 4 `spec_from_case_study_config()` functions read `config["case_study"].get("runtime", {}).get("n_jobs", 1)` and store in spec
-1. Pipeline stages check `spec.n_jobs`: if 1, run serial; if -1, dispatch to all CPU cores via joblib
+1. `run_manuscript_pipeline.py` loads a typed workflow config YAML
+1. Config runtime sets `n_jobs` and stage limits
+1. Adapter maps workflow config to stage-chain runtime config
+1. Pipeline stages read `spec.n_jobs` and dispatch serial/parallel accordingly
 
 ### Spec Dataclasses: Where n_jobs Lives
 

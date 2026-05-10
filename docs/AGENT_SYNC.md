@@ -5,11 +5,11 @@ branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: Phase 5 integration complete; 300-sample validation (READY TO START)
-current_slice: validate full manuscript pipeline against 300-sample dataset using unified config entry point
-slice_status: ready (cleaned artifacts; unified entry point integrated and tested)
-last_validation: Full gate passed; config-to-legacy adapter integrated; entry point tested with fast config
-next_slice: run 300-sample no-caps validation; track per-stage timing; collect results for manuscript artifact validation
+current_milestone: Debugged run termination; stabilized preflight + no-caps launch workflow
+current_slice: validate with capped smoke config, then run 300-sample no-caps in persistent mode
+slice_status: ready (smoke config passes; runner now writes explicit run state markers)
+last_validation: Full gate passed after runner hardening, smoke config, and legacy script cleanup
+next_slice: launch no-caps run detached and monitor run_complete/run_failed markers
 
 ## Completed: Phase 5 Integration (Config-Driven Entry Point)
 
@@ -66,7 +66,7 @@ python tools/monitor_validation_timing.py artifacts/validation_300_sample_no_cap
 - `src/bsm_rfm/manuscript_stages.py`
 - `tests/test_manuscript_interaction_discovery.py`
 - `tests/test_manuscript_final_artifacts.py`
-- `tools/run_300_sample_validation.py`
+- `tools/run_manuscript_pipeline.py`
 - `tests/test_manuscript_runtime.py`
 - `docs/AGENT_SYNC.md`
 - `docs/ENGINEERING_MANIFEST.md`
@@ -78,7 +78,8 @@ pixi run pytest -q tests/test_manuscript_interaction_discovery.py -k 'spec'
 pixi run pytest -q tests/test_manuscript_final_artifacts.py -k 'spec'
 pixi run pytest -q tests/test_manuscript_interaction_discovery.py
 pixi run pytest -q tests/test_manuscript_reproduction_chain.py tests/test_manuscript_reproduction_audit.py
-pixi run env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 python tools/run_300_sample_validation.py
+pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_smoke.yml
+pixi run env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 python tools/run_manuscript_pipeline.py configs/validation_300_sample_no_caps.yml
 ```
 
 ## Full gate

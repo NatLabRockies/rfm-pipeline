@@ -17,10 +17,14 @@ from __future__ import annotations
 
 import argparse
 import copy
+import json
+import os
+import signal
 import sys
 import time
 import traceback
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Ensure repo root is in sys.path for src imports
@@ -56,6 +60,43 @@ class _FakeContext:
     case_study_config: dict
     tables: dict
     runtime: _FakeRuntime
+
+
+def _load_tables(output_column_limit: int | None) -> dict:
+    """Load validation tables and normalize holdout labels."""
+    import pandas as pd
+
+    data_root = REPO_ROOT / "artifacts" / "test_dataset_300"
+    y = pd.read_parquet(data_root / "Y.parquet")
+    y_cols = [c for c in y.columns if c != "sample_id"]
+    if output_column_limit is not None and len(y_cols) > output_column_limit:
+        y = y[["sample_id", *y_cols[:output_column_limit]]]
+    holdout = pd.read_parquet(data_root / "holdout_assignments.parquet").copy()
+    holdout["split"] = (
+        holdout["split"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .replace({"test": "holdout", "val": "holdout", "validation": "holdout"})
+    )
+    return {
+        "case_study_input_matrix": pd.read_parquet(data_root / "X.parquet"),
+        "case_study_output_matrix": y,
+        "fixed_holdout_assignments": holdout,
+        "manuscript_feature_catalog": pd.read_parquet(
+            REPO_ROOT / "artifacts" / "actual_input_feature_catalog.parquet"
+        ),
+    }
+
+
+def _utc_now() -> str:
+    """Return timezone-aware UTC timestamp string."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    """Persist run-state payload atomically."""
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def config_to_legacy_case_study(
@@ -152,6 +193,10 @@ def main() -> int:
         help="Override output artifact directory",
     )
     args = parser.parse_args()
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(line_buffering=True)
 
     # Load and validate config
     try:
@@ -163,10 +208,10 @@ def main() -> int:
         print(f"✗ Failed to load config: {e}", file=sys.stderr)
         return 1
 
-    # Apply fast-mode overrides if requested
+    # Apply fast-mode overrides from CLI/config
     if args.fast:
         config.validation.fast_mode = True
-        config = apply_fast_mode_overrides(config)
+    config = apply_fast_mode_overrides(config)
 
     # Override with CLI args if provided
     if args.seed is not None:
@@ -177,6 +222,13 @@ def main() -> int:
     # Convert to legacy format and run pipeline
     output_root = Path(config.output.artifact_dir)
     output_root.mkdir(parents=True, exist_ok=True)
+    started_path = output_root / "run_started.json"
+    complete_path = output_root / "run_complete.json"
+    failed_path = output_root / "run_failed.json"
+    interrupted_path = output_root / "run_interrupted.json"
+    for stale in (complete_path, failed_path, interrupted_path):
+        if stale.exists():
+            stale.unlink()
 
     print(f"\n{'─' * 70}")
     print("  Unified Manuscript Pipeline Runner")
@@ -188,20 +240,13 @@ def main() -> int:
     print(f"  Fast mode: {config.validation.fast_mode}")
     print("  Stages: 6 (conditioning → screening → interaction → nonlinear → sparse → final)")
 
-    # Load tables (assuming 300-sample dataset for now)
-    # TODO: Generalize dataset loading based on config.dataset.type
-    try:
-        import pandas as pd
+    output_column_limit = None
+    if config.validation.fast_mode:
+        output_column_limit = config.validation.fast_mode_overrides.output_cap
 
-        data_root = REPO_ROOT / "artifacts" / "test_dataset_300"
-        tables = {
-            "case_study_input_matrix": pd.read_parquet(data_root / "X.parquet"),
-            "case_study_output_matrix": pd.read_parquet(data_root / "Y.parquet"),
-            "fixed_holdout_assignments": pd.read_parquet(data_root / "holdout_assignments.parquet"),
-            "manuscript_feature_catalog": pd.read_parquet(
-                REPO_ROOT / "artifacts" / "actual_input_feature_catalog.parquet"
-            ),
-        }
+    # Load tables (synthetic_300_sample currently supported)
+    try:
+        tables = _load_tables(output_column_limit=output_column_limit)
     except Exception as e:
         print(f"✗ Failed to load data: {e}", file=sys.stderr)
         return 1
@@ -220,14 +265,69 @@ def main() -> int:
     sys.stdout.flush()
 
     t0 = time.perf_counter()
+    _write_json(
+        started_path,
+        {
+            "status": "running",
+            "started_at_utc": _utc_now(),
+            "pid": os.getpid(),
+            "config_path": str(Path(args.config).resolve()),
+            "output_root": str(output_root.resolve()),
+            "runtime_n_jobs": config.runtime.n_jobs,
+        },
+    )
+
+    def _handle_signal(signum: int, _frame: object) -> None:
+        signal_name = signal.Signals(signum).name
+        interrupted_payload = {
+            "status": "interrupted",
+            "interrupted_at_utc": _utc_now(),
+            "pid": os.getpid(),
+            "signal": signal_name,
+            "elapsed_seconds": round(time.perf_counter() - t0, 3),
+        }
+        _write_json(interrupted_path, interrupted_payload)
+        print(
+            f"\n✗ Pipeline interrupted by {signal_name}. Details: {interrupted_path}",
+            file=sys.stderr,
+        )
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
+
     try:
         run_manuscript_reproduction_stage_chain(ctx)
         elapsed = time.perf_counter() - t0
+        _write_json(
+            complete_path,
+            {
+                "status": "complete",
+                "completed_at_utc": _utc_now(),
+                "pid": os.getpid(),
+                "elapsed_seconds": round(elapsed, 3),
+            },
+        )
         print(f"\n✓ Pipeline complete ({elapsed:.0f}s)")
         return 0
+    except SystemExit as e:
+        return int(e.code) if isinstance(e.code, int) else 1
     except Exception as e:
+        elapsed = time.perf_counter() - t0
+        _write_json(
+            failed_path,
+            {
+                "status": "failed",
+                "failed_at_utc": _utc_now(),
+                "pid": os.getpid(),
+                "elapsed_seconds": round(elapsed, 3),
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+            },
+        )
         print(f"\n✗ Pipeline failed: {e}", file=sys.stderr)
         traceback.print_exc()
+        print(f"Failure details: {failed_path}", file=sys.stderr)
         return 1
 
 

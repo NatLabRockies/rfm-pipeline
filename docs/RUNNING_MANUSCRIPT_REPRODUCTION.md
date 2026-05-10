@@ -4,28 +4,34 @@ This guide explains how to run the manuscript reproduction workflow against diff
 
 ## Quick Start
 
-### Run with Local Config
+### Run with Config-Driven Unified Entry Point
 
-The simplest way to run manuscript reproduction is using your local configuration:
+The standard entrypoint is config-driven:
 
 ```bash
-pixi run manuscript-reproduce
+pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_no_caps.yml
 ```
 
-This uses `configs/local/manuscript_paths.local.yml` to locate your data files.
+For long runs with timestamped tracking and durable logs:
+
+```bash
+pixi run workflow-run -- --config configs/validation_300_sample_no_caps.yml
+```
 
 ### Run with Custom Output Directory
 
 ```bash
-pixi run manuscript-reproduce --output-dir artifacts/my-run-2024
+pixi run python tools/run_manuscript_pipeline.py \
+  configs/validation_300_sample_no_caps.yml \
+  --output-dir artifacts/my-run-2024
 ```
 
-### Run with Explicit PYTHONPATH
-
-If you need explicit control:
+### Run with Config + Tracking + Label
 
 ```bash
-PYTHONPATH=src pixi run manuscript-reproduce --output-dir artifacts/test-run
+pixi run workflow-run -- \
+  --config configs/validation_300_sample_no_caps.yml \
+  --run-label validation-no-caps
 ```
 
 ## Configuration
@@ -218,11 +224,27 @@ env \
   NUMEXPR_NUM_THREADS=1 \
   VECLIB_MAXIMUM_THREADS=1 \
   JOBLIB_TEMP_FOLDER=/tmp/joblib \
-  pixi run python tools/run_300_sample_validation.py --no-caps
+  pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_no_caps.yml
 ```
 
 **Why**: Each joblib worker spawns multiple threads for numpy/scipy operations. Without limiting these, thread count = (n_workers × threads_per_worker), which can exceed physical cores and cause memory pressure.
 
 **Error if missing**: `joblib.externals.loky.process_executor.TerminatedWorkerError: A worker process managed by the executor was unexpectedly terminated`
 
-**Alternative**: Use `n_jobs=2` or `n_jobs=4` instead of `-1` for fewer, more stable workers.
+**Alternative**: Use `n_jobs=2` or `n_jobs=4` in config instead of `-1` for fewer, more stable workers.
+
+## Tracked Runs for Long-Term Debugging
+
+`pixi run workflow-run` writes durable records:
+
+- `artifacts/workflow_runs/<run-id>/pipeline.log`
+- `artifacts/workflow_runs/<run-id>/run_metadata.json`
+- `artifacts/workflow_runs/<run-id>/run_summary.json`
+- `artifacts/workflow_runs/run_history.jsonl` (append-only run ledger)
+
+The pipeline artifact directory also records marker files:
+
+- `run_started.json`
+- `run_complete.json`
+- `run_failed.json`
+- `run_interrupted.json`

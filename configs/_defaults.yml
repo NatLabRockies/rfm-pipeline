@@ -1,0 +1,20 @@
+# Defaults and base configuration
+# Can be referenced by other configs via YAML anchors (&, *)
+
+# Shared defaults for all 300-sample runs
+defaults_300_sample: &defaults_300_sample
+  dataset:
+    type: "synthetic_300_sample"
+  algorithm:
+    variance_threshold: 0.90
+  output:
+    seed: 123
+
+# Defaults for full-dataset runs
+defaults_full: &defaults_full
+  dataset:
+    type: "synthetic_full"
+  algorithm:
+    variance_threshold: 0.90
+  output:
+    seed: 123

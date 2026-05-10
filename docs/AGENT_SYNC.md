@@ -5,38 +5,61 @@ branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: 300-sample validation run (IN PROGRESS)
-current_slice: validate full manuscript pipeline against 300-sample dataset with timing tracking
-slice_status: running (validation started 2026-05-09 19:14; ETA 10-15 hours)
-last_validation: Full gate passed; branches merged to main; validation restarted
-next_slice: collect timing data; validate artifacts; unblock next integration phase
+current_milestone: Phase 5 integration complete; 300-sample validation (READY TO START)
+current_slice: validate full manuscript pipeline against 300-sample dataset using unified config entry point
+slice_status: ready (cleaned artifacts; unified entry point integrated and tested)
+last_validation: Full gate passed; config-to-legacy adapter integrated; entry point tested with fast config
+next_slice: run 300-sample no-caps validation; track per-stage timing; collect results for manuscript artifact validation
 
-## Blocked items
+## Completed: Phase 5 Integration (Config-Driven Entry Point)
 
-- Integration tests (run separately; many are slow)
-- Full integration with manuscript_stages.py (awaiting next agent)
-
-## Completed: Phase 5 Refactor (Config-Driven Unified Entry Point)
-
-**Status**: ✅ Merged to main (both branches)
+**Status**: ✅ COMPLETE — Merged to main; all tests passing
 
 **Deliverables** (ALL COMPLETE):
 
-- ✅ `src/bsm_rfm/config.py` — typed config dataclasses
-- ✅ `tools/run_manuscript_pipeline.py` — unified entry point (integration pending)
-- ✅ `configs/` directory — 3 example configs (validation_300_sample_fast, validation_300_sample_no_caps, validation_300_sample_serial)
+- ✅ `src/bsm_rfm/config.py` — typed config dataclasses (256 lines)
+- ✅ `tools/run_manuscript_pipeline.py` — unified entry point with full integration (245 lines)
+- ✅ `configs/` directory — 3 production example configs
 - ✅ `tests/test_config_loader.py` — 7 unit tests (all pass)
-- ✅ `configs/README.md` — quick user guide
-- ✅ `docs/PHASE5_CONFIG_DRIVEN_IMPLEMENTATION.md` — comprehensive summary
-- ✅ Merged to main with 2 merge commits
+- ✅ `config_to_legacy_case_study()` adapter function — maps WorkflowConfig to legacy format
+- ✅ Data loading (X, Y, holdout, feature catalog)
+- ✅ Full manuscript_stages integration — calls run_manuscript_reproduction_stage_chain()
+- ✅ Proper error handling and timing reporting
+- ✅ Merged to main (commit ebae0b2); full repo gate clean
 
-**Branch history**:
+**Integration work completed**:
 
-- feat/unified-config-runner (2 commits, 1,026 lines) — merged
-- perf/ablation-bootstrap-speedup (6 commits total, +368 lines) — merged
-- Both deleted locally; available on origin for reference
+- Implemented config_to_legacy_case_study() mapping all fields:
+  - algorithm.retained_components → output_conditioning
+  - stage configs → per-stage empirical_null_screen, interaction_discovery, etc.
+  - runtime.n_jobs → case_study.runtime.n_jobs
+  - output.seed → random_seed
+- Load all required data tables (test_dataset_300)
+- Create \_FakeContext compatible with manuscript_stages expectations
+- Call run_manuscript_reproduction_stage_chain() with proper parameters
+- Tested with fast config; output validated
 
-**Next phase**: Integration with manuscript_stages.py (2-4 hours work, not started)
+**Entry point usage**:
+
+```bash
+# Full run (1000 perms, 100 resamples, 200 bootstraps, n_jobs=-1)
+env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
+  pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_no_caps.yml
+
+# Fast mode (5 perms, 8 resamples, 20 bootstraps, n_jobs=1)
+pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_fast.yml
+
+# Monitor timing
+python tools/monitor_validation_timing.py artifacts/validation_300_sample_no_caps
+```
+
+## Next immediate actions
+
+1. **Start 300-sample validation** with unified entry point
+1. **Track per-stage timing** for documentation
+1. **Validate artifacts** match manuscript expectations
+1. **Update ENGINEERING_MANIFEST** with timing predictions
 
 ## Files in scope
 

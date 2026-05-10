@@ -918,15 +918,19 @@ def build_manuscript_feature_design(
     if input_matrix["sample_id"].duplicated(keep=False).any():
         raise ValueError("input_matrix must contain unique sample_id values.")
 
-    design = pd.DataFrame({"sample_id": input_matrix["sample_id"].reset_index(drop=True)})
+    sample_id = input_matrix["sample_id"].reset_index(drop=True)
+    feature_columns = {}
     for feature_name in feature_catalog["feature_name"].astype(str):
-        if feature_name in design.columns:
+        if feature_name in feature_columns:
             raise ValueError(f"Duplicate feature name in feature_catalog: {feature_name}")
         values = _materialize_feature_column(input_matrix, feature_name)
         numeric = pd.to_numeric(values, errors="raise").to_numpy(dtype=float)
         if not np.isfinite(numeric).all():
             raise ValueError(f"Feature {feature_name!r} produced non-finite values.")
-        design[feature_name] = numeric
+        feature_columns[feature_name] = numeric
+
+    feature_df = pd.DataFrame(feature_columns)
+    design = pd.concat([pd.DataFrame({"sample_id": sample_id}), feature_df], axis=1)
     return design
 
 

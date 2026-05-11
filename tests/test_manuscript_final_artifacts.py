@@ -5,11 +5,14 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import pytest
+
 from bsm_rfm.manuscript_runtime import (
     build_manuscript_notebook_context,
     load_manuscript_case_study_config,
 )
 from bsm_rfm.manuscript_stages import (
+    _build_hc3_inferential_filter_tables,
     final_manuscript_artifacts_spec_from_case_study_config,
     run_final_manuscript_artifacts_stage,
 )
@@ -63,6 +66,12 @@ def test_final_artifact_spec_accepts_optional_runtime_overrides() -> None:
             "final_inferential_filter": {
                 "interval_method": "hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs",
                 "alpha": 0.1,
+                "output_subset_mode": "random_fraction",
+                "output_fraction": 0.25,
+                "output_names": ["y1", "y2"],
+                "max_outputs": 4,
+                "random_seed": 321,
+                "subset_metric": "variance",
             },
         }
     }
@@ -72,7 +81,85 @@ def test_final_artifact_spec_accepts_optional_runtime_overrides() -> None:
     assert spec.bootstrap_count == 12
     assert spec.bootstrap_alpha == 0.1
     assert spec.inferential_filter_alpha == 0.1
+    assert spec.hc3_output_subset_mode == "random_fraction"
+    assert spec.hc3_output_fraction == pytest.approx(0.25)
+    assert spec.hc3_output_names == ("y1", "y2")
+    assert spec.hc3_output_max_outputs == 4
+    assert spec.hc3_output_random_seed == 321
+    assert spec.hc3_output_subset_metric == "variance"
     assert spec.random_seed == 456
+
+
+def test_hc3_filter_target_list_uses_only_requested_outputs() -> None:
+    import numpy as np
+    import pandas as pd
+
+    rng = np.random.default_rng(123)
+    x_train = pd.DataFrame(rng.normal(size=(40, 3)), columns=["x1", "x2", "x3"])
+    y_train = pd.DataFrame(
+        {
+            "y1": rng.normal(size=40),
+            "y2": 2.0 * x_train["x1"] + rng.normal(scale=0.05, size=40),
+            "y3": rng.normal(size=40),
+            "y4": -1.5 * x_train["x2"] + rng.normal(scale=0.05, size=40),
+            "y5": rng.normal(size=40),
+        }
+    )
+
+    intervals, summary = _build_hc3_inferential_filter_tables(
+        x_train,
+        y_train,
+        alpha=0.05,
+        interval_method="hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs",
+        output_subset_mode="target_list",
+        output_fraction=None,
+        output_names=("y2", "y4"),
+        max_outputs=None,
+        random_seed=123,
+        subset_metric="variance",
+    )
+
+    assert set(intervals["output_name"].unique()) == {"y2", "y4"}
+    assert summary["n_outputs"].nunique() == 1
+    assert int(summary["n_outputs"].iloc[0]) == 2
+
+
+def test_hc3_filter_random_fraction_respects_cap() -> None:
+    import numpy as np
+    import pandas as pd
+
+    rng = np.random.default_rng(456)
+    x_train = pd.DataFrame(rng.normal(size=(30, 2)), columns=["x1", "x2"])
+    y_train = pd.DataFrame(
+        {
+            "y0": 1.3 * x_train["x1"] + rng.normal(scale=0.08, size=30),
+            "y1": -0.9 * x_train["x2"] + rng.normal(scale=0.08, size=30),
+            "y2": 0.7 * x_train["x1"] + rng.normal(scale=0.08, size=30),
+            "y3": rng.normal(size=30),
+            "y4": rng.normal(size=30),
+            "y5": rng.normal(size=30),
+            "y6": rng.normal(size=30),
+            "y7": rng.normal(size=30),
+            "y8": rng.normal(size=30),
+            "y9": rng.normal(size=30),
+        }
+    )
+
+    intervals, summary = _build_hc3_inferential_filter_tables(
+        x_train,
+        y_train,
+        alpha=0.05,
+        interval_method="hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs",
+        output_subset_mode="random_fraction",
+        output_fraction=0.5,
+        output_names=(),
+        max_outputs=3,
+        random_seed=789,
+        subset_metric="variance",
+    )
+
+    assert len(intervals["output_name"].unique()) == 3
+    assert int(summary["n_outputs"].iloc[0]) == 3
 
 
 def test_run_final_manuscript_artifacts_stage_executes_demo_context() -> None:

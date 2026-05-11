@@ -79,6 +79,8 @@ class ScreeningStageConfig:
     """Number of null permutations (B+1)."""
     bh_q_threshold: float = 0.10
     """Benjamini-Hochberg FDR threshold."""
+    max_retained_terms: int | None = None
+    """Optional deterministic top-K cap on retained first-order terms."""
 
 
 @dataclass
@@ -87,6 +89,8 @@ class InteractionStageConfig:
 
     p_threshold: float = 0.05
     """Interaction significance threshold."""
+    n_permutations: int | None = None
+    """Optional interaction null permutations (B+1); default inherits empirical stage."""
     n_tree_estimators: int = 100
     """SHAP tree ensemble size."""
     max_tree_depth: int = 10
@@ -125,6 +129,18 @@ class FinalArtifactsStageConfig:
     """Number of bootstrap replicates."""
     bootstrap_alpha: float = 0.05
     """Two-sided bootstrap error level."""
+    hc3_output_subset_mode: str = "all"
+    """HC3 output selection mode: all, random_fraction, target_list, top_variance."""
+    hc3_output_fraction: float | None = None
+    """Optional output fraction for random_fraction mode."""
+    hc3_output_names: list[str] | None = None
+    """Optional explicit outputs for target_list mode."""
+    hc3_output_max_outputs: int | None = None
+    """Optional hard cap on outputs used in HC3 filtering."""
+    hc3_output_random_seed: int = 123
+    """Deterministic seed for random output subsetting."""
+    hc3_output_subset_metric: str = "variance"
+    """Ranking metric for principled downselection modes."""
 
 
 @dataclass

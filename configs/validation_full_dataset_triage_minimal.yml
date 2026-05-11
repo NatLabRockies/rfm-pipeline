@@ -1,0 +1,50 @@
+# Full-dataset triage profile for fast iteration while staying close to manuscript settings.
+# Designed to keep stage-2 retention near manuscript-like scale before interaction scoring.
+
+dataset:
+  type: "synthetic_full"
+
+algorithm:
+  variance_threshold: 0.90
+
+runtime:
+  n_jobs: -1
+  output_batch_size: null
+  use_chunked_io: true
+  chunked_io_config:
+    chunk_size_mb: 64
+    max_memory_budget_mb: 4096
+    enable_spill_to_disk: true
+
+stages:
+  empirical_null_screening:
+    # Coarser than publication (1000), but fine enough to avoid p-value quantization blowups.
+    n_permutations: 101
+    bh_q_threshold: 0.10
+    max_retained_terms: 63
+  interaction_discovery:
+    # Notebook-like interaction profile.
+    n_permutations: 21
+    n_tree_estimators: 100
+    max_tree_depth: 3
+    p_threshold: 0.05
+  nonlinear_discovery:
+    edf_threshold: 2.5
+    transform_families: ["spline", "poly", "log"]
+  sparse_selection:
+    n_stability_subsamples: 20
+    subsample_fraction: 1.0
+    lasso_alpha_percentile: 50
+    max_candidate_terms: 150
+  final_artifacts:
+    bootstrap_count: 10
+    bootstrap_alpha: 0.05
+
+validation:
+  fast_mode: false
+  fast_mode_overrides: {}
+
+output:
+  artifact_dir: "./artifacts/validation_full_dataset_triage_minimal/"
+  seed: 123
+  verbose: true

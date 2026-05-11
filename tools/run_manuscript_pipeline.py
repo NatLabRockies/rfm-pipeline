@@ -30,6 +30,7 @@ from src.bsm_rfm.manuscript_stages import (  # noqa: E402
     OutputConditioningResult,
     SparseSelectionStabilityResult,
     condition_manuscript_outputs,
+    configure_progress_telemetry,
     discover_manuscript_interactions,
     discover_manuscript_nonlinear_transformations,
     empirical_null_screening_spec_from_case_study_config,
@@ -388,6 +389,8 @@ def main() -> int:
     output_root = Path(config.output.artifact_dir)
     output_root.mkdir(parents=True, exist_ok=True)
     _configure_parallel_runtime(output_root)
+    progress_path = output_root / "runtime_diagnostics" / "stage_progress.json"
+    configure_progress_telemetry(progress_path)
     started_path = output_root / "run_started.json"
     complete_path = output_root / "run_complete.json"
     failed_path = output_root / "run_failed.json"
@@ -403,6 +406,7 @@ def main() -> int:
     print(f"  Dataset: {config.dataset.type}")
     print(f"  Runtime n_jobs: {config.runtime.n_jobs}")
     print(f"  Output: {output_root}")
+    print(f"  Progress telemetry: {progress_path}")
     print(f"  Fast mode: {config.validation.fast_mode}")
     print(f"  Stage window: {args.start_stage} → {args.stop_stage}")
     print("  Stages: 6 (conditioning → screening → interaction → nonlinear → sparse → final)")
@@ -445,6 +449,7 @@ def main() -> int:
             "loaded_table_memory_mb": round(loaded_memory_mb, 3),
             "output_column_limit": output_column_limit,
             "oom_output_cap_applied": bool(oom_cap_applied),
+            "progress_telemetry_path": str(progress_path.resolve()),
         },
     )
 
@@ -610,9 +615,11 @@ def main() -> int:
                 "partial_run": bool(stop_idx < len(STAGES) - 1),
                 "loaded_table_memory_mb": round(loaded_memory_mb, 3),
                 "output_column_limit": output_column_limit,
+                "progress_telemetry_path": str(progress_path.resolve()),
             },
         )
         print(f"\n✓ Pipeline complete ({elapsed:.0f}s)")
+        configure_progress_telemetry(None)
         return 0
     except SystemExit as e:
         return int(e.code) if isinstance(e.code, int) else 1
@@ -629,11 +636,13 @@ def main() -> int:
                 "error_message": str(e),
                 "start_stage": args.start_stage,
                 "stop_stage": args.stop_stage,
+                "progress_telemetry_path": str(progress_path.resolve()),
             },
         )
         print(f"\n✗ Pipeline failed: {e}", file=sys.stderr)
         traceback.print_exc()
         print(f"Failure details: {failed_path}", file=sys.stderr)
+        configure_progress_telemetry(None)
         return 1
 
 

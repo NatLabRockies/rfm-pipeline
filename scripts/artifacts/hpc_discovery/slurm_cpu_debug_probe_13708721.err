@@ -1,0 +1,2 @@
+/home/dhetting/.bashrc: line 36: /home/dhetting/.bashrc.d/copilot_agent_workflow_aliases.sh: No such file or directory
+/var/spool/slurmd/job13708721/slurm_script: line 58: python: command not found

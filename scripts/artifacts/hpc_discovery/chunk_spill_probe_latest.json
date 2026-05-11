@@ -1,0 +1,19 @@
+{
+  "array_task_id": null,
+  "chunk_shape": [
+    200000,
+    64
+  ],
+  "chunks": 20,
+  "disk_free_bytes": 6026486005760,
+  "disk_total_bytes": 6347481849856,
+  "disk_used_bytes": 1024139264,
+  "job_id": "13708755",
+  "mean_checksum": 0.043029275313642756,
+  "spill_dir": "/tmp/scratch/13708755/bsm_spill_probe/chunks_13708755_0",
+  "spill_files": 20,
+  "spill_total_bytes": 1024002560,
+  "spill_write_seconds": 2.7462594330427237,
+  "stream_read_seconds": 0.17586530395783484,
+  "tmpdir": "/tmp/scratch/13708755/bsm_spill_probe/tmp"
+}

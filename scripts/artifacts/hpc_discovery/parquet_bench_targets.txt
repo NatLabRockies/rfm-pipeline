@@ -1,0 +1,3 @@
+/scratch/dhetting/bsm_hpc_discovery/13708755/parquet_bench
+/projects/bsm/hpc_discovery/dhetting/13708755/parquet_bench
+/tmp/scratch/13708755/bsm_parquet_bench

@@ -1,0 +1,632 @@
+timestamp_utc=2026-05-11T01:40:24Z
+job_id=13708720
+job_name=bsm-cpu-probe
+partition=debug
+account=bsm
+node=x3000c0s31b0n0
+nodelist=x3000c0s31b0n0
+cpus_per_task=4
+cpus_on_node=104
+mem_per_node=8192
+tmpdir=/tmp/scratch/13708720
+submit_dir=/home/dhetting/src/bsm-public-rf/scripts
+DISCOVERY_OUT_DIR=/home/dhetting/src/bsm-public-rf/scripts/artifacts/hpc_discovery
+
+### scontrol show job
+JobId=13708720 JobName=bsm-cpu-probe
+   UserId=dhetting(120225) GroupId=dhetting(120225) MCS_label=N/A
+   Priority=261050545 Nice=0 Account=bsm QOS=normal
+   JobState=RUNNING Reason=None Dependency=(null)
+   Requeue=0 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
+   RunTime=00:00:07 TimeLimit=00:10:00 TimeMin=N/A
+   SubmitTime=2026-05-10T19:35:51 EligibleTime=2026-05-10T19:35:51
+   AccrueTime=2026-05-10T19:35:51
+   StartTime=2026-05-10T19:40:17 EndTime=2026-05-10T19:50:17 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-05-10T19:40:17 Scheduler=Main
+   Partition=debug AllocNode:Sid=x3001c0s25b0n0:3168463
+   ReqNodeList=(null) ExcNodeList=(null)
+   NodeList=x3000c0s31b0n0
+   BatchHost=x3000c0s31b0n0
+   NumNodes=1 NumCPUs=104 NumTasks=1 CPUs/Task=4 ReqB:S:C:T=0:0:*:*
+   ReqTRES=cpu=4,mem=8G,node=1,billing=39
+   AllocTRES=cpu=104,mem=8G,node=1,billing=1024
+   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
+   MinCPUsNode=4 MinMemoryNode=8G MinTmpDiskNode=0
+   Features=[hbw|not-hbw] DelayBoot=00:00:00
+   OverSubscribe=NO Contiguous=0 Licenses=(null) LicensesAlloc=(null) Network=(null)
+   Command=/home/dhetting/src/bsm-public-rf/scripts/artifacts/hpc_discovery/slurm_cpu_debug_probe_job.sbatch
+   WorkDir=/home/dhetting/src/bsm-public-rf/scripts
+   StdErr=/home/dhetting/src/bsm-public-rf/scripts/artifacts/hpc_discovery/slurm_cpu_debug_probe_13708720.err
+   StdIn=/dev/null
+   StdOut=/home/dhetting/src/bsm-public-rf/scripts/artifacts/hpc_discovery/slurm_cpu_debug_probe_13708720.out
+   Switches=1@2-00:00:00
+   TresPerTask=cpu=4
+   
+
+### srun affinity smoke test
+task=0 host=x3000c0s31b0n0 cpus_allowed=0-3
+### host
+x3000c0s31b0n0
+Linux x3000c0s31b0n0 4.18.0-477.10.1.el8_8.x86_64 #1 SMP Wed Apr 5 13:35:01 EDT 2023 x86_64 x86_64 x86_64 GNU/Linux
+Red Hat Enterprise Linux release 8.8 (Ootpa)
+### cpu
+Architecture:        x86_64
+CPU op-mode(s):      32-bit, 64-bit
+Byte Order:          Little Endian
+CPU(s):              104
+On-line CPU(s) list: 0-103
+Thread(s) per core:  1
+Core(s) per socket:  52
+Socket(s):           2
+NUMA node(s):        2
+Vendor ID:           GenuineIntel
+CPU family:          6
+Model:               143
+Model name:          Intel(R) Xeon(R) Platinum 8470
+Stepping:            8
+CPU MHz:             2000.000
+BogoMIPS:            4000.00
+L1d cache:           48K
+L1i cache:           32K
+L2 cache:            2048K
+L3 cache:            107520K
+NUMA node0 CPU(s):   0-25,52-77
+NUMA node1 CPU(s):   26-51,78-103
+Flags:               fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf tsc_known_freq pni pclmulqdq dtes64 monitor ds_cpl smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid dca sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb cat_l3 cat_l2 cdp_l3 invpcid_single cdp_l2 ssbd mba ibrs ibpb stibp ibrs_enhanced fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb intel_pt avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local split_lock_detect avx_vnni avx512_bf16 wbnoinvd dtherm ida arat pln pts avx512vbmi umip pku ospke waitpkg avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg tme avx512_vpopcntdq la57 rdpid bus_lock_detect cldemote movdiri movdir64b enqcmd fsrm md_clear serialize tsxldtrk pconfig arch_lbr amx_bf16 avx512_fp16 amx_tile amx_int8 flush_l1d arch_capabilities
+available: 2 nodes (0-1)
+node 0 cpus: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77
+node 0 size: 1031101 MB
+node 0 free: 1026966 MB
+node 1 cpus: 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 101 102 103
+node 1 size: 1032131 MB
+node 1 free: 1028760 MB
+node distances:
+node   0   1 
+  0:  10  20 
+  1:  20  10 
+### memory
+              total        used        free      shared  buff/cache   available
+Mem:          2.0Ti       6.5Gi       2.0Ti       408Mi       812Mi       2.0Ti
+Swap:            0B          0B          0B
+MemTotal:       2112751180 kB
+MemFree:        2105064308 kB
+MemAvailable:   2099989932 kB
+Buffers:           21484 kB
+Cached:           646228 kB
+SwapCached:            0 kB
+Active:           198124 kB
+Inactive:         621060 kB
+Active(anon):      78128 kB
+Inactive(anon):   491160 kB
+Active(file):     119996 kB
+Inactive(file):   129900 kB
+Unevictable:        3072 kB
+Mlocked:               0 kB
+SwapTotal:             0 kB
+SwapFree:              0 kB
+Dirty:                48 kB
+Writeback:             0 kB
+AnonPages:        155800 kB
+Mapped:           132736 kB
+Shmem:            418124 kB
+KReclaimable:     164724 kB
+Slab:            3402476 kB
+SReclaimable:     164724 kB
+SUnreclaim:      3237752 kB
+KernelStack:       37392 kB
+PageTables:        13360 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:    1056375588 kB
+Committed_AS:    6247484 kB
+VmallocTotal:   13743895347199 kB
+VmallocUsed:     2311484 kB
+VmallocChunk:          0 kB
+Percpu:           119168 kB
+HardwareCorrupted:     0 kB
+AnonHugePages:     40960 kB
+ShmemHugePages:        0 kB
+ShmemPmdMapped:        0 kB
+FileHugePages:         0 kB
+FilePmdMapped:         0 kB
+HugePages_Total:       0
+HugePages_Free:        0
+HugePages_Rsvd:        0
+HugePages_Surp:        0
+Hugepagesize:       2048 kB
+Hugetlb:               0 kB
+DirectMap4k:     1763240 kB
+DirectMap2M:    279007232 kB
+DirectMap1G:    1868562432 kB
+### filesystems
+Filesystem                                   Type    Size  Used Avail Use% Mounted on
+/dev/sda                                     ext4    5.8T   40K  5.5T   1% /tmp/scratch
+2586@kfi,2650@kfi:2651@kfi,2696@kfi:/scratch lustre   31P   18P   13P  59% /kfs3
+2202@kfi,2266@kfi:2203@kfi,2267@kfi:/project lustre   62P   48P   14P  78% /kfs2
+2202@kfi,2266@kfi:2203@kfi,2267@kfi:/project lustre   62P   48P   14P  78% /kfs2
+2586@kfi,2650@kfi:2651@kfi,2696@kfi:/scratch lustre   31P   18P   13P  59% /kfs3
+Filesystem                                   Inodes IUsed IFree IUse% Mounted on
+/dev/sda                                       187M    14  187M    1% /tmp/scratch
+2586@kfi,2650@kfi:2651@kfi,2696@kfi:/scratch   8.0G  2.6G  5.5G   32% /kfs3
+2202@kfi,2266@kfi:2203@kfi,2267@kfi:/project    16G  2.8G   14G   17% /kfs2
+2202@kfi,2266@kfi:2203@kfi,2267@kfi:/project    16G  2.8G   14G   17% /kfs2
+2586@kfi,2650@kfi:2651@kfi,2696@kfi:/scratch   8.0G  2.6G  5.5G   32% /kfs3
+devtmpfs on /dev type devtmpfs (rw,nosuid,noexec,size=1056356216k,nr_inodes=264089054,mode=755)
+tmpfs on /dev/shm type tmpfs (rw,nosuid,nodev,noexec)
+tmpfs on /rootfs.rw type tmpfs (rw,relatime,mpol=interleave:0-1)
+tmpfs on /tmp type tmpfs (rw,relatime,mpol=interleave:0-1)
+/dev/sda on /tmp/scratch type ext4 (rw,relatime,stripe=16)
+tmpfs on /run type tmpfs (rw,nosuid,nodev,mode=755)
+tmpfs on /sys/fs/cgroup type tmpfs (ro,nosuid,nodev,noexec,mode=755)
+2138@kfi,2074@kfi:2139@kfi,2075@kfi:/kfs1/nopt on /nopt type lustre (rw,checksum,flock,nouser_xattr,lruresize,lazystatfs,nouser_fid2path,verbose,encrypt)
+2202@kfi,2266@kfi:2203@kfi,2267@kfi:/project on /kfs2 type lustre (rw,checksum,flock,nouser_xattr,lruresize,lazystatfs,nouser_fid2path,verbose,encrypt)
+2586@kfi,2650@kfi:2651@kfi,2696@kfi:/scratch on /kfs3 type lustre (rw,checksum,flock,nouser_xattr,lruresize,lazystatfs,nouser_fid2path,verbose,encrypt)
+2138@kfi,2074@kfi:2139@kfi,2075@kfi:/kfs1/home on /home type lustre (rw,checksum,flock,nouser_xattr,lruresize,lazystatfs,nouser_fid2path,verbose,encrypt)
+tmpfs on /var/tmp type tmpfs (rw,relatime,mpol=interleave:0-1)
+### lustre
+Disk quotas for usr dhetting (uid 120225):
+     Filesystem    used   quota   limit   grace   files   quota   limit   grace
+       /scratch  15.97T      0k      0k       - 7646820       0       0       -
+uid 120225 is using default block quota setting
+uid 120225 is using default file quota setting
+    0 - /projects/bsm
+/scratch/dhetting
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          flash
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  16       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/scratch/dhetting/BSM
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          flash
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  16       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/scratch/dhetting/.duc-index
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          flash
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  16       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/scratch/dhetting/emrecrada
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          flash
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  16       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/.duc-index
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/.pixi
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/bin
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/.npm-global
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/install-pixi.sh
+  lcm_layout_gen:    3
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             1
+    lcme_mirror_id:      0
+    lcme_flags:          init
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      lmm_stripe_count:  1
+      lmm_stripe_size:   1048576
+      lmm_pattern:       raid0
+      lmm_layout_gen:    0
+      lmm_stripe_offset: 36
+      lmm_pool:          disk
+      lmm_objects:
+      - 0: { l_ost_idx: 36, l_fid: [0x100240000:0x89b2007:0x0] }
+
+    lcme_id:             2
+    lcme_mirror_id:      0
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      lmm_stripe_count:  8
+      lmm_stripe_size:   4194304
+      lmm_pattern:       raid0
+      lmm_layout_gen:    0
+      lmm_stripe_offset: -1
+      lmm_pool:          disk
+
+    lcme_id:             3
+    lcme_mirror_id:      0
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      lmm_stripe_count:  24
+      lmm_stripe_size:   4194304
+      lmm_pattern:       raid0
+      lmm_layout_gen:    0
+      lmm_stripe_offset: -1
+      lmm_pool:          disk
+
+/projects/bsm/.npm-cache
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/install-copilot-cli.sh
+  lcm_layout_gen:    3
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             1
+    lcme_mirror_id:      0
+    lcme_flags:          init
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      lmm_stripe_count:  1
+      lmm_stripe_size:   1048576
+      lmm_pattern:       raid0
+      lmm_layout_gen:    0
+      lmm_stripe_offset: 24
+      lmm_pool:          disk
+      lmm_objects:
+      - 0: { l_ost_idx: 24, l_fid: [0x100180000:0x89aca92:0x0] }
+
+    lcme_id:             2
+    lcme_mirror_id:      0
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      lmm_stripe_count:  8
+      lmm_stripe_size:   4194304
+      lmm_pattern:       raid0
+      lmm_layout_gen:    0
+      lmm_stripe_offset: -1
+      lmm_pool:          disk
+
+    lcme_id:             3
+    lcme_mirror_id:      0
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      lmm_stripe_count:  24
+      lmm_stripe_size:   4194304
+      lmm_pattern:       raid0
+      lmm_layout_gen:    0
+      lmm_stripe_offset: -1
+      lmm_pool:          disk
+
+/projects/bsm/data
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/.cache
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/dhetting
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/pixi-envs
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+### slurm accounting config inside job
+AccountingStorageBackupHost = (null)
+AccountingStorageEnforce = associations,limits,qos,safe
+AccountingStorageHost   = 10.150.0.23
+AccountingStorageExternalHost = (null)
+AccountingStorageParameters = (null)
+AccountingStoragePort   = 6819
+AccountingStorageTRES   = cpu,mem,energy,node,billing,fs/disk,vmem,pages,gres/gpu,gres/gpu:h100,gres/gpumem,gres/gpuutil
+AccountingStorageType   = accounting_storage/slurmdbd
+AccountingStorageUser   = N/A
+JobAcctGatherFrequency  = 30
+JobAcctGatherType       = jobacct_gather/linux
+JobAcctGatherParams     = (null)
+JobRequeue              = 0
+KillWait                = 30 sec
+MaxArraySize            = 11000
+MaxBatchRequeue         = 5
+MaxJobCount             = 65000
+PreemptMode             = OFF
+PreemptParameters       = (null)
+PreemptType             = (null)
+PreemptExemptTime       = 00:00:00
+RequeueExit             = (null)
+RequeueExitHold         = (null)
+### python minimal topology

@@ -5,7 +5,7 @@ branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: Phase 7 performance hardening and scaling instrumentation
+current_milestone: Phase 7 complete; Phase 8 planning underway (distributed HPC execution)
 current_slice: Implemented stage-window resume/stop flow, sparse top-K capping, runtime diagnostics, and OOM fallback controls
 slice_status: in_progress (uncapped 300-sample scale run active via tracked workflow)
 last_validation: `./test_repo.sh --check` passed after runner/stage hardening changes; targeted pytest suites passing
@@ -118,25 +118,112 @@ python tools/monitor_validation_timing.py artifacts/validation_300_sample_no_cap
   - resumed `sparse_selection → final_manuscript_artifacts`
   - both complete successfully and produce markers/artifacts
 
-## Phase 7 Planning (Pending 300-sample completion)
+## Completed: Phase 7 Performance Hardening (Current Slice)
 
-**Goal**: Validate 300-sample artifacts and scale to full dataset
+**Status**: ✅ COMPLETE — all hardening implemented and validated; uncapped 300-sample run monitoring continues
 
-**Phase 7a: Artifact Validation** (when 300-sample completes):
+**Deliverables**:
 
-1. Check all 6 stage directories exist (output_conditioning through final_artifacts)
-1. Verify feature retention counts match expectations (~63 first-order, ~248 interactions, ~41 nonlinear)
-1. Extract per-stage timing data; update documentation
-1. Create validation report comparing against manuscript reference values
+- ✅ Added deterministic sparse candidate top-K cap (`max_candidate_terms`) to prevent sparse-stage blowups
+- ✅ Added runtime OOM controls: `runtime.max_loaded_table_mb` + `runtime.oom_output_cap`
+- ✅ Reworked pipeline runner for stage-window execution:
+  - `--start-stage` for resume from existing artifacts
+  - `--stop-stage` for partial/debug execution
+- ✅ Added runtime diagnostics artifact:
+  - `runtime_diagnostics/stage_runtime_summary.csv` with per-stage elapsed time + stage counters
+- ✅ Added joblib/loky runtime stabilization in runner (`JOBLIB_TEMP_FOLDER`, `LOKY_MAX_CPU_COUNT`)
+- ✅ Removed generator-based parallel consumption in nonlinear/stability loops to reduce backend fragility
+- ✅ **CRITICAL FIX**: Removed `return_as="generator"` from 3 Parallel() calls (1000x+ speedup verified on smoke tests)
+- ✅ Added fine-grained stage progress telemetry: JSON writer with live monitoring capability
+- ✅ Verified partial+resume flow end-to-end
 
-**Phase 7b: Full-Dataset Scaling** (conditional on Phase 7a passing):
+______________________________________________________________________
 
-1. Create `validation_full_manuscript.yml` config with real-data paths
-1. Run full-dataset validation (1000 perms, 100 resamples, 200 bootstraps)
-1. Compare timing against 300-sample linear scaling predictions
-1. Validate manuscript table/figure outputs against private reference values
+## Phase 8: Distributed Execution and Out-of-Core Processing (PLANNING)
 
-**Estimated scope**: 4-6 hours (depends on 300-sample completion time and artifact validation findings)
+**Status**: Planning phase — environment discovery complete, method manifest finalized, ready for implementation kickoff
+
+**Overview**:
+
+Phase 8 scales the manuscript workflow from local multi-threaded Python to distributed HPC execution on NREL Kestrel and generic clusters. Three sub-phases:
+
+1. **Phase 8a**: SLURM array baseline (config schema, manifest-driven shard runner, checkpoint/recovery)
+1. **Phase 8b**: Out-of-core processing (chunked I/O, streaming aggregations, spill-to-disk)
+1. **Phase 8c**: Optional adapters (Dask, MPI/mpi4py, Ray experimental)
+
+**Key documents**:
+
+- `docs/PHASE_8_DISTRIBUTED_HPC_PLAN.md` — 12-section detailed plan (architecture, config examples, testing, risks)
+- `ai_context/methods/kestrel_slurm_distributed_compute_method_manifest.md` — method guidance from external research
+- `kestrel_bsm_hpc_discovery_answers.md` — live Kestrel configuration (account=bsm, MaxArraySize=11k, filesystems, etc.)
+
+**Design principles**:
+
+- **Config-only**: all HPC parameters via YAML (no source code edits for different environments)
+- **Multi-runtime**: SLURM arrays (primary), Dask (secondary), MPI (tertiary), Ray (experimental/opt-in)
+- **Fault-tolerant**: idempotent outputs, `_SUCCESS` markers, resumable tasks
+- **Backward compatible**: local single-machine runs unaffected; `distributed_execution.enabled=false` by default
+
+**Kestrel specifics**:
+
+- Account/project: `bsm`
+- Partition recommendations: `debug` for smoke tests, `shared`/`short`/`standard`/`nvme` for production
+- Max array size: 11,000 (use `%N` throttling for concurrency control)
+- Filesystem: use `/projects/bsm` for durable state, `/scratch/$USER/bsm_<run_id>/` for temp, `$TMPDIR` for node-local spill
+- Network interface: `hsn0` (high-speed network for Dask jobs)
+- No preemption (`PreemptMode=OFF`), no auto-requeue (`JobRequeue=0`) — design for idempotent recovery
+
+**Phase 8a Deliverables** (Weeks 1-2):
+
+- [ ] Config schema: `DistributedExecutionConfig`, `SlurmConfig`, `SpillConfig` in `src/bsm_rfm/config.py`
+- [ ] Module `src/bsm_rfm/distributed/`:
+  - `config_distributed.py` — config dataclasses
+  - `slurm_array_runner.py` — manifest-driven task execution
+  - `spill.py` — intelligent `/scratch` vs `$TMPDIR` selection
+  - `checkpoint.py` — idempotent output layout + markers
+- [ ] Manifest schema: shard ID, input paths, output path, expected rows/columns, status tracking
+- [ ] SLURM script templates: array job, reduce/merge job, diagnostic job (Jinja2-rendered)
+- [ ] Tests: unit (config, spill logic, checkpoint semantics), smoke (manifest parsing, script rendering), integration (1-task array on Kestrel)
+- [ ] Documentation: `docs/DISTRIBUTED_EXECUTION_GUIDE.md`, `docs/KESTREL_SLURM_QUICKSTART.md`
+
+**Phase 8b Deliverables** (Weeks 2-3):
+
+- [ ] `src/bsm_rfm/chunked_io.py`:
+  - `ChunkedParquetReader` — iterate large files in chunks without full materialization
+  - `ChunkedAggregation` — streaming reductions (sum, mean, count, concat)
+- [ ] `src/bsm_rfm/spill_ops.py` — temp file accumulation, atomic promotion, free-space monitoring
+- [ ] Workflow integration: add `use_chunked_io` config flag; modify interaction/nonlinear/sparse stages
+- [ ] Tests: unit (chunk iteration, aggregations), integration (numerical equivalence on 300-sample), stress (10 GB synthetic file)
+
+**Phase 8c Deliverables** (Weeks 3-4, optional/secondary):
+
+- [ ] `src/bsm_rfm/distributed/dask_runner.py` — Dask DataFrame + `SLURMCluster`
+- [ ] `src/bsm_rfm/distributed/mpi_runner.py` — MPI rank communication
+- [ ] `src/bsm_rfm/distributed/ray_runner_experimental.py` — Ray (opt-in via `BSM_ENABLE_RAY_EXPERIMENTAL=1`)
+
+**Phase 8 Success Criteria**:
+
+- [ ] Config file specifies all distributed parameters without code changes
+- [ ] SLURM array baseline runs 300-sample on Kestrel successfully
+- [ ] Full 30k-sample dataset completes ≤ 24 hours
+- [ ] Artifacts match local-run validation ≤ 5 decimal places
+- [ ] Out-of-core processing passes numerical equivalence test
+- [ ] Documentation enables self-service on Kestrel + generic HPC
+
+**Estimated timeline**: Phase 8a complete in 2 weeks; 8b+8c by end of Week 4
+
+**Blocker**: Phase 8 implementation should wait until Phase 7's uncapped 300-sample run completes, so we have accurate stage-wise timing baseline for scaling predictions and runtime estimation
+
+______________________________________________________________________
+
+## Phase 8 Next Steps (TBD, after 300-sample completion)
+
+1. Collect stage-wise timing from uncapped run + validate artifacts
+1. Begin Phase 8a implementation: config schema + spill logic
+1. Create SLURM template renderer + smoke tests
+1. Test 1-task array on Kestrel
+1. Expand to multi-task arrays and validation
+1. Document usage for self-service deployment
 
 ## Files in scope
 

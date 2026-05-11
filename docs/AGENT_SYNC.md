@@ -6,10 +6,25 @@ base_branch: main
 autonomy_tier: 3
 profile: autonomous
 current_milestone: Phase 8a implementation (local-first out-of-core foundation)
-current_slice: Added typed out-of-core config + integrated chunked loading path in unified runner + completed quick numerical/memory stress tests
-slice_status: in_progress (phase-8a merge pending)
-last_validation: `pixi run ruff check ...` clean; `pixi run pytest tests/test_config_loader.py tests/test_out_of_core_integration.py tests/test_chunked_io.py tests/test_streaming_ops.py -q` all passing
-next_slice: merge phase-8a branch and start Phase 8b workflow-level chunked sparse/final optimizations
+current_slice: Runtime regression triage + high-fidelity telemetry + small-dataset full-run/uncapped ramp preflight
+slice_status: in_progress (uncapped small-sample run bottleneck isolated; phase-8a merge pending)
+last_validation: `BSM_PROGRESS_BATCH_SIZE=1 pixi run python tools/run_manuscript_pipeline.py configs/validation_80_sample_workflow_smoke.yml` passed end-to-end; `pixi run ruff check tools/run_manuscript_pipeline.py src/bsm_rfm/manuscript_stages.py src/bsm_rfm/config.py` clean
+next_slice: tune/guard interaction-discovery uncapped path (1000 permutations) before retrying full uncapped ramp
+
+## Runtime triage update (2026-05-11)
+
+- Fixed runner bug: `tools/run_manuscript_pipeline.py` now honors `dataset.path`/`dataset.type` instead of hardcoding `artifacts/test_dataset_300`.
+- Added high-fidelity telemetry:
+  - final-stage substeps (`final_manuscript_artifacts`, 10 substeps)
+  - ablation-model progress (`final_ablation`, 5 model checkpoints)
+  - env override `BSM_PROGRESS_BATCH_SIZE` for finer progress granularity.
+- Added small-dataset ramp configs:
+  - `configs/validation_80_sample_workflow_smoke.yml` (capped, full chain, passes)
+  - `configs/validation_80_sample_uncapped.yml` (uncapped preflight)
+- Added local small dataset artifact root: `artifacts/test_dataset_160/`.
+- Findings:
+  - Capped small full workflow completes in ~7 seconds on 158-row dataset.
+  - Uncapped small run stalls in interaction stage at `permutation_scores` 0/1000 even with fine-grain progress; this stage is current runtime blow-up point.
 
 ## Ad hoc request: external research handoff (Kestrel SLURM)
 

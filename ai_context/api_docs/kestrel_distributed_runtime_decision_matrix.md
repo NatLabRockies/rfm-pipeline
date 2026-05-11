@@ -1,7 +1,7 @@
 # Kestrel Distributed Runtime Decision Matrix
 
-**Purpose:** Compare SLURM arrays, Dask+dask-jobqueue, MPI/mpi4py, and Ray on SLURM for Kestrel distributed compute support.\
-**Retrieval date:** 2026-05-10.\
+**Purpose:** Compare SLURM arrays, Dask+dask-jobqueue, MPI/mpi4py, and Ray on SLURM for Kestrel distributed compute support.
+**Retrieval date:** 2026-05-10.
 **Default account:** `bsm`.
 
 ## 1. Summary recommendation

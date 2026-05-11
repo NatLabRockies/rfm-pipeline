@@ -1,7 +1,7 @@
 # Runtime API Bundle: Dask + dask-jobqueue on Kestrel
 
-**Purpose:** API and launch guidance for Dask+dask-jobqueue as the recommended distributed dataframe runtime on Kestrel.\
-**Retrieval date:** 2026-05-10.\
+**Purpose:** API and launch guidance for Dask+dask-jobqueue as the recommended distributed dataframe runtime on Kestrel.
+**Retrieval date:** 2026-05-10.
 **Default account:** `bsm`.
 
 ## 1. Kestrel-specific Dask evidence

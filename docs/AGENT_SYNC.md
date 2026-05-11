@@ -11,6 +11,18 @@ slice_status: in_progress (uncapped 300-sample scale run active via tracked work
 last_validation: `./test_repo.sh --check` passed after runner/stage hardening changes; targeted pytest suites passing
 next_slice: finish uncapped scale run, collect stage-runtime diagnostics, and calibrate 3k/10k/full scaling windows
 
+## Ad hoc request: external research handoff (Kestrel SLURM)
+
+- Status: prepared handoff packet scaffold only (no external claims added locally).
+- Scope decision captured: multi-runtime comparison first for distributed compute support on NREL Kestrel.
+- Prompt artifact created: `ai_context/prompts/kestrel_slurm_external_research_request.md`.
+- Empty research artifact templates scaffolded under:
+  - `ai_context/literature/`
+  - `ai_context/methods/`
+  - `ai_context/api_docs/`
+  - `ai_context/manifests/`
+  - `ai_context/prompts/`
+
 ## Completed: Phase 5 Integration (Config-Driven Entry Point)
 
 **Status**: ✅ COMPLETE — Merged to main; all tests passing

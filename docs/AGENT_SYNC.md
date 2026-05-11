@@ -5,7 +5,7 @@ branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: Phase 7 complete; Phase 8 planning underway (distributed HPC execution)
+current_milestone: Phase 8 planning (local-first out-of-core + optional HPC)
 current_slice: Implemented stage-window resume/stop flow, sparse top-K capping, runtime diagnostics, and OOM fallback controls
 slice_status: in_progress (uncapped 300-sample scale run active via tracked workflow)
 last_validation: `./test_repo.sh --check` passed after runner/stage hardening changes; targeted pytest suites passing

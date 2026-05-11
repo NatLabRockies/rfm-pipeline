@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import time
 import warnings
 from dataclasses import dataclass
@@ -70,6 +71,19 @@ def _report_progress(
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     tmp.replace(path)
+
+
+def _progress_batch_size(total: int, default_cap: int) -> int:
+    """Choose progress batch size with optional high-fidelity override."""
+    if total <= 0:
+        return 1
+    override = os.getenv("BSM_PROGRESS_BATCH_SIZE")
+    if override:
+        try:
+            return max(1, min(total, int(override)))
+        except ValueError:
+            pass
+    return max(1, min(default_cap, total // 20 if total > 20 else total))
 
 
 @dataclass(frozen=True)
@@ -1325,7 +1339,7 @@ def discover_manuscript_interactions(
 
     total_scores = len(y_matrices)
     all_results: list[tuple[np.ndarray, np.ndarray]] = []
-    batch_size = max(1, min(25, total_scores // 20 if total_scores > 20 else total_scores))
+    batch_size = _progress_batch_size(total_scores, 25)
     _report_progress(
         stage="interaction_discovery",
         completed=0,
@@ -1620,7 +1634,7 @@ def discover_manuscript_nonlinear_transformations(
     base_feat_list = list(candidates_by_base.keys())
     feature_results: dict[str, dict] = {}
     total_features = len(base_feat_list)
-    batch_size = max(1, min(50, total_features // 20 if total_features > 20 else total_features))
+    batch_size = _progress_batch_size(total_features, 50)
     _report_progress(
         stage="nonlinear_discovery",
         completed=0,
@@ -2283,6 +2297,16 @@ def _compute_ablation_table(
     subset per model, avoiding redundant materialization of interaction and nonlinear
     feature columns.
     """
+    ablation_total = 5
+    ablation_done = 0
+    _report_progress(
+        stage="final_ablation",
+        completed=ablation_done,
+        total=ablation_total,
+        unit="models",
+        detail="start",
+    )
+
     null_metric = bootstrap_macro_nrmse_ci(
         y_holdout.to_numpy(dtype=float),
         null_predictions,
@@ -2292,6 +2316,14 @@ def _compute_ablation_table(
         alpha=spec.bootstrap_alpha,
         random_state=spec.random_seed,
         n_jobs=spec.n_jobs,
+    )
+    ablation_done = 1
+    _report_progress(
+        stage="final_ablation",
+        completed=ablation_done,
+        total=ablation_total,
+        unit="models",
+        detail="null_mean complete",
     )
 
     first_order_names = list(
@@ -2328,27 +2360,67 @@ def _compute_ablation_table(
             "nrmse": null_metric["point_estimate"],
             "ci_lower": null_metric["ci_lower"],
             "ci_upper": null_metric["ci_upper"],
-        },
+        }
+    ]
+
+    rows.append(
         {
             "model_name": "main_effects_ols",
             **_fit_ablation_ols_nrmse(first_order_names, **common_kwargs),
-        },
+        }
+    )
+    _report_progress(
+        stage="final_ablation",
+        completed=2,
+        total=ablation_total,
+        unit="models",
+        detail="main_effects_ols complete",
+    )
+
+    rows.append(
         {
             "model_name": "screened_ols",
             **_fit_ablation_ols_nrmse(screened_names, **common_kwargs),
-        },
+        }
+    )
+    _report_progress(
+        stage="final_ablation",
+        completed=3,
+        total=ablation_total,
+        unit="models",
+        detail="screened_ols complete",
+    )
+
+    rows.append(
         {
             "model_name": "penalized_ols",
             **_fit_ablation_ols_nrmse(prefilter_feature_names, **common_kwargs),
-        },
+        }
+    )
+    _report_progress(
+        stage="final_ablation",
+        completed=4,
+        total=ablation_total,
+        unit="models",
+        detail="penalized_ols complete",
+    )
+
+    rows.append(
         {
             "model_name": "final_ols",
             "n_features": len(final_feature_names),
             "nrmse": final_metric["point_estimate"],
             "ci_lower": final_metric["ci_lower"],
             "ci_upper": final_metric["ci_upper"],
-        },
-    ]
+        }
+    )
+    _report_progress(
+        stage="final_ablation",
+        completed=5,
+        total=ablation_total,
+        unit="models",
+        detail="all models complete",
+    )
     return pd.DataFrame(rows)
 
 
@@ -2455,6 +2527,19 @@ def regenerate_final_manuscript_artifacts(
         Materialized final-model, manuscript-table, and SVG figure artifacts.
     """
     _validate_final_manuscript_artifacts_spec(spec)
+    final_steps_total = 10
+    final_step = 0
+
+    def _final_progress(detail: str) -> None:
+        _report_progress(
+            stage="final_manuscript_artifacts",
+            completed=final_step,
+            total=final_steps_total,
+            unit="substeps",
+            detail=detail,
+        )
+
+    _final_progress("start")
     prefilter_feature_names = _final_support_feature_names(sparse_selection.final_stable_support)
     prefilter_catalog = _feature_catalog_subset(feature_catalog, prefilter_feature_names)
     prefilter_support_features = _build_final_support_features(
@@ -2468,6 +2553,10 @@ def regenerate_final_manuscript_artifacts(
     holdout_ids = _holdout_sample_ids(holdout_assignments)
     if holdout_ids.empty:
         raise ValueError("Final manuscript artifacts require at least one holdout row.")
+    final_step = 1
+    _final_progress(
+        f"prefilter prepared; train_rows={len(train_ids)}, holdout_rows={len(holdout_ids)}"
+    )
     x_prefilter_train = _indexed_by_sample_id(
         _align_table_by_sample_id(
             prefilter_design,
@@ -2487,6 +2576,8 @@ def regenerate_final_manuscript_artifacts(
         alpha=spec.inferential_filter_alpha,
         interval_method=spec.inferential_filter_interval_method,
     )
+    final_step = 2
+    _final_progress("hc3 inferential filter complete")
     final_feature_names = _hc3_retained_feature_names(hc3_filter_summary)
     final_catalog = _feature_catalog_subset(feature_catalog, final_feature_names)
     final_support_features = _build_final_support_features(
@@ -2518,9 +2609,16 @@ def regenerate_final_manuscript_artifacts(
         _align_output_matrix(output_matrix, holdout_ids, retained_outputs),
         holdout_ids,
     )
+    final_step = 3
+    _final_progress(
+        "final design aligned; "
+        f"outputs={len(retained_outputs)}, features={len(final_feature_names)}"
+    )
 
     final_fit = fit_final_ols(x_train, y_train)
     final_predictions = predict_final_ols(final_fit, x_holdout)
+    final_step = 4
+    _final_progress("final OLS fit + predictions complete")
     final_metric = bootstrap_macro_nrmse_ci(
         y_holdout.to_numpy(dtype=float),
         final_predictions.to_numpy(dtype=float),
@@ -2531,6 +2629,8 @@ def regenerate_final_manuscript_artifacts(
         random_state=spec.random_seed,
         n_jobs=spec.n_jobs,
     )
+    final_step = 5
+    _final_progress(f"final metric bootstrap complete; n_boot={spec.bootstrap_count}")
     null_predictions = make_null_mean_prediction(
         y_train.to_numpy(dtype=float),
         n_rows=len(y_holdout),
@@ -2545,6 +2645,8 @@ def regenerate_final_manuscript_artifacts(
         random_state=spec.random_seed,
         n_jobs=spec.n_jobs,
     )
+    final_step = 6
+    _final_progress("null metric bootstrap complete")
 
     ablation_table = _compute_ablation_table(
         feature_catalog=feature_catalog,
@@ -2560,6 +2662,8 @@ def regenerate_final_manuscript_artifacts(
         final_metric=final_metric,
         spec=spec,
     )
+    final_step = 7
+    _final_progress("ablation table complete")
 
     per_output_nrmse = per_output_nrmse_frame(
         y_holdout.to_numpy(dtype=float),
@@ -2569,6 +2673,8 @@ def regenerate_final_manuscript_artifacts(
         min_range=spec.nrmse_min_range,
     )
     per_output_nrmse_summary = _build_per_output_nrmse_summary(per_output_nrmse)
+    final_step = 8
+    _final_progress("per-output metrics complete")
 
     coefficient_matrix_raw_scale = make_coefficient_matrix_frame(
         final_fit.coef_raw_scale,
@@ -2648,6 +2754,10 @@ def regenerate_final_manuscript_artifacts(
         figure_specs=figure_specs,
         spec=spec,
     )
+    final_step = 9
+    _final_progress("final summaries complete")
+    final_step = 10
+    _final_progress("done")
     return FinalManuscriptArtifactsResult(
         prefilter_support_features=prefilter_support_features,
         final_support_features=final_support_features,
@@ -4633,7 +4743,7 @@ def _permutation_row_norm_null(
         return np.linalg.norm(coefficients, axis=1)
 
     null_statistics = np.zeros((n_permutations, x_scaled.shape[1]), dtype=float)
-    batch_size = max(1, min(50, n_permutations // 20 if n_permutations > 20 else n_permutations))
+    batch_size = _progress_batch_size(n_permutations, 50)
     _report_progress(
         stage="empirical_null_screen",
         completed=0,

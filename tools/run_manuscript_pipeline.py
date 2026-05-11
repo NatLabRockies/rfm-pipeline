@@ -155,10 +155,35 @@ def _read_parquet_with_mode(
     return pd.concat(chunks, ignore_index=True)
 
 
+def _resolve_data_root(config: WorkflowConfig) -> Path:
+    """Resolve dataset root from config.dataset.{path,type}."""
+    if config.dataset.path:
+        candidate = Path(config.dataset.path)
+        if not candidate.is_absolute():
+            candidate = REPO_ROOT / candidate
+        return candidate
+
+    dataset_roots = {
+        "synthetic_300_sample": REPO_ROOT / "artifacts" / "test_dataset_300",
+        "synthetic_full": REPO_ROOT / "artifacts" / "test_dataset_3k",
+    }
+    try:
+        return dataset_roots[config.dataset.type]
+    except KeyError as exc:
+        raise ValueError(
+            "Unsupported dataset.type for unified runner. "
+            f"dataset.type={config.dataset.type!r}. "
+            "Set dataset.path explicitly or use one of: "
+            f"{sorted(dataset_roots.keys())}"
+        ) from exc
+
+
 def _load_tables(output_column_limit: int | None, config: WorkflowConfig) -> dict[str, Any]:
     """Load validation tables and normalize holdout labels."""
-    data_root = REPO_ROOT / "artifacts" / "test_dataset_300"
+    data_root = _resolve_data_root(config)
     out_of_core = _effective_out_of_core(config)
+    if not data_root.exists():
+        raise FileNotFoundError(f"Dataset root not found: {data_root}")
     y = _read_parquet_with_mode(data_root / "Y.parquet", out_of_core=out_of_core)
     y_cols = [c for c in y.columns if c != "sample_id"]
     if output_column_limit is not None and len(y_cols) > output_column_limit:
@@ -199,14 +224,15 @@ def _enforce_oom_policy(
     *,
     config: WorkflowConfig,
     output_column_limit: int | None,
-) -> tuple[dict[str, Any], float, int | None, bool]:
+) -> tuple[dict[str, Any], float, int | None, bool, Path]:
     """Load tables and apply OOM fallback policy when configured."""
+    data_root = _resolve_data_root(config)
     tables = _load_tables(output_column_limit=output_column_limit, config=config)
     memory_mb = _tables_memory_mb(tables)
     applied_oom_cap = False
     limit_mb = config.runtime.max_loaded_table_mb
     if limit_mb is None or memory_mb <= limit_mb:
-        return tables, memory_mb, output_column_limit, applied_oom_cap
+        return tables, memory_mb, output_column_limit, applied_oom_cap, data_root
 
     fallback_cap = config.runtime.oom_output_cap
     should_reload = fallback_cap is not None and (
@@ -224,7 +250,7 @@ def _enforce_oom_policy(
             f"limit_mb={limit_mb:.1f}, observed_mb={memory_mb:.1f}. "
             "Increase runtime.max_loaded_table_mb or set runtime.oom_output_cap."
         )
-    return tables, memory_mb, output_column_limit, applied_oom_cap
+    return tables, memory_mb, output_column_limit, applied_oom_cap, data_root
 
 
 def _stage_indices(start_stage: str, stop_stage: str) -> tuple[int, int]:
@@ -485,10 +511,13 @@ def main() -> int:
         output_column_limit = config.validation.fast_mode_overrides.output_cap
 
     try:
-        tables, loaded_memory_mb, output_column_limit, oom_cap_applied = _enforce_oom_policy(
-            config=config,
-            output_column_limit=output_column_limit,
-        )
+        (
+            tables,
+            loaded_memory_mb,
+            output_column_limit,
+            oom_cap_applied,
+            data_root,
+        ) = _enforce_oom_policy(config=config, output_column_limit=output_column_limit)
     except Exception as e:
         print(f"✗ Failed to load data: {e}", file=sys.stderr)
         return 1
@@ -516,6 +545,9 @@ def main() -> int:
             "start_stage": args.start_stage,
             "stop_stage": args.stop_stage,
             "loaded_table_memory_mb": round(loaded_memory_mb, 3),
+            "dataset_root": str(data_root.resolve()),
+            "dataset_rows": int(len(tables["case_study_input_matrix"])),
+            "dataset_outputs": int(max(0, len(tables["case_study_output_matrix"].columns) - 1)),
             "output_column_limit": output_column_limit,
             "oom_output_cap_applied": bool(oom_cap_applied),
             "progress_telemetry_path": str(progress_path.resolve()),

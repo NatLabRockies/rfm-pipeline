@@ -1,0 +1,19 @@
+{
+  "array_task_id": null,
+  "chunk_shape": [
+    200000,
+    64
+  ],
+  "chunks": 20,
+  "disk_free_bytes": 13903574308376576,
+  "disk_total_bytes": 34068506950492160,
+  "disk_used_bytes": 19821372820131840,
+  "job_id": null,
+  "mean_checksum": 0.043029275313642756,
+  "spill_dir": "/scratch/dhetting/bsm_hpc_discovery/manual/spill_probe/chunks_manual_0",
+  "spill_files": 20,
+  "spill_total_bytes": 1024002560,
+  "spill_write_seconds": 3.359544607112184,
+  "stream_read_seconds": 0.7036198480054736,
+  "tmpdir": "/scratch/dhetting/bsm_hpc_discovery/manual/spill_probe/tmp"
+}

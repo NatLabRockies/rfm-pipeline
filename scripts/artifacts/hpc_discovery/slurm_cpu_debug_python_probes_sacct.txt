@@ -1,0 +1,4 @@
+JobID|JobName|Partition|Account|State|ExitCode|Elapsed|Timelimit|AllocTRES|ReqTRES|MaxRSS|AveRSS|MaxVMSize|MaxDiskRead|MaxDiskWrite|NodeList
+13708755|bsm-python-probes|debug|bsm|COMPLETED|0:0|00:00:34|00:30:00|billing=1024,cpu=104,energy=14356,mem=32G,node=1|billing=78,cpu=8,mem=32G,node=1||||||x3000c0s31b0n0
+13708755.batch|batch||bsm|COMPLETED|0:0|00:00:34||cpu=104,mem=32G,node=1||7816K|7816K|3407192K|0|0.00M|x3000c0s31b0n0
+13708755.extern|extern||bsm|COMPLETED|0:0|00:00:34||billing=1024,cpu=104,mem=32G,node=1|||||||x3000c0s31b0n0

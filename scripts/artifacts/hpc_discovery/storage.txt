@@ -1,0 +1,720 @@
+### project id
+>>> lfs project -d /projects/bsm
+    0 - /projects/bsm
+
+### project quota
+>>> lfs quota -hp 0 /projects/bsm
+Disk quotas for prj 0 (pid 0):
+     Filesystem    used   quota   limit   grace   files   quota   limit   grace
+  /projects/bsm  46.96P      0k      0k       - 2897185133       0       0       -
+
+### scratch quota
+>>> lfs quota -h -u dhetting /scratch
+Disk quotas for usr dhetting (uid 120225):
+     Filesystem    used   quota   limit   grace   files   quota   limit   grace
+       /scratch  15.97T      0k      0k       - 7646848       0       0       -
+uid 120225 is using default block quota setting
+uid 120225 is using default file quota setting
+
+### home quota
+>>> lfs quota -uh dhetting /home/dhetting
+Disk quotas for usr dhetting (uid 120225):
+     Filesystem    used   quota   limit   grace   files   quota   limit   grace
+ /home/dhetting  18.02G     50G     50G       -  270674       0       0       -
+uid 120225 is using default file quota setting
+
+### lustre df
+>>> lfs df -h /scratch /projects/bsm
+UUID                       bytes        Used   Available Use% Mounted on
+scratch-MDT0000_UUID       15.0T       10.3T        4.5T  70% /kfs3[MDT:0] 
+scratch-MDT0001_UUID       15.0T      128.9G       14.7T   1% /kfs3[MDT:1] 
+scratch-OST0000_UUID      436.0T      260.1T      171.5T  61% /kfs3[OST:0]
+scratch-OST0001_UUID      436.0T      232.4T      199.2T  54% /kfs3[OST:1]
+scratch-OST0002_UUID      436.0T      259.5T      172.1T  61% /kfs3[OST:2]
+scratch-OST0003_UUID      436.0T      261.2T      170.4T  61% /kfs3[OST:3]
+scratch-OST0004_UUID      436.0T      260.9T      170.8T  61% /kfs3[OST:4]
+scratch-OST0005_UUID      436.0T      269.4T      162.3T  63% /kfs3[OST:5]
+scratch-OST0006_UUID      436.0T      258.8T      172.8T  60% /kfs3[OST:6]
+scratch-OST0007_UUID      436.0T      259.1T      172.6T  61% /kfs3[OST:7]
+scratch-OST0008_UUID      436.0T      260.5T      171.1T  61% /kfs3[OST:8]
+scratch-OST0009_UUID      436.0T      258.9T      172.7T  60% /kfs3[OST:9]
+scratch-OST000a_UUID      436.0T      261.0T      170.7T  61% /kfs3[OST:10]
+scratch-OST000b_UUID      436.0T      260.8T      170.8T  61% /kfs3[OST:11]
+scratch-OST000c_UUID      436.0T      261.7T      169.9T  61% /kfs3[OST:12]
+scratch-OST000d_UUID      436.0T      262.0T      169.7T  61% /kfs3[OST:13]
+scratch-OST000e_UUID      436.0T      262.4T      169.2T  61% /kfs3[OST:14]
+scratch-OST000f_UUID      436.0T      263.5T      168.1T  62% /kfs3[OST:15]
+scratch-OST0010_UUID      436.0T      259.9T      171.8T  61% /kfs3[OST:16]
+scratch-OST0011_UUID      436.0T      260.7T      171.0T  61% /kfs3[OST:17]
+scratch-OST0012_UUID      436.0T      261.1T      170.5T  61% /kfs3[OST:18]
+scratch-OST0013_UUID      436.0T      261.3T      170.4T  61% /kfs3[OST:19]
+scratch-OST0014_UUID      436.0T      260.2T      171.4T  61% /kfs3[OST:20]
+scratch-OST0015_UUID      436.0T      262.0T      169.7T  61% /kfs3[OST:21]
+scratch-OST0016_UUID      436.0T      259.6T      172.1T  61% /kfs3[OST:22]
+scratch-OST0017_UUID      436.0T      259.7T      172.0T  61% /kfs3[OST:23]
+scratch-OST0018_UUID      436.0T      260.3T      171.3T  61% /kfs3[OST:24]
+scratch-OST0019_UUID      436.0T      259.1T      172.5T  61% /kfs3[OST:25]
+scratch-OST001a_UUID      436.0T      259.5T      172.1T  61% /kfs3[OST:26]
+scratch-OST001b_UUID      436.0T      257.6T      174.1T  60% /kfs3[OST:27]
+scratch-OST001c_UUID      436.0T      263.3T      168.4T  61% /kfs3[OST:28]
+scratch-OST001d_UUID      436.0T      264.5T      167.1T  62% /kfs3[OST:29]
+scratch-OST001e_UUID      436.0T      259.9T      171.8T  61% /kfs3[OST:30]
+scratch-OST001f_UUID      436.0T      258.0T      173.6T  60% /kfs3[OST:31]
+scratch-OST0020_UUID       60.6T       13.6T       46.4T  23% /kfs3[OST:32] 
+scratch-OST0021_UUID       60.6T       13.8T       46.2T  24% /kfs3[OST:33] 
+scratch-OST0022_UUID       60.6T       13.3T       46.7T  23% /kfs3[OST:34] 
+scratch-OST0023_UUID       60.6T       13.8T       46.3T  23% /kfs3[OST:35] 
+scratch-OST0024_UUID      436.0T      262.1T      169.5T  61% /kfs3[OST:36]
+scratch-OST0025_UUID      436.0T      258.2T      173.5T  60% /kfs3[OST:37]
+scratch-OST0026_UUID      436.0T      266.4T      165.2T  62% /kfs3[OST:38]
+scratch-OST0027_UUID      436.0T      259.5T      172.2T  61% /kfs3[OST:39]
+scratch-OST0028_UUID      436.0T      261.5T      170.2T  61% /kfs3[OST:40]
+scratch-OST0029_UUID      436.0T      259.1T      172.6T  61% /kfs3[OST:41]
+scratch-OST002a_UUID      436.0T      261.9T      169.7T  61% /kfs3[OST:42]
+scratch-OST002b_UUID      436.0T      261.0T      170.7T  61% /kfs3[OST:43]
+scratch-OST002c_UUID      436.0T      262.5T      169.1T  61% /kfs3[OST:44]
+scratch-OST002d_UUID      436.0T      260.3T      171.4T  61% /kfs3[OST:45]
+scratch-OST002e_UUID      436.0T      260.9T      170.7T  61% /kfs3[OST:46]
+scratch-OST002f_UUID      436.0T      260.1T      171.6T  61% /kfs3[OST:47]
+scratch-OST0030_UUID      436.0T      261.5T      170.2T  61% /kfs3[OST:48]
+scratch-OST0031_UUID      436.0T      261.6T      170.0T  61% /kfs3[OST:49]
+scratch-OST0032_UUID      436.0T      260.5T      171.1T  61% /kfs3[OST:50]
+scratch-OST0033_UUID      436.0T      259.1T      172.6T  61% /kfs3[OST:51]
+scratch-OST0034_UUID       60.6T       13.8T       46.2T  24% /kfs3[OST:52] 
+scratch-OST0035_UUID       60.6T       13.7T       46.4T  23% /kfs3[OST:53] 
+scratch-OST0036_UUID       60.6T       14.1T       45.9T  24% /kfs3[OST:54] 
+scratch-OST0037_UUID       60.6T       13.8T       46.2T  24% /kfs3[OST:55] 
+scratch-OST0038_UUID       60.6T       13.9T       46.1T  24% /kfs3[OST:56] 
+scratch-OST0039_UUID       60.6T       13.9T       46.2T  24% /kfs3[OST:57] 
+scratch-OST003a_UUID      436.0T      258.6T      173.0T  60% /kfs3[OST:58]
+scratch-OST003b_UUID      436.0T      259.3T      172.3T  61% /kfs3[OST:59]
+scratch-OST003c_UUID      436.0T      258.5T      173.1T  60% /kfs3[OST:60]
+scratch-OST003d_UUID      436.0T      260.4T      171.3T  61% /kfs3[OST:61]
+scratch-OST003e_UUID      436.0T      256.8T      174.8T  60% /kfs3[OST:62]
+scratch-OST003f_UUID      436.0T      261.2T      170.5T  61% /kfs3[OST:63]
+scratch-OST0040_UUID      436.0T      258.3T      173.4T  60% /kfs3[OST:64]
+scratch-OST0041_UUID      436.0T      260.0T      171.6T  61% /kfs3[OST:65]
+scratch-OST0042_UUID      436.0T      259.2T      172.4T  61% /kfs3[OST:66]
+scratch-OST0043_UUID      436.0T      259.7T      171.9T  61% /kfs3[OST:67]
+scratch-OST0044_UUID      436.0T      263.4T      168.3T  62% /kfs3[OST:68]
+scratch-OST0045_UUID      436.0T      261.6T      170.0T  61% /kfs3[OST:69]
+scratch-OST0046_UUID      436.0T      260.1T      171.5T  61% /kfs3[OST:70]
+scratch-OST0047_UUID      436.0T      265.3T      166.4T  62% /kfs3[OST:71]
+scratch-OST0048_UUID      436.0T      257.6T      174.1T  60% /kfs3[OST:72]
+scratch-OST0049_UUID      436.0T      274.7T      157.0T  64% /kfs3[OST:73]
+scratch-OST004a_UUID       60.6T       13.7T       46.3T  23% /kfs3[OST:74] 
+scratch-OST004b_UUID       60.6T       13.8T       46.2T  23% /kfs3[OST:75] 
+scratch-OST004c_UUID       60.6T       14.2T       45.8T  24% /kfs3[OST:76] 
+scratch-OST004d_UUID       60.6T       14.3T       45.8T  24% /kfs3[OST:77] 
+scratch-OST004e_UUID       60.6T       13.8T       46.2T  23% /kfs3[OST:78] 
+scratch-OST004f_UUID       60.6T       14.1T       45.9T  24% /kfs3[OST:79] 
+scratch-OST0050_UUID       60.6T       13.8T       46.2T  23% /kfs3[OST:80] 
+scratch-OST0051_UUID       60.6T       13.9T       46.1T  24% /kfs3[OST:81] 
+scratch-OST0052_UUID       60.6T       13.5T       46.5T  23% /kfs3[OST:82] 
+scratch-OST0053_UUID       60.6T       13.3T       46.7T  23% /kfs3[OST:83] 
+scratch-OST0054_UUID       60.6T       13.9T       46.1T  24% /kfs3[OST:84] 
+scratch-OST0055_UUID       60.6T       13.7T       46.4T  23% /kfs3[OST:85] 
+scratch-OST0056_UUID      436.0T      259.6T      172.1T  61% /kfs3[OST:86]
+scratch-OST0057_UUID      436.0T      261.0T      170.7T  61% /kfs3[OST:87]
+scratch-OST0058_UUID      436.0T      268.5T      163.2T  63% /kfs3[OST:88]
+scratch-OST0059_UUID      436.0T      264.7T      167.0T  62% /kfs3[OST:89]
+
+filesystem_summary:        30.3P       17.6P       12.3P  59% /kfs3
+
+UUID                       bytes        Used   Available Use% Mounted on
+project-MDT0000_UUID       15.0T       10.5T        4.3T  72% /kfs2[MDT:0] 
+project-MDT0001_UUID       15.0T       34.4G       14.8T   1% /kfs2[MDT:1] 
+project-MDT0002_UUID       15.0T        4.8T       10.0T  33% /kfs2[MDT:2] 
+project-MDT0003_UUID       15.0T        1.3T       13.5T   9% /kfs2[MDT:3] 
+project-OST0000_UUID      654.3T      473.3T      174.4T  74% /kfs2[OST:0]
+project-OST0001_UUID      654.3T      484.1T      163.6T  75% /kfs2[OST:1]
+project-OST0002_UUID      654.3T      441.3T      206.4T  69% /kfs2[OST:2]
+project-OST0003_UUID      654.3T      462.4T      185.3T  72% /kfs2[OST:3]
+project-OST0004_UUID      654.3T      431.6T      216.0T  67% /kfs2[OST:4]
+project-OST0005_UUID      654.3T      487.2T      160.5T  76% /kfs2[OST:5]
+project-OST0006_UUID      654.3T      479.0T      168.7T  74% /kfs2[OST:6]
+project-OST0007_UUID      654.3T      484.9T      162.8T  75% /kfs2[OST:7]
+project-OST0008_UUID      654.3T      492.4T      155.3T  77% /kfs2[OST:8]
+project-OST0009_UUID      654.3T      490.6T      157.1T  76% /kfs2[OST:9]
+project-OST000a_UUID      654.3T      474.0T      173.7T  74% /kfs2[OST:10]
+project-OST000b_UUID      654.3T      475.6T      172.1T  74% /kfs2[OST:11]
+project-OST000c_UUID      654.3T      479.3T      168.3T  75% /kfs2[OST:12]
+project-OST000d_UUID      654.3T      482.3T      165.4T  75% /kfs2[OST:13]
+project-OST000e_UUID      654.3T      486.6T      161.0T  76% /kfs2[OST:14]
+project-OST000f_UUID      654.3T      480.6T      167.0T  75% /kfs2[OST:15]
+project-OST0010_UUID      654.3T      467.6T      180.0T  73% /kfs2[OST:16]
+project-OST0011_UUID      654.3T      489.8T      157.8T  76% /kfs2[OST:17]
+project-OST0012_UUID      654.3T      475.4T      172.3T  74% /kfs2[OST:18]
+project-OST0013_UUID      654.3T      470.3T      177.3T  73% /kfs2[OST:19]
+project-OST0014_UUID      654.3T      477.5T      170.1T  74% /kfs2[OST:20]
+project-OST0015_UUID      654.3T      467.1T      180.6T  73% /kfs2[OST:21]
+project-OST0016_UUID      654.3T      478.6T      169.1T  74% /kfs2[OST:22]
+project-OST0017_UUID      654.3T      486.5T      161.2T  76% /kfs2[OST:23]
+project-OST0018_UUID      654.3T      459.8T      187.9T  71% /kfs2[OST:24]
+project-OST0019_UUID      654.3T      465.4T      182.3T  72% /kfs2[OST:25]
+project-OST001a_UUID      654.3T      477.9T      169.8T  74% /kfs2[OST:26]
+project-OST001b_UUID      654.3T      473.4T      174.2T  74% /kfs2[OST:27]
+project-OST001c_UUID      654.3T      463.0T      184.6T  72% /kfs2[OST:28]
+project-OST001d_UUID      654.3T      475.1T      172.5T  74% /kfs2[OST:29]
+project-OST001e_UUID      654.3T      459.5T      188.1T  71% /kfs2[OST:30]
+project-OST001f_UUID      654.3T      462.2T      185.5T  72% /kfs2[OST:31]
+project-OST0020_UUID      654.3T      450.9T      196.7T  70% /kfs2[OST:32]
+project-OST0021_UUID      654.3T      469.8T      177.9T  73% /kfs2[OST:33]
+project-OST0022_UUID      654.3T      474.6T      173.1T  74% /kfs2[OST:34]
+project-OST0023_UUID      654.3T      452.7T      194.9T  70% /kfs2[OST:35]
+project-OST0024_UUID      654.3T      464.3T      183.4T  72% /kfs2[OST:36]
+project-OST0025_UUID      654.3T      466.8T      180.8T  73% /kfs2[OST:37]
+project-OST0026_UUID      654.3T      465.3T      182.4T  72% /kfs2[OST:38]
+project-OST0027_UUID      654.3T      459.5T      188.2T  71% /kfs2[OST:39]
+project-OST0028_UUID      654.3T      470.6T      177.1T  73% /kfs2[OST:40]
+project-OST0029_UUID      654.3T      459.5T      188.1T  71% /kfs2[OST:41]
+project-OST002a_UUID      654.3T      450.4T      197.2T  70% /kfs2[OST:42]
+project-OST002b_UUID      654.3T      482.4T      165.3T  75% /kfs2[OST:43]
+project-OST002c_UUID      654.3T      475.2T      172.5T  74% /kfs2[OST:44]
+project-OST002d_UUID      654.3T      468.6T      179.1T  73% /kfs2[OST:45]
+project-OST002e_UUID      654.3T      457.2T      190.5T  71% /kfs2[OST:46]
+project-OST002f_UUID      654.3T      472.2T      175.5T  73% /kfs2[OST:47]
+project-OST0030_UUID      654.3T      578.0T       69.6T  90% /kfs2[OST:48]
+project-OST0031_UUID      654.3T      577.1T       70.6T  90% /kfs2[OST:49]
+project-OST0032_UUID      654.3T      582.4T       65.2T  90% /kfs2[OST:50]
+project-OST0033_UUID      654.3T      580.9T       66.7T  90% /kfs2[OST:51]
+project-OST0034_UUID      654.3T      575.8T       71.9T  89% /kfs2[OST:52]
+project-OST0035_UUID      654.3T      580.8T       66.8T  90% /kfs2[OST:53]
+project-OST0036_UUID      654.3T      580.0T       67.7T  90% /kfs2[OST:54]
+project-OST0037_UUID      654.3T      578.8T       68.9T  90% /kfs2[OST:55]
+project-OST0038_UUID      654.3T      579.9T       67.8T  90% /kfs2[OST:56]
+project-OST0039_UUID      654.3T      578.3T       69.4T  90% /kfs2[OST:57]
+project-OST003a_UUID      654.3T      581.7T       65.9T  90% /kfs2[OST:58]
+project-OST003b_UUID      654.3T      577.6T       70.1T  90% /kfs2[OST:59]
+project-OST003c_UUID      654.3T      586.9T       60.8T  91% /kfs2[OST:60]
+project-OST003d_UUID      654.3T      579.5T       68.1T  90% /kfs2[OST:61]
+project-OST003e_UUID      654.3T      583.4T       64.3T  91% /kfs2[OST:62]
+project-OST003f_UUID      654.3T      587.9T       59.8T  91% /kfs2[OST:63]
+project-OST0040_UUID      654.3T      578.2T       69.4T  90% /kfs2[OST:64]
+project-OST0041_UUID      654.3T      589.8T       57.8T  92% /kfs2[OST:65]
+project-OST0042_UUID      654.3T      579.7T       67.9T  90% /kfs2[OST:66]
+project-OST0043_UUID      654.3T      578.8T       68.9T  90% /kfs2[OST:67]
+project-OST0044_UUID      654.3T      584.7T       62.9T  91% /kfs2[OST:68]
+project-OST0045_UUID      654.3T      574.2T       73.5T  89% /kfs2[OST:69]
+project-OST0046_UUID      654.3T      571.3T       76.4T  89% /kfs2[OST:70]
+project-OST0047_UUID      654.3T      575.0T       72.6T  89% /kfs2[OST:71]
+project-OST0048_UUID      654.3T      429.3T      218.4T  67% /kfs2[OST:72]
+project-OST0049_UUID      654.3T      422.8T      224.8T  66% /kfs2[OST:73]
+project-OST004a_UUID      654.3T      431.2T      216.5T  67% /kfs2[OST:74]
+project-OST004b_UUID      654.3T      431.8T      215.9T  67% /kfs2[OST:75]
+project-OST004c_UUID      654.3T      422.5T      225.1T  66% /kfs2[OST:76]
+project-OST004d_UUID      654.3T      429.7T      217.9T  67% /kfs2[OST:77]
+project-OST004e_UUID      654.3T      421.5T      226.2T  66% /kfs2[OST:78]
+project-OST004f_UUID      654.3T      418.8T      228.8T  65% /kfs2[OST:79]
+project-OST0050_UUID      654.3T      510.7T      137.0T  79% /kfs2[OST:80]
+project-OST0051_UUID      654.3T      513.1T      134.5T  80% /kfs2[OST:81]
+project-OST0052_UUID      654.3T      516.3T      131.4T  80% /kfs2[OST:82]
+project-OST0053_UUID      654.3T      517.3T      130.4T  80% /kfs2[OST:83]
+project-OST0054_UUID      654.3T      512.1T      135.6T  80% /kfs2[OST:84]
+project-OST0055_UUID      654.3T      516.0T      131.7T  80% /kfs2[OST:85]
+project-OST0056_UUID      654.3T      516.1T      131.5T  80% /kfs2[OST:86]
+project-OST0057_UUID      654.3T      519.1T      128.6T  81% /kfs2[OST:87]
+project-OST0058_UUID      654.3T      518.0T      129.6T  80% /kfs2[OST:88]
+project-OST0059_UUID      654.3T      505.0T      142.6T  78% /kfs2[OST:89]
+project-OST005a_UUID      654.3T      515.1T      132.6T  80% /kfs2[OST:90]
+project-OST005b_UUID      654.3T      519.6T      128.0T  81% /kfs2[OST:91]
+project-OST005c_UUID      654.3T      522.0T      125.6T  81% /kfs2[OST:92]
+project-OST005d_UUID      654.3T      513.9T      133.7T  80% /kfs2[OST:93]
+project-OST005e_UUID      654.3T      519.9T      127.7T  81% /kfs2[OST:94]
+project-OST005f_UUID      654.3T      514.4T      133.2T  80% /kfs2[OST:95]
+
+filesystem_summary:        61.3P       47.0P       13.7P  78% /kfs2
+
+
+### scratch stripe
+>>> lfs getstripe /scratch/dhetting
+/scratch/dhetting
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          flash
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  16       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/scratch/dhetting/BSM
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          flash
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  16       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+lfs getstripe: llapi_semantic_traverse: Failed to open '/scratch/dhetting/._dbindex_': Permission denied (13)
+/scratch/dhetting/.duc-index
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          flash
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  16       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/scratch/dhetting/bsm_hpc_discovery
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          flash
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  16       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/scratch/dhetting/emrecrada
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          flash
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  16       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+
+### project stripe
+>>> lfs getstripe /projects/bsm
+/projects/bsm
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/.duc-index
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/.pixi
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/hpc_discovery
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/bin
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/.npm-global
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+lfs getstripe: llapi_semantic_traverse: Failed to open '/projects/bsm/._dbindex_': Permission denied (13)
+/projects/bsm/install-pixi.sh
+  lcm_layout_gen:    3
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             1
+    lcme_mirror_id:      0
+    lcme_flags:          init
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      lmm_stripe_count:  1
+      lmm_stripe_size:   1048576
+      lmm_pattern:       raid0
+      lmm_layout_gen:    0
+      lmm_stripe_offset: 36
+      lmm_pool:          disk
+      lmm_objects:
+      - 0: { l_ost_idx: 36, l_fid: [0x100240000:0x89b2007:0x0] }
+
+    lcme_id:             2
+    lcme_mirror_id:      0
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      lmm_stripe_count:  8
+      lmm_stripe_size:   4194304
+      lmm_pattern:       raid0
+      lmm_layout_gen:    0
+      lmm_stripe_offset: -1
+      lmm_pool:          disk
+
+    lcme_id:             3
+    lcme_mirror_id:      0
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      lmm_stripe_count:  24
+      lmm_stripe_size:   4194304
+      lmm_pattern:       raid0
+      lmm_layout_gen:    0
+      lmm_stripe_offset: -1
+      lmm_pool:          disk
+
+/projects/bsm/.npm-cache
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/install-copilot-cli.sh
+  lcm_layout_gen:    3
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             1
+    lcme_mirror_id:      0
+    lcme_flags:          init
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      lmm_stripe_count:  1
+      lmm_stripe_size:   1048576
+      lmm_pattern:       raid0
+      lmm_layout_gen:    0
+      lmm_stripe_offset: 24
+      lmm_pool:          disk
+      lmm_objects:
+      - 0: { l_ost_idx: 24, l_fid: [0x100180000:0x89aca92:0x0] }
+
+    lcme_id:             2
+    lcme_mirror_id:      0
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      lmm_stripe_count:  8
+      lmm_stripe_size:   4194304
+      lmm_pattern:       raid0
+      lmm_layout_gen:    0
+      lmm_stripe_offset: -1
+      lmm_pool:          disk
+
+    lcme_id:             3
+    lcme_mirror_id:      0
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      lmm_stripe_count:  24
+      lmm_stripe_size:   4194304
+      lmm_pattern:       raid0
+      lmm_layout_gen:    0
+      lmm_stripe_offset: -1
+      lmm_pool:          disk
+
+/projects/bsm/data
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/.cache
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/dhetting
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+/projects/bsm/pixi-envs
+  lcm_layout_gen:    0
+  lcm_mirror_count:  1
+  lcm_entry_count:   3
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 0
+    lcme_extent.e_end:   2097152
+      stripe_count:  1       stripe_size:   1048576       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 2097152
+    lcme_extent.e_end:   268435456
+      stripe_count:  8       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+    lcme_id:             N/A
+    lcme_mirror_id:      N/A
+    lcme_flags:          0
+    lcme_extent.e_start: 268435456
+    lcme_extent.e_end:   EOF
+      stripe_count:  24       stripe_size:   4194304       pattern:       raid0       stripe_offset: -1       pool:          disk
+
+

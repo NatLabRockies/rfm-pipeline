@@ -1,0 +1,22 @@
+{
+  "cols": 200,
+  "compression": "zstd",
+  "disk_free_bytes": 13903561803182080,
+  "disk_total_bytes": 34068506950492160,
+  "disk_used_bytes": 19821386240159744,
+  "file_bytes": 231001371,
+  "full_read_mib_per_s": 407.14132619386174,
+  "full_read_seconds": 0.5410899370908737,
+  "job_id": null,
+  "projected_read_apparent_mib_per_s": 1852.7072552207876,
+  "projected_read_seconds": 0.11890711495652795,
+  "projection_cols": 50,
+  "row_group_size_rows": 200000,
+  "row_groups": 1,
+  "rows": 200000,
+  "target_dir": "/scratch/dhetting/bsm_hpc_discovery/manual/parquet_bench",
+  "target_file": "/scratch/dhetting/bsm_hpc_discovery/manual/parquet_bench/parquet_bench_manual.parquet",
+  "target_row_group_mib": 512,
+  "write_mib_per_s": 84.69838062025951,
+  "write_seconds": 2.600995118962601
+}

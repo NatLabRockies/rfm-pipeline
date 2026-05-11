@@ -1,0 +1,22 @@
+{
+  "cols": 200,
+  "compression": "zstd",
+  "disk_free_bytes": 6026254999552,
+  "disk_total_bytes": 6347481849856,
+  "disk_used_bytes": 1255145472,
+  "file_bytes": 231001371,
+  "full_read_mib_per_s": 698.975227954618,
+  "full_read_seconds": 0.31517579703358933,
+  "job_id": "13708755",
+  "projected_read_apparent_mib_per_s": 2453.7852819993814,
+  "projected_read_seconds": 0.0897796869976446,
+  "projection_cols": 50,
+  "row_group_size_rows": 200000,
+  "row_groups": 1,
+  "rows": 200000,
+  "target_dir": "/tmp/scratch/13708755/bsm_parquet_bench",
+  "target_file": "/tmp/scratch/13708755/bsm_parquet_bench/parquet_bench_13708755.parquet",
+  "target_row_group_mib": 512,
+  "write_mib_per_s": 98.23718018362288,
+  "write_seconds": 2.242532554024365
+}

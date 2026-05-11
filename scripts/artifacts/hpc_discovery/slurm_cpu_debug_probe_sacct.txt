@@ -1,0 +1,5 @@
+JobID|JobName|Partition|Account|State|ExitCode|Elapsed|Timelimit|AllocTRES|ReqTRES|MaxRSS|AveRSS|MaxVMSize|MaxDiskRead|MaxDiskWrite|NodeList
+13708732|bsm-cpu-probe|debug|bsm|COMPLETED|0:0|00:00:10|00:10:00|billing=1024,cpu=104,energy=4238,mem=8G,node=1|billing=39,cpu=4,mem=8G,node=1||||||x3000c0s31b0n0
+13708732.batch|batch||bsm|COMPLETED|0:0|00:00:10||cpu=104,mem=8G,node=1||13992K|13992K|3276120K|0|0.00M|x3000c0s31b0n0
+13708732.extern|extern||bsm|COMPLETED|0:0|00:00:10||billing=1024,cpu=104,mem=8G,node=1|||||||x3000c0s31b0n0
+13708732.0|bash||bsm|COMPLETED|0:0|00:00:02||cpu=4,mem=8G,node=1||7904K|7904K|3428348K|0|0.00M|x3000c0s31b0n0

@@ -6,10 +6,10 @@ base_branch: main
 autonomy_tier: 3
 profile: autonomous
 current_milestone: Phase 8a implementation (local-first out-of-core foundation)
-current_slice: Post-merge validation + full-dataset runtime extrapolation
-slice_status: complete (HC3 optimized; phased 3k-sample test completed with projections validated)
-last_validation: Post-merge phased runtime investigation complete; full-gate passing; HC3 optimization confirmed 24.2× speedup
-next_slice: Optional—validate full 30k-sample projection or explore interaction-discovery optimization
+current_slice: Interaction discovery optimization investigation
+slice_status: complete (6 opportunities identified, ranked by feasibility/gain; ready for implementation)
+last_validation: Analysis complete, no code changes yet
+next_slice: Implement adaptive SHAP sampling + GBT parameter reduction (expected 20–35% improvement)
 
 ## Runtime investigation workflow package (2026-05-11)
 
@@ -517,3 +517,76 @@ pixi run env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_
   Sparse selection and final-artifacts stages not completed due to compute time (100 stability
   subsamples × ~1,300 candidates). Interaction/nonlinear stage equivalence confirmed via
   `public_implementation_status=manuscript_aligned` in stage summaries.
+
+## Interaction Discovery Optimization Investigation (2026-05-11)
+
+**Problem:** Interaction discovery now dominates runtime (95.9% of 3k-sample budget, 4520s / 78 min). HC3 optimization removed final-stage bottleneck; interaction stage now candidate for similar gains.
+
+**Methodology:**
+
+1. Reviewed current implementation (`src/bsm_rfm/manuscript_stages.py:1256–1432`).
+1. Analyzed computational flow:
+   - Pre-generate permuted response matrices (41 permutations for large profile)
+   - For each permutation, for each active PCA component (~20):
+     - Fit GBT (120 estimators, depth 4, 1000×355 features) ≈ 2–3 min
+     - Compute SHAP interactions (500 sample limit) ≈ 1–2 min
+   - Parallel batch processing (batch_size = total / 25)
+1. Compared vs manuscript config (201 permutations, tighter thresholds).
+1. Evaluated dataset characteristics: 3000 rows, 355 input features, 23,496 outputs.
+
+**Key Findings:**
+
+- GBT + SHAP computation is ~50% cost per permutation
+- SHAP sampling capped at 500 (50% of 1000-row training set; likely overkill)
+- GBT parameters (120/4) are not adaptive; small profile uses only 50 estimators
+- Batch size tuning (max 2 permutations per batch with 20+ cores) may be suboptimal
+- Active components (15–25) score all despite low signal in some
+
+**Opportunities Identified (6 total, ranked by feasibility & gain):**
+
+1. **Adaptive SHAP Sampling** (Low Risk, 10–15% gain)
+
+   - Change: `max_shap_samples = min(250, 0.3 * n_train)` instead of fixed 500
+   - Rationale: 500 samples is 50% for 1000-row set; 30% (300) stabilizes interaction estimates with lower cost
+   - Effort: Low (config + spec wiring)
+
+1. **GBT Parameter Reduction** (Medium Risk, 20–30% gain)
+
+   - Test: `n_estimators: 100, max_depth: 3` (vs current 120/4)
+   - Rationale: Medium profile uses 100/3, small uses 50/3; scaling suggests lighter trees are viable
+   - Effort: Medium (requires validation against baseline pair retention)
+
+1. **Parallel Batch Size Tuning** (Low Risk, 5–10% gain)
+
+   - Change: `batch_size = max(2, ceil(total / 8))` (vs current ceil(total / 25))
+   - Rationale: Larger batches reduce overhead; only 2 permutations per batch underutilizes cores
+   - Effort: Low
+
+1. **Variance-Based Component Pruning** (Low Risk, 10–20% gain)
+
+   - Proposal: Score only top K components by variance explained (e.g., top 12 of 20)
+   - Rationale: High-order interactions unlikely in low-signal components
+   - Effort: Low (requires variance ranking logic)
+
+1. **Candidate Pair Pre-Filtering** (Low Risk, 30–50% gain, HIGH EFFORT)
+
+   - Proposal: Score weak pairs quickly (shallow trees), prune bottom 50%, score survivors in full
+   - Rationale: Many pairs have near-zero signals across all permutations
+   - Effort: High (requires approximation design + validation)
+
+1. **Early Stopping on Permutations** (Medium Risk, 15–25% gain, VALIDATION RISK)
+
+   - Proposal: Stop null permutations if p-value confidence sufficient
+   - Rationale: Many nulls likely far from observed; additional permutations may be redundant
+   - Effort: Medium (statistical validity risk; only for non-critical pairs)
+
+**Recommendation:**
+
+- Implement Top 2 (Adaptive SHAP + GBT reduction) in next slice
+- Target: **20–35% improvement** on interaction discovery (4520s → ~3000s)
+- Full-dataset projection impact: 30,000-row runtime **27.5h → ~22h** (1.1 days → 0.9 days)
+
+**Documentation:**
+
+- Full analysis: `docs/INTERACTION_DISCOVERY_OPTIMIZATION.md`
+- Implementation plan: See plan.md Phase section

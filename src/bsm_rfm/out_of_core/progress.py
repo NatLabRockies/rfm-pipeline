@@ -95,7 +95,7 @@ class ChunkProgress:
         with open(tmp_file, "w") as f:
             json.dump(report, f, indent=2)
 
-        self.output_path.rename(tmp_file)
+        Path(tmp_file).replace(self.output_path)
 
     def report(self) -> dict[str, Any]:
         """Return current progress report as dictionary."""

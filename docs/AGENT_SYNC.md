@@ -139,91 +139,72 @@ python tools/monitor_validation_timing.py artifacts/validation_300_sample_no_cap
 
 ______________________________________________________________________
 
-## Phase 8: Distributed Execution and Out-of-Core Processing (PLANNING)
+## Phase 8: Distributed Execution and Out-of-Core Processing
 
-**Status**: Planning phase — environment discovery complete, method manifest finalized, ready for implementation kickoff
+**Status**: Phase 8a (local-first out-of-core foundation) IN PROGRESS
 
-**Overview**:
+**Architecture** (revised to local-first + optional HPC):
 
-Phase 8 scales the manuscript workflow from local multi-threaded Python to distributed HPC execution on NREL Kestrel and generic clusters. Three sub-phases:
+- Primary: Out-of-core chunked I/O + streaming aggregations + spill-to-disk (works on any machine)
+- Optional secondary: SLURM distributed execution (for HPC acceleration on Kestrel)
 
-1. **Phase 8a**: SLURM array baseline (config schema, manifest-driven shard runner, checkpoint/recovery)
-1. **Phase 8b**: Out-of-core processing (chunked I/O, streaming aggregations, spill-to-disk)
-1. **Phase 8c**: Optional adapters (Dask, MPI/mpi4py, Ray experimental)
+**Completed** ✅:
+
+- [x] HPC environment discovery (Kestrel probing + method manifest)
+- [x] Phase 8 plan revision: local-first vs HPC-first
+- [x] Feature branch `feature/phase-8a-out-of-core-foundation` created
+- [x] Phase 8a foundation modules implemented + tested + committed:
+  - `src/bsm_rfm/out_of_core/chunked_io.py` — ChunkedParquetReader, ChunkedCSVReader
+  - `src/bsm_rfm/out_of_core/streaming_ops.py` — StreamingAggregation, StreamingQuantile
+  - `src/bsm_rfm/out_of_core/memory.py` — MemoryBudget, choose_temp_dir, get_disk_free_mb
+  - `src/bsm_rfm/out_of_core/spill_ops.py` — SpillToDiskBuffer, LargeArrayWriter
+  - `src/bsm_rfm/out_of_core/progress.py` — ChunkProgress telemetry
+- [x] Tests committed (19 unit tests, all passing)
+  - `tests/test_chunked_io.py` — 8 I/O tests
+  - `tests/test_streaming_ops.py` — 11 aggregation + equivalence tests
+- [x] All linting fixed; pre-commit hooks pass
+
+**In Progress** ⏳:
+
+- 300-sample uncapped validation still running (stage 3/6, ~2-4 hours remaining as of last check)
+
+**Remaining Phase 8a Tasks** (next):
+
+- [ ] Add OutOfCoreConfig dataclass to config.py
+- [ ] Integrate chunked I/O into sparse_selection stage (for stability resamples)
+- [ ] Integrate streaming bootstrap into final_artifacts stage
+- [ ] Run numerical equivalence tests: chunked vs non-chunked on 300-sample
+- [ ] Run memory stress tests: artificially low budget, verify spill works
+- [ ] Merge feature/phase-8a-out-of-core-foundation to main after validation
+
+**Phase 8b (out-of-core integration)** → Phase 8c (optional SLURM) after 8a merged
+
+**Design decisions**:
+
+- Chunk size: row-group aware for Parquet (often 512 MB default), configurable per machine
+- Spill strategy: Parquet format on fast local NVMe/ProjectFS, avoid tmpfs
+- Memory model: track with psutil, spill when threshold hit, resume on re-read
+- Backward compatible: off by default; opt-in via config `use_chunked_io: true`
+
+**Configuration example** (for when implemented):
+
+```yaml
+runtime:
+  use_chunked_io: true
+  out_of_core:
+    chunk_size_mb: 512
+    max_memory_budget_mb: 8000
+    temp_dir: /scratch/$USER/bsm_spill
+    enable_spill_to_disk: true
+```
 
 **Key documents**:
 
-- `docs/PHASE_8_DISTRIBUTED_HPC_PLAN.md` — 12-section detailed plan (architecture, config examples, testing, risks)
-- `ai_context/methods/kestrel_slurm_distributed_compute_method_manifest.md` — method guidance from external research
-- `kestrel_bsm_hpc_discovery_answers.md` — live Kestrel configuration (account=bsm, MaxArraySize=11k, filesystems, etc.)
+- `docs/PHASE_8_SCALABLE_EXECUTION_PLAN.md` — current authoritative design spec (local-first architecture)
+- `docs/ENGINEERING_MANIFEST.md` — Phase 8 overview updated
+- `kestrel_bsm_hpc_discovery_answers.md` — Kestrel-specific configuration (account=bsm, MaxArraySize=11k, etc.)
 
-**Design principles**:
-
-- **Config-only**: all HPC parameters via YAML (no source code edits for different environments)
-- **Multi-runtime**: SLURM arrays (primary), Dask (secondary), MPI (tertiary), Ray (experimental/opt-in)
-- **Fault-tolerant**: idempotent outputs, `_SUCCESS` markers, resumable tasks
-- **Backward compatible**: local single-machine runs unaffected; `distributed_execution.enabled=false` by default
-
-**Kestrel specifics**:
-
-- Account/project: `bsm`
-- Partition recommendations: `debug` for smoke tests, `shared`/`short`/`standard`/`nvme` for production
-- Max array size: 11,000 (use `%N` throttling for concurrency control)
-- Filesystem: use `/projects/bsm` for durable state, `/scratch/$USER/bsm_<run_id>/` for temp, `$TMPDIR` for node-local spill
-- Network interface: `hsn0` (high-speed network for Dask jobs)
-- No preemption (`PreemptMode=OFF`), no auto-requeue (`JobRequeue=0`) — design for idempotent recovery
-
-**Phase 8a Deliverables** (Weeks 1-2):
-
-- [ ] Config schema: `DistributedExecutionConfig`, `SlurmConfig`, `SpillConfig` in `src/bsm_rfm/config.py`
-- [ ] Module `src/bsm_rfm/distributed/`:
-  - `config_distributed.py` — config dataclasses
-  - `slurm_array_runner.py` — manifest-driven task execution
-  - `spill.py` — intelligent `/scratch` vs `$TMPDIR` selection
-  - `checkpoint.py` — idempotent output layout + markers
-- [ ] Manifest schema: shard ID, input paths, output path, expected rows/columns, status tracking
-- [ ] SLURM script templates: array job, reduce/merge job, diagnostic job (Jinja2-rendered)
-- [ ] Tests: unit (config, spill logic, checkpoint semantics), smoke (manifest parsing, script rendering), integration (1-task array on Kestrel)
-- [ ] Documentation: `docs/DISTRIBUTED_EXECUTION_GUIDE.md`, `docs/KESTREL_SLURM_QUICKSTART.md`
-
-**Phase 8b Deliverables** (Weeks 2-3):
-
-- [ ] `src/bsm_rfm/chunked_io.py`:
-  - `ChunkedParquetReader` — iterate large files in chunks without full materialization
-  - `ChunkedAggregation` — streaming reductions (sum, mean, count, concat)
-- [ ] `src/bsm_rfm/spill_ops.py` — temp file accumulation, atomic promotion, free-space monitoring
-- [ ] Workflow integration: add `use_chunked_io` config flag; modify interaction/nonlinear/sparse stages
-- [ ] Tests: unit (chunk iteration, aggregations), integration (numerical equivalence on 300-sample), stress (10 GB synthetic file)
-
-**Phase 8c Deliverables** (Weeks 3-4, optional/secondary):
-
-- [ ] `src/bsm_rfm/distributed/dask_runner.py` — Dask DataFrame + `SLURMCluster`
-- [ ] `src/bsm_rfm/distributed/mpi_runner.py` — MPI rank communication
-- [ ] `src/bsm_rfm/distributed/ray_runner_experimental.py` — Ray (opt-in via `BSM_ENABLE_RAY_EXPERIMENTAL=1`)
-
-**Phase 8 Success Criteria**:
-
-- [ ] Config file specifies all distributed parameters without code changes
-- [ ] SLURM array baseline runs 300-sample on Kestrel successfully
-- [ ] Full 30k-sample dataset completes ≤ 24 hours
-- [ ] Artifacts match local-run validation ≤ 5 decimal places
-- [ ] Out-of-core processing passes numerical equivalence test
-- [ ] Documentation enables self-service on Kestrel + generic HPC
-
-**Estimated timeline**: Phase 8a complete in 2 weeks; 8b+8c by end of Week 4
-
-**Blocker**: Phase 8 implementation should wait until Phase 7's uncapped 300-sample run completes, so we have accurate stage-wise timing baseline for scaling predictions and runtime estimation
-
-______________________________________________________________________
-
-## Phase 8 Next Steps (TBD, after 300-sample completion)
-
-1. Collect stage-wise timing from uncapped run + validate artifacts
-1. Begin Phase 8a implementation: config schema + spill logic
-1. Create SLURM template renderer + smoke tests
-1. Test 1-task array on Kestrel
-1. Expand to multi-task arrays and validation
-1. Document usage for self-service deployment
+**Blocker Resolution**: Phase 8 implementation was unblocked by user approval for scope expansion (no longer waiting for 300-sample). Work proceeds in feature branch in parallel while 300-sample runs overnight.
 
 ## Files in scope
 

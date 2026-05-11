@@ -94,6 +94,65 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _read_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _pid_is_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    else:
+        return True
+
+
+def _mark_abandoned_run_if_needed(
+    *,
+    output_root: Path,
+    started_path: Path,
+    complete_path: Path,
+    failed_path: Path,
+    interrupted_path: Path,
+    abandoned_path: Path,
+    progress_path: Path,
+) -> None:
+    """Write an abandoned-run marker when a prior run has no terminal marker and dead PID."""
+    if not started_path.exists():
+        return
+    if (
+        complete_path.exists()
+        or failed_path.exists()
+        or interrupted_path.exists()
+        or abandoned_path.exists()
+    ):
+        return
+    started = _read_json(started_path) or {}
+    prior_pid = int(started.get("pid", -1))
+    if _pid_is_alive(prior_pid):
+        return
+    payload: dict[str, Any] = {
+        "status": "abandoned",
+        "abandoned_at_utc": _utc_now(),
+        "output_root": str(output_root.resolve()),
+        "reason": "prior run has run_started marker but no terminal marker and no live PID",
+        "prior_run_started": started,
+    }
+    progress = _read_json(progress_path)
+    if progress is not None:
+        payload["last_progress"] = progress
+    _write_json(abandoned_path, payload)
+
+
 def _read_csv(path: Path):
     import pandas as pd
 
@@ -381,19 +440,21 @@ def config_to_legacy_case_study(workflow_config: WorkflowConfig) -> dict[str, An
     final_model = case_study.setdefault("final_model", {})
     runtime = case_study.setdefault("runtime", {})
 
+    temporary_reduction = output_conditioning.setdefault("temporary_reduction", {})
+    temporary_reduction["retained_variance_fraction"] = workflow_config.algorithm.variance_threshold
     if workflow_config.algorithm.retained_components is not None:
-        output_conditioning["retained_components"] = workflow_config.algorithm.retained_components
-    else:
-        output_conditioning["variance_explained_threshold"] = (
-            workflow_config.algorithm.variance_threshold
-        )
+        temporary_reduction["retained_components"] = workflow_config.algorithm.retained_components
 
     scr = workflow_config.stages.empirical_null_screening
     empirical_null_screen["permutation_count_B"] = scr.n_permutations - 1
     empirical_null_screen["bh_q_screen"] = scr.bh_q_threshold
+    if scr.max_retained_terms is not None:
+        empirical_null_screen["max_retained_terms"] = int(scr.max_retained_terms)
 
     itr = workflow_config.stages.interaction_discovery
     interaction_discovery["p_threshold"] = itr.p_threshold
+    if itr.n_permutations is not None:
+        interaction_discovery["permutation_count_B"] = itr.n_permutations - 1
     interaction_discovery["n_tree_estimators"] = itr.n_tree_estimators
     interaction_discovery["max_tree_depth"] = itr.max_tree_depth
 
@@ -411,6 +472,16 @@ def config_to_legacy_case_study(workflow_config: WorkflowConfig) -> dict[str, An
     fnl = workflow_config.stages.final_artifacts
     final_model["bootstrap_count"] = fnl.bootstrap_count
     final_model["bootstrap_alpha"] = fnl.bootstrap_alpha
+    final_inferential_filter = case_study.setdefault("final_inferential_filter", {})
+    final_inferential_filter["output_subset_mode"] = fnl.hc3_output_subset_mode
+    if fnl.hc3_output_fraction is not None:
+        final_inferential_filter["output_fraction"] = fnl.hc3_output_fraction
+    if fnl.hc3_output_names:
+        final_inferential_filter["output_names"] = list(fnl.hc3_output_names)
+    if fnl.hc3_output_max_outputs is not None:
+        final_inferential_filter["max_outputs"] = int(fnl.hc3_output_max_outputs)
+    final_inferential_filter["random_seed"] = int(fnl.hc3_output_random_seed)
+    final_inferential_filter["subset_metric"] = str(fnl.hc3_output_subset_metric)
 
     runtime["n_jobs"] = workflow_config.runtime.n_jobs
     config["random_seed"] = workflow_config.output.seed
@@ -490,6 +561,16 @@ def main() -> int:
     complete_path = output_root / "run_complete.json"
     failed_path = output_root / "run_failed.json"
     interrupted_path = output_root / "run_interrupted.json"
+    abandoned_path = output_root / "run_abandoned.json"
+    _mark_abandoned_run_if_needed(
+        output_root=output_root,
+        started_path=started_path,
+        complete_path=complete_path,
+        failed_path=failed_path,
+        interrupted_path=interrupted_path,
+        abandoned_path=abandoned_path,
+        progress_path=progress_path,
+    )
     for stale in (complete_path, failed_path, interrupted_path):
         if stale.exists():
             stale.unlink()
@@ -574,6 +655,10 @@ def main() -> int:
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, _handle_signal)
+    if hasattr(signal, "SIGQUIT"):
+        signal.signal(signal.SIGQUIT, _handle_signal)
 
     stage_records: list[dict[str, Any]] = []
     conditioning: OutputConditioningResult | None = None

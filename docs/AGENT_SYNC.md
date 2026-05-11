@@ -11,6 +11,80 @@ slice_status: in_progress (uncapped small-sample run bottleneck isolated; phase-
 last_validation: `BSM_PROGRESS_BATCH_SIZE=1 pixi run python tools/run_manuscript_pipeline.py configs/validation_80_sample_workflow_smoke.yml` passed end-to-end; `pixi run ruff check tools/run_manuscript_pipeline.py src/bsm_rfm/manuscript_stages.py src/bsm_rfm/config.py` clean
 next_slice: tune/guard interaction-discovery uncapped path (1000 permutations) before retrying full uncapped ramp
 
+## Runtime investigation workflow package (2026-05-11)
+
+- Added reusable single-command runtime ladder runner:
+  - `tools/run_runtime_investigation.py`
+  - Pixi task: `pixi run runtime-investigation -- ...`
+- Workflow capabilities:
+  - Generates `small/medium/large` ladder configs from a base config.
+  - Supports user dataset override via `--dataset-path`.
+  - Runs ladder sequentially through unified manuscript runner.
+  - Collects per-profile metrics from run markers + runtime diagnostics.
+  - Writes projection/report artifacts:
+    - `runtime_investigation_summary.csv`
+    - `runtime_projection.json`
+    - `runtime_investigation_summary.md`
+    - `monitor_command.txt`
+- Added docs and monitor integration:
+  - `docs/RUNTIME_INVESTIGATION_WORKFLOW.md`
+  - `docs/RUNNING_MANUSCRIPT_REPRODUCTION.md` quick-start entry
+  - `scripts/watch_final_cost_ladder.sh` can monitor generated `runs/` root
+- Added focused tests:
+  - `tests/test_runtime_investigation.py`
+- Validation:
+  - `pixi run pytest -q tests/test_runtime_investigation.py tests/test_config_loader.py` ✅
+  - `pixi run runtime-investigation --base-config configs/validation_80_sample_workflow_smoke.yml --dataset-path artifacts/test_dataset_80 --output-root artifacts/runtime_investigation --label e2e80` ✅
+  - E2E artifacts: `artifacts/runtime_investigation/20260511T170236Z-e2e80/`
+
+## Runtime estimate update (2026-05-11, all-columns target)
+
+- New anchor evidence:
+  - `artifacts/final_cost_ladder/04/final_manuscript_artifacts`: `final_manuscript_tables_and_figures=2467.712s` at 3k rows, support=120, bootstrap=10.
+  - `artifacts/validation_300_sample_no_caps`: early-chain (stages 1-4) runtime observed ~11h before sparse/final.
+- Bound model used:
+  - early-chain scales ~linearly with row count from 300-sample no-caps anchor.
+  - sparse stage is minor relative to early/final at current settings.
+  - final-stage bound uses row-linear scaling and support exponent bracket `p^2` to `p^3` toward all-columns target support.
+- Updated projections (hours / days):
+  - 300 rows: **22.1–42.3 h** (**0.9–1.8 d**)
+  - 10,000 rows: **735.9–1408.4 h** (**30.7–58.7 d**)
+  - 30,000 rows: **2207.6–4225.3 h** (**92.0–176.1 d**)
+
+## Runtime driver clarification (2026-05-11)
+
+- The extreme upper bound is a worst-case extrapolation from the current all-columns final-stage path, not a universal runtime guarantee for all manuscript-equivalent runs.
+- Evidence from current full-data rung (`artifacts/final_cost_ladder/04`):
+  - Output conditioning retains **9,712** outputs (`n_outputs_retained=9712`).
+  - Final stage (`final_manuscript_tables_and_figures`) takes **2467.712s** even with support=120 and bootstrap_count=10.
+- Primary cost drivers in `regenerate_final_manuscript_artifacts`:
+  - HC3 inferential filter loops over **features × retained outputs**.
+  - Multiple bootstrap metric computations (`bootstrap_macro_nrmse_ci`) over large output matrices.
+  - Ablation table recomputes bootstrap-backed OLS comparisons across multiple model variants.
+- Notebook/HPC vs current-path compute delta (source-backed):
+  - Archived HPC script (`docs/final_scripts_from_hpc/multivariate_mmreg_pipeline.with_subset.py`) limits HC3 significance to a subset (`max_outputs=200` default).
+  - Current full-data run processed **9,712** retained outputs (**48.56×** more outputs than 200).
+  - Current HC3 feature-output loop cardinality at rung-04: **1,165,440** (`120 × 9712`).
+  - Current implementation computes HC3 covariance inside the feature×output nested loop, so output-level covariance work is repeated across features.
+- Implication:
+  - If prior manuscript completion was \<1 day, it likely used a materially lighter effective final-stage regime (fewer retained outputs and/or lighter inferential/bootstrap burden and/or different hardware/runtime profile) than the current all-columns extrapolation target.
+
+## HC3 optimization slice (2026-05-11)
+
+- Implemented **optional HC3 output subsetting controls** in final-artifacts config path:
+  - mode: `all` (default), `random_fraction`, `target_list`, `top_variance`
+  - controls: `output_fraction`, `output_names`, `max_outputs`, `random_seed`, `subset_metric`
+- Wired from unified config → legacy case-study mapping → final-artifacts spec/runtime.
+- Implemented **redundant-compute removal** in HC3 inferential filtering:
+  - per-output HC3 covariance now computed once per output and reused across feature rows.
+  - removes repeated covariance recomputation previously done inside feature×output inner loops.
+- Added tests:
+  - config loading + mapping of new HC3 knobs (`tests/test_config_loader.py`)
+  - final-artifacts spec parsing + HC3 subset behavior (`tests/test_manuscript_final_artifacts.py`)
+- Validation:
+  - `pixi run pytest -q tests/test_config_loader.py tests/test_manuscript_final_artifacts.py` ✅
+  - `pixi run ruff check src/bsm_rfm/config.py tools/run_manuscript_pipeline.py src/bsm_rfm/manuscript_stages.py tests/test_config_loader.py tests/test_manuscript_final_artifacts.py` ✅
+
 ## Runtime triage update (2026-05-11)
 
 - Fixed runner bug: `tools/run_manuscript_pipeline.py` now honors `dataset.path`/`dataset.type` instead of hardcoding `artifacts/test_dataset_300`.
@@ -248,6 +322,58 @@ pixi run env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_
 ```
 
 ## Latest slice update
+
+- Prepared Kestrel-ready final-stage cost-ladder pack (configs + runnable scripts):
+
+  - `configs/kestrel_final_cost_base_precompute.yml`
+  - `configs/kestrel_final_cost_sparse_final_{01,02,03,04}.yml`
+  - `configs/kestrel_final_cost_sparse_final_05_near_uncapped.yml`
+  - `scripts/kestrel/run_final_cost_ladder_on_node.sh`
+  - `scripts/kestrel/submit_final_cost_ladder.sbatch`
+
+- Experiment design for 1-hour ~100-core node:
+
+  1. Precompute shared early artifacts through `nonlinear_discovery` once.
+  1. Run sparse→final ladder with escalating `max_candidate_terms`/bootstrap load.
+  1. Emit `artifacts/hpc_final_cost_ladder/summary.csv` with sparse/final timing and support size.
+
+- Kestrel defaults wired from discovery constraints:
+
+  - account `bsm`, partition `shared` (override at submit time if needed)
+  - one node, `cpus-per-task=104`, `mem=220G`, `time=01:00:00`
+  - out-of-core enabled with chunked I/O and spill-friendly temp handling (`TMPDIR` on scratch).
+
+- Added config-driven triage controls to keep full-dataset ramps fast and reproducible:
+
+  - `stages.empirical_null_screening.max_retained_terms` (default `null`)
+  - `stages.interaction_discovery.n_permutations` (default `null`, inherits empirical screen)
+
+- Fixed unified-runner output-conditioning mapping bug:
+
+  - `algorithm.variance_threshold` now maps to
+    `case_study.output_conditioning.temporary_reduction.retained_variance_fraction`
+  - `algorithm.retained_components` now maps to
+    `case_study.output_conditioning.temporary_reduction.retained_components`
+
+- Added focused tests for these mappings/caps:
+
+  - `tests/test_config_loader.py` (legacy mapping + new fields)
+  - `tests/test_manuscript_empirical_null_screening.py`
+    (`max_retained_terms` deterministic cap behavior)
+
+- Added full-dataset triage configs:
+
+  - `configs/validation_full_dataset_notebook_triage.yml`
+  - `configs/validation_full_dataset_triage_minimal.yml`
+
+- Full-dataset triage ramp findings (`validation_full_dataset_triage_minimal`):
+
+  - output conditioning retained components: `20`
+  - empirical-null retained first-order terms: `63` (capped)
+  - interaction stage retained pairs: `366` (manuscript ref `367`)
+  - nonlinear stage retained transformations: `43` (manuscript ref `37`)
+  - sparse stage (triage cap `max_candidate_terms=150`) final stable support: `148`
+  - final-manuscript-artifacts stage remains the dominant runtime bottleneck on full dataset.
 
 - Added optional interaction runtime overrides in case-study config parsing:
   `permutation_count_B`, `n_tree_estimators`, `max_tree_depth`, `max_shap_samples`.

@@ -15,6 +15,7 @@ from bsm_rfm.config import (
     apply_fast_mode_overrides,
     load_config,
 )
+from tools.run_manuscript_pipeline import config_to_legacy_case_study
 
 if TYPE_CHECKING:
     from bsm_rfm.config import WorkflowConfig
@@ -56,21 +57,37 @@ class TestLoadConfig:
                         "output_batch_size": 500,
                         "max_loaded_table_mb": 4096.0,
                         "oom_output_cap": 5000,
+                        "out_of_core": {
+                            "enabled": True,
+                            "chunk_size_mb": 64,
+                            "max_memory_budget_mb": 1024,
+                            "enable_spill_to_disk": True,
+                        },
                     },
                     "stages": {
                         "empirical_null_screening": {
                             "n_permutations": 500,
                             "bh_q_threshold": 0.05,
+                            "max_retained_terms": 63,
                         },
                         "interaction_discovery": {
                             "p_threshold": 0.01,
+                            "n_permutations": 120,
                             "n_tree_estimators": 200,
                         },
                         "sparse_selection": {
                             "n_stability_subsamples": 50,
                             "max_candidate_terms": 1000,
                         },
-                        "final_artifacts": {"bootstrap_count": 100},
+                        "final_artifacts": {
+                            "bootstrap_count": 100,
+                            "hc3_output_subset_mode": "random_fraction",
+                            "hc3_output_fraction": 0.2,
+                            "hc3_output_names": ["Y1", "Y2"],
+                            "hc3_output_max_outputs": 300,
+                            "hc3_output_random_seed": 777,
+                            "hc3_output_subset_metric": "variance",
+                        },
                     },
                     "output": {"artifact_dir": "./artifacts/full/", "seed": 42},
                 },
@@ -85,9 +102,48 @@ class TestLoadConfig:
                 assert config.runtime.n_jobs == -1
                 assert config.runtime.max_loaded_table_mb == 4096.0
                 assert config.runtime.oom_output_cap == 5000
+                assert config.runtime.out_of_core.enabled is True
+                assert config.runtime.out_of_core.chunk_size_mb == 64
                 assert config.stages.empirical_null_screening.n_permutations == 500
+                assert config.stages.empirical_null_screening.max_retained_terms == 63
+                assert config.stages.interaction_discovery.n_permutations == 120
                 assert config.stages.sparse_selection.max_candidate_terms == 1000
+                assert config.stages.final_artifacts.hc3_output_subset_mode == "random_fraction"
+                assert config.stages.final_artifacts.hc3_output_fraction == pytest.approx(0.2)
+                assert config.stages.final_artifacts.hc3_output_names == ["Y1", "Y2"]
+                assert config.stages.final_artifacts.hc3_output_max_outputs == 300
+                assert config.stages.final_artifacts.hc3_output_random_seed == 777
+                assert config.stages.final_artifacts.hc3_output_subset_metric == "variance"
                 assert config.output.seed == 42
+            finally:
+                Path(f.name).unlink()
+
+    def test_load_legacy_chunked_runtime_keys(self):
+        """Test backward compatibility for runtime.use_chunked_io/chunked_io_config."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
+            yaml.dump(
+                {
+                    "dataset": {"type": "synthetic_300_sample"},
+                    "runtime": {
+                        "use_chunked_io": True,
+                        "chunked_io_config": {
+                            "chunk_size_mb": 32,
+                            "max_memory_budget_mb": 512,
+                            "enable_spill_to_disk": False,
+                        },
+                    },
+                },
+                f,
+            )
+            f.flush()
+
+            try:
+                config = load_config(f.name)
+                assert config.runtime.use_chunked_io is True
+                assert config.runtime.out_of_core.enabled is True
+                assert config.runtime.out_of_core.chunk_size_mb == 32
+                assert config.runtime.out_of_core.max_memory_budget_mb == 512
+                assert config.runtime.out_of_core.enable_spill_to_disk is False
             finally:
                 Path(f.name).unlink()
 
@@ -149,3 +205,63 @@ class TestFastModeOverrides:
 
         assert config.stages.empirical_null_screening.n_permutations == 10
         assert config.stages.final_artifacts.bootstrap_count == original_bootstrap
+
+
+class TestLegacyConfigMapping:
+    """Test WorkflowConfig -> legacy case-study mapping."""
+
+    def test_maps_variance_threshold_to_temporary_reduction(self):
+        """variance_threshold should map to output_conditioning.temporary_reduction."""
+        config = WorkflowConfig(dataset=DatasetConfig(type="synthetic_300_sample"))
+        config.algorithm.variance_threshold = 0.85
+
+        legacy = config_to_legacy_case_study(config)
+        reduction = legacy["case_study"]["output_conditioning"]["temporary_reduction"]
+        assert reduction["retained_variance_fraction"] == pytest.approx(0.85)
+
+    def test_maps_retained_component_override_to_temporary_reduction(self):
+        """retained_components override should map to temporary_reduction key used by stages."""
+        config = WorkflowConfig(dataset=DatasetConfig(type="synthetic_300_sample"))
+        config.algorithm.retained_components = 5
+
+        legacy = config_to_legacy_case_study(config)
+        reduction = legacy["case_study"]["output_conditioning"]["temporary_reduction"]
+        assert reduction["retained_components"] == 5
+
+    def test_maps_empirical_null_max_retained_terms_override(self):
+        """max_retained_terms should map to case-study empirical-null section."""
+        config = WorkflowConfig(dataset=DatasetConfig(type="synthetic_300_sample"))
+        config.stages.empirical_null_screening.max_retained_terms = 63
+
+        legacy = config_to_legacy_case_study(config)
+        section = legacy["case_study"]["empirical_null_screen"]
+        assert section["max_retained_terms"] == 63
+
+    def test_maps_interaction_permutation_override(self):
+        """Interaction n_permutations should map to interaction_discovery.permutation_count_B."""
+        config = WorkflowConfig(dataset=DatasetConfig(type="synthetic_300_sample"))
+        config.stages.interaction_discovery.n_permutations = 21
+
+        legacy = config_to_legacy_case_study(config)
+        section = legacy["case_study"]["interaction_discovery"]
+        assert section["permutation_count_B"] == 20
+
+    def test_maps_final_hc3_subset_overrides(self):
+        """HC3 output subset options should map to final_inferential_filter."""
+        config = WorkflowConfig(dataset=DatasetConfig(type="synthetic_300_sample"))
+        final = config.stages.final_artifacts
+        final.hc3_output_subset_mode = "target_list"
+        final.hc3_output_fraction = 0.25
+        final.hc3_output_names = ["Y1", "Y2"]
+        final.hc3_output_max_outputs = 75
+        final.hc3_output_random_seed = 999
+        final.hc3_output_subset_metric = "variance"
+
+        legacy = config_to_legacy_case_study(config)
+        section = legacy["case_study"]["final_inferential_filter"]
+        assert section["output_subset_mode"] == "target_list"
+        assert section["output_fraction"] == pytest.approx(0.25)
+        assert section["output_names"] == ["Y1", "Y2"]
+        assert section["max_outputs"] == 75
+        assert section["random_seed"] == 999
+        assert section["subset_metric"] == "variance"

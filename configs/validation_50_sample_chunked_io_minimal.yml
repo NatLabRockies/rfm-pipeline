@@ -1,0 +1,42 @@
+# Minimal fast config for rapid iteration and debugging
+# Purpose: test chunked I/O code path quickly with enough features to proceed
+
+dataset:
+  type: "synthetic_300_sample"
+
+algorithm:
+  variance_threshold: 0.90
+
+runtime:
+  n_jobs: -1
+  use_chunked_io: true
+  chunked_io_config:
+    chunk_size_mb: 10
+    max_memory_budget_mb: 256
+    enable_spill_to_disk: true
+  output_batch_size: null
+
+stages:
+  empirical_null_screening:
+    n_permutations: 20  # Small but enough to screen
+    bh_q_threshold: 0.10
+  interaction_discovery:
+    n_tree_estimators: 10  # Increased for feature selection
+    max_tree_depth: 5
+    p_threshold: 0.10  # Relaxed to let features through
+  nonlinear_discovery:
+    edf_threshold: 2.5
+    transform_families: ["spline"]
+  sparse_selection:
+    n_stability_subsamples: 10  # Increased
+    subsample_fraction: 1.0
+    lasso_alpha_percentile: 50
+  final_artifacts:
+    bootstrap_count: 10  # Increased slightly
+    bootstrap_alpha: 0.05
+
+validation:
+  fast_mode: false
+
+output:
+  artifact_dir: "./artifacts/test_chunked_io_minimal/"

@@ -1,0 +1,45 @@
+dataset:
+  type: "synthetic_full"
+
+algorithm:
+  variance_threshold: 0.90
+
+runtime:
+  n_jobs: -1
+  output_batch_size: null
+  use_chunked_io: true
+  chunked_io_config:
+    chunk_size_mb: 64
+    max_memory_budget_mb: 4096
+    enable_spill_to_disk: true
+
+stages:
+  empirical_null_screening:
+    n_permutations: 101
+    bh_q_threshold: 0.10
+    max_retained_terms: 63
+  interaction_discovery:
+    n_permutations: 21
+    n_tree_estimators: 100
+    max_tree_depth: 3
+    p_threshold: 0.05
+  nonlinear_discovery:
+    edf_threshold: 2.5
+    transform_families: ["spline", "poly", "log"]
+  sparse_selection:
+    n_stability_subsamples: 6
+    subsample_fraction: 1.0
+    lasso_alpha_percentile: 50
+    max_candidate_terms: 20
+  final_artifacts:
+    bootstrap_count: 5
+    bootstrap_alpha: 0.05
+
+validation:
+  fast_mode: false
+  fast_mode_overrides: {}
+
+output:
+  artifact_dir: "./artifacts/final_cost_ladder/01/"
+  seed: 123
+  verbose: true

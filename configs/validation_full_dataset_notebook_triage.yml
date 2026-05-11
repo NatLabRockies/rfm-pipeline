@@ -1,0 +1,47 @@
+# Full-dataset triage run with notebook-like lightweight interaction settings.
+# Goal: fast end-to-end pipeline validation before publication-grade hyperparameters.
+
+dataset:
+  type: "synthetic_full"
+
+algorithm:
+  variance_threshold: 0.90
+
+runtime:
+  n_jobs: -1
+  output_batch_size: null
+  use_chunked_io: true
+  chunked_io_config:
+    chunk_size_mb: 64
+    max_memory_budget_mb: 4096
+    enable_spill_to_disk: true
+
+stages:
+  empirical_null_screening:
+    # Config n_permutations is (B+1); this yields B=20 notebook-like permutations.
+    n_permutations: 21
+    bh_q_threshold: 0.10
+  interaction_discovery:
+    # Keep estimator count close to notebook defaults, reduce depth for triage speed.
+    n_tree_estimators: 100
+    max_tree_depth: 3
+    p_threshold: 0.05
+  nonlinear_discovery:
+    edf_threshold: 2.5
+    transform_families: ["spline", "poly", "log"]
+  sparse_selection:
+    n_stability_subsamples: 20
+    subsample_fraction: 1.0
+    lasso_alpha_percentile: 50
+  final_artifacts:
+    bootstrap_count: 50
+    bootstrap_alpha: 0.05
+
+validation:
+  fast_mode: false
+  fast_mode_overrides: {}
+
+output:
+  artifact_dir: "./artifacts/validation_full_dataset_notebook_triage/"
+  seed: 123
+  verbose: true

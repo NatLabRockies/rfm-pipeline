@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import time
 import warnings
 from dataclasses import dataclass
@@ -70,6 +71,19 @@ def _report_progress(
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     tmp.replace(path)
+
+
+def _progress_batch_size(total: int, default_cap: int) -> int:
+    """Choose progress batch size with optional high-fidelity override."""
+    if total <= 0:
+        return 1
+    override = os.getenv("BSM_PROGRESS_BATCH_SIZE")
+    if override:
+        try:
+            return max(1, min(total, int(override)))
+        except ValueError:
+            pass
+    return max(1, min(default_cap, total // 20 if total > 20 else total))
 
 
 @dataclass(frozen=True)
@@ -183,6 +197,7 @@ class EmpiricalNullScreeningSpec:
     source_script_equivalence_status: str = "not_yet_validated"
     random_seed: int = 123
     n_jobs: int = 1
+    max_retained_terms: int | None = None
 
 
 @dataclass(frozen=True)
@@ -559,6 +574,12 @@ class FinalManuscriptArtifactsSpec:
         "hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs"
     )
     inferential_filter_alpha: float = 0.05
+    hc3_output_subset_mode: str = "all"
+    hc3_output_fraction: float | None = None
+    hc3_output_names: tuple[str, ...] = ()
+    hc3_output_max_outputs: int | None = None
+    hc3_output_random_seed: int = 123
+    hc3_output_subset_metric: str = "variance"
     n_jobs: int = 1
 
 
@@ -925,6 +946,11 @@ def empirical_null_screening_spec_from_case_study_config(
         ),
         random_seed=int(interface.get("holdout_random_seed", 123)),
         n_jobs=int(runtime.get("n_jobs", 1)),
+        max_retained_terms=(
+            int(section["max_retained_terms"])
+            if section.get("max_retained_terms") is not None
+            else None
+        ),
     )
 
 
@@ -1024,6 +1050,8 @@ def screen_manuscript_empirical_null_terms(
         raise ValueError("permutation_count_B must be positive.")
     if not 0.0 < spec.bh_q_screen <= 1.0:
         raise ValueError("bh_q_screen must be in the interval (0, 1].")
+    if spec.max_retained_terms is not None and spec.max_retained_terms < 1:
+        raise ValueError("max_retained_terms must be positive when provided.")
 
     first_order_catalog = _first_order_feature_catalog(feature_catalog)
     design = build_manuscript_feature_design(input_matrix, first_order_catalog)
@@ -1079,6 +1107,10 @@ def screen_manuscript_empirical_null_terms(
         ascending=[True, False, True],
         ignore_index=True,
     )
+    if spec.max_retained_terms is not None:
+        retained_terms = retained_terms.head(spec.max_retained_terms).reset_index(drop=True)
+        retained_names = set(retained_terms["feature_name"].astype(str))
+        feature_stats["retained"] = feature_stats["feature_name"].astype(str).isin(retained_names)
     summary = _build_empirical_null_screening_summary(
         n_training_rows=len(x_train),
         n_candidate_terms=len(feature_names),
@@ -1325,7 +1357,7 @@ def discover_manuscript_interactions(
 
     total_scores = len(y_matrices)
     all_results: list[tuple[np.ndarray, np.ndarray]] = []
-    batch_size = max(1, min(25, total_scores // 20 if total_scores > 20 else total_scores))
+    batch_size = _progress_batch_size(total_scores, 25)
     _report_progress(
         stage="interaction_discovery",
         completed=0,
@@ -1620,7 +1652,7 @@ def discover_manuscript_nonlinear_transformations(
     base_feat_list = list(candidates_by_base.keys())
     feature_results: dict[str, dict] = {}
     total_features = len(base_feat_list)
-    batch_size = max(1, min(50, total_features // 20 if total_features > 20 else total_features))
+    batch_size = _progress_batch_size(total_features, 50)
     _report_progress(
         stage="nonlinear_discovery",
         completed=0,
@@ -2184,6 +2216,20 @@ def final_manuscript_artifacts_spec_from_case_study_config(
         random_seed=int(interface.get("holdout_random_seed", 123)),
         inferential_filter_interval_method=str(inferential_filter["interval_method"]),
         inferential_filter_alpha=float(inferential_filter.get("alpha", 0.05)),
+        hc3_output_subset_mode=str(inferential_filter.get("output_subset_mode", "all")),
+        hc3_output_fraction=(
+            float(inferential_filter["output_fraction"])
+            if inferential_filter.get("output_fraction") is not None
+            else None
+        ),
+        hc3_output_names=tuple(str(name) for name in inferential_filter.get("output_names", [])),
+        hc3_output_max_outputs=(
+            int(inferential_filter["max_outputs"])
+            if inferential_filter.get("max_outputs") is not None
+            else None
+        ),
+        hc3_output_random_seed=int(inferential_filter.get("random_seed", 123)),
+        hc3_output_subset_metric=str(inferential_filter.get("subset_metric", "variance")),
         n_jobs=int(runtime.get("n_jobs", 1)),
     )
 
@@ -2283,6 +2329,16 @@ def _compute_ablation_table(
     subset per model, avoiding redundant materialization of interaction and nonlinear
     feature columns.
     """
+    ablation_total = 5
+    ablation_done = 0
+    _report_progress(
+        stage="final_ablation",
+        completed=ablation_done,
+        total=ablation_total,
+        unit="models",
+        detail="start",
+    )
+
     null_metric = bootstrap_macro_nrmse_ci(
         y_holdout.to_numpy(dtype=float),
         null_predictions,
@@ -2292,6 +2348,14 @@ def _compute_ablation_table(
         alpha=spec.bootstrap_alpha,
         random_state=spec.random_seed,
         n_jobs=spec.n_jobs,
+    )
+    ablation_done = 1
+    _report_progress(
+        stage="final_ablation",
+        completed=ablation_done,
+        total=ablation_total,
+        unit="models",
+        detail="null_mean complete",
     )
 
     first_order_names = list(
@@ -2328,27 +2392,67 @@ def _compute_ablation_table(
             "nrmse": null_metric["point_estimate"],
             "ci_lower": null_metric["ci_lower"],
             "ci_upper": null_metric["ci_upper"],
-        },
+        }
+    ]
+
+    rows.append(
         {
             "model_name": "main_effects_ols",
             **_fit_ablation_ols_nrmse(first_order_names, **common_kwargs),
-        },
+        }
+    )
+    _report_progress(
+        stage="final_ablation",
+        completed=2,
+        total=ablation_total,
+        unit="models",
+        detail="main_effects_ols complete",
+    )
+
+    rows.append(
         {
             "model_name": "screened_ols",
             **_fit_ablation_ols_nrmse(screened_names, **common_kwargs),
-        },
+        }
+    )
+    _report_progress(
+        stage="final_ablation",
+        completed=3,
+        total=ablation_total,
+        unit="models",
+        detail="screened_ols complete",
+    )
+
+    rows.append(
         {
             "model_name": "penalized_ols",
             **_fit_ablation_ols_nrmse(prefilter_feature_names, **common_kwargs),
-        },
+        }
+    )
+    _report_progress(
+        stage="final_ablation",
+        completed=4,
+        total=ablation_total,
+        unit="models",
+        detail="penalized_ols complete",
+    )
+
+    rows.append(
         {
             "model_name": "final_ols",
             "n_features": len(final_feature_names),
             "nrmse": final_metric["point_estimate"],
             "ci_lower": final_metric["ci_lower"],
             "ci_upper": final_metric["ci_upper"],
-        },
-    ]
+        }
+    )
+    _report_progress(
+        stage="final_ablation",
+        completed=5,
+        total=ablation_total,
+        unit="models",
+        detail="all models complete",
+    )
     return pd.DataFrame(rows)
 
 
@@ -2455,6 +2559,19 @@ def regenerate_final_manuscript_artifacts(
         Materialized final-model, manuscript-table, and SVG figure artifacts.
     """
     _validate_final_manuscript_artifacts_spec(spec)
+    final_steps_total = 10
+    final_step = 0
+
+    def _final_progress(detail: str) -> None:
+        _report_progress(
+            stage="final_manuscript_artifacts",
+            completed=final_step,
+            total=final_steps_total,
+            unit="substeps",
+            detail=detail,
+        )
+
+    _final_progress("start")
     prefilter_feature_names = _final_support_feature_names(sparse_selection.final_stable_support)
     prefilter_catalog = _feature_catalog_subset(feature_catalog, prefilter_feature_names)
     prefilter_support_features = _build_final_support_features(
@@ -2468,6 +2585,10 @@ def regenerate_final_manuscript_artifacts(
     holdout_ids = _holdout_sample_ids(holdout_assignments)
     if holdout_ids.empty:
         raise ValueError("Final manuscript artifacts require at least one holdout row.")
+    final_step = 1
+    _final_progress(
+        f"prefilter prepared; train_rows={len(train_ids)}, holdout_rows={len(holdout_ids)}"
+    )
     x_prefilter_train = _indexed_by_sample_id(
         _align_table_by_sample_id(
             prefilter_design,
@@ -2486,7 +2607,15 @@ def regenerate_final_manuscript_artifacts(
         y_train,
         alpha=spec.inferential_filter_alpha,
         interval_method=spec.inferential_filter_interval_method,
+        output_subset_mode=spec.hc3_output_subset_mode,
+        output_fraction=spec.hc3_output_fraction,
+        output_names=spec.hc3_output_names,
+        max_outputs=spec.hc3_output_max_outputs,
+        random_seed=spec.hc3_output_random_seed,
+        subset_metric=spec.hc3_output_subset_metric,
     )
+    final_step = 2
+    _final_progress("hc3 inferential filter complete")
     final_feature_names = _hc3_retained_feature_names(hc3_filter_summary)
     final_catalog = _feature_catalog_subset(feature_catalog, final_feature_names)
     final_support_features = _build_final_support_features(
@@ -2518,9 +2647,16 @@ def regenerate_final_manuscript_artifacts(
         _align_output_matrix(output_matrix, holdout_ids, retained_outputs),
         holdout_ids,
     )
+    final_step = 3
+    _final_progress(
+        "final design aligned; "
+        f"outputs={len(retained_outputs)}, features={len(final_feature_names)}"
+    )
 
     final_fit = fit_final_ols(x_train, y_train)
     final_predictions = predict_final_ols(final_fit, x_holdout)
+    final_step = 4
+    _final_progress("final OLS fit + predictions complete")
     final_metric = bootstrap_macro_nrmse_ci(
         y_holdout.to_numpy(dtype=float),
         final_predictions.to_numpy(dtype=float),
@@ -2531,6 +2667,8 @@ def regenerate_final_manuscript_artifacts(
         random_state=spec.random_seed,
         n_jobs=spec.n_jobs,
     )
+    final_step = 5
+    _final_progress(f"final metric bootstrap complete; n_boot={spec.bootstrap_count}")
     null_predictions = make_null_mean_prediction(
         y_train.to_numpy(dtype=float),
         n_rows=len(y_holdout),
@@ -2545,6 +2683,8 @@ def regenerate_final_manuscript_artifacts(
         random_state=spec.random_seed,
         n_jobs=spec.n_jobs,
     )
+    final_step = 6
+    _final_progress("null metric bootstrap complete")
 
     ablation_table = _compute_ablation_table(
         feature_catalog=feature_catalog,
@@ -2560,6 +2700,8 @@ def regenerate_final_manuscript_artifacts(
         final_metric=final_metric,
         spec=spec,
     )
+    final_step = 7
+    _final_progress("ablation table complete")
 
     per_output_nrmse = per_output_nrmse_frame(
         y_holdout.to_numpy(dtype=float),
@@ -2569,6 +2711,8 @@ def regenerate_final_manuscript_artifacts(
         min_range=spec.nrmse_min_range,
     )
     per_output_nrmse_summary = _build_per_output_nrmse_summary(per_output_nrmse)
+    final_step = 8
+    _final_progress("per-output metrics complete")
 
     coefficient_matrix_raw_scale = make_coefficient_matrix_frame(
         final_fit.coef_raw_scale,
@@ -2648,6 +2792,10 @@ def regenerate_final_manuscript_artifacts(
         figure_specs=figure_specs,
         spec=spec,
     )
+    final_step = 9
+    _final_progress("final summaries complete")
+    final_step = 10
+    _final_progress("done")
     return FinalManuscriptArtifactsResult(
         prefilter_support_features=prefilter_support_features,
         final_support_features=final_support_features,
@@ -4633,7 +4781,7 @@ def _permutation_row_norm_null(
         return np.linalg.norm(coefficients, axis=1)
 
     null_statistics = np.zeros((n_permutations, x_scaled.shape[1]), dtype=float)
-    batch_size = max(1, min(50, n_permutations // 20 if n_permutations > 20 else n_permutations))
+    batch_size = _progress_batch_size(n_permutations, 50)
     _report_progress(
         stage="empirical_null_screen",
         completed=0,
@@ -4763,6 +4911,9 @@ def _build_empirical_null_screening_summary(
                 "n_components": int(n_components),
                 "n_permutations": int(spec.permutation_count_B),
                 "bh_q_screen": float(spec.bh_q_screen),
+                "max_retained_terms": (
+                    int(spec.max_retained_terms) if spec.max_retained_terms is not None else np.nan
+                ),
                 "n_retained_terms": int(n_retained_terms),
                 "min_empirical_p_value": float(min_p_value),
                 "manuscript_retained_terms_reference": int(spec.retained_terms_reference),
@@ -4790,6 +4941,9 @@ def _build_empirical_null_screening_provenance(
                 "source_script_equivalence_status": spec.source_script_equivalence_status,
                 "permutation_count_B": spec.permutation_count_B,
                 "bh_q_screen": spec.bh_q_screen,
+                "max_retained_terms": (
+                    int(spec.max_retained_terms) if spec.max_retained_terms is not None else np.nan
+                ),
                 "retained_terms_reference": spec.retained_terms_reference,
             }
         ]
@@ -5184,6 +5338,18 @@ def _validate_final_manuscript_artifacts_spec(spec: FinalManuscriptArtifactsSpec
         raise ValueError("Only the frozen 95% HC3 Wald final inferential filter is supported.")
     if not 0.0 < spec.inferential_filter_alpha < 1.0:
         raise ValueError("inferential_filter_alpha must be in the interval (0, 1).")
+    valid_subset_modes = {"all", "random_fraction", "target_list", "top_variance"}
+    if spec.hc3_output_subset_mode not in valid_subset_modes:
+        raise ValueError(
+            "hc3_output_subset_mode must be one of "
+            f"{sorted(valid_subset_modes)}. Got {spec.hc3_output_subset_mode!r}."
+        )
+    if spec.hc3_output_fraction is not None and not 0.0 < spec.hc3_output_fraction <= 1.0:
+        raise ValueError("hc3_output_fraction must be in the interval (0, 1].")
+    if spec.hc3_output_max_outputs is not None and spec.hc3_output_max_outputs <= 0:
+        raise ValueError("hc3_output_max_outputs must be positive when provided.")
+    if spec.hc3_output_subset_metric not in {"variance"}:
+        raise ValueError("Only variance-based HC3 output subsetting is supported.")
 
 
 def _final_support_feature_names(final_stable_support: pd.DataFrame) -> list[str]:
@@ -5258,12 +5424,62 @@ def _indexed_by_sample_id(frame: pd.DataFrame, sample_ids: pd.Series) -> pd.Data
     return indexed
 
 
+def _select_hc3_output_names(
+    y_numeric: pd.DataFrame,
+    *,
+    output_subset_mode: str,
+    output_fraction: float | None,
+    output_names: tuple[str, ...],
+    max_outputs: int | None,
+    random_seed: int,
+    subset_metric: str,
+) -> list[str]:
+    """Select output columns used for HC3 filtering."""
+    all_names = [str(name) for name in y_numeric.columns]
+    if not all_names:
+        raise ValueError("HC3 inferential filtering requires at least one output column.")
+    selected: list[str]
+    if output_subset_mode == "all":
+        selected = all_names
+    elif output_subset_mode == "target_list":
+        requested = [str(name) for name in output_names]
+        selected = [name for name in requested if name in set(all_names)]
+        if not selected:
+            raise ValueError("HC3 target_list mode selected no valid outputs.")
+    elif output_subset_mode == "random_fraction":
+        if output_fraction is None:
+            raise ValueError("HC3 random_fraction mode requires output_fraction.")
+        n_total = len(all_names)
+        n_keep = max(1, int(math.ceil(n_total * output_fraction)))
+        rng = np.random.default_rng(random_seed)
+        selected = sorted(rng.choice(all_names, size=n_keep, replace=False).tolist())
+    elif output_subset_mode == "top_variance":
+        if subset_metric != "variance":
+            raise ValueError("Only variance subset metric is supported for HC3 top_variance mode.")
+        variances = y_numeric.var(axis=0, ddof=1).sort_values(ascending=False)
+        n_keep = max_outputs if max_outputs is not None else len(all_names)
+        selected = [str(name) for name in variances.index[:n_keep]]
+    else:
+        raise ValueError(f"Unsupported HC3 output subset mode: {output_subset_mode!r}")
+    if max_outputs is not None and len(selected) > max_outputs:
+        selected = selected[:max_outputs]
+    if not selected:
+        raise ValueError("HC3 output selection resulted in an empty output set.")
+    return selected
+
+
 def _build_hc3_inferential_filter_tables(
     x_train: pd.DataFrame,
     y_train: pd.DataFrame,
     *,
     alpha: float,
     interval_method: str,
+    output_subset_mode: str = "all",
+    output_fraction: float | None = None,
+    output_names: tuple[str, ...] = (),
+    max_outputs: int | None = None,
+    random_seed: int = 123,
+    subset_metric: str = "variance",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build per-output HC3 Wald intervals and feature-level filter decisions."""
     x_numeric = x_train.apply(pd.to_numeric, errors="raise")
@@ -5273,7 +5489,17 @@ def _build_hc3_inferential_filter_tables(
     if len(x_numeric) != len(y_numeric):
         raise ValueError("HC3 inferential filtering requires aligned X and Y row counts.")
     x_values = x_numeric.to_numpy(dtype=float)
-    y_values = y_numeric.to_numpy(dtype=float)
+    selected_output_names = _select_hc3_output_names(
+        y_numeric,
+        output_subset_mode=output_subset_mode,
+        output_fraction=output_fraction,
+        output_names=output_names,
+        max_outputs=max_outputs,
+        random_seed=random_seed,
+        subset_metric=subset_metric,
+    )
+    y_selected = y_numeric.loc[:, selected_output_names]
+    y_values = y_selected.to_numpy(dtype=float)
     if not np.isfinite(x_values).all() or not np.isfinite(y_values).all():
         raise ValueError("HC3 inferential filtering requires finite numeric values.")
 
@@ -5289,54 +5515,57 @@ def _build_hc3_inferential_filter_tables(
     interval_rows: list[dict[str, Any]] = []
     feature_rows: list[dict[str, Any]] = []
     feature_names = list(x_numeric.columns)
-    output_names = list(y_numeric.columns)
-    for feature_position, feature_name in enumerate(feature_names):
-        output_excludes_zero_count = 0
-        max_abs_t_statistic = 0.0
-        for output_position, output_name in enumerate(output_names):
-            scaled_residual = residuals[:, output_position] / leverage_denominator
-            meat = design.T @ ((scaled_residual**2)[:, np.newaxis] * design)
-            covariance = xtx_inv @ meat @ xtx_inv
-            coefficient = float(beta[feature_position + 1, output_position])
-            variance = max(float(covariance[feature_position + 1, feature_position + 1]), 0.0)
-            standard_error = math.sqrt(variance)
-            lower = coefficient - z_value * standard_error
-            upper = coefficient + z_value * standard_error
-            zero_compatible = lower <= 0.0 <= upper
-            excludes_zero = not zero_compatible
-            if excludes_zero:
-                output_excludes_zero_count += 1
-            t_statistic = coefficient / standard_error if standard_error > 0.0 else math.inf
-            if math.isfinite(t_statistic):
-                max_abs_t_statistic = max(max_abs_t_statistic, abs(t_statistic))
-            elif coefficient != 0.0:
-                max_abs_t_statistic = math.inf
+    output_names = list(y_selected.columns)
+    output_excludes_counts = np.zeros(len(feature_names), dtype=int)
+    max_abs_t_stats = np.zeros(len(feature_names), dtype=float)
+    for output_position, output_name in enumerate(output_names):
+        scaled_residual = residuals[:, output_position] / leverage_denominator
+        meat = design.T @ ((scaled_residual**2)[:, np.newaxis] * design)
+        covariance = xtx_inv @ meat @ xtx_inv
+        diag_variance = np.diag(covariance)[1:]
+        std_errors = np.sqrt(np.maximum(diag_variance, 0.0))
+        coefficients = beta[1:, output_position]
+        lower = coefficients - z_value * std_errors
+        upper = coefficients + z_value * std_errors
+        zero_compatible = np.logical_and(lower <= 0.0, upper >= 0.0)
+        excludes_zero = ~zero_compatible
+        output_excludes_counts += excludes_zero.astype(int)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t_stats = coefficients / std_errors
+        finite_mask = np.isfinite(t_stats)
+        max_abs_t_stats = np.where(
+            finite_mask,
+            np.maximum(max_abs_t_stats, np.abs(t_stats)),
+            np.where(coefficients != 0.0, np.inf, max_abs_t_stats),
+        )
+        for feature_position, feature_name in enumerate(feature_names):
             interval_rows.append(
                 {
                     "feature_name": str(feature_name),
                     "output_name": str(output_name),
-                    "coefficient": coefficient,
-                    "hc3_standard_error": float(standard_error),
+                    "coefficient": float(coefficients[feature_position]),
+                    "hc3_standard_error": float(std_errors[feature_position]),
                     "wald_z_value": float(z_value),
-                    "ci_lower": float(lower),
-                    "ci_upper": float(upper),
-                    "zero_compatible": bool(zero_compatible),
-                    "excludes_zero": bool(excludes_zero),
+                    "ci_lower": float(lower[feature_position]),
+                    "ci_upper": float(upper[feature_position]),
+                    "zero_compatible": bool(zero_compatible[feature_position]),
+                    "excludes_zero": bool(excludes_zero[feature_position]),
                     "interval_method": interval_method,
                     "alpha": float(alpha),
                 }
             )
-        retained = output_excludes_zero_count > 0
+    for feature_position, feature_name in enumerate(feature_names):
+        retained = bool(output_excludes_counts[feature_position] > 0)
         feature_rows.append(
             {
                 "feature_name": str(feature_name),
                 "n_outputs": int(len(output_names)),
-                "n_outputs_excluding_zero": int(output_excludes_zero_count),
+                "n_outputs_excluding_zero": int(output_excludes_counts[feature_position]),
                 "hc3_retained_after_filter": bool(retained),
                 "hc3_drop_reason": "retained_by_at_least_one_output"
                 if retained
                 else "zero_compatible_for_all_outputs",
-                "max_abs_hc3_t_statistic": float(max_abs_t_statistic),
+                "max_abs_hc3_t_statistic": float(max_abs_t_stats[feature_position]),
                 "interval_method": interval_method,
                 "alpha": float(alpha),
             }

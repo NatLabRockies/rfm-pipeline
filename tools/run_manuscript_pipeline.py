@@ -21,7 +21,12 @@ REPO_ROOT = Path(__file__).parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.bsm_rfm.config import WorkflowConfig, apply_fast_mode_overrides, load_config  # noqa: E402
+from src.bsm_rfm.config import (  # noqa: E402
+    OutOfCoreConfig,
+    WorkflowConfig,
+    apply_fast_mode_overrides,
+    load_config,
+)
 from src.bsm_rfm.manuscript_runtime import load_manuscript_case_study_config  # noqa: E402
 from src.bsm_rfm.manuscript_stages import (  # noqa: E402
     EmpiricalNullScreeningResult,
@@ -48,6 +53,11 @@ from src.bsm_rfm.manuscript_stages import (  # noqa: E402
     write_nonlinear_discovery_artifacts,
     write_output_conditioning_artifacts,
     write_sparse_selection_stability_artifacts,
+)
+from src.bsm_rfm.out_of_core import (  # noqa: E402
+    ChunkedParquetReader,
+    SpillToDiskBuffer,
+    choose_temp_dir,
 )
 
 STAGES = (
@@ -84,6 +94,65 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _read_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _pid_is_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    else:
+        return True
+
+
+def _mark_abandoned_run_if_needed(
+    *,
+    output_root: Path,
+    started_path: Path,
+    complete_path: Path,
+    failed_path: Path,
+    interrupted_path: Path,
+    abandoned_path: Path,
+    progress_path: Path,
+) -> None:
+    """Write an abandoned-run marker when a prior run has no terminal marker and dead PID."""
+    if not started_path.exists():
+        return
+    if (
+        complete_path.exists()
+        or failed_path.exists()
+        or interrupted_path.exists()
+        or abandoned_path.exists()
+    ):
+        return
+    started = _read_json(started_path) or {}
+    prior_pid = int(started.get("pid", -1))
+    if _pid_is_alive(prior_pid):
+        return
+    payload: dict[str, Any] = {
+        "status": "abandoned",
+        "abandoned_at_utc": _utc_now(),
+        "output_root": str(output_root.resolve()),
+        "reason": "prior run has run_started marker but no terminal marker and no live PID",
+        "prior_run_started": started,
+    }
+    progress = _read_json(progress_path)
+    if progress is not None:
+        payload["last_progress"] = progress
+    _write_json(abandoned_path, payload)
+
+
 def _read_csv(path: Path):
     import pandas as pd
 
@@ -92,16 +161,96 @@ def _read_csv(path: Path):
     return pd.read_csv(path)
 
 
-def _load_tables(output_column_limit: int | None) -> dict[str, Any]:
-    """Load validation tables and normalize holdout labels."""
+def _effective_out_of_core(config: WorkflowConfig) -> OutOfCoreConfig:
+    """Resolve out-of-core settings, including legacy runtime keys."""
+    resolved = config.runtime.out_of_core
+    legacy_map = config.runtime.chunked_io_config or {}
+    if config.runtime.use_chunked_io and not resolved.enabled:
+        resolved.enabled = True
+    if legacy_map:
+        resolved.chunk_size_mb = int(legacy_map.get("chunk_size_mb", resolved.chunk_size_mb))
+        resolved.max_memory_budget_mb = int(
+            legacy_map.get("max_memory_budget_mb", resolved.max_memory_budget_mb)
+        )
+        resolved.temp_dir = legacy_map.get("temp_dir", resolved.temp_dir)
+        resolved.enable_spill_to_disk = bool(
+            legacy_map.get("enable_spill_to_disk", resolved.enable_spill_to_disk)
+        )
+    return resolved
+
+
+def _read_parquet_with_mode(
+    path: Path,
+    *,
+    out_of_core: OutOfCoreConfig,
+    columns: list[str] | None = None,
+):
     import pandas as pd
 
-    data_root = REPO_ROOT / "artifacts" / "test_dataset_300"
-    y = pd.read_parquet(data_root / "Y.parquet")
+    if not out_of_core.enabled:
+        return pd.read_parquet(path, columns=columns)
+
+    reader = ChunkedParquetReader(
+        str(path),
+        chunk_size_mb=max(1, int(out_of_core.chunk_size_mb)),
+        columns=columns,
+    )
+    if out_of_core.enable_spill_to_disk:
+        temp_root = choose_temp_dir(preferred_root=out_of_core.temp_dir)
+        buffer = SpillToDiskBuffer(
+            temp_dir=temp_root,
+            max_memory_mb=max(64, int(out_of_core.max_memory_budget_mb)),
+        )
+        try:
+            for chunk in reader:
+                buffer.add_chunk(chunk)
+            return buffer.get_final_dataframe()
+        finally:
+            buffer.cleanup()
+
+    chunks = list(reader)
+    if not chunks:
+        return pd.read_parquet(path, columns=columns).iloc[0:0]
+    return pd.concat(chunks, ignore_index=True)
+
+
+def _resolve_data_root(config: WorkflowConfig) -> Path:
+    """Resolve dataset root from config.dataset.{path,type}."""
+    if config.dataset.path:
+        candidate = Path(config.dataset.path)
+        if not candidate.is_absolute():
+            candidate = REPO_ROOT / candidate
+        return candidate
+
+    dataset_roots = {
+        "synthetic_300_sample": REPO_ROOT / "artifacts" / "test_dataset_300",
+        "synthetic_full": REPO_ROOT / "artifacts" / "test_dataset_3k",
+    }
+    try:
+        return dataset_roots[config.dataset.type]
+    except KeyError as exc:
+        raise ValueError(
+            "Unsupported dataset.type for unified runner. "
+            f"dataset.type={config.dataset.type!r}. "
+            "Set dataset.path explicitly or use one of: "
+            f"{sorted(dataset_roots.keys())}"
+        ) from exc
+
+
+def _load_tables(output_column_limit: int | None, config: WorkflowConfig) -> dict[str, Any]:
+    """Load validation tables and normalize holdout labels."""
+    data_root = _resolve_data_root(config)
+    out_of_core = _effective_out_of_core(config)
+    if not data_root.exists():
+        raise FileNotFoundError(f"Dataset root not found: {data_root}")
+    y = _read_parquet_with_mode(data_root / "Y.parquet", out_of_core=out_of_core)
     y_cols = [c for c in y.columns if c != "sample_id"]
     if output_column_limit is not None and len(y_cols) > output_column_limit:
         y = y[["sample_id", *y_cols[:output_column_limit]]]
-    holdout = pd.read_parquet(data_root / "holdout_assignments.parquet").copy()
+    holdout = _read_parquet_with_mode(
+        data_root / "holdout_assignments.parquet",
+        out_of_core=out_of_core,
+    ).copy()
     holdout["split"] = (
         holdout["split"]
         .astype(str)
@@ -110,11 +259,15 @@ def _load_tables(output_column_limit: int | None) -> dict[str, Any]:
         .replace({"test": "holdout", "val": "holdout", "validation": "holdout"})
     )
     return {
-        "case_study_input_matrix": pd.read_parquet(data_root / "X.parquet"),
+        "case_study_input_matrix": _read_parquet_with_mode(
+            data_root / "X.parquet",
+            out_of_core=out_of_core,
+        ),
         "case_study_output_matrix": y,
         "fixed_holdout_assignments": holdout,
-        "manuscript_feature_catalog": pd.read_parquet(
-            REPO_ROOT / "artifacts" / "actual_input_feature_catalog.parquet"
+        "manuscript_feature_catalog": _read_parquet_with_mode(
+            REPO_ROOT / "artifacts" / "actual_input_feature_catalog.parquet",
+            out_of_core=out_of_core,
         ),
     }
 
@@ -130,21 +283,22 @@ def _enforce_oom_policy(
     *,
     config: WorkflowConfig,
     output_column_limit: int | None,
-) -> tuple[dict[str, Any], float, int | None, bool]:
+) -> tuple[dict[str, Any], float, int | None, bool, Path]:
     """Load tables and apply OOM fallback policy when configured."""
-    tables = _load_tables(output_column_limit=output_column_limit)
+    data_root = _resolve_data_root(config)
+    tables = _load_tables(output_column_limit=output_column_limit, config=config)
     memory_mb = _tables_memory_mb(tables)
     applied_oom_cap = False
     limit_mb = config.runtime.max_loaded_table_mb
     if limit_mb is None or memory_mb <= limit_mb:
-        return tables, memory_mb, output_column_limit, applied_oom_cap
+        return tables, memory_mb, output_column_limit, applied_oom_cap, data_root
 
     fallback_cap = config.runtime.oom_output_cap
     should_reload = fallback_cap is not None and (
         output_column_limit is None or fallback_cap < output_column_limit
     )
     if should_reload:
-        tables = _load_tables(output_column_limit=fallback_cap)
+        tables = _load_tables(output_column_limit=fallback_cap, config=config)
         memory_mb = _tables_memory_mb(tables)
         output_column_limit = fallback_cap
         applied_oom_cap = True
@@ -155,7 +309,7 @@ def _enforce_oom_policy(
             f"limit_mb={limit_mb:.1f}, observed_mb={memory_mb:.1f}. "
             "Increase runtime.max_loaded_table_mb or set runtime.oom_output_cap."
         )
-    return tables, memory_mb, output_column_limit, applied_oom_cap
+    return tables, memory_mb, output_column_limit, applied_oom_cap, data_root
 
 
 def _stage_indices(start_stage: str, stop_stage: str) -> tuple[int, int]:
@@ -286,19 +440,21 @@ def config_to_legacy_case_study(workflow_config: WorkflowConfig) -> dict[str, An
     final_model = case_study.setdefault("final_model", {})
     runtime = case_study.setdefault("runtime", {})
 
+    temporary_reduction = output_conditioning.setdefault("temporary_reduction", {})
+    temporary_reduction["retained_variance_fraction"] = workflow_config.algorithm.variance_threshold
     if workflow_config.algorithm.retained_components is not None:
-        output_conditioning["retained_components"] = workflow_config.algorithm.retained_components
-    else:
-        output_conditioning["variance_explained_threshold"] = (
-            workflow_config.algorithm.variance_threshold
-        )
+        temporary_reduction["retained_components"] = workflow_config.algorithm.retained_components
 
     scr = workflow_config.stages.empirical_null_screening
     empirical_null_screen["permutation_count_B"] = scr.n_permutations - 1
     empirical_null_screen["bh_q_screen"] = scr.bh_q_threshold
+    if scr.max_retained_terms is not None:
+        empirical_null_screen["max_retained_terms"] = int(scr.max_retained_terms)
 
     itr = workflow_config.stages.interaction_discovery
     interaction_discovery["p_threshold"] = itr.p_threshold
+    if itr.n_permutations is not None:
+        interaction_discovery["permutation_count_B"] = itr.n_permutations - 1
     interaction_discovery["n_tree_estimators"] = itr.n_tree_estimators
     interaction_discovery["max_tree_depth"] = itr.max_tree_depth
 
@@ -316,6 +472,16 @@ def config_to_legacy_case_study(workflow_config: WorkflowConfig) -> dict[str, An
     fnl = workflow_config.stages.final_artifacts
     final_model["bootstrap_count"] = fnl.bootstrap_count
     final_model["bootstrap_alpha"] = fnl.bootstrap_alpha
+    final_inferential_filter = case_study.setdefault("final_inferential_filter", {})
+    final_inferential_filter["output_subset_mode"] = fnl.hc3_output_subset_mode
+    if fnl.hc3_output_fraction is not None:
+        final_inferential_filter["output_fraction"] = fnl.hc3_output_fraction
+    if fnl.hc3_output_names:
+        final_inferential_filter["output_names"] = list(fnl.hc3_output_names)
+    if fnl.hc3_output_max_outputs is not None:
+        final_inferential_filter["max_outputs"] = int(fnl.hc3_output_max_outputs)
+    final_inferential_filter["random_seed"] = int(fnl.hc3_output_random_seed)
+    final_inferential_filter["subset_metric"] = str(fnl.hc3_output_subset_metric)
 
     runtime["n_jobs"] = workflow_config.runtime.n_jobs
     config["random_seed"] = workflow_config.output.seed
@@ -395,6 +561,16 @@ def main() -> int:
     complete_path = output_root / "run_complete.json"
     failed_path = output_root / "run_failed.json"
     interrupted_path = output_root / "run_interrupted.json"
+    abandoned_path = output_root / "run_abandoned.json"
+    _mark_abandoned_run_if_needed(
+        output_root=output_root,
+        started_path=started_path,
+        complete_path=complete_path,
+        failed_path=failed_path,
+        interrupted_path=interrupted_path,
+        abandoned_path=abandoned_path,
+        progress_path=progress_path,
+    )
     for stale in (complete_path, failed_path, interrupted_path):
         if stale.exists():
             stale.unlink()
@@ -416,10 +592,13 @@ def main() -> int:
         output_column_limit = config.validation.fast_mode_overrides.output_cap
 
     try:
-        tables, loaded_memory_mb, output_column_limit, oom_cap_applied = _enforce_oom_policy(
-            config=config,
-            output_column_limit=output_column_limit,
-        )
+        (
+            tables,
+            loaded_memory_mb,
+            output_column_limit,
+            oom_cap_applied,
+            data_root,
+        ) = _enforce_oom_policy(config=config, output_column_limit=output_column_limit)
     except Exception as e:
         print(f"✗ Failed to load data: {e}", file=sys.stderr)
         return 1
@@ -447,6 +626,9 @@ def main() -> int:
             "start_stage": args.start_stage,
             "stop_stage": args.stop_stage,
             "loaded_table_memory_mb": round(loaded_memory_mb, 3),
+            "dataset_root": str(data_root.resolve()),
+            "dataset_rows": int(len(tables["case_study_input_matrix"])),
+            "dataset_outputs": int(max(0, len(tables["case_study_output_matrix"].columns) - 1)),
             "output_column_limit": output_column_limit,
             "oom_output_cap_applied": bool(oom_cap_applied),
             "progress_telemetry_path": str(progress_path.resolve()),
@@ -473,6 +655,10 @@ def main() -> int:
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, _handle_signal)
+    if hasattr(signal, "SIGQUIT"):
+        signal.signal(signal.SIGQUIT, _handle_signal)
 
     stage_records: list[dict[str, Any]] = []
     conditioning: OutputConditioningResult | None = None

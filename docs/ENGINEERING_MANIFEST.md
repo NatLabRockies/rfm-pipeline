@@ -3,7 +3,7 @@
 **Repository**: bsm-public-rf
 **Primary Goal**: Exact replication of manuscript workflow methodology
 **Status**: Core workflow gap closed; 300-sample full-chain validation completed
-**Last Updated**: 2026-05-09
+**Last Updated**: 2026-05-10
 
 ## 🚨 CRITICAL PRIORITY: Workflow Implementation Fix
 
@@ -112,17 +112,18 @@ Run `SELECT * FROM todos` to see current task breakdown.
 
 **Key changes**: Added run-state markers (run_started.json, run_complete.json, run_failed.json), signal handlers (SIGTERM/SIGINT), output column limiting for capped runs, workflow tracking with timestamped logs and audit trail.
 
-### Phase 6 (IN PROGRESS): Cleanup Legacy Adapters & Documentation
+### Phase 6 (COMPLETE): Cleanup Legacy Adapters & Documentation
 
-**Objective**: Remove remaining references to deleted scripts; ensure unified config-driven runner is the only entry point.
+**Status**: ✅ COMPLETE — Legacy cleanup done, perf optimization added
 
-**Current work**:
+**Deliverables**:
 
-1. [x] Delete legacy dataset scripts (already done in commit 73f26fe)
-1. [x] Update doc references in MANUSCRIPT_WORKFLOW_REFERENCE.md
-1. [x] Update doc references in ENGINEERING_MANIFEST.md
-1. [ ] Run full gate to confirm no tests break
-1. [ ] Commit cleanup updates
+- ✅ Deleted legacy scripts: `run_300_sample_validation.py`, `run_fast_validation.py`
+- ✅ Updated doc references: MANUSCRIPT_WORKFLOW_REFERENCE.md, ENGINEERING_MANIFEST.md
+- ✅ Performance optimization: replaced repeated DataFrame column assignments with batch `pd.concat()`
+- ✅ Eliminated ~300 fragmentation warnings per run
+- ✅ All tests passing (config loader, interaction discovery, final artifacts)
+- ✅ Full gate passed (exit 0)
 
 ### Phase 7 (COMPLETE): Performance Hardening + OOM-Ready Scaling
 
@@ -146,49 +147,53 @@ Run `SELECT * FROM todos` to see current task breakdown.
 - OOM fallback policy implemented: deterministic candidate capping + output column limiting
 - Stage-resume flow validated end-to-end with partial pipeline execution
 
-### Phase 8 (PENDING): Distributed Execution and Out-of-Core Processing
+### Phase 8 (PENDING): Scalable Execution — Local Out-of-Core + Optional Distributed HPC
 
 **Status**: Planning — environment discovery complete, method manifest finalized, ready for implementation
 
-**Scope**: Config-driven distributed execution on NREL Kestrel + generic HPC; out-of-core/chunked processing for 30k+ samples
+**Scope**: Out-of-core/chunked processing (primary, local-first) + optional distributed HPC (secondary)
 
-**Objective**: Scale from local multi-threaded Python to distributed HPC; support datasets with millions of samples × millions of columns
+**Objective**: Enable manuscript workflow execution on any dataset size, from laptop to HPC cluster
 
-**Three sub-phases**:
+**Three sequential sub-phases**:
 
-1. **Phase 8a** (Week 1-2): SLURM array baseline — config schema, shard manifest, checkpoint/recovery, deterministic production foundation
-1. **Phase 8b** (Week 2-3): Out-of-core processing — chunked I/O, streaming aggregations, spill-to-disk reductions
-1. **Phase 8c** (Week 3-4): Optional adapters — Dask + dask-jobqueue, MPI/mpi4py, Ray experimental (opt-in)
+1. **Phase 8a** (Weeks 1-2): Out-of-core foundation — chunked I/O, streaming aggregations, spill-to-disk (works everywhere)
+1. **Phase 8b** (Weeks 2-3): Stage integration — modify sparse/final stages for chunked processing; numerical validation
+1. **Phase 8c** (Weeks 3-5): Optional HPC — SLURM array baseline, Dask/MPI/Ray adapters (opt-in, Kestrel-optimized)
 
 **Key design principles**:
 
-- **Config-only**: all distributed execution parameters specified via YAML; no source code edits for different HPC environments
-- **Multi-runtime**: support SLURM arrays (primary), Dask (secondary), MPI (tertiary), Ray (experimental/opt-in)
-- **Fault-tolerant**: idempotent task outputs with `_SUCCESS` markers; support resumable execution
-- **Backward compatible**: `distributed_execution.enabled=false` runs local single-machine; existing workflows unaffected
-- **Kestrel-optimized**: leverage Lustre filesystem, SLURM job arrays (max 11k), hsn0 network interface, but generic enough for other clusters
+- **Local-first**: Chunked I/O works on laptop, workstation, and HPC nodes equally
+- **Config-driven**: All parameters (memory budget, temp dir, HPC account) via YAML; no code edits
+- **Backward compatible**: Out-of-core off by default for Phase 5-7 workflows; opt-in with flags
+- **Cascading complexity**: SLURM arrays first (simple, deterministic); Dask/MPI/Ray only if needed
+- **Self-service**: Users with Kestrel access can scale to multi-node without assistance
 
-**Reference documentation**:
+**Estimated runtime**:
 
-- `docs/PHASE_8_DISTRIBUTED_HPC_PLAN.md` — detailed implementation plan with architecture, config examples, testing strategy
-- `ai_context/methods/kestrel_slurm_distributed_compute_method_manifest.md` — external research-backed method guidance
-- `kestrel_bsm_hpc_discovery_answers.md` — live Kestrel system information (account, partitions, filesystem, limits)
+- **Laptop (2 GB budget)**: ~30k samples in ~4-6 hours (with spill)
+- **Workstation (16 GB)**: ~30k samples in ~1-2 hours
+- **Kestrel single node**: ~30k samples in ~30 minutes
+- **Kestrel 10-node array**: ~30k samples in ~5-10 minutes (embarrassingly parallel)
 
 **Success criteria**:
 
-- [ ] Config file enables all distributed parameters without code changes
-- [ ] SLURM array baseline successfully runs on Kestrel (300-sample → full dataset)
-- [ ] Out-of-core processing passes numerical equivalence test
-- [ ] Full 30k-sample dataset completes in ≤ 24 hours
-- [ ] Artifacts match local run within 5 decimal places
+- [ ] Out-of-core passes stress tests (10 GB file, 2 GB memory budget)
+- [ ] Sparse + final stages work with chunked I/O, numerical equivalence verified
+- [ ] Laptop can process full 30k sample dataset without OOM
+- [ ] SLURM array successfully runs on Kestrel
+- [ ] Config files show progression: laptop → workstation → HPC
+
+**Reference documentation**:
+
+- `docs/PHASE_8_SCALABLE_EXECUTION_PLAN.md` — detailed 12-section plan with local-first priority
+- `ai_context/methods/kestrel_slurm_distributed_compute_method_manifest.md` — method guidance
+- `kestrel_bsm_hpc_discovery_answers.md` — live Kestrel system info
 
 ______________________________________________________________________
 
-## Immediate Next Steps
-
-1. **Monitor uncapped 300-sample validation** — currently running in background; will provide baseline scaling estimates
-1. **After 300-sample completes**: collect stage-wise timing data + validate artifacts
-1. **Phase 8 implementation** — begin Phase 8a (config schema + SLURM baseline) once 300-sample timing data is available
-1. **External HPC environment research** — user feedback loop from Kestrel deployment will validate Phase 8 design
+1. After 300-sample validation completes: validate artifacts match manuscript expectations
+1. If Phase 5 validation passes: proceed with Phase 8 (scalable execution on local + HPC)
+1. Keep `docs/AGENT_SYNC.md` aligned with current branch/status
 
 **This is the PRIMARY purpose of the repository. Everything else is secondary.**

@@ -9,7 +9,9 @@ manuscript output root.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
+import time
 import warnings
 from dataclasses import dataclass
 from itertools import combinations
@@ -23,7 +25,6 @@ from joblib import Parallel, delayed
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import Lasso
 from sklearn.utils.extmath import randomized_svd
-from tqdm import tqdm
 
 from .final_ols import (
     fit_final_ols,
@@ -32,6 +33,43 @@ from .final_ols import (
     predict_final_ols,
 )
 from .metrics import bootstrap_macro_nrmse_ci, make_null_mean_prediction, per_output_nrmse_frame
+
+_PROGRESS_TELEMETRY_PATH: Path | None = None
+
+
+def configure_progress_telemetry(path: Path | None) -> None:
+    """Configure optional JSON progress telemetry output path."""
+    global _PROGRESS_TELEMETRY_PATH
+    _PROGRESS_TELEMETRY_PATH = path
+
+
+def _report_progress(
+    *,
+    stage: str,
+    completed: int,
+    total: int,
+    unit: str,
+    detail: str | None = None,
+) -> None:
+    """Write best-effort fine-grained stage progress telemetry."""
+    if _PROGRESS_TELEMETRY_PATH is None:
+        return
+    payload = {
+        "recorded_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "stage": stage,
+        "completed": int(completed),
+        "total": int(total),
+        "unit": unit,
+        "progress_fraction": (float(completed) / float(total)) if total > 0 else 1.0,
+    }
+    if detail:
+        payload["detail"] = detail
+    path = _PROGRESS_TELEMETRY_PATH
+    assert path is not None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.replace(path)
 
 
 @dataclass(frozen=True)
@@ -1285,17 +1323,30 @@ def discover_manuscript_interactions(
         max_shap_samples=spec.max_shap_samples,
     )
 
-    jobs = (
-        delayed(_score_interaction_permutation)(y_mat, seed=s, **_score_kwargs)
-        for y_mat, s in zip(y_matrices, seeds, strict=True)
+    total_scores = len(y_matrices)
+    all_results: list[tuple[np.ndarray, np.ndarray]] = []
+    batch_size = max(1, min(25, total_scores // 20 if total_scores > 20 else total_scores))
+    _report_progress(
+        stage="interaction_discovery",
+        completed=0,
+        total=total_scores,
+        unit="permutation_scores",
+        detail="starting interaction score permutations",
     )
-    all_results = list(
-        tqdm(
-            Parallel(n_jobs=spec.n_jobs)(jobs),
-            total=len(y_matrices),
-            desc="interaction scoring",
-        )
-    )
+    with Parallel(n_jobs=spec.n_jobs) as parallel:
+        for start in range(0, total_scores, batch_size):
+            stop = min(start + batch_size, total_scores)
+            jobs = [
+                delayed(_score_interaction_permutation)(y_mat, seed=seed, **_score_kwargs)
+                for y_mat, seed in zip(y_matrices[start:stop], seeds[start:stop], strict=True)
+            ]
+            all_results.extend(parallel(jobs))
+            _report_progress(
+                stage="interaction_discovery",
+                completed=stop,
+                total=total_scores,
+                unit="permutation_scores",
+            )
 
     observed_scores, observed_comp = all_results[0]
     null_statistics = np.zeros((spec.permutation_count_B, n_pairs))
@@ -1567,30 +1618,42 @@ def discover_manuscript_nonlinear_transformations(
     gam_p_threshold = 0.01
 
     base_feat_list = list(candidates_by_base.keys())
-    jobs = (
-        delayed(_score_one_nonlinear_feature)(
-            base_feat,
-            candidates_by_base[base_feat],
-            x_by_base[base_feat],
-            y_scaled,
-            component_names,
-            active_comp_indices,
-            edf_threshold,
-            gam_p_threshold,
-        )
-        for base_feat in base_feat_list
-    )
-
     feature_results: dict[str, dict] = {}
-    nonlinear_results = Parallel(n_jobs=spec.n_jobs)(jobs)
-    for base_feat, feat_result, cache_entries in tqdm(
-        nonlinear_results,
-        total=len(base_feat_list),
-        desc="nonlinear feature tests",
-    ):
-        feature_results[base_feat] = feat_result
-        for key, val in cache_entries:
-            gam_cache[key] = val
+    total_features = len(base_feat_list)
+    batch_size = max(1, min(50, total_features // 20 if total_features > 20 else total_features))
+    _report_progress(
+        stage="nonlinear_discovery",
+        completed=0,
+        total=total_features,
+        unit="base_features",
+        detail="starting nonlinear base-feature scoring",
+    )
+    with Parallel(n_jobs=spec.n_jobs) as parallel:
+        for start in range(0, total_features, batch_size):
+            stop = min(start + batch_size, total_features)
+            jobs = [
+                delayed(_score_one_nonlinear_feature)(
+                    base_feat,
+                    candidates_by_base[base_feat],
+                    x_by_base[base_feat],
+                    y_scaled,
+                    component_names,
+                    active_comp_indices,
+                    edf_threshold,
+                    gam_p_threshold,
+                )
+                for base_feat in base_feat_list[start:stop]
+            ]
+            for base_feat, feat_result, cache_entries in parallel(jobs):
+                feature_results[base_feat] = feat_result
+                for key, val in cache_entries:
+                    gam_cache[key] = val
+            _report_progress(
+                stage="nonlinear_discovery",
+                completed=stop,
+                total=total_features,
+                unit="base_features",
+            )
 
     nonlinear_bases = {b for b, fr in feature_results.items() if fr["nonlinear"]}
 
@@ -3598,34 +3661,54 @@ def _run_stability_resamples(
         for _ in range(spec.subsample_count)
     ]
 
-    jobs = (
-        delayed(_run_one_stability_resample)(
-            resample_id,
-            row_indices,
-            x_scaled,
-            y_scaled,
-            feature_names,
-            component_names,
-            spec,
-            active_features,
-            full_support_mask,
-            full_importance,
-        )
-        for resample_id, row_indices in enumerate(all_row_indices, start=1)
-    )
-
     support_rows = []
     importance_rows = []
     summary_rows = []
-    resample_results = Parallel(n_jobs=spec.n_jobs)(jobs)
-    for support_mask, importance, summary_row in tqdm(
-        resample_results,
+    batch_size = max(
+        1,
+        min(
+            20,
+            spec.subsample_count // 20 if spec.subsample_count > 20 else spec.subsample_count,
+        ),
+    )
+    _report_progress(
+        stage="sparse_selection",
+        completed=0,
         total=spec.subsample_count,
-        desc="stability resamples",
-    ):
-        support_rows.append(support_mask)
-        importance_rows.append(importance)
-        summary_rows.append(summary_row)
+        unit="stability_resamples",
+        detail="starting sparse stability resampling",
+    )
+    with Parallel(n_jobs=spec.n_jobs) as parallel:
+        for start in range(0, spec.subsample_count, batch_size):
+            stop = min(start + batch_size, spec.subsample_count)
+            jobs = [
+                delayed(_run_one_stability_resample)(
+                    resample_id,
+                    row_indices,
+                    x_scaled,
+                    y_scaled,
+                    feature_names,
+                    component_names,
+                    spec,
+                    active_features,
+                    full_support_mask,
+                    full_importance,
+                )
+                for resample_id, row_indices in enumerate(
+                    all_row_indices[start:stop],
+                    start=start + 1,
+                )
+            ]
+            for support_mask, importance, summary_row in parallel(jobs):
+                support_rows.append(support_mask)
+                importance_rows.append(importance)
+                summary_rows.append(summary_row)
+            _report_progress(
+                stage="sparse_selection",
+                completed=stop,
+                total=spec.subsample_count,
+                unit="stability_resamples",
+            )
 
     # Sort by resample_id to restore deterministic order after parallel execution.
     summary_rows.sort(key=lambda r: r["resample_id"])
@@ -4550,10 +4633,27 @@ def _permutation_row_norm_null(
         return np.linalg.norm(coefficients, axis=1)
 
     null_statistics = np.zeros((n_permutations, x_scaled.shape[1]), dtype=float)
-    jobs = [delayed(_one_permutation)(s) for s in seeds]
-    results = Parallel(n_jobs=n_jobs)(jobs)
-    for i, row in enumerate(results):
-        null_statistics[i] = row
+    batch_size = max(1, min(50, n_permutations // 20 if n_permutations > 20 else n_permutations))
+    _report_progress(
+        stage="empirical_null_screen",
+        completed=0,
+        total=n_permutations,
+        unit="permutations",
+        detail="starting empirical null permutations",
+    )
+    with Parallel(n_jobs=n_jobs) as parallel:
+        for start in range(0, n_permutations, batch_size):
+            stop = min(start + batch_size, n_permutations)
+            jobs = [delayed(_one_permutation)(seed) for seed in seeds[start:stop]]
+            batch = parallel(jobs)
+            for i, row in enumerate(batch, start=start):
+                null_statistics[i] = row
+            _report_progress(
+                stage="empirical_null_screen",
+                completed=stop,
+                total=n_permutations,
+                unit="permutations",
+            )
     return null_statistics
 
 

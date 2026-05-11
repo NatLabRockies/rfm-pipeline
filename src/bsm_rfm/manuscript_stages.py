@@ -1335,6 +1335,12 @@ def discover_manuscript_interactions(
     n_pairs = len(candidates)
     n_comp = len(component_names)
 
+    # Adaptive SHAP sampling: use 30% of training set or max 250 samples, whichever is lower.
+    # This reduces SHAP computation cost while maintaining interaction estimate quality.
+    n_train_samples = len(y_train)
+    adaptive_shap_samples = min(250, max(100, int(0.3 * n_train_samples)))
+    effective_max_shap_samples = min(spec.max_shap_samples, adaptive_shap_samples)
+
     # Pre-generate all permuted response matrices and per-call seeds.
     seeds = [int(rng.integers(0, 2**31)) for _ in range(spec.permutation_count_B + 1)]
     y_matrices: list[np.ndarray] = [y_scaled]
@@ -1352,12 +1358,13 @@ def discover_manuscript_interactions(
         candidates=candidates,
         n_estimators=spec.n_tree_estimators,
         max_depth=spec.max_tree_depth,
-        max_shap_samples=spec.max_shap_samples,
+        max_shap_samples=effective_max_shap_samples,
     )
 
     total_scores = len(y_matrices)
     all_results: list[tuple[np.ndarray, np.ndarray]] = []
-    batch_size = _progress_batch_size(total_scores, 25)
+    # Use divisor 8 instead of 25 for larger batches (reduce parallelization overhead)
+    batch_size = _progress_batch_size(total_scores, 8)
     _report_progress(
         stage="interaction_discovery",
         completed=0,

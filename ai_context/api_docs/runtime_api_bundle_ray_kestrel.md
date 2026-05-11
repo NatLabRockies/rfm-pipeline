@@ -1,7 +1,7 @@
 # Runtime API Bundle: Ray on Kestrel SLURM
 
-**Purpose:** API and launch guidance for Ray as an experimental Kestrel runtime.\
-**Retrieval date:** 2026-05-10.\
+**Purpose:** API and launch guidance for Ray as an experimental Kestrel runtime.
+**Retrieval date:** 2026-05-10.
 **Default account:** `bsm`.
 
 ## 1. Status

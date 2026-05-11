@@ -1,9 +1,9 @@
 # Kestrel SLURM Distributed Compute Literature Bundle
 
-**Purpose:** Repo-local research packet for planning distributed Python support on NREL/NLR Kestrel using SLURM.\
-**Repo context:** Python/Pixi pipeline processing large Parquet-derived feature matrices with out-of-core, spill-to-disk, and distributed execution requirements.\
-**Default project/allocation handle for examples:** `bsm`.\
-**Retrieval date for external web sources:** 2026-05-10.\
+**Purpose:** Repo-local research packet for planning distributed Python support on NREL/NLR Kestrel using SLURM.
+**Repo context:** Python/Pixi pipeline processing large Parquet-derived feature matrices with out-of-core, spill-to-disk, and distributed execution requirements.
+**Default project/allocation handle for examples:** `bsm`.
+**Retrieval date for external web sources:** 2026-05-10.
 **User-provided live cluster probe date:** 2026-05-10.
 
 ## 1. Source-status legend

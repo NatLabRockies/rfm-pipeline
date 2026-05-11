@@ -1,6 +1,6 @@
 # Kestrel SLURM Distributed Compute Engineering Manifest
 
-**Purpose:** Test-first implementation plan for Kestrel SLURM distributed compute support.\
+**Purpose:** Test-first implementation plan for Kestrel SLURM distributed compute support.
 **Default account:** `bsm`.
 
 ## 1. Required context artifacts

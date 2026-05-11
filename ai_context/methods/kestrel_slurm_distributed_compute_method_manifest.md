@@ -1,7 +1,7 @@
 # Kestrel SLURM Distributed Compute Method Manifest
 
-**Purpose:** Convert Kestrel/SLURM/runtime research into implementation guidance for a local repo agent.\
-**Default allocation/account:** `bsm`.\
+**Purpose:** Convert Kestrel/SLURM/runtime research into implementation guidance for a local repo agent.
+**Default allocation/account:** `bsm`.
 **Retrieval date for external sources:** 2026-05-10.
 
 ## 1. Method decision principle

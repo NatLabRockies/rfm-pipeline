@@ -1,7 +1,7 @@
 # Runtime API Bundle: MPI / mpi4py on Kestrel
 
-**Purpose:** API and launch guidance for mpi4py as a Kestrel distributed runtime option.\
-**Retrieval date:** 2026-05-10.\
+**Purpose:** API and launch guidance for mpi4py as a Kestrel distributed runtime option.
+**Retrieval date:** 2026-05-10.
 **Default account:** `bsm`.
 
 ## 1. Kestrel MPI environment guidance

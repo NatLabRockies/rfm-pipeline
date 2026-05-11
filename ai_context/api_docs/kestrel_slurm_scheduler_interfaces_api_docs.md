@@ -1,8 +1,8 @@
 # Kestrel SLURM Scheduler Interfaces API Docs
 
-**Purpose:** Current scheduler syntax and Kestrel-specific constraints for local implementation agents.\
-**Default account:** `bsm`.\
-**External retrieval date:** 2026-05-10.\
+**Purpose:** Current scheduler syntax and Kestrel-specific constraints for local implementation agents.
+**Default account:** `bsm`.
+**External retrieval date:** 2026-05-10.
 **Live Kestrel config source:** user-provided terminal output, 2026-05-10.
 
 ## 1. Required submission fields

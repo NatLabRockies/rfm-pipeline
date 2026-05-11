@@ -43,6 +43,32 @@ class RuntimeConfig:
     """Optional max memory budget (MB) for loaded X+Y+catalog+holdout tables."""
     oom_output_cap: int | None = None
     """If budget exceeded, reload outputs with this cap instead of failing."""
+    use_chunked_io: bool = False
+    """Deprecated compatibility toggle; prefer runtime.out_of_core.enabled."""
+    chunked_io_config: dict | None = None
+    """Deprecated compatibility map; prefer runtime.out_of_core.*."""
+    out_of_core: OutOfCoreConfig = field(default_factory=lambda: OutOfCoreConfig())
+    """Out-of-core settings used by chunked loading and spill-to-disk logic."""
+
+
+@dataclass
+class OutOfCoreConfig:
+    """Out-of-core processing settings."""
+
+    enabled: bool = False
+    """Enable chunked loading and spill-aware paths."""
+    chunk_size_mb: int = 512
+    """Target chunk size for Parquet chunked readers."""
+    max_memory_budget_mb: int = 8000
+    """Spill buffer memory threshold before flushing chunks to disk."""
+    temp_dir: str | None = None
+    """Optional temp directory for spill files."""
+    enable_spill_to_disk: bool = True
+    """When true, buffer chunks to disk under memory pressure."""
+    use_chunked_io: bool = False
+    """Enable out-of-core processing with chunked I/O and spill-to-disk."""
+    chunked_io_config: dict | None = None
+    """Out-of-core config: {chunk_size_mb, max_memory_budget_mb, temp_dir, enable_spill_to_disk}."""
 
 
 @dataclass
@@ -196,7 +222,20 @@ def load_config(config_path: str | Path) -> WorkflowConfig:
         )
     dataset = DatasetConfig(**dataset_data)
     algorithm = AlgorithmConfig(**data.get("algorithm", {}))
-    runtime = RuntimeConfig(**data.get("runtime", {}))
+    runtime_data = dict(data.get("runtime", {}))
+    out_of_core_data = dict(runtime_data.pop("out_of_core", {}) or {})
+    legacy_use_chunked = bool(runtime_data.get("use_chunked_io", False))
+    legacy_chunked_cfg = runtime_data.get("chunked_io_config", {}) or {}
+    if not out_of_core_data and (legacy_use_chunked or legacy_chunked_cfg):
+        out_of_core_data = {
+            "enabled": legacy_use_chunked,
+            "chunk_size_mb": legacy_chunked_cfg.get("chunk_size_mb", 512),
+            "max_memory_budget_mb": legacy_chunked_cfg.get("max_memory_budget_mb", 8000),
+            "temp_dir": legacy_chunked_cfg.get("temp_dir"),
+            "enable_spill_to_disk": legacy_chunked_cfg.get("enable_spill_to_disk", True),
+        }
+    out_of_core = OutOfCoreConfig(**out_of_core_data)
+    runtime = RuntimeConfig(**runtime_data, out_of_core=out_of_core)
 
     # Parse stage configs
     stages_data = data.get("stages", {})

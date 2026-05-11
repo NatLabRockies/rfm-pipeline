@@ -21,7 +21,12 @@ REPO_ROOT = Path(__file__).parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.bsm_rfm.config import WorkflowConfig, apply_fast_mode_overrides, load_config  # noqa: E402
+from src.bsm_rfm.config import (  # noqa: E402
+    OutOfCoreConfig,
+    WorkflowConfig,
+    apply_fast_mode_overrides,
+    load_config,
+)
 from src.bsm_rfm.manuscript_runtime import load_manuscript_case_study_config  # noqa: E402
 from src.bsm_rfm.manuscript_stages import (  # noqa: E402
     EmpiricalNullScreeningResult,
@@ -48,6 +53,11 @@ from src.bsm_rfm.manuscript_stages import (  # noqa: E402
     write_nonlinear_discovery_artifacts,
     write_output_conditioning_artifacts,
     write_sparse_selection_stability_artifacts,
+)
+from src.bsm_rfm.out_of_core import (  # noqa: E402
+    ChunkedParquetReader,
+    SpillToDiskBuffer,
+    choose_temp_dir,
 )
 
 STAGES = (
@@ -92,16 +102,71 @@ def _read_csv(path: Path):
     return pd.read_csv(path)
 
 
-def _load_tables(output_column_limit: int | None) -> dict[str, Any]:
-    """Load validation tables and normalize holdout labels."""
+def _effective_out_of_core(config: WorkflowConfig) -> OutOfCoreConfig:
+    """Resolve out-of-core settings, including legacy runtime keys."""
+    resolved = config.runtime.out_of_core
+    legacy_map = config.runtime.chunked_io_config or {}
+    if config.runtime.use_chunked_io and not resolved.enabled:
+        resolved.enabled = True
+    if legacy_map:
+        resolved.chunk_size_mb = int(legacy_map.get("chunk_size_mb", resolved.chunk_size_mb))
+        resolved.max_memory_budget_mb = int(
+            legacy_map.get("max_memory_budget_mb", resolved.max_memory_budget_mb)
+        )
+        resolved.temp_dir = legacy_map.get("temp_dir", resolved.temp_dir)
+        resolved.enable_spill_to_disk = bool(
+            legacy_map.get("enable_spill_to_disk", resolved.enable_spill_to_disk)
+        )
+    return resolved
+
+
+def _read_parquet_with_mode(
+    path: Path,
+    *,
+    out_of_core: OutOfCoreConfig,
+    columns: list[str] | None = None,
+):
     import pandas as pd
 
+    if not out_of_core.enabled:
+        return pd.read_parquet(path, columns=columns)
+
+    reader = ChunkedParquetReader(
+        str(path),
+        chunk_size_mb=max(1, int(out_of_core.chunk_size_mb)),
+        columns=columns,
+    )
+    if out_of_core.enable_spill_to_disk:
+        temp_root = choose_temp_dir(preferred_root=out_of_core.temp_dir)
+        buffer = SpillToDiskBuffer(
+            temp_dir=temp_root,
+            max_memory_mb=max(64, int(out_of_core.max_memory_budget_mb)),
+        )
+        try:
+            for chunk in reader:
+                buffer.add_chunk(chunk)
+            return buffer.get_final_dataframe()
+        finally:
+            buffer.cleanup()
+
+    chunks = list(reader)
+    if not chunks:
+        return pd.read_parquet(path, columns=columns).iloc[0:0]
+    return pd.concat(chunks, ignore_index=True)
+
+
+def _load_tables(output_column_limit: int | None, config: WorkflowConfig) -> dict[str, Any]:
+    """Load validation tables and normalize holdout labels."""
     data_root = REPO_ROOT / "artifacts" / "test_dataset_300"
-    y = pd.read_parquet(data_root / "Y.parquet")
+    out_of_core = _effective_out_of_core(config)
+    y = _read_parquet_with_mode(data_root / "Y.parquet", out_of_core=out_of_core)
     y_cols = [c for c in y.columns if c != "sample_id"]
     if output_column_limit is not None and len(y_cols) > output_column_limit:
         y = y[["sample_id", *y_cols[:output_column_limit]]]
-    holdout = pd.read_parquet(data_root / "holdout_assignments.parquet").copy()
+    holdout = _read_parquet_with_mode(
+        data_root / "holdout_assignments.parquet",
+        out_of_core=out_of_core,
+    ).copy()
     holdout["split"] = (
         holdout["split"]
         .astype(str)
@@ -110,11 +175,15 @@ def _load_tables(output_column_limit: int | None) -> dict[str, Any]:
         .replace({"test": "holdout", "val": "holdout", "validation": "holdout"})
     )
     return {
-        "case_study_input_matrix": pd.read_parquet(data_root / "X.parquet"),
+        "case_study_input_matrix": _read_parquet_with_mode(
+            data_root / "X.parquet",
+            out_of_core=out_of_core,
+        ),
         "case_study_output_matrix": y,
         "fixed_holdout_assignments": holdout,
-        "manuscript_feature_catalog": pd.read_parquet(
-            REPO_ROOT / "artifacts" / "actual_input_feature_catalog.parquet"
+        "manuscript_feature_catalog": _read_parquet_with_mode(
+            REPO_ROOT / "artifacts" / "actual_input_feature_catalog.parquet",
+            out_of_core=out_of_core,
         ),
     }
 
@@ -132,7 +201,7 @@ def _enforce_oom_policy(
     output_column_limit: int | None,
 ) -> tuple[dict[str, Any], float, int | None, bool]:
     """Load tables and apply OOM fallback policy when configured."""
-    tables = _load_tables(output_column_limit=output_column_limit)
+    tables = _load_tables(output_column_limit=output_column_limit, config=config)
     memory_mb = _tables_memory_mb(tables)
     applied_oom_cap = False
     limit_mb = config.runtime.max_loaded_table_mb
@@ -144,7 +213,7 @@ def _enforce_oom_policy(
         output_column_limit is None or fallback_cap < output_column_limit
     )
     if should_reload:
-        tables = _load_tables(output_column_limit=fallback_cap)
+        tables = _load_tables(output_column_limit=fallback_cap, config=config)
         memory_mb = _tables_memory_mb(tables)
         output_column_limit = fallback_cap
         applied_oom_cap = True

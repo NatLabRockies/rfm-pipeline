@@ -56,6 +56,12 @@ class TestLoadConfig:
                         "output_batch_size": 500,
                         "max_loaded_table_mb": 4096.0,
                         "oom_output_cap": 5000,
+                        "out_of_core": {
+                            "enabled": True,
+                            "chunk_size_mb": 64,
+                            "max_memory_budget_mb": 1024,
+                            "enable_spill_to_disk": True,
+                        },
                     },
                     "stages": {
                         "empirical_null_screening": {
@@ -85,9 +91,40 @@ class TestLoadConfig:
                 assert config.runtime.n_jobs == -1
                 assert config.runtime.max_loaded_table_mb == 4096.0
                 assert config.runtime.oom_output_cap == 5000
+                assert config.runtime.out_of_core.enabled is True
+                assert config.runtime.out_of_core.chunk_size_mb == 64
                 assert config.stages.empirical_null_screening.n_permutations == 500
                 assert config.stages.sparse_selection.max_candidate_terms == 1000
                 assert config.output.seed == 42
+            finally:
+                Path(f.name).unlink()
+
+    def test_load_legacy_chunked_runtime_keys(self):
+        """Test backward compatibility for runtime.use_chunked_io/chunked_io_config."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
+            yaml.dump(
+                {
+                    "dataset": {"type": "synthetic_300_sample"},
+                    "runtime": {
+                        "use_chunked_io": True,
+                        "chunked_io_config": {
+                            "chunk_size_mb": 32,
+                            "max_memory_budget_mb": 512,
+                            "enable_spill_to_disk": False,
+                        },
+                    },
+                },
+                f,
+            )
+            f.flush()
+
+            try:
+                config = load_config(f.name)
+                assert config.runtime.use_chunked_io is True
+                assert config.runtime.out_of_core.enabled is True
+                assert config.runtime.out_of_core.chunk_size_mb == 32
+                assert config.runtime.out_of_core.max_memory_budget_mb == 512
+                assert config.runtime.out_of_core.enable_spill_to_disk is False
             finally:
                 Path(f.name).unlink()
 

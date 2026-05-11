@@ -170,6 +170,42 @@ def test_empirical_null_screening_uses_only_first_order_terms() -> None:
     assert screened_names == {"x_signal", "x_noise"}
 
 
+def test_empirical_null_screening_applies_max_retained_terms_cap() -> None:
+    sample_ids = list(range(1, 25))
+    x1 = [float(v) for v in range(24)]
+    x2 = [float(v) * 0.5 for v in range(24)]
+    x3 = [float((v % 5) - 2) for v in range(24)]
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2, "x3": x3})
+    catalog = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2", "x3"],
+            "feature_type": ["first_order", "first_order", "first_order"],
+        }
+    )
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 20 + ["holdout"] * 4})
+    pca_scores = pd.DataFrame(
+        {
+            "sample_id": sample_ids,
+            "PC1": [2.0 * value for value in x1],
+            "PC2": [1.5 * value for value in x2],
+        }
+    )
+    spec = EmpiricalNullScreeningSpec(
+        statistic="coefficient_row_l2_norm",
+        permutation_count_B=19,
+        bh_q_screen=1.0,
+        retained_terms_reference=349,
+        random_seed=123,
+        max_retained_terms=1,
+    )
+
+    result = screen_manuscript_empirical_null_terms(inputs, catalog, holdout, pca_scores, spec)
+
+    assert len(result.retained_terms) == 1
+    assert int(result.summary.loc[0, "n_retained_terms"]) == 1
+    assert int(result.feature_screening_statistics["retained"].sum()) == 1
+
+
 def test_run_empirical_null_screening_stage_executes_demo_context() -> None:
     context = build_manuscript_notebook_context(
         Path.cwd(),

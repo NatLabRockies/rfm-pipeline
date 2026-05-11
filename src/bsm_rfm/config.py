@@ -43,6 +43,32 @@ class RuntimeConfig:
     """Optional max memory budget (MB) for loaded X+Y+catalog+holdout tables."""
     oom_output_cap: int | None = None
     """If budget exceeded, reload outputs with this cap instead of failing."""
+    use_chunked_io: bool = False
+    """Deprecated compatibility toggle; prefer runtime.out_of_core.enabled."""
+    chunked_io_config: dict | None = None
+    """Deprecated compatibility map; prefer runtime.out_of_core.*."""
+    out_of_core: OutOfCoreConfig = field(default_factory=lambda: OutOfCoreConfig())
+    """Out-of-core settings used by chunked loading and spill-to-disk logic."""
+
+
+@dataclass
+class OutOfCoreConfig:
+    """Out-of-core processing settings."""
+
+    enabled: bool = False
+    """Enable chunked loading and spill-aware paths."""
+    chunk_size_mb: int = 512
+    """Target chunk size for Parquet chunked readers."""
+    max_memory_budget_mb: int = 8000
+    """Spill buffer memory threshold before flushing chunks to disk."""
+    temp_dir: str | None = None
+    """Optional temp directory for spill files."""
+    enable_spill_to_disk: bool = True
+    """When true, buffer chunks to disk under memory pressure."""
+    use_chunked_io: bool = False
+    """Enable out-of-core processing with chunked I/O and spill-to-disk."""
+    chunked_io_config: dict | None = None
+    """Out-of-core config: {chunk_size_mb, max_memory_budget_mb, temp_dir, enable_spill_to_disk}."""
 
 
 @dataclass
@@ -53,6 +79,8 @@ class ScreeningStageConfig:
     """Number of null permutations (B+1)."""
     bh_q_threshold: float = 0.10
     """Benjamini-Hochberg FDR threshold."""
+    max_retained_terms: int | None = None
+    """Optional deterministic top-K cap on retained first-order terms."""
 
 
 @dataclass
@@ -61,6 +89,8 @@ class InteractionStageConfig:
 
     p_threshold: float = 0.05
     """Interaction significance threshold."""
+    n_permutations: int | None = None
+    """Optional interaction null permutations (B+1); default inherits empirical stage."""
     n_tree_estimators: int = 100
     """SHAP tree ensemble size."""
     max_tree_depth: int = 10
@@ -99,6 +129,18 @@ class FinalArtifactsStageConfig:
     """Number of bootstrap replicates."""
     bootstrap_alpha: float = 0.05
     """Two-sided bootstrap error level."""
+    hc3_output_subset_mode: str = "all"
+    """HC3 output selection mode: all, random_fraction, target_list, top_variance."""
+    hc3_output_fraction: float | None = None
+    """Optional output fraction for random_fraction mode."""
+    hc3_output_names: list[str] | None = None
+    """Optional explicit outputs for target_list mode."""
+    hc3_output_max_outputs: int | None = None
+    """Optional hard cap on outputs used in HC3 filtering."""
+    hc3_output_random_seed: int = 123
+    """Deterministic seed for random output subsetting."""
+    hc3_output_subset_metric: str = "variance"
+    """Ranking metric for principled downselection modes."""
 
 
 @dataclass
@@ -196,7 +238,20 @@ def load_config(config_path: str | Path) -> WorkflowConfig:
         )
     dataset = DatasetConfig(**dataset_data)
     algorithm = AlgorithmConfig(**data.get("algorithm", {}))
-    runtime = RuntimeConfig(**data.get("runtime", {}))
+    runtime_data = dict(data.get("runtime", {}))
+    out_of_core_data = dict(runtime_data.pop("out_of_core", {}) or {})
+    legacy_use_chunked = bool(runtime_data.get("use_chunked_io", False))
+    legacy_chunked_cfg = runtime_data.get("chunked_io_config", {}) or {}
+    if not out_of_core_data and (legacy_use_chunked or legacy_chunked_cfg):
+        out_of_core_data = {
+            "enabled": legacy_use_chunked,
+            "chunk_size_mb": legacy_chunked_cfg.get("chunk_size_mb", 512),
+            "max_memory_budget_mb": legacy_chunked_cfg.get("max_memory_budget_mb", 8000),
+            "temp_dir": legacy_chunked_cfg.get("temp_dir"),
+            "enable_spill_to_disk": legacy_chunked_cfg.get("enable_spill_to_disk", True),
+        }
+    out_of_core = OutOfCoreConfig(**out_of_core_data)
+    runtime = RuntimeConfig(**runtime_data, out_of_core=out_of_core)
 
     # Parse stage configs
     stages_data = data.get("stages", {})

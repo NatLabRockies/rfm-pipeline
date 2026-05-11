@@ -5,11 +5,100 @@ branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: Phase 8 planning (local-first out-of-core + optional HPC)
-current_slice: Implemented stage-window resume/stop flow, sparse top-K capping, runtime diagnostics, and OOM fallback controls
-slice_status: in_progress (uncapped 300-sample scale run active via tracked workflow)
-last_validation: `./test_repo.sh --check` passed after runner/stage hardening changes; targeted pytest suites passing
-next_slice: finish uncapped scale run, collect stage-runtime diagnostics, and calibrate 3k/10k/full scaling windows
+current_milestone: Phase 8a implementation (local-first out-of-core foundation)
+current_slice: Runtime regression triage + high-fidelity telemetry + small-dataset full-run/uncapped ramp preflight
+slice_status: in_progress (uncapped small-sample run bottleneck isolated; phase-8a merge pending)
+last_validation: `BSM_PROGRESS_BATCH_SIZE=1 pixi run python tools/run_manuscript_pipeline.py configs/validation_80_sample_workflow_smoke.yml` passed end-to-end; `pixi run ruff check tools/run_manuscript_pipeline.py src/bsm_rfm/manuscript_stages.py src/bsm_rfm/config.py` clean
+next_slice: tune/guard interaction-discovery uncapped path (1000 permutations) before retrying full uncapped ramp
+
+## Runtime investigation workflow package (2026-05-11)
+
+- Added reusable single-command runtime ladder runner:
+  - `tools/run_runtime_investigation.py`
+  - Pixi task: `pixi run runtime-investigation -- ...`
+- Workflow capabilities:
+  - Generates `small/medium/large` ladder configs from a base config.
+  - Supports user dataset override via `--dataset-path`.
+  - Runs ladder sequentially through unified manuscript runner.
+  - Collects per-profile metrics from run markers + runtime diagnostics.
+  - Writes projection/report artifacts:
+    - `runtime_investigation_summary.csv`
+    - `runtime_projection.json`
+    - `runtime_investigation_summary.md`
+    - `monitor_command.txt`
+- Added docs and monitor integration:
+  - `docs/RUNTIME_INVESTIGATION_WORKFLOW.md`
+  - `docs/RUNNING_MANUSCRIPT_REPRODUCTION.md` quick-start entry
+  - `scripts/watch_final_cost_ladder.sh` can monitor generated `runs/` root
+- Added focused tests:
+  - `tests/test_runtime_investigation.py`
+- Validation:
+  - `pixi run pytest -q tests/test_runtime_investigation.py tests/test_config_loader.py` ✅
+  - `pixi run runtime-investigation --base-config configs/validation_80_sample_workflow_smoke.yml --dataset-path artifacts/test_dataset_80 --output-root artifacts/runtime_investigation --label e2e80` ✅
+  - E2E artifacts: `artifacts/runtime_investigation/20260511T170236Z-e2e80/`
+
+## Runtime estimate update (2026-05-11, all-columns target)
+
+- New anchor evidence:
+  - `artifacts/final_cost_ladder/04/final_manuscript_artifacts`: `final_manuscript_tables_and_figures=2467.712s` at 3k rows, support=120, bootstrap=10.
+  - `artifacts/validation_300_sample_no_caps`: early-chain (stages 1-4) runtime observed ~11h before sparse/final.
+- Bound model used:
+  - early-chain scales ~linearly with row count from 300-sample no-caps anchor.
+  - sparse stage is minor relative to early/final at current settings.
+  - final-stage bound uses row-linear scaling and support exponent bracket `p^2` to `p^3` toward all-columns target support.
+- Updated projections (hours / days):
+  - 300 rows: **22.1–42.3 h** (**0.9–1.8 d**)
+  - 10,000 rows: **735.9–1408.4 h** (**30.7–58.7 d**)
+  - 30,000 rows: **2207.6–4225.3 h** (**92.0–176.1 d**)
+
+## Runtime driver clarification (2026-05-11)
+
+- The extreme upper bound is a worst-case extrapolation from the current all-columns final-stage path, not a universal runtime guarantee for all manuscript-equivalent runs.
+- Evidence from current full-data rung (`artifacts/final_cost_ladder/04`):
+  - Output conditioning retains **9,712** outputs (`n_outputs_retained=9712`).
+  - Final stage (`final_manuscript_tables_and_figures`) takes **2467.712s** even with support=120 and bootstrap_count=10.
+- Primary cost drivers in `regenerate_final_manuscript_artifacts`:
+  - HC3 inferential filter loops over **features × retained outputs**.
+  - Multiple bootstrap metric computations (`bootstrap_macro_nrmse_ci`) over large output matrices.
+  - Ablation table recomputes bootstrap-backed OLS comparisons across multiple model variants.
+- Notebook/HPC vs current-path compute delta (source-backed):
+  - Archived HPC script (`docs/final_scripts_from_hpc/multivariate_mmreg_pipeline.with_subset.py`) limits HC3 significance to a subset (`max_outputs=200` default).
+  - Current full-data run processed **9,712** retained outputs (**48.56×** more outputs than 200).
+  - Current HC3 feature-output loop cardinality at rung-04: **1,165,440** (`120 × 9712`).
+  - Current implementation computes HC3 covariance inside the feature×output nested loop, so output-level covariance work is repeated across features.
+- Implication:
+  - If prior manuscript completion was \<1 day, it likely used a materially lighter effective final-stage regime (fewer retained outputs and/or lighter inferential/bootstrap burden and/or different hardware/runtime profile) than the current all-columns extrapolation target.
+
+## HC3 optimization slice (2026-05-11)
+
+- Implemented **optional HC3 output subsetting controls** in final-artifacts config path:
+  - mode: `all` (default), `random_fraction`, `target_list`, `top_variance`
+  - controls: `output_fraction`, `output_names`, `max_outputs`, `random_seed`, `subset_metric`
+- Wired from unified config → legacy case-study mapping → final-artifacts spec/runtime.
+- Implemented **redundant-compute removal** in HC3 inferential filtering:
+  - per-output HC3 covariance now computed once per output and reused across feature rows.
+  - removes repeated covariance recomputation previously done inside feature×output inner loops.
+- Added tests:
+  - config loading + mapping of new HC3 knobs (`tests/test_config_loader.py`)
+  - final-artifacts spec parsing + HC3 subset behavior (`tests/test_manuscript_final_artifacts.py`)
+- Validation:
+  - `pixi run pytest -q tests/test_config_loader.py tests/test_manuscript_final_artifacts.py` ✅
+  - `pixi run ruff check src/bsm_rfm/config.py tools/run_manuscript_pipeline.py src/bsm_rfm/manuscript_stages.py tests/test_config_loader.py tests/test_manuscript_final_artifacts.py` ✅
+
+## Runtime triage update (2026-05-11)
+
+- Fixed runner bug: `tools/run_manuscript_pipeline.py` now honors `dataset.path`/`dataset.type` instead of hardcoding `artifacts/test_dataset_300`.
+- Added high-fidelity telemetry:
+  - final-stage substeps (`final_manuscript_artifacts`, 10 substeps)
+  - ablation-model progress (`final_ablation`, 5 model checkpoints)
+  - env override `BSM_PROGRESS_BATCH_SIZE` for finer progress granularity.
+- Added small-dataset ramp configs:
+  - `configs/validation_80_sample_workflow_smoke.yml` (capped, full chain, passes)
+  - `configs/validation_80_sample_uncapped.yml` (uncapped preflight)
+- Added local small dataset artifact root: `artifacts/test_dataset_160/`.
+- Findings:
+  - Capped small full workflow completes in ~7 seconds on 158-row dataset.
+  - Uncapped small run stalls in interaction stage at `permutation_scores` 0/1000 even with fine-grain progress; this stage is current runtime blow-up point.
 
 ## Ad hoc request: external research handoff (Kestrel SLURM)
 
@@ -139,91 +228,71 @@ python tools/monitor_validation_timing.py artifacts/validation_300_sample_no_cap
 
 ______________________________________________________________________
 
-## Phase 8: Distributed Execution and Out-of-Core Processing (PLANNING)
+## Phase 8: Distributed Execution and Out-of-Core Processing
 
-**Status**: Planning phase — environment discovery complete, method manifest finalized, ready for implementation kickoff
+**Status**: Phase 8a (local-first out-of-core foundation) IN PROGRESS
 
-**Overview**:
+**Architecture** (revised to local-first + optional HPC):
 
-Phase 8 scales the manuscript workflow from local multi-threaded Python to distributed HPC execution on NREL Kestrel and generic clusters. Three sub-phases:
+- Primary: Out-of-core chunked I/O + streaming aggregations + spill-to-disk (works on any machine)
+- Optional secondary: SLURM distributed execution (for HPC acceleration on Kestrel)
 
-1. **Phase 8a**: SLURM array baseline (config schema, manifest-driven shard runner, checkpoint/recovery)
-1. **Phase 8b**: Out-of-core processing (chunked I/O, streaming aggregations, spill-to-disk)
-1. **Phase 8c**: Optional adapters (Dask, MPI/mpi4py, Ray experimental)
+**Completed** ✅:
+
+- [x] HPC environment discovery (Kestrel probing + method manifest)
+- [x] Phase 8 plan revision: local-first vs HPC-first
+- [x] Feature branch `feature/phase-8a-out-of-core-foundation` created
+- [x] Phase 8a foundation modules implemented + tested + committed:
+  - `src/bsm_rfm/out_of_core/chunked_io.py` — ChunkedParquetReader, ChunkedCSVReader
+  - `src/bsm_rfm/out_of_core/streaming_ops.py` — StreamingAggregation, StreamingQuantile
+  - `src/bsm_rfm/out_of_core/memory.py` — MemoryBudget, choose_temp_dir, get_disk_free_mb
+  - `src/bsm_rfm/out_of_core/spill_ops.py` — SpillToDiskBuffer, LargeArrayWriter
+  - `src/bsm_rfm/out_of_core/progress.py` — ChunkProgress telemetry
+- [x] Tests committed (19 unit tests, all passing)
+  - `tests/test_chunked_io.py` — 8 I/O tests
+  - `tests/test_streaming_ops.py` — 11 aggregation + equivalence tests
+- [x] All linting fixed; pre-commit hooks pass
+
+**In Progress** ⏳:
+
+- 300-sample uncapped validation still running (stage 3/6, ~2-4 hours remaining as of last check)
+
+**Remaining Phase 8a Tasks** (next):
+
+- [x] Add OutOfCoreConfig dataclass to config.py
+- [x] Integrate chunked loading path in `tools/run_manuscript_pipeline.py` (used by sparse/final via stage inputs)
+- [x] Run numerical equivalence tests on out-of-core readers/aggregations (focused fast suite)
+- [x] Run memory stress tests with forced spill (`SpillToDiskBuffer` tiny budget)
+- [ ] Merge feature/phase-8a-out-of-core-foundation to main after validation
+
+**Phase 8b (out-of-core integration)** → Phase 8c (optional SLURM) after 8a merged
+
+**Design decisions**:
+
+- Chunk size: row-group aware for Parquet (often 512 MB default), configurable per machine
+- Spill strategy: Parquet format on fast local NVMe/ProjectFS, avoid tmpfs
+- Memory model: track with psutil, spill when threshold hit, resume on re-read
+- Backward compatible: off by default; opt-in via config `use_chunked_io: true`
+
+**Configuration example** (for when implemented):
+
+```yaml
+runtime:
+  use_chunked_io: true
+  out_of_core:
+    chunk_size_mb: 512
+    max_memory_budget_mb: 8000
+    temp_dir: /scratch/$USER/bsm_spill
+    enable_spill_to_disk: true
+```
 
 **Key documents**:
 
-- `docs/PHASE_8_DISTRIBUTED_HPC_PLAN.md` — 12-section detailed plan (architecture, config examples, testing, risks)
-- `ai_context/methods/kestrel_slurm_distributed_compute_method_manifest.md` — method guidance from external research
-- `kestrel_bsm_hpc_discovery_answers.md` — live Kestrel configuration (account=bsm, MaxArraySize=11k, filesystems, etc.)
+- `docs/PHASE_8_SCALABLE_EXECUTION_PLAN.md` — current authoritative design spec (local-first architecture)
+- `docs/ENGINEERING_MANIFEST.md` — Phase 8 overview updated
+- `kestrel_bsm_hpc_discovery_answers.md` — Kestrel-specific configuration (account=bsm, MaxArraySize=11k, etc.)
 
-**Design principles**:
-
-- **Config-only**: all HPC parameters via YAML (no source code edits for different environments)
-- **Multi-runtime**: SLURM arrays (primary), Dask (secondary), MPI (tertiary), Ray (experimental/opt-in)
-- **Fault-tolerant**: idempotent outputs, `_SUCCESS` markers, resumable tasks
-- **Backward compatible**: local single-machine runs unaffected; `distributed_execution.enabled=false` by default
-
-**Kestrel specifics**:
-
-- Account/project: `bsm`
-- Partition recommendations: `debug` for smoke tests, `shared`/`short`/`standard`/`nvme` for production
-- Max array size: 11,000 (use `%N` throttling for concurrency control)
-- Filesystem: use `/projects/bsm` for durable state, `/scratch/$USER/bsm_<run_id>/` for temp, `$TMPDIR` for node-local spill
-- Network interface: `hsn0` (high-speed network for Dask jobs)
-- No preemption (`PreemptMode=OFF`), no auto-requeue (`JobRequeue=0`) — design for idempotent recovery
-
-**Phase 8a Deliverables** (Weeks 1-2):
-
-- [ ] Config schema: `DistributedExecutionConfig`, `SlurmConfig`, `SpillConfig` in `src/bsm_rfm/config.py`
-- [ ] Module `src/bsm_rfm/distributed/`:
-  - `config_distributed.py` — config dataclasses
-  - `slurm_array_runner.py` — manifest-driven task execution
-  - `spill.py` — intelligent `/scratch` vs `$TMPDIR` selection
-  - `checkpoint.py` — idempotent output layout + markers
-- [ ] Manifest schema: shard ID, input paths, output path, expected rows/columns, status tracking
-- [ ] SLURM script templates: array job, reduce/merge job, diagnostic job (Jinja2-rendered)
-- [ ] Tests: unit (config, spill logic, checkpoint semantics), smoke (manifest parsing, script rendering), integration (1-task array on Kestrel)
-- [ ] Documentation: `docs/DISTRIBUTED_EXECUTION_GUIDE.md`, `docs/KESTREL_SLURM_QUICKSTART.md`
-
-**Phase 8b Deliverables** (Weeks 2-3):
-
-- [ ] `src/bsm_rfm/chunked_io.py`:
-  - `ChunkedParquetReader` — iterate large files in chunks without full materialization
-  - `ChunkedAggregation` — streaming reductions (sum, mean, count, concat)
-- [ ] `src/bsm_rfm/spill_ops.py` — temp file accumulation, atomic promotion, free-space monitoring
-- [ ] Workflow integration: add `use_chunked_io` config flag; modify interaction/nonlinear/sparse stages
-- [ ] Tests: unit (chunk iteration, aggregations), integration (numerical equivalence on 300-sample), stress (10 GB synthetic file)
-
-**Phase 8c Deliverables** (Weeks 3-4, optional/secondary):
-
-- [ ] `src/bsm_rfm/distributed/dask_runner.py` — Dask DataFrame + `SLURMCluster`
-- [ ] `src/bsm_rfm/distributed/mpi_runner.py` — MPI rank communication
-- [ ] `src/bsm_rfm/distributed/ray_runner_experimental.py` — Ray (opt-in via `BSM_ENABLE_RAY_EXPERIMENTAL=1`)
-
-**Phase 8 Success Criteria**:
-
-- [ ] Config file specifies all distributed parameters without code changes
-- [ ] SLURM array baseline runs 300-sample on Kestrel successfully
-- [ ] Full 30k-sample dataset completes ≤ 24 hours
-- [ ] Artifacts match local-run validation ≤ 5 decimal places
-- [ ] Out-of-core processing passes numerical equivalence test
-- [ ] Documentation enables self-service on Kestrel + generic HPC
-
-**Estimated timeline**: Phase 8a complete in 2 weeks; 8b+8c by end of Week 4
-
-**Blocker**: Phase 8 implementation should wait until Phase 7's uncapped 300-sample run completes, so we have accurate stage-wise timing baseline for scaling predictions and runtime estimation
-
-______________________________________________________________________
-
-## Phase 8 Next Steps (TBD, after 300-sample completion)
-
-1. Collect stage-wise timing from uncapped run + validate artifacts
-1. Begin Phase 8a implementation: config schema + spill logic
-1. Create SLURM template renderer + smoke tests
-1. Test 1-task array on Kestrel
-1. Expand to multi-task arrays and validation
-1. Document usage for self-service deployment
+**Blocker Resolution**: Phase 8 implementation was unblocked by user approval for scope expansion (no longer waiting for 300-sample). Work proceeds in feature branch in parallel while 300-sample runs overnight.
 
 ## Files in scope
 
@@ -253,6 +322,58 @@ pixi run env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_
 ```
 
 ## Latest slice update
+
+- Prepared Kestrel-ready final-stage cost-ladder pack (configs + runnable scripts):
+
+  - `configs/kestrel_final_cost_base_precompute.yml`
+  - `configs/kestrel_final_cost_sparse_final_{01,02,03,04}.yml`
+  - `configs/kestrel_final_cost_sparse_final_05_near_uncapped.yml`
+  - `scripts/kestrel/run_final_cost_ladder_on_node.sh`
+  - `scripts/kestrel/submit_final_cost_ladder.sbatch`
+
+- Experiment design for 1-hour ~100-core node:
+
+  1. Precompute shared early artifacts through `nonlinear_discovery` once.
+  1. Run sparse→final ladder with escalating `max_candidate_terms`/bootstrap load.
+  1. Emit `artifacts/hpc_final_cost_ladder/summary.csv` with sparse/final timing and support size.
+
+- Kestrel defaults wired from discovery constraints:
+
+  - account `bsm`, partition `shared` (override at submit time if needed)
+  - one node, `cpus-per-task=104`, `mem=220G`, `time=01:00:00`
+  - out-of-core enabled with chunked I/O and spill-friendly temp handling (`TMPDIR` on scratch).
+
+- Added config-driven triage controls to keep full-dataset ramps fast and reproducible:
+
+  - `stages.empirical_null_screening.max_retained_terms` (default `null`)
+  - `stages.interaction_discovery.n_permutations` (default `null`, inherits empirical screen)
+
+- Fixed unified-runner output-conditioning mapping bug:
+
+  - `algorithm.variance_threshold` now maps to
+    `case_study.output_conditioning.temporary_reduction.retained_variance_fraction`
+  - `algorithm.retained_components` now maps to
+    `case_study.output_conditioning.temporary_reduction.retained_components`
+
+- Added focused tests for these mappings/caps:
+
+  - `tests/test_config_loader.py` (legacy mapping + new fields)
+  - `tests/test_manuscript_empirical_null_screening.py`
+    (`max_retained_terms` deterministic cap behavior)
+
+- Added full-dataset triage configs:
+
+  - `configs/validation_full_dataset_notebook_triage.yml`
+  - `configs/validation_full_dataset_triage_minimal.yml`
+
+- Full-dataset triage ramp findings (`validation_full_dataset_triage_minimal`):
+
+  - output conditioning retained components: `20`
+  - empirical-null retained first-order terms: `63` (capped)
+  - interaction stage retained pairs: `366` (manuscript ref `367`)
+  - nonlinear stage retained transformations: `43` (manuscript ref `37`)
+  - sparse stage (triage cap `max_candidate_terms=150`) final stable support: `148`
+  - final-manuscript-artifacts stage remains the dominant runtime bottleneck on full dataset.
 
 - Added optional interaction runtime overrides in case-study config parsing:
   `permutation_count_B`, `n_tree_estimators`, `max_tree_depth`, `max_shap_samples`.

@@ -18,6 +18,20 @@ For long runs with timestamped tracking and durable logs:
 pixi run workflow-run -- --config configs/validation_300_sample_no_caps.yml
 ```
 
+### Runtime Investigation Ladder (single command)
+
+Use this to estimate full-run runtime from small/medium/large profiling runs on your own dataset:
+
+```bash
+pixi run runtime-investigation \
+  --base-config configs/validation_300_sample_no_caps.yml \
+  --dataset-path /absolute/path/to/your_dataset_root \
+  --output-root artifacts/runtime_investigation \
+  --label my-dataset
+```
+
+For full details, see `docs/RUNTIME_INVESTIGATION_WORKFLOW.md`.
+
 ### Run with Custom Output Directory
 
 ```bash

@@ -51,8 +51,8 @@ PROFILE_OVERRIDES: dict[str, dict[str, Any]] = {
             "empirical_null_screening": {"n_permutations": 201, "max_retained_terms": 80},
             "interaction_discovery": {
                 "n_permutations": 41,
-                "n_tree_estimators": 120,
-                "max_tree_depth": 4,
+                "n_tree_estimators": 100,  # Reduced from 120 (Phase 2 optimization)
+                "max_tree_depth": 3,  # Reduced from 4 (Phase 2 optimization)
             },
             "sparse_selection": {"n_stability_subsamples": 12, "max_candidate_terms": 250},
             "final_artifacts": {"bootstrap_count": 20},

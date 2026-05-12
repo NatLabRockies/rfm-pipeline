@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+import pytest
 
+import bsm_rfm.manuscript_stages as manuscript_stages
 from bsm_rfm.manuscript_runtime import (
     build_manuscript_notebook_context,
     load_manuscript_case_study_config,
@@ -51,6 +54,8 @@ def test_interaction_discovery_spec_accepts_optional_runtime_overrides() -> None
                 "n_tree_estimators": 17,
                 "max_tree_depth": 2,
                 "max_shap_samples": 41,
+                "parallel_batch_timeout_seconds": 17,
+                "parallel_backend": "loky",
             },
         }
     }
@@ -62,6 +67,8 @@ def test_interaction_discovery_spec_accepts_optional_runtime_overrides() -> None
     assert spec.n_tree_estimators == 17
     assert spec.max_tree_depth == 2
     assert spec.max_shap_samples == 41
+    assert spec.parallel_batch_timeout_seconds == 17
+    assert spec.parallel_backend == "loky"
 
 
 def test_interaction_discovery_retains_residual_pair_signal_and_writes_artifacts(
@@ -187,3 +194,129 @@ def test_run_interaction_discovery_stage_executes_demo_context() -> None:
     assert result.interactions.summary.loc[0, "stage"] == "interaction_discovery"
     assert result.interactions.summary.loc[0, "n_candidate_pairs"] == 1
     assert result.artifact_paths["interaction_pair_scores"].exists()
+
+
+def test_interaction_discovery_rejects_invalid_parallel_backend() -> None:
+    sample_ids = list(range(1, 21))
+    x1 = [-1.0, -1.0, 1.0, 1.0] * 5
+    x2 = [-1.0, 1.0, -1.0, 1.0] * 5
+    pca_signal = [left * right for left, right in zip(x1, x2, strict=True)]
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2})
+    catalog = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2"],
+            "feature_type": ["first_order", "first_order"],
+        }
+    )
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 16 + ["holdout"] * 4})
+    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
+    retained_terms = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2"],
+            "feature_type": ["first_order", "first_order"],
+        }
+    )
+    spec = InteractionDiscoverySpec(
+        method="tree_shap_interaction_values",
+        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
+        null_threshold_quantile=0.9,
+        retained_pairs_reference=1,
+        permutation_count_B=2,
+        random_seed=123,
+        n_jobs=2,
+        parallel_backend="invalid_backend",
+    )
+
+    with pytest.raises(ValueError, match="parallel_backend"):
+        discover_manuscript_interactions(inputs, catalog, holdout, pca_scores, retained_terms, spec)
+
+
+def test_interaction_discovery_uses_configured_parallel_backend_without_fallback(
+    monkeypatch,
+) -> None:
+    sample_ids = list(range(1, 21))
+    x1 = [-1.0, -1.0, 1.0, 1.0] * 5
+    x2 = [-1.0, 1.0, -1.0, 1.0] * 5
+    pca_signal = [left * right for left, right in zip(x1, x2, strict=True)]
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2})
+    catalog = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2"],
+            "feature_type": ["first_order", "first_order"],
+        }
+    )
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 16 + ["holdout"] * 4})
+    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
+    retained_terms = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2"],
+            "feature_type": ["first_order", "first_order"],
+        }
+    )
+    spec = InteractionDiscoverySpec(
+        method="tree_shap_interaction_values",
+        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
+        null_threshold_quantile=0.9,
+        retained_pairs_reference=1,
+        permutation_count_B=3,
+        random_seed=123,
+        n_jobs=2,
+        parallel_batch_timeout_seconds=1,
+        parallel_backend="threading",
+    )
+
+    calls: list[tuple[int, str]] = []
+
+    class FakeParallel:
+        def __init__(self, n_jobs: int, **kwargs: object) -> None:
+            self.n_jobs = n_jobs
+            self.backend = str(kwargs.get("backend", "loky"))
+
+        def __enter__(self) -> FakeParallel:
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def __call__(
+            self,
+            jobs: list[tuple[object, tuple[object, ...], dict[str, object]]],
+        ) -> list[tuple[np.ndarray, np.ndarray]]:
+            calls.append((self.n_jobs, self.backend))
+            results: list[tuple[np.ndarray, np.ndarray]] = []
+            for func, args, kwargs in jobs:
+                results.append(func(*args, **kwargs))
+            return results
+
+    def _fake_score_interaction_permutation(
+        y_base: np.ndarray,
+        permute_response: bool,
+        *,
+        n_pairs: int,
+        n_comp: int,
+        **_: object,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        _ = (y_base, permute_response)
+        scores = np.ones(n_pairs, dtype=float)
+        component_scores = np.ones((n_pairs, n_comp), dtype=float)
+        return scores, component_scores
+
+    monkeypatch.setattr(manuscript_stages, "Parallel", FakeParallel)
+    monkeypatch.setattr(
+        manuscript_stages,
+        "_score_interaction_permutation",
+        _fake_score_interaction_permutation,
+    )
+
+    result = discover_manuscript_interactions(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        spec,
+    )
+
+    assert calls[0] == (2, "threading")
+    assert all(n_jobs == 2 and backend == "threading" for n_jobs, backend in calls)
+    assert len(result.pair_scores) == 1

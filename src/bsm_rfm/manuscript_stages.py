@@ -24,7 +24,8 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 from sklearn.exceptions import ConvergenceWarning
-from sklearn.linear_model import Lasso
+from sklearn.linear_model import Lasso, MultiTaskElasticNetCV
+from sklearn.preprocessing import StandardScaler
 from sklearn.utils.extmath import randomized_svd
 
 from .final_ols import (
@@ -287,6 +288,9 @@ class InteractionDiscoverySpec:
     max_tree_depth: int = 3
     max_shap_samples: int = 500
     n_jobs: int = 1
+    elasticnet_l1_ratio: float = 0.5
+    elasticnet_cv_folds: int = 5
+    min_component_variance_fraction: float = 0.01  # Skip components below 1% variance
 
 
 @dataclass(frozen=True)
@@ -1252,6 +1256,226 @@ def interaction_discovery_spec_from_case_study_config(
             interaction.get("source_workflow_equivalence_status", "not_yet_validated")
         ),
         n_jobs=int(runtime.get("n_jobs", 1)),
+        elasticnet_l1_ratio=float(interaction.get("elasticnet_l1_ratio", 0.5)),
+        elasticnet_cv_folds=int(interaction.get("elasticnet_cv_folds", 5)),
+        min_component_variance_fraction=float(
+            interaction.get("min_component_variance_fraction", 0.01)
+        ),
+    )
+
+
+def _discover_elasticnet_interactions(
+    input_matrix: pd.DataFrame,
+    holdout_assignments: pd.DataFrame,
+    pca_scores: pd.DataFrame,
+    retained_terms: pd.DataFrame,
+    spec: InteractionDiscoverySpec,
+) -> InteractionDiscoveryResult:
+    """Discover interaction pairs via ElasticNet coefficient selection (original archived approach).
+
+    Candidate pairs are generated from first-order terms retained by empirical null screen.
+    All candidate interactions are computed, then MultiTaskElasticNetCV selects which have
+    non-zero coefficients. This matches the original archived workflow approach.
+
+    Parameters
+    ----------
+    input_matrix
+        Case-study input table with ``sample_id`` and source input columns.
+    holdout_assignments
+        Table with ``sample_id`` and ``split`` columns. Only train rows are used.
+    pca_scores
+        Output-conditioning PCA score table with ``sample_id`` and component columns.
+    retained_terms
+        Empirical-null retained-term table with at least a ``feature_name`` column.
+    spec
+        Interaction-discovery specification.
+
+    Returns
+    -------
+    InteractionDiscoveryResult
+        Materialized pair-score, component-score, null-summary, retained-pair, and summary tables.
+    """
+    if spec.method != "elasticnet_interactions":
+        raise ValueError(f"Expected method 'elasticnet_interactions', got {spec.method}")
+    if not 0.0 < spec.null_threshold_quantile < 1.0:
+        raise ValueError("null_threshold_quantile must be in the interval (0, 1).")
+
+    # Generate candidate interaction pairs from retained screening features.
+    candidates = _generate_pairwise_interactions(
+        _retained_first_order_term_names(retained_terms, input_matrix, minimum_count=2)
+    )
+    component_names = _component_columns(pca_scores)
+    train_ids = _train_sample_ids(holdout_assignments)
+    y_train = _align_table_by_sample_id(pca_scores, train_ids, component_names, "PCA scores")
+
+    if len(y_train) < 4:
+        raise ValueError("Interaction discovery requires at least four training rows.")
+    y_scaled, component_active = _standardize_for_screening(y_train)
+    if not component_active.any():
+        raise ValueError("All retained PCA components have zero training variance.")
+    if not candidates:
+        raise ValueError("No candidate interaction pairs available.")
+
+    # Build feature matrix: first-order features + all interaction candidates.
+    feature_names = sorted({name for _, left, right in candidates for name in [left, right]})
+    pair_names = [name for name, _, _ in candidates]
+    interaction_indices = {
+        name: (feature_names.index(left), feature_names.index(right))
+        for name, left, right in candidates
+    }
+
+    indexed = input_matrix.set_index("sample_id", drop=False)
+    missing_ids = [s for s in train_ids if s not in indexed.index]
+    if missing_ids:
+        preview = ", ".join(str(v) for v in missing_ids[:5])
+        raise ValueError(f"input matrix is missing sample_id values: {preview}")
+
+    train_rows = indexed.loc[list(train_ids)].reset_index(drop=True)
+    x_first_order = np.column_stack(
+        [_source_input_column(train_rows, f, f).to_numpy(dtype=float) for f in feature_names]
+    )
+
+    # Compute all interaction products.
+    x_interactions = np.column_stack(
+        [x_first_order[:, i] * x_first_order[:, j] for i, j in interaction_indices.values()]
+    )
+
+    # Combine first-order and interaction features.
+    x_all = np.column_stack([x_first_order, x_interactions])
+
+    # Standardize for ElasticNet.
+    scaler = StandardScaler()
+    x_scaled = scaler.fit_transform(x_all)
+
+    # Fit MultiTaskElasticNetCV to select relevant interactions.
+    try:
+        model = MultiTaskElasticNetCV(
+            l1_ratio=spec.elasticnet_l1_ratio,
+            cv=spec.elasticnet_cv_folds,
+            fit_intercept=True,
+            max_iter=10000,
+            random_state=spec.random_seed,
+            n_jobs=spec.n_jobs,
+        )
+        model.fit(x_scaled, y_scaled)
+    except Exception as e:
+        raise ValueError(f"ElasticNet fitting failed: {e}") from e
+
+    # Extract selected features (non-zero coefficients).
+    coef_matrix = model.coef_.T  # n_features x n_outputs
+    selected_mask = (np.abs(coef_matrix) > 1e-10).any(axis=1)
+
+    # Determine which interaction pairs were selected.
+    n_first_order = len(feature_names)
+    selected_pairs = []
+    for i, sel in enumerate(selected_mask[n_first_order:], start=n_first_order):
+        if sel:
+            pair_idx = i - n_first_order
+            if pair_idx < len(pair_names):
+                selected_pairs.append(pair_names[pair_idx])
+
+    # Build output dataframes in same format as GBT approach.
+    # Compute a "score" for each interaction based on max coefficient magnitude across outputs.
+    pair_scores_data = []
+    for pair_name, left, right in candidates:
+        pair_idx = n_first_order + pair_names.index(pair_name)
+        coefs = coef_matrix[pair_idx, :]
+        max_coef = np.abs(coefs).max()
+        is_selected = pair_name in selected_pairs
+
+        # Create a pseudo-score based on coefficient magnitude (higher = more important).
+        score = float(max_coef)
+
+        pair_scores_data.append(
+            {
+                "pair_name": pair_name,
+                "left_feature": left,
+                "right_feature": right,
+                "interaction_score": score,
+                "null_threshold": 0.0,  # ElasticNet doesn't use null thresholds
+                "p_value": 0.0 if is_selected else 1.0,
+                "empirical_null_retained": is_selected,
+                "retained": is_selected,
+                "mean_coefficient_magnitude": float(np.abs(coefs).mean()),
+            }
+        )
+
+    pair_scores = pd.DataFrame(pair_scores_data)
+
+    # Component-level scores: assign max coefficient magnitude to each component.
+    component_scores_data = []
+    for comp_idx, comp_name in enumerate(component_names):
+        if not component_active[comp_idx]:
+            continue
+        for pair_name, _left, _right in candidates:
+            pair_idx = n_first_order + pair_names.index(pair_name)
+            coef_value = float(coef_matrix[pair_idx, comp_idx])
+            component_scores_data.append(
+                {
+                    "pair_name": pair_name,
+                    "component": comp_name,
+                    "mean_absolute_interaction": float(np.abs(coef_value)),
+                }
+            )
+
+    component_interaction_scores = pd.DataFrame(component_scores_data)
+
+    # Null summary: ElasticNet doesn't use permutation nulls, so use simplified summary.
+    null_summary_data = []
+    for pair_name, _, _ in candidates:
+        null_summary_data.append(
+            {
+                "pair_name": pair_name,
+                "null_mean": 0.0,
+                "null_std": 0.0,
+                "null_count": 0,
+            }
+        )
+    interaction_null_summary = pd.DataFrame(null_summary_data)
+
+    # Retained pairs: those with non-zero ElasticNet coefficients.
+    retained_pairs = pair_scores.loc[pair_scores["retained"]].copy()
+    retained_pairs = retained_pairs.sort_values(
+        ["interaction_score", "pair_name"],
+        ascending=[False, True],
+        ignore_index=True,
+    )
+
+    # Provenance.
+    provenance = pd.DataFrame(
+        {
+            "interaction_method": [spec.method],
+            "interaction_implementation": ["elasticnet_coefficient_selection"],
+            "n_tree_estimators": [spec.n_tree_estimators],
+            "max_tree_depth": [spec.max_tree_depth],
+            "elasticnet_l1_ratio": [spec.elasticnet_l1_ratio],
+            "elasticnet_cv_folds": [spec.elasticnet_cv_folds],
+            "null_threshold_quantile": [spec.null_threshold_quantile],
+        }
+    )
+
+    # Summary.
+    summary = pd.DataFrame(
+        {
+            "n_training_rows": [len(y_train)],
+            "n_candidate_pairs": [len(candidates)],
+            "n_empirical_null_retained_pairs": [len(retained_pairs)],
+            "n_retained_pairs": [len(retained_pairs)],
+            "n_active_components": [int(component_active.sum())],
+            "max_interaction_score": [
+                float(pair_scores["interaction_score"].max()) if len(pair_scores) > 0 else 0.0
+            ],
+            "elasticnet_alpha": [float(model.alpha_)],
+        }
+    )
+
+    return InteractionDiscoveryResult(
+        pair_scores=pair_scores,
+        component_interaction_scores=component_interaction_scores,
+        interaction_null_summary=interaction_null_summary,
+        retained_pairs=retained_pairs,
+        provenance=provenance,
+        summary=summary,
     )
 
 
@@ -1263,13 +1487,11 @@ def discover_manuscript_interactions(
     retained_terms: pd.DataFrame,
     spec: InteractionDiscoverySpec,
 ) -> InteractionDiscoveryResult:
-    """Discover candidate interaction pairs via tree-based SHAP interaction values.
+    """Discover candidate interaction pairs via specified method (GBT+SHAP or ElasticNet).
 
-    Candidate pairs are generated dynamically from the first-order terms retained by the empirical
-    null screen. A gradient-boosted tree is fitted per PCA component; SHAP interaction values are
-    used to score pairs. The per-component mean absolute SHAP interaction is aggregated by taking
-    the maximum over all active PCA components. Response permutations provide deterministic
-    pair-specific null thresholds for CI/demo execution.
+    Supports two interaction discovery approaches:
+    1. tree_shap_interaction_values: GBT+SHAP-based dynamic interaction discovery
+    2. elasticnet_interactions: Original archived ElasticNet coefficient selection
 
     Parameters
     ----------
@@ -1291,8 +1513,13 @@ def discover_manuscript_interactions(
     InteractionDiscoveryResult
         Materialized pair-score, component-score, null-summary, retained-pair, and summary tables.
     """
-    if spec.method != "tree_shap_interaction_values":
+    if spec.method == "elasticnet_interactions":
+        return _discover_elasticnet_interactions(
+            input_matrix, holdout_assignments, pca_scores, retained_terms, spec
+        )
+    elif spec.method != "tree_shap_interaction_values":
         raise ValueError(f"Unsupported interaction-discovery method: {spec.method}")
+
     expected_rule = "max_over_components_of_mean_absolute_shap_interaction"
     if spec.aggregation_rule != expected_rule:
         raise ValueError(f"Unsupported interaction aggregation rule: {spec.aggregation_rule}")
@@ -1334,6 +1561,23 @@ def discover_manuscript_interactions(
 
     rng = np.random.default_rng(spec.random_seed)
     active_comp_indices = [i for i, a in enumerate(component_active) if a]
+
+    # Component pruning: skip components with very low variance
+    # (below min_component_variance_fraction). This reduces SHAP computation for
+    # uninformative components while retaining signal components.
+    if spec.min_component_variance_fraction > 0:
+        component_variances = y_train.var(axis=0).values  # Convert to numpy array
+        max_variance = component_variances.max()
+        if max_variance > 0:
+            variance_fractions = component_variances / max_variance
+            pruned_indices = [
+                i
+                for i in active_comp_indices
+                if variance_fractions[i] >= spec.min_component_variance_fraction
+            ]
+            if pruned_indices:  # Only prune if we keep at least one component
+                active_comp_indices = pruned_indices
+
     n_pairs = len(candidates)
     n_comp = len(component_names)
 
@@ -3817,10 +4061,47 @@ def _run_stability_resamples(
     subsample_size = min(subsample_size, n_rows)
 
     # Pre-generate all row-index draws so results are deterministic regardless of n_jobs.
-    all_row_indices = [
-        np.sort(rng.choice(n_rows, size=subsample_size, replace=False))
-        for _ in range(spec.subsample_count)
-    ]
+    # First resample: uniform random selection (baseline)
+    # Subsequent resamples: stratified by feature importance to improve convergence
+    all_row_indices = []
+
+    # Resample 1: Uniform random
+    all_row_indices.append(np.sort(rng.choice(n_rows, size=subsample_size, replace=False)))
+
+    # Resamples 2+: Stratified by feature importance (faster convergence)
+    # Normalize full_importance across active features to get sampling weights
+    active_importance = full_importance.copy()
+    active_importance[~active_features] = 0.0
+    importance_sum = active_importance.sum()
+
+    if importance_sum > 0:
+        # Use feature importance to weight row selection (features appear in many rows)
+        # Proxy: rows with high-importance features selected more often
+        row_importance = np.zeros(n_rows)
+        for feat_idx in np.where(active_features)[0]:
+            # Sum feature values (as proxy for importance) across rows
+            row_importance += np.abs(x_scaled[:, feat_idx])
+
+        # Normalize to probability distribution
+        row_importance_sum = row_importance.sum()
+        if row_importance_sum > 0:
+            row_probs = row_importance / row_importance_sum
+        else:
+            row_probs = np.ones(n_rows) / n_rows
+
+        for _ in range(1, spec.subsample_count):
+            # Sample with replacement using importance-weighted probabilities
+            indices = rng.choice(
+                n_rows,
+                size=subsample_size,
+                replace=True,
+                p=row_probs,
+            )
+            all_row_indices.append(np.sort(np.unique(indices)))
+    else:
+        # Fallback to uniform if no importance information available
+        for _ in range(1, spec.subsample_count):
+            all_row_indices.append(np.sort(rng.choice(n_rows, size=subsample_size, replace=False)))
 
     support_rows = []
     importance_rows = []

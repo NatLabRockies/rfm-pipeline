@@ -11,7 +11,10 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import multiprocessing as mp
 import os
+import subprocess
+import tempfile
 import time
 import warnings
 from dataclasses import dataclass
@@ -85,6 +88,68 @@ def _progress_batch_size(total: int, default_cap: int) -> int:
         except ValueError:
             pass
     return max(1, min(default_cap, total // 20 if total > 20 else total))
+
+
+def _coerce_bool(value: Any, *, default: bool) -> bool:
+    """Coerce mixed config values to bool using predictable string handling."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+        return default
+    return bool(value)
+
+
+def _append_parallel_diagnostic(stage: str, payload: dict[str, Any]) -> None:
+    """Append structured parallel diagnostics for post-mortem hang analysis."""
+    if _PROGRESS_TELEMETRY_PATH is None:
+        return
+    diagnostics_path = _PROGRESS_TELEMETRY_PATH.parent / f"{stage}_parallel_diagnostics.jsonl"
+    diagnostics_path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "recorded_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        **payload,
+    }
+    with diagnostics_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+
+def _worker_process_snapshot(parent_pid: int) -> list[dict[str, str]]:
+    """Capture lightweight worker-process snapshot for diagnostics."""
+    try:
+        output = subprocess.check_output(
+            ["ps", "-ax", "-o", "pid,ppid,%cpu,%mem,command"],
+            text=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    snapshot: list[dict[str, str]] = []
+    for line in output.splitlines()[1:]:
+        parts = line.strip().split(None, 4)
+        if len(parts) < 5:
+            continue
+        pid_s, ppid_s, cpu_s, mem_s, cmd = parts
+        try:
+            if int(ppid_s) != parent_pid:
+                continue
+        except ValueError:
+            continue
+        snapshot.append(
+            {
+                "pid": pid_s,
+                "ppid": ppid_s,
+                "cpu_percent": cpu_s,
+                "mem_percent": mem_s,
+                "command": cmd,
+            }
+        )
+    return snapshot
 
 
 @dataclass(frozen=True)
@@ -291,6 +356,8 @@ class InteractionDiscoverySpec:
     elasticnet_l1_ratio: float = 0.5
     elasticnet_cv_folds: int = 5
     min_component_variance_fraction: float = 0.01  # Skip components below 1% variance
+    parallel_batch_timeout_seconds: int = 900
+    parallel_backend: str = "threading"
 
 
 @dataclass(frozen=True)
@@ -1261,6 +1328,8 @@ def interaction_discovery_spec_from_case_study_config(
         min_component_variance_fraction=float(
             interaction.get("min_component_variance_fraction", 0.01)
         ),
+        parallel_batch_timeout_seconds=int(interaction.get("parallel_batch_timeout_seconds", 900)),
+        parallel_backend=str(interaction.get("parallel_backend", "threading")),
     )
 
 
@@ -1528,6 +1597,25 @@ def discover_manuscript_interactions(
     if not 0.0 < spec.null_threshold_quantile < 1.0:
         raise ValueError("null_threshold_quantile must be in the interval (0, 1).")
 
+    def _run_interaction_jobs(
+        jobs: list[tuple[Any, tuple[Any, ...], dict[str, Any]]],
+        *,
+        n_jobs: int,
+        backend: str,
+        timeout_seconds: int | None,
+        temp_folder: str | None,
+    ) -> list[tuple[np.ndarray, np.ndarray]]:
+        parallel_kwargs: dict[str, Any] = {}
+        if n_jobs > 1 and timeout_seconds is not None and timeout_seconds > 0:
+            parallel_kwargs["timeout"] = int(timeout_seconds)
+        if n_jobs > 1:
+            parallel_kwargs["backend"] = backend
+            parallel_kwargs["prefer"] = "processes" if backend == "loky" else "threads"
+            if backend == "loky" and temp_folder:
+                parallel_kwargs["temp_folder"] = temp_folder
+        with Parallel(n_jobs=n_jobs, **parallel_kwargs) as parallel:
+            return parallel(jobs)
+
     candidates = _generate_pairwise_interactions(
         _retained_first_order_term_names(retained_terms, input_matrix, minimum_count=2)
     )
@@ -1587,13 +1675,10 @@ def discover_manuscript_interactions(
     adaptive_shap_samples = min(250, max(100, int(0.3 * n_train_samples)))
     effective_max_shap_samples = min(spec.max_shap_samples, adaptive_shap_samples)
 
-    # Pre-generate all permuted response matrices and per-call seeds.
+    # Pre-generate per-call seeds only. Each worker materializes its own response permutation.
+    # This avoids shipping large permuted matrices through joblib IPC, which can destabilize
+    # process-based parallel execution on large runs.
     seeds = [int(rng.integers(0, 2**31)) for _ in range(spec.permutation_count_B + 1)]
-    y_matrices: list[np.ndarray] = [y_scaled]
-    for _ in range(spec.permutation_count_B):
-        y_matrices.append(
-            np.column_stack([rng.permutation(y_scaled[:, c]) for c in range(y_scaled.shape[1])])
-        )
 
     _score_kwargs = dict(
         x_feat=x_feat,
@@ -1607,10 +1692,16 @@ def discover_manuscript_interactions(
         max_shap_samples=effective_max_shap_samples,
     )
 
-    total_scores = len(y_matrices)
+    total_scores = len(seeds)
     all_results: list[tuple[np.ndarray, np.ndarray]] = []
     # Use divisor 8 instead of 25 for larger batches (reduce parallelization overhead)
     batch_size = _progress_batch_size(total_scores, 8)
+    batch_timeout_seconds = int(
+        os.getenv("BSM_INTERACTION_BATCH_TIMEOUT_SECONDS", spec.parallel_batch_timeout_seconds)
+    )
+    parallel_backend = os.getenv("BSM_INTERACTION_PARALLEL_BACKEND", spec.parallel_backend)
+    if parallel_backend not in {"loky", "threading"}:
+        raise ValueError("interaction_discovery.parallel_backend must be 'loky' or 'threading'.")
     _report_progress(
         stage="interaction_discovery",
         completed=0,
@@ -1618,14 +1709,59 @@ def discover_manuscript_interactions(
         unit="permutation_scores",
         detail="starting interaction score permutations",
     )
-    with Parallel(n_jobs=spec.n_jobs) as parallel:
+    with tempfile.TemporaryDirectory(prefix="bsm-interaction-joblib-") as temp_dir:
         for start in range(0, total_scores, batch_size):
             stop = min(start + batch_size, total_scores)
             jobs = [
-                delayed(_score_interaction_permutation)(y_mat, seed=seed, **_score_kwargs)
-                for y_mat, seed in zip(y_matrices[start:stop], seeds[start:stop], strict=True)
+                delayed(_score_interaction_permutation)(
+                    y_base=y_scaled,
+                    permute_response=(score_index > 0),
+                    seed=seed,
+                    **_score_kwargs,
+                )
+                for score_index, seed in enumerate(seeds[start:stop], start=start)
             ]
-            all_results.extend(parallel(jobs))
+            batch_result: list[tuple[np.ndarray, np.ndarray]] | None = None
+            if spec.n_jobs <= 1:
+                batch_result = _run_interaction_jobs(
+                    jobs,
+                    n_jobs=1,
+                    backend=parallel_backend,
+                    timeout_seconds=None,
+                    temp_folder=None,
+                )
+            else:
+                try:
+                    batch_result = _run_interaction_jobs(
+                        jobs,
+                        n_jobs=spec.n_jobs,
+                        backend=parallel_backend,
+                        timeout_seconds=batch_timeout_seconds,
+                        temp_folder=temp_dir,
+                    )
+                except (TimeoutError, mp.TimeoutError, RuntimeError, OSError) as exc:
+                    _append_parallel_diagnostic(
+                        "interaction_discovery",
+                        {
+                            "event": "parallel_batch_failure",
+                            "batch_start": start,
+                            "batch_stop": stop,
+                            "batch_size": len(jobs),
+                            "backend": parallel_backend,
+                            "n_jobs": spec.n_jobs,
+                            "timeout_seconds": batch_timeout_seconds,
+                            "exception_type": type(exc).__name__,
+                            "exception_message": str(exc),
+                            "controller_pid": os.getpid(),
+                            "worker_snapshot": _worker_process_snapshot(os.getpid()),
+                        },
+                    )
+                    raise RuntimeError(
+                        "Interaction discovery parallel batch failed; "
+                        "no serial fallback or retries are allowed for n_jobs>1."
+                    ) from exc
+            assert batch_result is not None
+            all_results.extend(batch_result)
             _report_progress(
                 stage="interaction_discovery",
                 completed=stop,
@@ -5491,7 +5627,8 @@ def _shap_mean_abs_interaction_matrix(
 
 
 def _score_interaction_permutation(
-    y_mat: np.ndarray,
+    y_base: np.ndarray,
+    permute_response: bool,
     x_feat: np.ndarray,
     n_pairs: int,
     n_comp: int,
@@ -5503,12 +5640,18 @@ def _score_interaction_permutation(
     max_shap_samples: int,
     seed: int,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Fit GBTs and score SHAP interactions for one (possibly permuted) response matrix.
+    """Fit GBTs and score SHAP interactions for one observed/permuted response matrix.
 
     Returns ``(max_scores, component_scores)`` where ``max_scores`` has shape ``(n_pairs,)``
     and ``component_scores`` has shape ``(n_pairs, n_comp)``.
     """
     rng = np.random.default_rng(seed)
+    if permute_response:
+        y_mat = np.column_stack(
+            [rng.permutation(y_base[:, comp_idx]) for comp_idx in range(y_base.shape[1])]
+        )
+    else:
+        y_mat = y_base
     scores = np.zeros((n_pairs, n_comp))
     for comp_idx in active_comp_indices:
         y_comp = y_mat[:, comp_idx]

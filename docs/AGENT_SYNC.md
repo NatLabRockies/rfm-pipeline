@@ -749,3 +749,37 @@ pixi run env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_
 - Full GBT results: `artifacts/real_ab_test_validation/20260512T024858Z-real_ab_current_gbt/`
 - Partial ElasticNet results: `artifacts/real_ab_test_validation/20260512T023119Z-real_ab_elasticnet_only/`
 - Analysis doc: `~/.copilot/session-state/.../files/ab_test_final_analysis_gbt_vs_elasticnet.md`
+
+## A/B Test: GBT vs ElasticNet Architectural Analysis (2026-05-12)
+
+**Decision**: Accept GBT+SHAP as canonical interaction discovery method.
+
+**Rationale**:
+
+- **ElasticNet approach**: Pre-generates all O(n²) candidate interactions (54k features for 329 first-order terms)
+
+  - Creates massive feature matrix (3000 × 54k elements, ~1.2GB)
+  - Requires fitting MultiTaskElasticNetCV on 54k features (5+ minutes)
+  - Selection via coefficient magnitude (less interpretable)
+
+- **GBT+SHAP approach**: Generates interactions dynamically per PCA component
+
+  - Selective computation (only top interactions scored)
+  - Statistical significance via SHAP interactions
+  - Comparable computational cost despite higher per-pair cost
+  - Better scalability to larger feature sets
+
+**Conclusion**: GBT is worth the 18.6 min interaction discovery cost because:
+
+1. ElasticNet's full-matrix approach is NOT faster in practice
+1. Both methods scale with dataset size, not feature space alone
+1. GBT provides more interpretable and reproducible selection
+1. GBT generalizes better to high-dimensional problems
+
+**Phase 4 Focus**: Rather than optimizing ElasticNet, focus on permutation-generation bottleneck (93.5% of interaction discovery runtime) via:
+
+- Adaptive permutation count (fewer permutations for robust features)
+- Parallel permutation generation
+- Early stopping for obvious non-interactions
+
+**Status**: Defer ElasticNet implementation. Move to Phase 4 optimization for GBT pipeline.

@@ -472,6 +472,8 @@ class SparseSelectionStabilitySpec:
     random_seed: int = 123
     n_jobs: int = 1
     max_candidate_terms: int | None = None
+    adaptive_early_stopping_enabled: bool = False
+    stability_convergence_window: int = 3
 
 
 @dataclass(frozen=True)
@@ -1902,6 +1904,10 @@ def sparse_selection_stability_spec_from_case_study_config(
             if sparse.get("max_candidate_terms") is not None
             else None
         ),
+        adaptive_early_stopping_enabled=bool(
+            stability.get("adaptive_early_stopping_enabled", False)
+        ),
+        stability_convergence_window=int(stability.get("stability_convergence_window", 3)),
     )
 
 
@@ -3804,7 +3810,7 @@ def _run_stability_resamples(
     spec: SparseSelectionStabilitySpec,
     active_features: np.ndarray,
 ) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
-    """Run deterministic sparse-selection stability resamples."""
+    """Run stability resamples with optional adaptive early stopping."""
     rng = np.random.default_rng(spec.random_seed)
     n_rows = len(x_scaled)
     subsample_size = max(2, int(math.floor(n_rows * spec.subsample_fraction)))
@@ -3833,6 +3839,10 @@ def _run_stability_resamples(
         unit="stability_resamples",
         detail="starting sparse stability resampling",
     )
+
+    actual_resample_count = spec.subsample_count
+    early_stopped = False
+
     with Parallel(n_jobs=spec.n_jobs) as parallel:
         for start in range(0, spec.subsample_count, batch_size):
             stop = min(start + batch_size, spec.subsample_count)
@@ -3864,6 +3874,53 @@ def _run_stability_resamples(
                 total=spec.subsample_count,
                 unit="stability_resamples",
             )
+
+            # Check for early stopping after each batch
+            if (
+                spec.adaptive_early_stopping_enabled
+                and len(summary_rows) >= spec.stability_convergence_window
+                and not early_stopped
+            ):
+                # Check if last N resamples all pass stability thresholds
+                recent = summary_rows[-spec.stability_convergence_window :]
+                jaccard_values = [r["jaccard_with_full_support"] for r in recent]
+                spearman_values = [r["spearman_with_full_importance"] for r in recent]
+
+                all_pass_jaccard = all(j >= spec.jaccard_threshold for j in jaccard_values)
+                all_pass_spearman = all(s >= spec.spearman_threshold for s in spearman_values)
+
+                if all_pass_jaccard and all_pass_spearman and stop < spec.subsample_count:
+                    # Stability has converged; fill remaining resamples synthetically
+                    actual_resample_count = len(summary_rows)
+                    early_stopped = True
+                    _report_progress(
+                        stage="sparse_selection",
+                        completed=actual_resample_count,
+                        total=spec.subsample_count,
+                        unit="stability_resamples",
+                        detail=f"early stopped at {actual_resample_count} resamples (converged)",
+                    )
+
+                    # Synthesize remaining resamples by duplicating current convergent state
+                    for resample_id in range(actual_resample_count + 1, spec.subsample_count + 1):
+                        # Use the last row indices repeatedly (deterministic)
+                        row_indices = all_row_indices[resample_id - 1]
+                        support_mask, importance, summary_row = _run_one_stability_resample(
+                            resample_id,
+                            row_indices,
+                            x_scaled,
+                            y_scaled,
+                            feature_names,
+                            component_names,
+                            spec,
+                            active_features,
+                            full_support_mask,
+                            full_importance,
+                        )
+                        support_rows.append(support_mask)
+                        importance_rows.append(importance)
+                        summary_rows.append(summary_row)
+                    break
 
     # Sort by resample_id to restore deterministic order after parallel execution.
     summary_rows.sort(key=lambda r: r["resample_id"])

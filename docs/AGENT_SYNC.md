@@ -5,11 +5,11 @@ branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: Phase 8a implementation (local-first out-of-core foundation)
-current_slice: Interaction discovery optimization phases 1–3 implementation
-slice_status: complete (40.7% large-profile speedup verified; pair retention within tolerance)
-last_validation: Phased runtime tests completed (small/medium/large profiles, optimized vs baseline)
-next_slice: Run full 30k-sample validation with Phase 1–3 optimizations
+current_milestone: Performance audit & architectural validation
+current_slice: A/B test: GBT+SHAP vs ElasticNet-only (PATH B complete, PATH A blocked)
+slice_status: blocked
+last_validation: PATH B (GBT full pipeline): 1114.5s total, interaction_discovery dominates 93.5% (1042.3s). NRMSE 0.089576. PATH A ElasticNet-only incomplete (config/I/O issues); architectural decision pending.
+next_slice: Complete PATH A (ElasticNet-only) full pipeline to enable model quality comparison; architectural decision (GBT vs ElasticNet) determines Phase 4 strategy
 
 ## Runtime investigation workflow package (2026-05-11)
 
@@ -677,3 +677,75 @@ pixi run env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_
 
 - Full analysis: `docs/INTERACTION_DISCOVERY_OPTIMIZATION.md`
 - Implementation plan: See plan.md Phase section
+
+## A/B Test: GBT+SHAP vs ElasticNet-Only Architectural Validation (2026-05-12)
+
+**Status**: ⏳ IN PROGRESS — PATH B complete, PATH A incomplete (technical issues)
+
+### Test Design
+
+- **Path A (ElasticNet-only):** Null screening → Nonlinear discovery (no interaction discovery stage)
+- **Path B (Full GBT+SHAP):** Complete pipeline including interaction discovery
+- Dataset: Test 3k (1000 rows, medium profile)
+- Goal: Determine if 56 interaction pairs justify 93.5% of runtime cost
+
+### Results: PATH B (GBT Full Pipeline) ✓ COMPLETE
+
+**Runtime: 1114.5s (18.6 min)**
+
+| Stage                                |    Duration | % of Total |
+| ------------------------------------ | ----------: | ---------: |
+| output_conditioning                  |        5.0s |       0.4% |
+| empirical_null_screening             |        1.9s |       0.2% |
+| **interaction_discovery (GBT+SHAP)** | **1042.3s** |  **93.5%** |
+| nonlinear_discovery                  |        9.3s |       0.8% |
+| sparse_selection_and_stability       |       20.9s |       1.9% |
+| final_manuscript_tables_and_figures  |       35.2s |       3.2% |
+
+**Model Quality:**
+
+- Final features: 119 total (63 first-order + 56 interactions)
+- Holdout NRMSE: **0.089576**
+- Cost per interaction pair: ~18.6s each
+
+### Results: PATH A (ElasticNet-Only) ✗ INCOMPLETE
+
+- Completed null_screening → nonlinear_discovery in 1056s
+- **Missing:** sparse_selection and final_manuscript_artifacts stages (needed for final NRMSE)
+- **Technical issue:** Configuration system regenerates default stages; removal via pop() not respected
+- **Impact:** Cannot compare model quality; architectural decision blocked
+
+### Key Architectural Insight
+
+**Interaction discovery dominates 93.5% of total runtime.**
+
+- GBT+SHAP cost: 1042.3s out of 1114.5s
+- Non-interaction stages: 72.2s
+- Cost-benefit question: Are 56 interaction pairs worth this cost?
+- **BLOCKING QUESTION:** Does ElasticNet-only (first-order features only) achieve comparable NRMSE?
+
+### Next Actions
+
+1. **CRITICAL:** Complete PATH A full pipeline run (ElasticNet without interactions)
+
+   - Extract final NRMSE and feature count
+   - Compare quality delta to GBT baseline (0.089576)
+   - Decision threshold: \<1% worse = GBT may be unnecessary
+
+1. **Based on architectural decision:**
+
+   - **If ElasticNet NRMSE < 1% worse:** Switch to ElasticNet, implement Phase 4 (pre-filtering, component pruning) for 15-30 day savings at 30k scale
+   - **If ElasticNet NRMSE 1-2% worse:** Evaluate lightweight GBT variant (fewer estimators/depth) as hybrid
+   - **If ElasticNet NRMSE >2% worse:** Keep GBT, accelerate Phase 4 implementation (critical path to meet deadline)
+
+### 30k-Sample Runtime Implications
+
+- **Current GBT path:** ~69-104 days (from Phase 1-3 baseline)
+- **If ElasticNet sufficient:** Saves 93.5% of interaction discovery time → estimated 4.9-7.3 days (rough, unvalidated)
+- **If GBT retained:** Phase 4 optimization becomes critical (must achieve 15-30 day reduction)
+
+### Evidence Files
+
+- Full GBT results: `artifacts/real_ab_test_validation/20260512T024858Z-real_ab_current_gbt/`
+- Partial ElasticNet results: `artifacts/real_ab_test_validation/20260512T023119Z-real_ab_elasticnet_only/`
+- Analysis doc: `~/.copilot/session-state/.../files/ab_test_final_analysis_gbt_vs_elasticnet.md`

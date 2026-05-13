@@ -21,6 +21,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+from bsm_rfm.config import load_config
 from bsm_rfm.distributed.config_distributed import (
     DaskConfig,
     DistributedConfig,
@@ -126,7 +127,9 @@ def test_kestrel_gpu_h100_config_loads():
     config_path = Path(__file__).parent.parent / "configs" / "hpc" / "kestrel_gpu_h100.yml"
     if not config_path.exists():
         pytest.skip("kestrel_gpu_h100.yml not present")
+    workflow_cfg = load_config(config_path)
     cfg = load_distributed_config(config_path)
+    assert workflow_cfg.output.artifact_dir == "./artifacts/kestrel_gpu_h100_run"
     assert cfg.gpu.enabled is True
     assert cfg.gpu.device == "cuda"
     assert cfg.slurm.partition == "gpu-h100s"
@@ -245,6 +248,47 @@ def test_write_scripts_no_gpu_scripts_when_disabled(tmp_path):
     scripts = runner.write_scripts(tmp_path / "scripts", stage="interaction_discovery")
     assert "gpu_stage" not in scripts
     assert "gpu_diagnostic" not in scripts
+
+
+def test_gpu_live_scripts_exist_with_expected_defaults() -> None:
+    submit_script = Path("scripts/kestrel/submit_gpu_h100_live.sh").read_text(encoding="utf-8")
+    collect_script = Path("scripts/kestrel/collect_gpu_interaction_results.sh").read_text(
+        encoding="utf-8"
+    )
+    watch_script = Path("scripts/kestrel/watch_gpu_interaction_queue.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "set -euo pipefail" in submit_script
+    assert 'PARTITION="${PARTITION:-gpu-h100s}"' in submit_script
+    assert 'WALLTIME="${WALLTIME:-04:00:00}"' in submit_script
+    assert "submit_interaction_discovery_gpu_array.sh" in submit_script
+
+    assert "set -euo pipefail" in collect_script
+    assert "gpu_interaction_results_summary.csv" in collect_script
+    assert "interaction_discovery_merged.json" in collect_script
+
+    assert "set -euo pipefail" in watch_script
+    assert "squeue -u" in watch_script
+    assert "sacct -u" in watch_script
+    assert "collect_gpu_interaction_results.sh" in watch_script
+
+
+def test_hpc_submit_prefers_gpu_stage_script() -> None:
+    from tools.bsm_hpc_submit import _select_array_script
+
+    scripts = {
+        "stage": Path("submit_interaction_discovery_array.sh"),
+        "gpu_stage": Path("submit_interaction_discovery_gpu_array.sh"),
+    }
+    assert _select_array_script(scripts) == Path("submit_interaction_discovery_gpu_array.sh")
+
+
+def test_hpc_submit_falls_back_to_cpu_stage_script() -> None:
+    from tools.bsm_hpc_submit import _select_array_script
+
+    scripts = {"stage": Path("submit_interaction_discovery_array.sh")}
+    assert _select_array_script(scripts) == Path("submit_interaction_discovery_array.sh")
 
 
 # ---------------------------------------------------------------------------

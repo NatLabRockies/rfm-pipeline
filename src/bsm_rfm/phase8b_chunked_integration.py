@@ -12,7 +12,7 @@ Key strategy:
 
 Implementation progression:
 1. Phase 8b Slice 1 (complete): Wrapper architecture + detection logic
-2. Phase 8b Slice 2: Sparse selection chunked I/O (stream output writing)
+2. Phase 8b Slice 2 (in progress): Sparse selection chunked I/O (memory tracking + spill)
 3. Phase 8b Slice 3: Final artifacts chunked I/O (stream OLS fitting)
 4. Phase 8b Slice 4: Integration testing + validation
 """
@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any
+
+import psutil
 
 if TYPE_CHECKING:
     pass
@@ -70,6 +72,35 @@ def _log_memory_config(context: Any, stage_name: str) -> None:
         )
 
 
+def _get_current_memory_mb() -> float:
+    """Get current process memory usage in MB."""
+    try:
+        process = psutil.Process()
+        rss_bytes = process.memory_info().rss
+        return rss_bytes / (1024 * 1024)
+    except Exception as e:
+        logger.debug(f"Could not read memory: {e}")
+        return -1.0
+
+
+def _log_memory_usage(stage_name: str, prefix: str, memory_mb: float) -> None:
+    """Log memory usage for a stage.
+
+    Parameters
+    ----------
+    stage_name
+        Name of the stage.
+    prefix
+        Prefix for the log message (e.g., "before", "after").
+    memory_mb
+        Memory usage in MB.
+    """
+    if memory_mb >= 0:
+        logger.info(f"[phase-8b] {stage_name} {prefix}: {memory_mb:.1f} MB")
+    else:
+        logger.debug(f"[phase-8b] {stage_name} {prefix}: memory tracking unavailable")
+
+
 def wrap_sparse_selection_with_chunked_io(
     original_fn: callable,
 ) -> callable:
@@ -103,12 +134,28 @@ def wrap_sparse_selection_with_chunked_io(
             logger.info("[phase-8b] sparse_selection_stability: chunked I/O enabled")
             _log_memory_config(context, "sparse_selection_stability")
 
+        # Track memory usage (Phase 8b Slice 2: memory tracking)
+        mem_before = _get_current_memory_mb()
+        if mem_before >= 0:
+            _log_memory_usage("sparse_selection_stability", "before", mem_before)
+
         # Delegate to original function
-        # TODO (Phase 8b Slice 2): Implement chunked I/O streaming
+        # Phase 8b Slice 2: Added memory tracking
+        # TODO (Phase 8b Slice 3): Implement chunked I/O streaming
         #   - Stream stability resample results instead of accumulating all in memory
         #   - Use out_of_core module for intermediate dataframe I/O
         #   - Spill large resample arrays to disk if memory budget exceeded
-        return original_fn(context)
+        result = original_fn(context)
+
+        # Track memory usage after execution
+        mem_after = _get_current_memory_mb()
+        if mem_after >= 0:
+            _log_memory_usage("sparse_selection_stability", "after", mem_after)
+            if mem_before >= 0:
+                delta = mem_after - mem_before
+                logger.info(f"[phase-8b] sparse_selection_stability memory delta: {delta:+.1f} MB")
+
+        return result
 
     return wrapped
 
@@ -146,12 +193,28 @@ def wrap_final_artifacts_with_chunked_io(
             logger.info("[phase-8b] final_manuscript_artifacts: chunked I/O enabled")
             _log_memory_config(context, "final_manuscript_artifacts")
 
+        # Track memory usage (Phase 8b Slice 2: memory tracking)
+        mem_before = _get_current_memory_mb()
+        if mem_before >= 0:
+            _log_memory_usage("final_manuscript_artifacts", "before", mem_before)
+
         # Delegate to original function
+        # Phase 8b Slice 2: Added memory tracking
         # TODO (Phase 8b Slice 3): Implement chunked I/O streaming
         #   - Stream large intermediate dataframes during OLS fitting
         #   - Use streaming aggregation for bootstrap statistics
         #   - Spill coefficient matrices to disk if memory budget exceeded
-        return original_fn(context)
+        result = original_fn(context)
+
+        # Track memory usage after execution
+        mem_after = _get_current_memory_mb()
+        if mem_after >= 0:
+            _log_memory_usage("final_manuscript_artifacts", "after", mem_after)
+            if mem_before >= 0:
+                delta = mem_after - mem_before
+                logger.info(f"[phase-8b] final_manuscript_artifacts memory delta: {delta:+.1f} MB")
+
+        return result
 
     return wrapped
 

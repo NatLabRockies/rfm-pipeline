@@ -197,7 +197,10 @@ Run `SELECT * FROM todos` to see current task breakdown.
 - ✅ shard worker now runs real interaction scoring and emits per-shard pair outputs
 - ✅ reduce step now merges retained pairs and pair scores across shards
 - ✅ shard manifest caps effective shard count at feature-column cardinality
-- ⏳ remaining: real MPI runner + real Ray runner + full submit-path input wiring
+- ✅ MPI runner delegates to shard worker with dataclass-aware parameter passing
+- ✅ submit-path input resolution: auto-finds and resolves prior-stage artifacts (pca_scores, retained_terms, X, holdout, catalog)
+- ✅ bsm_hpc_submit.py auto-populates shard manifest input_paths for interaction_discovery submissions
+- ⏳ remaining: real Ray runner + end-to-end HPC integration test + GPU scoring path
 
 ______________________________________________________________________
 

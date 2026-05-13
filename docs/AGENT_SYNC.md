@@ -7,9 +7,32 @@ autonomy_tier: 3
 profile: autonomous
 current_milestone: Phase 8 — Scalable Execution (HPC + Out-of-Core)
 current_slice: Phase 8b — Chunked I/O Integration (sparse_selection + final_artifacts)
-slice_status: in_progress (wrapper architecture complete, test framework established)
-last_validation: Phase 8b wrapper module tests (9 tests) pass; all 28 distributed tests pass (HPC e2e + artifact resolution + Phase 8b chunked I/O)
-next_slice: (1) Chunked I/O implementation for sparse_selection, (2) Chunked I/O implementation for final_artifacts, (3) GPU scoring path implementation (optional Phase 8c), (4) Production validation on Kestrel (optional)
+slice_status: in_progress (Slice 1 foundation complete, Slice 2 memory tracking complete)
+last_validation: Phase 8b Slice 2 memory tracking tests (11 tests) pass; all 95 distributed tests pass (HPC e2e + artifact resolution + Phase 8b)
+next_slice: (1) Phase 8b Slice 3 - sparse_selection streaming I/O, (2) Phase 8b Slice 4 - integration testing, (3) GPU scoring path (optional Phase 8c)
+
+## Phase 8b — memory tracking integration (2026-05-13)
+
+- Enhanced `src/bsm_rfm/phase8b_chunked_integration.py` with memory tracking:
+  - Added psutil import for process memory monitoring
+  - Implemented `_get_current_memory_mb()` to read process RSS in MB
+  - Implemented `_log_memory_usage()` for formatted memory logs with prefix
+  - Added memory tracking to `wrap_sparse_selection_with_chunked_io()`:
+    - Tracks memory before/after sparse_selection execution
+    - Logs memory delta (change) after completion
+    - Logs configuration when use_chunked_io=True
+  - Added memory tracking to `wrap_final_artifacts_with_chunked_io()`:
+    - Same memory tracking pattern as sparse_selection
+    - Logs out_of_core config (chunk_size, budget, spill behavior)
+- Added 2 new memory tracking tests to `tests/test_phase8b_chunked_io_integration.py`:
+  - TestMemoryTracking.test_sparse_selection_wrapper_tracks_memory()
+  - TestMemoryTracking.test_final_artifacts_wrapper_tracks_memory()
+  - 11 total tests; all passing
+- Validation:
+  - `pixi run pytest tests/test_phase8b_chunked_io_integration.py` (11 tests) ✅
+  - `pixi run pytest tests/test_hpc_*.py tests/test_phase8b_*.py tests/test_distributed_*.py` (95 tests total) ✅
+- Commit: `d23aa50` pushed to origin/main
+- Phase 8b Slice 2 complete: Memory monitoring foundation ready for streaming implementation
 
 ## Phase 8b — chunked I/O integration wrapper (2026-05-13)
 
@@ -31,7 +54,8 @@ next_slice: (1) Chunked I/O implementation for sparse_selection, (2) Chunked I/O
 - Validation:
   - `pixi run pytest tests/test_phase8b_chunked_io_integration.py` (9 tests) ✅
   - `pixi run pytest tests/test_hpc_*.py tests/test_phase8b_*.py` (28 tests total) ✅
-- Next: Implement chunked I/O streaming logic inside wrappers (streaming data I/O, chunk aggregation, memory tracking)
+- Commit: `38205d8` (foundation), `a0c67fd` (enhancement) pushed to origin/main
+- Phase 8b Slice 1 complete: Wrapper architecture foundation established
 
 ## Phase 8c — end-to-end integration testing (2026-05-13)
 

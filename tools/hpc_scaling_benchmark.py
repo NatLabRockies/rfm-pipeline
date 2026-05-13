@@ -81,19 +81,13 @@ logger = logging.getLogger("hpc_scaling_benchmark")
 
 # "Core scaling" sweep: holds all settings moderate, varies only n_jobs.
 # Purpose: measure parallel efficiency (Amdahl / Gustafson law parameters).
-CORE_SCALING_CELLS = [
-    {"n_jobs": 1},
-    {"n_jobs": 2},
-    {"n_jobs": 4},
-    {"n_jobs": 8},
-    {"n_jobs": 16},
-    {"n_jobs": 32},
-    {"n_jobs": 64},
-    {"n_jobs": -1},  # all cores
-]
+# All benchmark cells run with all available cores (n_jobs=-1 → resolved to max_cores).
+# Core scaling is handled analytically: we assume ~linear speedup and let the calculator
+# divide by the benchmark's core count to project onto the user's machine.
+# This avoids slow single-core runs and is sufficient for estimating the dominant
+# O(N²) feature-scaling and linear perm/tree effects.
 
 # "Feature scaling" sweep: varies max_retained_terms → O(N²) pair growth.
-# n_jobs fixed at "all available"; all other settings moderate.
 FEATURE_SCALING_CELLS = [
     {"max_retained_terms": 20},
     {"max_retained_terms": 40},
@@ -122,24 +116,11 @@ TREE_SCALING_CELLS = [
     {"n_tree_estimators": 200},
 ]
 
-# "Cross sweep" — selected (n_jobs, max_retained_terms) pairs for 2D interaction model.
-# Keeps everything else at moderate defaults.
-CROSS_SWEEP_CELLS = [
-    {"n_jobs": 1, "max_retained_terms": 50},
-    {"n_jobs": 4, "max_retained_terms": 50},
-    {"n_jobs": 16, "max_retained_terms": 50},
-    {"n_jobs": -1, "max_retained_terms": 50},
-    {"n_jobs": 1, "max_retained_terms": 150},
-    {"n_jobs": 4, "max_retained_terms": 150},
-    {"n_jobs": 16, "max_retained_terms": 150},
-    {"n_jobs": -1, "max_retained_terms": 150},
-]
-
 # Quick smoke grid (3 cells only, for --quick mode)
 QUICK_CELLS = [
-    {"n_jobs": 1, "max_retained_terms": 30, "n_permutations": 5, "n_tree_estimators": 25},
-    {"n_jobs": 4, "max_retained_terms": 30, "n_permutations": 5, "n_tree_estimators": 25},
-    {"n_jobs": -1, "max_retained_terms": 50, "n_permutations": 11, "n_tree_estimators": 50},
+    {"max_retained_terms": 30, "n_permutations": 5, "n_tree_estimators": 25},
+    {"max_retained_terms": 50, "n_permutations": 11, "n_tree_estimators": 50},
+    {"max_retained_terms": 100, "n_permutations": 21, "n_tree_estimators": 100},
 ]
 
 # Moderate defaults applied to every cell (overridden per axis)
@@ -163,21 +144,14 @@ def _build_full_grid(max_cores: int) -> list[dict[str, Any]]:
         cell = dict(MODERATE_DEFAULTS)
         cell.update(overrides)
         cell["_sweep"] = sweep_name
-        # Resolve -1 to actual max_cores
-        if cell["n_jobs"] == -1:
-            cell["n_jobs"] = max_cores
         cells.append(cell)
 
-    for c in CORE_SCALING_CELLS:
-        _add("core_scaling", c)
     for c in FEATURE_SCALING_CELLS:
         _add("feature_scaling", c)
     for c in PERM_SCALING_CELLS:
         _add("perm_scaling", c)
     for c in TREE_SCALING_CELLS:
         _add("tree_scaling", c)
-    for c in CROSS_SWEEP_CELLS:
-        _add("cross_sweep", c)
 
     # Deduplicate by canonical key (same params should run once)
     seen = set()
@@ -670,7 +644,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--sweeps",
         nargs="+",
-        choices=["core_scaling", "feature_scaling", "perm_scaling", "tree_scaling", "cross_sweep"],
+        choices=["feature_scaling", "perm_scaling", "tree_scaling"],
         default=None,
         help="Run only specific sweeps (default: all sweeps)",
     )
@@ -766,7 +740,6 @@ def main(argv: list[str] | None = None) -> int:
             sweep = cell.get("_sweep", "?")
             print(
                 f"[{i + 1:2d}/{len(cells)}] {sweep:<18} "
-                f"n_jobs={cell['n_jobs']:>3}  "
                 f"max_ret={str(cell.get('max_retained_terms') or 'uncap'):>6}  "
                 f"n_perm={cell['n_permutations']:>4}  "
                 f"n_trees={cell['n_tree_estimators']:>4}  ...",

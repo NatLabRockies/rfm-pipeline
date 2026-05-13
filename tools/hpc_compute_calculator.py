@@ -152,11 +152,21 @@ def _n_pairs(n_features: int) -> int:
 def fit_model(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Fit log-linear scaling model to benchmark data.
 
+    All benchmark cells run with all available cores (benchmark_cores).
+    Core scaling is projected analytically using linear assumption.
+
+    Model (fit from data):
+      log(T_wall) = log(alpha) + b_pairs*log(pairs) + b_perm*log(B)
+                    + b_trees*log(E) + delta*log(S/S_ref)
+
+    To project to user's core count:
+      T_user = T_benchmark * benchmark_cores / n_user_cores
+
     Returns a model dict with:
-      log_alpha, gamma (parallelism exp), delta (sample exp),
-      beta_pairs (pair-count exponent, should be ~1)
-      beta_perm  (permutation exponent, should be ~1)
-      beta_trees (tree exponent, should be ~1)
+      log_alpha, benchmark_cores, delta (sample exp),
+      b_pairs (pair-count exponent, should be ~1),
+      b_perm  (permutation exponent, should be ~1),
+      b_trees (tree exponent, should be ~1),
       r_squared, n_observations, reference_n_samples
     """
     if not _NUMPY:
@@ -168,7 +178,6 @@ def fit_model(rows: list[dict[str, Any]]) -> dict[str, Any]:
         for r in rows
         if all(
             [
-                r["n_jobs"],
                 r["n_candidate_pairs"],
                 r["n_permutations"],
                 r["n_tree_estimators"],
@@ -184,10 +193,10 @@ def fit_model(rows: list[dict[str, Any]]) -> dict[str, Any]:
         )
 
     ref_samples = _median([r["n_samples"] for r in valid if r["n_samples"] > 0]) or 1
+    benchmark_cores = _median([r["n_jobs"] for r in valid if (r["n_jobs"] or 0) > 0]) or 1
 
     # Build design matrix: log(T) = log(alpha) + b_pairs*log(pairs)
-    #   + b_perm*log(perms) + b_trees*log(trees) - gamma*log(jobs)
-    #   + delta*log(samples/ref)
+    #   + b_perm*log(perms) + b_trees*log(trees) + delta*log(samples/ref)
     log_T = []
     X_rows = []
     for r in valid:
@@ -199,7 +208,6 @@ def fit_model(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 math.log(r["n_candidate_pairs"]),  # b_pairs
                 math.log(r["n_permutations"]),  # b_perm
                 math.log(r["n_tree_estimators"]),  # b_trees
-                -math.log(r["n_jobs"]),  # gamma (sign flipped)
                 math.log(max(samples, 1) / max(ref_samples, 1)),  # delta
             ]
         )
@@ -208,13 +216,13 @@ def fit_model(rows: list[dict[str, Any]]) -> dict[str, Any]:
     y = np.array(log_T)
 
     # OLS via normal equations (or lstsq for stability)
-    coef, residuals, rank, sv = np.linalg.lstsq(X, y, rcond=None)
+    coef, _residuals, _rank, _sv = np.linalg.lstsq(X, y, rcond=None)
     y_pred = X @ coef
     ss_res = np.sum((y - y_pred) ** 2)
     ss_tot = np.sum((y - np.mean(y)) ** 2)
     r_squared = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
 
-    log_alpha, b_pairs, b_perm, b_trees, gamma, delta = coef
+    log_alpha, b_pairs, b_perm, b_trees, delta = coef
 
     model = {
         "log_alpha": float(log_alpha),
@@ -222,14 +230,14 @@ def fit_model(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "b_pairs": float(b_pairs),
         "b_perm": float(b_perm),
         "b_trees": float(b_trees),
-        "gamma": float(gamma),  # parallelism exponent
         "delta": float(delta),  # sample scaling exponent
+        "benchmark_cores": int(benchmark_cores),
         "r_squared": float(r_squared),
         "n_observations": len(valid),
         "reference_n_samples": int(ref_samples),
         "notes": (
             "b_pairs/b_perm/b_trees should be ~1.0 for linear scaling. "
-            "gamma should be 0.8–1.0 for good parallelism. "
+            "Core projection assumes linear speedup: T_user = T_bench * bench_cores / user_cores. "
             "r_squared > 0.95 indicates a reliable model."
         ),
     }
@@ -273,7 +281,7 @@ def predict_seconds(
     n_tree_estimators
         Number of gradient boosting trees.
     n_jobs
-        Parallel workers.
+        Parallel workers on the *user's* machine.
     n_samples
         Training sample count.
 
@@ -284,15 +292,18 @@ def predict_seconds(
     """
     pairs = _n_pairs(n_retained_terms)
     ref = model["reference_n_samples"]
-    log_t = (
+    bench_cores = model.get("benchmark_cores", 1)
+    # Fit model gives T at benchmark_cores; project linearly to n_jobs
+    log_t_bench = (
         model["log_alpha"]
         + model["b_pairs"] * math.log(pairs)
         + model["b_perm"] * math.log(n_permutations)
         + model["b_trees"] * math.log(n_tree_estimators)
-        - model["gamma"] * math.log(max(n_jobs, 1))
         + model["delta"] * math.log(max(n_samples, 1) / max(ref, 1))
     )
-    return math.exp(log_t)
+    t_bench = math.exp(log_t_bench)
+    # Linear core scaling: T_user = T_bench * bench_cores / n_jobs
+    return t_bench * bench_cores / max(n_jobs, 1)
 
 
 def _fmt_duration(seconds: float) -> str:
@@ -312,20 +323,22 @@ def _fmt_duration(seconds: float) -> str:
 
 
 def _model_summary(model: dict[str, Any]) -> str:
+    bench = model.get("benchmark_cores", "?")
     lines = [
         "## Fitted Scaling Model",
         "",
         "```",
-        "T(N, B, E, n_jobs, S) = α × C(N,2)^β₁ × B^β₂ × E^β₃ / n_jobs^γ × (S/S_ref)^δ",
+        "T(N, B, E, S) @ bench_cores = α × C(N,2)^β₁ × B^β₂ × E^β₃ × (S/S_ref)^δ",
+        "T @ user_cores = T_bench × bench_cores / user_cores  (linear scaling assumed)",
         "```",
         "",
         f"  α (seconds/unit)  = {model['alpha_seconds_per_unit']:.3e}",
         f"  β₁ (pair exp)     = {model['b_pairs']:.3f}  (ideal = 1.0)",
         f"  β₂ (perm exp)     = {model['b_perm']:.3f}  (ideal = 1.0)",
         f"  β₃ (tree exp)     = {model['b_trees']:.3f}  (ideal = 1.0)",
-        f"  γ  (parallel exp) = {model['gamma']:.3f}  (ideal = 1.0, Amdahl < 1.0)",
         f"  δ  (sample exp)   = {model['delta']:.3f}  "
         f"(reference S = {model['reference_n_samples']})",
+        f"  Benchmark cores   = {bench}",
         f"  R²                = {model['r_squared']:.4f}  (>0.95 = reliable)",
         f"  n observations    = {model['n_observations']}",
     ]
@@ -341,13 +354,15 @@ def generate_decision_table(
     core_counts: list[int],
 ) -> str:
     """Generate a core-count decision table for fixed config."""
+    bench = model.get("benchmark_cores", 1)
     lines = [
         f"## Decision Table: n_retained={n_retained_terms}  "
         f"n_perm={n_permutations}  n_trees={n_tree_estimators}  "
         f"n_samples={n_samples}",
+        f"(Projected linearly from {bench}-core benchmark)",
         "",
-        f"  {'Cores':>6}  {'Pairs':>8}  {'Estimated time':>16}  {'Speedup':>8}",
-        "  " + "-" * 45,
+        f"  {'Cores':>6}  {'Pairs':>8}  {'Estimated time':>16}  {'Speedup vs 1-core':>18}",
+        "  " + "-" * 55,
     ]
     pairs = _n_pairs(n_retained_terms)
     t1 = predict_seconds(model, n_retained_terms, n_permutations, n_tree_estimators, 1, n_samples)
@@ -356,7 +371,7 @@ def generate_decision_table(
             model, n_retained_terms, n_permutations, n_tree_estimators, n_jobs, n_samples
         )
         speedup = t1 / t
-        lines.append(f"  {n_jobs:>6}  {pairs:>8,d}  {_fmt_duration(t):>16}  {speedup:>7.1f}×")
+        lines.append(f"  {n_jobs:>6}  {pairs:>8,d}  {_fmt_duration(t):>16}  {speedup:>17.1f}×")
     return "\n".join(lines)
 
 
@@ -426,9 +441,11 @@ def build_report(
         f"{'n_trees':>8} {'elapsed(s)':>11} {'pairs':>8}",
         "  " + "-" * 75,
     ]
-    for r in sorted(rows, key=lambda x: (x["sweep"], x["n_jobs"], x["max_retained_terms"] or 0)):
+    for r in sorted(
+        rows, key=lambda x: (x["sweep"], x.get("n_jobs", 0), x["max_retained_terms"] or 0)
+    ):
         parts.append(
-            f"  {r['sweep']:<18} {r['n_jobs']:>7} "
+            f"  {r['sweep']:<18} {r.get('n_jobs', '?'):>7} "
             f"{str(r['max_retained_terms'] or 'uncap'):>8} "
             f"{r['n_permutations']:>7} {r['n_tree_estimators']:>8} "
             f"{r['elapsed_seconds']:>11.1f} "

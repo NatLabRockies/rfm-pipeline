@@ -138,6 +138,8 @@ class TestOutOfCoreIntegration:
         """Chunked reader should match pandas parquet values on real validation tables."""
         x_path = Path("artifacts/test_dataset_300/X.parquet")
         y_path = Path("artifacts/test_dataset_300/Y.parquet")
+        if not x_path.exists() or not y_path.exists():
+            pytest.skip("requires artifacts/test_dataset_300 parquet tables")
 
         x_full = pd.read_parquet(x_path)
         y_full = pd.read_parquet(y_path)

@@ -393,6 +393,27 @@ def _run_cell(
         dst = cell_dir / sub
         if src.exists() and not dst.exists():
             shutil.copytree(src, dst)
+        elif not src.exists():
+            logger.warning("stub artifact missing: %s", src)
+        elif dst.exists():
+            logger.debug("cell artifact already exists (reusing): %s", dst)
+
+    # Diagnostic: confirm retained_terms.csv is present and non-empty
+    rt_csv = cell_dir / "empirical_null_screen" / "retained_terms.csv"
+    if rt_csv.exists():
+        with rt_csv.open() as _f:
+            n_rt = sum(1 for _ in _f) - 1  # minus header
+        logger.debug("[%s] retained_terms.csv: %d rows", cell_id, n_rt)
+        if n_rt < 2:
+            logger.error(
+                "[%s] retained_terms.csv has %d rows — will fail. stub_dir=%s exists=%s",
+                cell_id,
+                n_rt,
+                stub_dir / "empirical_null_screen" / "retained_terms.csv",
+                (stub_dir / "empirical_null_screen" / "retained_terms.csv").exists(),
+            )
+    else:
+        logger.error("[%s] retained_terms.csv missing at %s", cell_id, rt_csv)
 
     cmd = [
         sys.executable,
@@ -422,6 +443,8 @@ def _run_cell(
         log_fh.flush()
 
         if result.returncode != 0:
+            # Log full stderr for diagnosis
+            logger.debug("[%s] full stderr:\n%s", cell_id, result.stderr)
             return CellResult(
                 cell_id=cell_id,
                 sweep=cell.get("_sweep", "unknown"),

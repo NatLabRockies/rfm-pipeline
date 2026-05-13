@@ -49,6 +49,32 @@ class RuntimeConfig:
     """Deprecated compatibility map; prefer runtime.out_of_core.*."""
     out_of_core: OutOfCoreConfig = field(default_factory=lambda: OutOfCoreConfig())
     """Out-of-core settings used by chunked loading and spill-to-disk logic."""
+    parallelism: ParallelismConfig = field(default_factory=lambda: ParallelismConfig())
+    """Distributed execution settings (Dask, Ray, MPI)."""
+
+
+@dataclass
+class ParallelismConfig:
+    """Distributed execution settings (Dask, Ray, MPI)."""
+
+    backend: str = "joblib"
+    """Execution backend: 'joblib' (default), 'dask', 'ray', 'mpi'."""
+    enabled: bool = False
+    """Enable distributed execution."""
+    dask_workers: int | None = None
+    """Number of Dask workers (if backend='dask')."""
+    dask_cores_per_worker: int = 4
+    """CPU cores per Dask worker."""
+    dask_memory_per_worker: str = "4 GB"
+    """RAM per Dask worker."""
+    dask_scheduler: str = "threads"
+    """Dask scheduler: 'threads', 'processes', or 'distributed'."""
+    gpu_enabled: bool = False
+    """Enable GPU acceleration if available."""
+    gpu_type: str = "a100"
+    """GPU type: 'a100', 'v100', 'h100', etc."""
+    gpu_count: int = 1
+    """Number of GPUs per node."""
 
 
 @dataclass

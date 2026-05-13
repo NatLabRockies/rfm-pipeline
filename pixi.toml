@@ -27,6 +27,7 @@ pixi-kernel = ">=0.7.1,<0.8"
 
 [pypi-dependencies]
 build = ">=1.2"
+bsm-rfm = {path = ".", editable = true}
 
 [tasks]
 import-smoke = "python tools/import_smoke.py"

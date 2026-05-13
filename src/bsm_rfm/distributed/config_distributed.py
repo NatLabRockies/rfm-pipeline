@@ -84,6 +84,51 @@ class KestrelConfig:
 
 
 @dataclass
+class GpuConfig:
+    """GPU acceleration settings for compute-intensive stages.
+
+    On NREL Kestrel, use partition 'gpu-h100s' for H100 GPU nodes.
+    Interaction discovery is the primary beneficiary of GPU acceleration
+    via XGBoost + SHAP GPU backend.
+    """
+
+    enabled: bool = False
+    """Enable GPU acceleration where supported."""
+    device: str = "auto"
+    """Device selection: 'auto' (use GPU if available), 'cuda', 'cpu'."""
+    n_gpus: int = 1
+    """Number of GPUs to use per node."""
+    gpu_partition: str = "gpu-h100s"
+    """SLURM partition for GPU jobs (Kestrel default)."""
+    gpu_walltime: str = "04:00:00"
+    """Walltime for GPU array jobs."""
+    gpu_memory_gb: int = 80
+    """GPU memory per device (H100 = 80 GB)."""
+    xgboost_tree_method: str = "hist"
+    """XGBoost tree_method: 'hist' (GPU) or 'exact' (CPU fallback)."""
+    cupy_fallback_to_numpy: bool = True
+    """If CuPy not available, fall back to NumPy silently."""
+
+
+@dataclass
+class DaskConfig:
+    """Dask distributed execution settings for dataframe/Parquet-oriented stages."""
+
+    n_workers: int = 4
+    """Number of Dask workers to launch."""
+    memory_per_worker_gb: int = 8
+    """Memory per Dask worker in GB."""
+    network_interface: str = "hsn0"
+    """Network interface for inter-worker communication (hsn0 on Kestrel high-speed network)."""
+    scheduler: str = "slurm"
+    """Dask scheduler: 'slurm' (SLURMCluster), 'threads', 'processes'."""
+    walltime: str = "04:00:00"
+    """Walltime for Dask worker SLURM jobs."""
+    dashboard_port: int = 8787
+    """Port for the Dask dashboard (forwarded via SSH)."""
+
+
+@dataclass
 class DistributedConfig:
     """Complete distributed execution configuration.
 
@@ -115,16 +160,21 @@ class DistributedConfig:
     """Execution backend: slurm_array | dask_slurm | mpi | ray_experimental."""
     run_id: str = "bsm_run"
     """Unique run identifier used for artifact and scratch directory naming."""
+    output_dir: str = "artifacts"
+    """Root output directory for shard outputs (relative or absolute path)."""
     pixi_env_path: str = "/projects/bsm/.pixi"
     """Path to Pixi environment on shared filesystem (all nodes must see this)."""
     slurm: SlurmConfig = field(default_factory=SlurmConfig)
     kestrel: KestrelConfig = field(default_factory=KestrelConfig)
     spill: SpillConfig = field(default_factory=SpillConfig)
+    gpu: GpuConfig = field(default_factory=GpuConfig)
+    dask: DaskConfig = field(default_factory=DaskConfig)
 
     def validate(self) -> list[str]:
         """Return a list of validation errors; empty list means valid."""
         errors = []
-        if self.backend not in {"slurm_array", "dask_slurm", "mpi", "ray_experimental"}:
+        valid_backends = {"slurm_array", "dask_slurm", "mpi", "ray_experimental"}
+        if self.backend not in valid_backends:
             errors.append(
                 f"Unknown backend '{self.backend}'. Must be one of: "
                 "slurm_array, dask_slurm, mpi, ray_experimental"
@@ -139,10 +189,14 @@ class DistributedConfig:
             errors.append("slurm.max_concurrent_array_tasks must be >= 1")
         if self.spill.min_free_gb < 0:
             errors.append("spill.min_free_gb must be >= 0")
+        if self.gpu.device not in {"auto", "cuda", "cpu"}:
+            errors.append("gpu.device must be one of: auto, cuda, cpu")
+        if self.gpu.n_gpus < 1:
+            errors.append("gpu.n_gpus must be >= 1")
         return errors
 
 
-def _dict_to_dataclass(cls, data: dict):
+def _dict_to_dataclass(cls, data):
     """Recursively convert a dict to a nested dataclass, ignoring unknown keys."""
     import dataclasses
 
@@ -187,3 +241,7 @@ def load_distributed_config(path: str | Path) -> DistributedConfig:
     if "distributed" in raw:
         raw = raw["distributed"]
     return _dict_to_dataclass(DistributedConfig, raw)
+
+
+# Alias for backward compatibility with Phase 8a imports
+load_config = load_distributed_config

@@ -161,6 +161,139 @@ sinfo -p {partition} --noheader -O partition,avail,nodes,cpus,memory,time
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Diagnostic complete"
 """
 
+_GPU_STAGE_SBATCH_TEMPLATE = """\
+#!/bin/bash
+#SBATCH --job-name=bsm_gpu_{stage}_{run_id}
+#SBATCH --account={account}
+#SBATCH --partition={gpu_partition}
+#SBATCH --time={gpu_walltime}
+#SBATCH --mem={gpu_host_memory_mb}M
+#SBATCH --cpus-per-task={cpus_per_task}
+#SBATCH --gpus-per-node={n_gpus}
+#SBATCH --array=0-{max_task_idx}%{max_concurrent}
+#SBATCH --output={log_dir}/bsm_gpu_{stage}_%A_%a.out
+#SBATCH --error={log_dir}/bsm_gpu_{stage}_%A_%a.err
+{requeue_line}
+# ---------------------------------------------------------------------------
+# BSM Manuscript Pipeline — SLURM GPU Array Stage Runner
+# Stage : {stage}
+# Run ID: {run_id}
+# GPUs  : {n_gpus} x H100 (gpu-h100s partition)
+# Shards: {n_shards}
+# Uses XGBoost + SHAP GPU backend for interaction discovery acceleration.
+# ---------------------------------------------------------------------------
+
+set -euo pipefail
+
+export PIXI_HOME="{pixi_env_path}"
+export PIXI_CACHE_DIR="{pixi_cache_dir}"
+
+# GPU-specific environment
+export CUDA_VISIBLE_DEVICES=$(seq -s, 0 $(({n_gpus}-1)))
+export BSM_INTERACTION_DEVICE="cuda"
+export BSM_XGBOOST_TREE_METHOD="{xgboost_tree_method}"
+
+TASK_ID=${{SLURM_ARRAY_TASK_ID}}
+MANIFEST="{manifest_path}"
+OUTPUT_ROOT="{output_root}"
+SCRATCH_ROOT="{scratch_root}"
+RUN_ID="{run_id}"
+STAGE="{stage}"
+
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] BSM GPU shard ${{TASK_ID}} starting on $(hostname)"
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] CUDA_VISIBLE_DEVICES=${{CUDA_VISIBLE_DEVICES}}"
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SLURM_JOB_ID=${{SLURM_JOB_ID}}"
+
+# Verify GPU availability
+nvidia-smi --query-gpu=name,memory.total \\
+    --format=csv,noheader || echo "WARNING: nvidia-smi not available"
+
+WORK_DIR="${{SCRATCH_ROOT}}/${{RUN_ID}}/task-$(printf '%04d' ${{TASK_ID}})"
+mkdir -p "${{WORK_DIR}}"
+
+cd "{repo_root}"
+
+pixi run python tools/hpc_shard_worker.py \\
+    --manifest "${{MANIFEST}}" \\
+    --task-id "${{TASK_ID}}" \\
+    --output-root "${{OUTPUT_ROOT}}" \\
+    --work-dir "${{WORK_DIR}}" \\
+    --stage "${{STAGE}}"
+
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] BSM GPU shard ${{TASK_ID}} COMPLETE"
+"""
+
+_GPU_DIAGNOSTIC_SBATCH_TEMPLATE = """\
+#!/bin/bash
+#SBATCH --job-name=bsm_gpu_diag_{run_id}
+#SBATCH --account={account}
+#SBATCH --partition={gpu_partition}
+#SBATCH --time=00:30:00
+#SBATCH --mem=64G
+#SBATCH --cpus-per-task=16
+#SBATCH --gpus-per-node=1
+#SBATCH --output={log_dir}/bsm_gpu_diag_%j.out
+#SBATCH --error={log_dir}/bsm_gpu_diag_%j.err
+# ---------------------------------------------------------------------------
+# BSM GPU Environment / CUDA Smoke Test
+# Verifies GPU availability, XGBoost GPU support, and SHAP GPU backend
+# before submitting production GPU array jobs.
+# ---------------------------------------------------------------------------
+
+set -euo pipefail
+
+export PIXI_HOME="{pixi_env_path}"
+export PIXI_CACHE_DIR="{pixi_cache_dir}"
+
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] GPU diagnostic run on $(hostname)"
+
+# GPU info
+nvidia-smi
+echo ""
+
+cd "{repo_root}"
+
+# Verify bsm_rfm and GPU dependencies
+pixi run python - <<'PYEOF'
+import bsm_rfm
+print(f"bsm_rfm OK: {{bsm_rfm.__file__}}")
+
+import numpy as np
+print(f"numpy {{np.__version__}}")
+
+try:
+    import xgboost as xgb
+    print(f"xgboost {{xgb.__version__}}")
+    dtrain = xgb.DMatrix(np.random.rand(100, 10), label=np.random.rand(100))
+    params = {{"device": "cuda", "tree_method": "hist", "n_estimators": 5}}
+    bst = xgb.train(params, dtrain, num_boost_round=5)
+    print("XGBoost GPU: OK")
+except Exception as e:
+    print(f"XGBoost GPU: FAILED — {{e}}")
+
+try:
+    import shap
+    print(f"shap {{shap.__version__}}")
+except ImportError:
+    print("shap: not installed")
+
+try:
+    import cupy as cp
+    print(f"cupy {{cp.__version__}}, GPU: {{cp.cuda.Device().id}}")
+    a = cp.zeros((1000, 1000))
+    print("CuPy matmul: OK")
+except ImportError:
+    print("cupy: not installed (optional)")
+
+from bsm_rfm.distributed.gpu_scoring import detect_device
+device = detect_device("auto")
+print(f"Detected device: {{device}}")
+PYEOF
+
+
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] GPU diagnostic complete"
+"""
+
 
 class SlurmArrayRunner:
     """Generate SLURM sbatch scripts for distributed BSM pipeline execution.
@@ -209,6 +342,7 @@ class SlurmArrayRunner:
         slurm = cfg.slurm
         kestrel = cfg.kestrel
         spill = cfg.spill
+        gpu = cfg.gpu
 
         log_dir = slurm.resolve_log_dir(cfg.run_id)
         scratch_root = os.path.expandvars(spill.scratch_root)
@@ -237,6 +371,12 @@ class SlurmArrayRunner:
             "repo_root": str(self.repo_root.resolve()),
             "n_shards": self.n_shards,
             "debug_partition": kestrel.debug_partition,
+            # GPU vars
+            "gpu_partition": gpu.gpu_partition,
+            "gpu_walltime": gpu.gpu_walltime,
+            "n_gpus": gpu.n_gpus,
+            "gpu_host_memory_mb": slurm.memory_gb * 1024,
+            "xgboost_tree_method": gpu.xgboost_tree_method,
         }
 
     def generate_stage_script(self, stage: str) -> str:
@@ -299,6 +439,37 @@ class SlurmArrayRunner:
         """Generate a smoke-test diagnostic sbatch script."""
         return _DIAGNOSTIC_SBATCH_TEMPLATE.format(**self._common_vars("diagnostic"))
 
+    def generate_gpu_stage_script(self, stage: str) -> str:
+        """Generate a GPU-accelerated SLURM array sbatch script.
+
+        Targets the GPU partition (gpu-h100s on Kestrel) and sets
+        BSM_INTERACTION_DEVICE=cuda so the shard worker uses the
+        XGBoost + SHAP GPU backend for interaction discovery.
+
+        Parameters
+        ----------
+        stage
+            Pipeline stage name. GPU acceleration is most effective for
+            interaction_discovery.
+
+        Returns
+        -------
+        str
+            Complete sbatch script content.
+        """
+        if self.n_shards == 0:
+            raise ValueError("No shards in manifest — run build_manifest() first")
+        if not self.config.gpu.enabled:
+            raise ValueError(
+                "GPU script requested but config.gpu.enabled is False. "
+                "Set distributed.gpu.enabled: true in your config."
+            )
+        return _GPU_STAGE_SBATCH_TEMPLATE.format(**self._common_vars(stage))
+
+    def generate_gpu_diagnostic_script(self) -> str:
+        """Generate a GPU environment smoke-test sbatch script."""
+        return _GPU_DIAGNOSTIC_SBATCH_TEMPLATE.format(**self._common_vars("gpu_diagnostic"))
+
     def write_scripts(
         self,
         output_dir: str | Path,
@@ -345,10 +516,23 @@ class SlurmArrayRunner:
             _make_executable(reduce_script)
             scripts["reduce"] = reduce_script
 
+            # GPU scripts (when GPU is enabled in config)
+            if self.config.gpu.enabled:
+                gpu_script = out / f"submit_{stage}_gpu_array.sh"
+                gpu_script.write_text(self.generate_gpu_stage_script(stage))
+                _make_executable(gpu_script)
+                scripts["gpu_stage"] = gpu_script
+
         diag_script = out / "submit_diagnostic.sh"
         diag_script.write_text(self.generate_diagnostic_script())
         _make_executable(diag_script)
         scripts["diagnostic"] = diag_script
+
+        if self.config.gpu.enabled:
+            gpu_diag_script = out / "submit_gpu_diagnostic.sh"
+            gpu_diag_script.write_text(self.generate_gpu_diagnostic_script())
+            _make_executable(gpu_diag_script)
+            scripts["gpu_diagnostic"] = gpu_diag_script
 
         submit_all = out / "submit_all.sh"
         submit_all.write_text(_make_submit_all_script(scripts, stage))

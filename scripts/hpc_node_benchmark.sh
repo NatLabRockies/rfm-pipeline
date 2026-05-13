@@ -106,6 +106,21 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# When submitted via sbatch, BASH_SOURCE[0] is a temp copy (e.g. /tmp/slurmd/...)
+# so SCRIPT_DIR/REPO_ROOT won't contain pixi.toml.  Fall back to SLURM_SUBMIT_DIR.
+if [[ ! -f "$REPO_ROOT/pixi.toml" ]]; then
+    if [[ -n "${SLURM_SUBMIT_DIR:-}" && -f "${SLURM_SUBMIT_DIR}/pixi.toml" ]]; then
+        REPO_ROOT="$SLURM_SUBMIT_DIR"
+    elif [[ -n "${SLURM_SUBMIT_DIR:-}" && -f "${SLURM_SUBMIT_DIR}/../pixi.toml" ]]; then
+        REPO_ROOT="$(cd "${SLURM_SUBMIT_DIR}/.." && pwd)"
+    else
+        echo "ERROR: Cannot locate repo root (pixi.toml not found)." >&2
+        echo "  Submit from the repo root:" >&2
+        echo "    cd /home/\$USER/src/bsm-public-rf && sbatch scripts/hpc_node_benchmark.sh" >&2
+        exit 1
+    fi
+fi
+
 echo "============================================================"
 echo "BSM HPC Scaling Benchmark"
 echo "  Repo  : $REPO_ROOT"

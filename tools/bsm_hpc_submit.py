@@ -107,7 +107,11 @@ def main() -> None:
     # Load configs
     from bsm_rfm.config import load_config
     from bsm_rfm.distributed.config_distributed import load_distributed_config
-    from bsm_rfm.distributed.manifest import build_manifest, save_manifest
+    from bsm_rfm.distributed.manifest import (
+        build_manifest,
+        resolve_interaction_discovery_shard_inputs,
+        save_manifest,
+    )
     from bsm_rfm.distributed.slurm_array_runner import SlurmArrayRunner
 
     # Load workflow config for artifact_dir
@@ -139,9 +143,24 @@ def main() -> None:
     )
 
     if not args.diagnostic_only:
+        # Auto-resolve input paths for interaction_discovery stage
+        input_paths = []
+        if args.stage == "interaction_discovery":
+            try:
+                resolved_inputs = resolve_interaction_discovery_shard_inputs(artifact_dir)
+                input_paths = list(resolved_inputs.values())
+                logger.info(
+                    "[hpc-submit] resolved %d interaction_discovery inputs: %s",
+                    len(input_paths),
+                    ", ".join(k for k in resolved_inputs.keys()),
+                )
+            except FileNotFoundError as e:
+                logger.error("[hpc-submit] failed to resolve interaction_discovery inputs: %s", e)
+                raise
+
         shards = build_manifest(
             stage=args.stage,
-            input_paths=[],  # populated by user or pipeline launcher with actual input paths
+            input_paths=input_paths,
             output_root=str(artifact_dir / "hpc_shards"),
             n_shards=n_shards,
         )

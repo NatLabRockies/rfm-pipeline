@@ -7,9 +7,30 @@ autonomy_tier: 3
 profile: autonomous
 current_milestone: Phase 8 — Scalable Execution (HPC + Out-of-Core)
 current_slice: Phase 8c — Distributed HPC (Dask/MPI) + GPU acceleration
-slice_status: in_progress (milestone 1 + shard/reduce integration complete)
-last_validation: Phase 8c shard/reduce integration complete; distributed manifest caps shard count to feature columns, shard worker emits real interaction artifacts, reduce merges retained pairs + pair scores; focused suites (111 tests) and full `./test_repo.sh` gate pass
-next_slice: (1) implement real MPI runner path for distributed stage execution, (2) implement real Ray runner path, (3) wire bsm_hpc_submit to pass full interaction_discovery shard input set for cluster submission
+slice_status: in_progress (shard/reduce/MPI complete; submit-inputs wiring complete)
+last_validation: Phase 8c submit-inputs resolution complete; 90 distributed tests pass (includes new test_hpc_artifact_input_resolution.py with 9 tests); artifact path resolver auto-wires interaction_discovery shard inputs through bsm_hpc_submit.py
+next_slice: (1) implement real Ray runner path (experimental), (2) end-to-end HPC integration test (submit → reduce → validate), (3) GPU scoring path implementation
+
+## Phase 8c — submit-path input resolution (2026-05-13)
+
+- Implemented artifact path resolver in `src/bsm_rfm/distributed/manifest.py`:
+  - `resolve_interaction_discovery_shard_inputs(artifact_dir)` locates prior-stage outputs
+  - Resolves pca_scores from output_conditioning, retained_terms from empirical_null_screen
+  - Resolves X, holdout_assignments, feature_catalog from artifact root
+  - Returns dict mapping symbolic names to absolute file paths
+  - Raises FileNotFoundError with descriptive message if any required file missing
+- Integrated resolver into bsm_hpc_submit.py main():
+  - Auto-resolves inputs for interaction_discovery stage submissions
+  - Passes resolved input_paths to build_manifest instead of empty list
+  - Logs resolved artifact names for transparency
+  - Propagates FileNotFoundError with guidance on prior-stage completion
+- Added comprehensive test suite `tests/test_hpc_artifact_input_resolution.py`:
+  - 9 tests covering resolver correctness, error handling, pathlib compatibility
+  - Tests manifest builder integration with resolved inputs
+  - Tests shard feature-range assignment alongside input inheritance
+- Validation:
+  - `pixi run pytest tests/test_hpc_artifact_input_resolution.py` (9 tests) ✅
+  - `pixi run pytest tests/test_distributed_phase8{a,bc}_gpu.py tests/test_hpc_shard_reduce.py tests/test_config_loader.py` (90 tests) ✅
 
 ## Phase 8c — shard/reduce roundtrip completion (2026-05-13)
 

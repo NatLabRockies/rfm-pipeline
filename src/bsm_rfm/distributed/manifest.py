@@ -247,3 +247,57 @@ def manifest_summary(shards: list[ShardManifest]) -> dict[str, int]:
     for s in shards:
         counts[s.status] = counts.get(s.status, 0) + 1
     return counts
+
+
+def resolve_interaction_discovery_shard_inputs(
+    artifact_dir: str | Path,
+) -> dict[str, str]:
+    """Resolve required shard inputs for interaction_discovery stage.
+
+    Locates prior-stage artifacts (pca_scores from output_conditioning,
+    retained_terms from empirical_null_screen, X/holdout/catalog from root)
+    and returns a dict mapping symbolic names to absolute file paths.
+
+    Parameters
+    ----------
+    artifact_dir
+        Artifact root directory (typically workflow output_root). Expected to
+        contain subdirectories output_conditioning/ and empirical_null_screen/,
+        and root files X.parquet, holdout_assignments.parquet,
+        actual_input_feature_catalog.parquet.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping from symbolic name to absolute file path:
+        - "pca_scores": path to output_conditioning/pca_scores.csv
+        - "retained_terms": path to empirical_null_screen/retained_terms.csv
+        - "X": path to X.parquet
+        - "holdout_assignments": path to holdout_assignments.parquet
+        - "feature_catalog": path to actual_input_feature_catalog.parquet
+
+    Raises
+    ------
+    FileNotFoundError
+        If any required file is missing.
+    """
+    artifact_dir = Path(artifact_dir)
+
+    required_files = {
+        "pca_scores": artifact_dir / "output_conditioning" / "pca_scores.csv",
+        "retained_terms": artifact_dir / "empirical_null_screen" / "retained_terms.csv",
+        "X": artifact_dir / "X.parquet",
+        "holdout_assignments": artifact_dir / "holdout_assignments.parquet",
+        "feature_catalog": artifact_dir / "actual_input_feature_catalog.parquet",
+    }
+
+    result = {}
+    for name, path in required_files.items():
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Required artifact '{name}' not found at {path}. "
+                f"Ensure prior stages (output_conditioning, empirical_null_screen) have completed."
+            )
+        result[name] = str(path.resolve())
+
+    return result

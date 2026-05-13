@@ -223,7 +223,7 @@ def _build_stub_artifacts(
     # Write a minimal stub config
     max_rt = retained_terms if retained_terms is not None else None
     stub_cfg = {
-        "dataset": {"path": str(dataset_path)},
+        "dataset": {"type": "custom", "path": str(dataset_path)},
         "algorithm": {"variance_threshold": variance_threshold},
         "runtime": {"n_jobs": 1, "use_chunked_io": False},
         "stages": {
@@ -293,7 +293,7 @@ def _write_cell_config(
     max_retained = cell.get("max_retained_terms")
 
     cfg = {
-        "dataset": {"path": str(dataset_path)},
+        "dataset": {"type": "custom", "path": str(dataset_path)},
         "algorithm": {"variance_threshold": float(cell["variance_threshold"])},
         "runtime": {
             "n_jobs": n_jobs,

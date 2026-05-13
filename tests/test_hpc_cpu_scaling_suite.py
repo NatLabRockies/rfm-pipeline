@@ -85,3 +85,33 @@ def test_cpu_scaling_suite_script_targets_all_tiers() -> None:
     assert "2:configs/hpc/kestrel_cpu_scale_2.yml" in text
     assert "10:configs/hpc/kestrel_cpu_scale_10.yml" in text
     assert "1000:configs/hpc/kestrel_cpu_scale_1000.yml" in text
+
+
+def test_cpu_scaling_live_submit_scripts_exist_with_expected_defaults() -> None:
+    script_2 = Path("scripts/kestrel/submit_cpu_scale_2_live.sh").read_text(encoding="utf-8")
+    script_10 = Path("scripts/kestrel/submit_cpu_scale_10_live.sh").read_text(encoding="utf-8")
+    script_1000 = Path("scripts/kestrel/submit_cpu_scale_1000_live.sh").read_text(encoding="utf-8")
+    script_chain = Path("scripts/kestrel/submit_cpu_scale_chain_live.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "set -euo pipefail" in script_2
+    assert 'PARTITION="${PARTITION:-debug}"' in script_2
+    assert 'WALLTIME="${WALLTIME:-01:00:00}"' in script_2
+    assert "sbatch --parsable --partition=" in script_2
+    assert "--dependency=afterok:${ARRAY_JOB_ID}" in script_2
+
+    assert "set -euo pipefail" in script_10
+    assert 'PARTITION="${PARTITION:-shared}"' in script_10
+    assert 'WALLTIME="${WALLTIME:-04:00:00}"' in script_10
+    assert "--dependency=afterok:${AFTER_JOB_ID}" in script_10
+
+    assert "set -euo pipefail" in script_1000
+    assert 'PARTITION="${PARTITION:-shared}"' in script_1000
+    assert 'WALLTIME="${WALLTIME:-08:00:00}"' in script_1000
+    assert "--dependency=afterok:${AFTER_JOB_ID}" in script_1000
+
+    assert "set -euo pipefail" in script_chain
+    assert "--partition=debug --time=01:00:00" in script_chain
+    assert "--partition=shared --time=04:00:00 --dependency=afterok:${R2}" in script_chain
+    assert "--partition=shared --time=08:00:00 --dependency=afterok:${R10}" in script_chain

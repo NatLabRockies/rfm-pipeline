@@ -163,12 +163,10 @@ else
     PYTHON_CMD="python"
 fi
 
-# Install/refresh Pixi env and ensure bsm_rfm editable install is present
+# Install/refresh Pixi env (editable bsm_rfm included via pypi-dependencies)
 cd "$REPO_ROOT"
 echo "  Installing Pixi env..."
 pixi install --locked
-echo "  Installing bsm_rfm (editable)..."
-pixi run install-package
 
 # Verify environment works
 $PYTHON_CMD -c "import bsm_rfm; print('  bsm_rfm OK:', bsm_rfm.__file__)"

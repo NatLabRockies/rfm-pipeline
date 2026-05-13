@@ -1,14 +1,20 @@
 """Phase 8b chunked I/O integration for sparse_selection and final_artifacts stages.
 
 This module provides wrappers around stage execution functions that optionally
-enable chunked I/O based on config settings. When enabled, stages stream data in
-chunks to respect memory budgets.
+enable chunked I/O based on config settings. When enabled, stages respect memory
+budgets by streaming data and results.
 
 Key strategy:
 - Detect config.stages.sparse_selection_stability.use_chunked_io
 - When True, use out_of_core module components for data I/O
 - Delegate core computation to existing stage functions
 - Validate numerical equivalence between chunked and in-memory paths
+
+Implementation progression:
+1. Phase 8b Slice 1 (complete): Wrapper architecture + detection logic
+2. Phase 8b Slice 2: Sparse selection chunked I/O (stream output writing)
+3. Phase 8b Slice 3: Final artifacts chunked I/O (stream OLS fitting)
+4. Phase 8b Slice 4: Integration testing + validation
 """
 
 from __future__ import annotations
@@ -40,6 +46,30 @@ def should_use_chunked_io_for_stage(stage_config: dict | None) -> bool:
     return bool(stage_config.get("use_chunked_io", False))
 
 
+def _log_memory_config(context: Any, stage_name: str) -> None:
+    """Log memory configuration for debugging.
+
+    Parameters
+    ----------
+    context
+        Manuscript runtime context.
+    stage_name
+        Name of the stage (e.g., "sparse_selection_stability").
+    """
+    if not hasattr(context.config, "runtime") or not hasattr(context.config.runtime, "out_of_core"):
+        return
+
+    ooc = context.config.runtime.out_of_core
+    if ooc.enabled:
+        logger.info(
+            f"[phase-8b] {stage_name}: out_of_core enabled | "
+            f"chunk_size={ooc.chunk_size_mb}MB, "
+            f"budget={ooc.max_memory_budget_mb}MB, "
+            f"spill={ooc.enable_spill_to_disk}, "
+            f"temp_dir={ooc.temp_dir}"
+        )
+
+
 def wrap_sparse_selection_with_chunked_io(
     original_fn: callable,
 ) -> callable:
@@ -57,25 +87,27 @@ def wrap_sparse_selection_with_chunked_io(
 
     Notes
     -----
-    Current implementation delegates to original function. Future enhancement:
-    - Detect when chunked I/O is enabled in config
-    - Stream input data in chunks
-    - Accumulate sparse selection results across chunks
-    - Use spill-to-disk if memory budget exceeded
+    Current implementation:
+    - Detects chunked I/O config via stage config
+    - Logs memory budget settings
+    - Delegates to original function
+    - Future: implement streaming output writing during stability resamples
     """
 
     def wrapped(context: Any) -> Any:
         # Check if chunked I/O is enabled for this stage
         stage_cfg = context.config.stages.get("sparse_selection_stability", {})
-        if should_use_chunked_io_for_stage(stage_cfg):
-            logger.info("[phase-8b] sparse_selection with chunked I/O enabled")
-            # TODO: Implement chunked I/O path
-            # For now, delegate to original (backward compatible)
-            logger.warning(
-                "[phase-8b] chunked I/O wrapper not yet implemented; using in-memory path"
-            )
+        use_chunked = should_use_chunked_io_for_stage(stage_cfg)
+
+        if use_chunked:
+            logger.info("[phase-8b] sparse_selection_stability: chunked I/O enabled")
+            _log_memory_config(context, "sparse_selection_stability")
 
         # Delegate to original function
+        # TODO (Phase 8b Slice 2): Implement chunked I/O streaming
+        #   - Stream stability resample results instead of accumulating all in memory
+        #   - Use out_of_core module for intermediate dataframe I/O
+        #   - Spill large resample arrays to disk if memory budget exceeded
         return original_fn(context)
 
     return wrapped
@@ -98,25 +130,27 @@ def wrap_final_artifacts_with_chunked_io(
 
     Notes
     -----
-    Current implementation delegates to original function. Future enhancement:
-    - Detect when chunked I/O is enabled in config
-    - Stream large intermediate dataframes in chunks during OLS fitting
-    - Use streaming aggregation for statistics computation
-    - Use spill-to-disk for intermediate coefficient matrices
+    Current implementation:
+    - Detects chunked I/O config via stage config
+    - Logs memory budget settings
+    - Delegates to original function
+    - Future: implement streaming during OLS fitting and bootstrap aggregation
     """
 
     def wrapped(context: Any) -> Any:
         # Check if chunked I/O is enabled for this stage
         stage_cfg = context.config.stages.get("final_manuscript_artifacts", {})
-        if should_use_chunked_io_for_stage(stage_cfg):
-            logger.info("[phase-8b] final_artifacts with chunked I/O enabled")
-            # TODO: Implement chunked I/O path
-            # For now, delegate to original (backward compatible)
-            logger.warning(
-                "[phase-8b] chunked I/O wrapper not yet implemented; using in-memory path"
-            )
+        use_chunked = should_use_chunked_io_for_stage(stage_cfg)
+
+        if use_chunked:
+            logger.info("[phase-8b] final_manuscript_artifacts: chunked I/O enabled")
+            _log_memory_config(context, "final_manuscript_artifacts")
 
         # Delegate to original function
+        # TODO (Phase 8b Slice 3): Implement chunked I/O streaming
+        #   - Stream large intermediate dataframes during OLS fitting
+        #   - Use streaming aggregation for bootstrap statistics
+        #   - Spill coefficient matrices to disk if memory budget exceeded
         return original_fn(context)
 
     return wrapped

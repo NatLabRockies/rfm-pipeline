@@ -265,3 +265,19 @@ class TestLegacyConfigMapping:
         assert section["max_outputs"] == 75
         assert section["random_seed"] == 999
         assert section["subset_metric"] == "variance"
+
+    def test_maps_runtime_parallelism_to_interaction_discovery(self):
+        """runtime.parallelism should map to interaction_discovery distributed keys."""
+        config = WorkflowConfig(dataset=DatasetConfig(type="synthetic_300_sample"))
+        config.runtime.parallelism.enabled = True
+        config.runtime.parallelism.backend = "dask"
+        config.runtime.parallelism.dask_workers = 7
+        config.runtime.parallelism.dask_cores_per_worker = 3
+        config.runtime.parallelism.dask_memory_per_worker = "6 GB"
+
+        legacy = config_to_legacy_case_study(config)
+        section = legacy["case_study"]["interaction_discovery"]
+        assert section["parallel_backend"] == "dask"
+        assert section["dask_workers"] == 7
+        assert section["dask_cores_per_worker"] == 3
+        assert section["dask_memory_per_worker"] == "6 GB"

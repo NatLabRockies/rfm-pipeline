@@ -8,8 +8,8 @@ profile: autonomous
 current_milestone: Phase 8 — Scalable Execution (HPC + Out-of-Core)
 current_slice: Phase 8c — Distributed HPC (Dask/MPI) + GPU acceleration
 slice_status: in_progress
-last_validation: Phase 8c Milestone 1 foundation: Executor abstraction (7/7 tests passing, all committed 4385d6d, afc607c); ready for integration into interaction_discovery
-next_slice: (1) Audit manuscript_stages.py for joblib.Parallel calls; (2) Refactor interaction_discovery to use executor.map() with fallback; (3) Add integration tests with mock cluster; (4) Validate numerical equivalence
+last_validation: Phase 8c Milestone 1 integration: interaction_discovery supports dask executor + dask→joblib fallback; runtime.parallelism maps to legacy interaction config; focused distributed+interaction suites pass (84 tests)
+next_slice: (1) Wire distributed shard worker to execute real interaction shard scoring (not placeholder metadata); (2) Implement reduce merge of retained_interaction_pairs across shards; (3) Add integration tests for shard+reduce roundtrip
 
 ## Phase 8a — SLURM Array Baseline (2026-05-12)
 

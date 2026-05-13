@@ -38,6 +38,7 @@ from .final_ols import (
     predict_final_ols,
 )
 from .metrics import bootstrap_macro_nrmse_ci, make_null_mean_prediction, per_output_nrmse_frame
+from .parallel import get_executor
 
 _PROGRESS_TELEMETRY_PATH: Path | None = None
 
@@ -358,6 +359,9 @@ class InteractionDiscoverySpec:
     min_component_variance_fraction: float = 0.01  # Skip components below 1% variance
     parallel_batch_timeout_seconds: int = 900
     parallel_backend: str = "threading"
+    dask_workers: int | None = None
+    dask_cores_per_worker: int = 1
+    dask_memory_per_worker: str = "4 GB"
 
 
 @dataclass(frozen=True)
@@ -1295,6 +1299,7 @@ def interaction_discovery_spec_from_case_study_config(
     empirical_null = case_study["empirical_null_screen"]
     interface = case_study.get("interface", {})
     runtime = case_study.get("runtime", {})
+    dask_workers_raw = interaction.get("dask_workers")
     return InteractionDiscoverySpec(
         method=str(interaction["method"]),
         aggregation_rule=str(interaction["aggregation_rule"]),
@@ -1330,6 +1335,9 @@ def interaction_discovery_spec_from_case_study_config(
         ),
         parallel_batch_timeout_seconds=int(interaction.get("parallel_batch_timeout_seconds", 900)),
         parallel_backend=str(interaction.get("parallel_backend", "threading")),
+        dask_workers=(int(dask_workers_raw) if dask_workers_raw is not None else None),
+        dask_cores_per_worker=int(interaction.get("dask_cores_per_worker", 1)),
+        dask_memory_per_worker=str(interaction.get("dask_memory_per_worker", "4 GB")),
     )
 
 
@@ -1598,13 +1606,53 @@ def discover_manuscript_interactions(
         raise ValueError("null_threshold_quantile must be in the interval (0, 1).")
 
     def _run_interaction_jobs(
-        jobs: list[tuple[Any, tuple[Any, ...], dict[str, Any]]],
+        work_items: list[tuple[int, int]],
         *,
         n_jobs: int,
         backend: str,
         timeout_seconds: int | None,
         temp_folder: str | None,
     ) -> list[tuple[np.ndarray, np.ndarray]]:
+        def _score_from_item(item: tuple[int, int]) -> tuple[np.ndarray, np.ndarray]:
+            score_index, seed = item
+            return _score_interaction_permutation(
+                y_base=y_scaled,
+                permute_response=(score_index > 0),
+                seed=seed,
+                **_score_kwargs,
+            )
+
+        if backend == "dask":
+            requested_workers = spec.dask_workers if spec.dask_workers is not None else n_jobs
+            if requested_workers <= 0:
+                requested_workers = os.cpu_count() or 1
+            dask_timeout = int(timeout_seconds) if timeout_seconds is not None else 3600
+            executor = None
+            try:
+                executor = get_executor(
+                    "dask",
+                    n_workers=max(1, int(requested_workers)),
+                    cores_per_worker=max(1, int(spec.dask_cores_per_worker)),
+                    memory_per_worker=spec.dask_memory_per_worker,
+                    timeout=dask_timeout,
+                )
+                return executor.map(_score_from_item, work_items)
+            except (ImportError, RuntimeError, OSError, TimeoutError, ValueError) as exc:
+                _append_parallel_diagnostic(
+                    "interaction_discovery",
+                    {
+                        "event": "dask_executor_fallback",
+                        "fallback_backend": "threading",
+                        "n_jobs": n_jobs,
+                        "exception_type": type(exc).__name__,
+                        "exception_message": str(exc),
+                    },
+                )
+                backend = "threading"
+            finally:
+                if executor is not None:
+                    executor.close()
+
         parallel_kwargs: dict[str, Any] = {}
         if n_jobs > 1 and timeout_seconds is not None and timeout_seconds > 0:
             parallel_kwargs["timeout"] = int(timeout_seconds)
@@ -1613,6 +1661,7 @@ def discover_manuscript_interactions(
             parallel_kwargs["prefer"] = "processes" if backend == "loky" else "threads"
             if backend == "loky" and temp_folder:
                 parallel_kwargs["temp_folder"] = temp_folder
+        jobs = [delayed(_score_from_item)(item) for item in work_items]
         with Parallel(n_jobs=n_jobs, **parallel_kwargs) as parallel:
             return parallel(jobs)
 
@@ -1700,8 +1749,10 @@ def discover_manuscript_interactions(
         os.getenv("BSM_INTERACTION_BATCH_TIMEOUT_SECONDS", spec.parallel_batch_timeout_seconds)
     )
     parallel_backend = os.getenv("BSM_INTERACTION_PARALLEL_BACKEND", spec.parallel_backend)
-    if parallel_backend not in {"loky", "threading"}:
-        raise ValueError("interaction_discovery.parallel_backend must be 'loky' or 'threading'.")
+    if parallel_backend not in {"loky", "threading", "dask"}:
+        raise ValueError(
+            "interaction_discovery.parallel_backend must be 'loky', 'threading', or 'dask'."
+        )
     _report_progress(
         stage="interaction_discovery",
         completed=0,
@@ -1712,54 +1763,37 @@ def discover_manuscript_interactions(
     with tempfile.TemporaryDirectory(prefix="bsm-interaction-joblib-") as temp_dir:
         for start in range(0, total_scores, batch_size):
             stop = min(start + batch_size, total_scores)
-            jobs = [
-                delayed(_score_interaction_permutation)(
-                    y_base=y_scaled,
-                    permute_response=(score_index > 0),
-                    seed=seed,
-                    **_score_kwargs,
-                )
-                for score_index, seed in enumerate(seeds[start:stop], start=start)
-            ]
+            batch_items = list(enumerate(seeds[start:stop], start=start))
             batch_result: list[tuple[np.ndarray, np.ndarray]] | None = None
-            if spec.n_jobs <= 1:
+            try:
                 batch_result = _run_interaction_jobs(
-                    jobs,
-                    n_jobs=1,
+                    batch_items,
+                    n_jobs=1 if spec.n_jobs <= 1 else spec.n_jobs,
                     backend=parallel_backend,
-                    timeout_seconds=None,
-                    temp_folder=None,
+                    timeout_seconds=(None if spec.n_jobs <= 1 else batch_timeout_seconds),
+                    temp_folder=(None if spec.n_jobs <= 1 else temp_dir),
                 )
-            else:
-                try:
-                    batch_result = _run_interaction_jobs(
-                        jobs,
-                        n_jobs=spec.n_jobs,
-                        backend=parallel_backend,
-                        timeout_seconds=batch_timeout_seconds,
-                        temp_folder=temp_dir,
-                    )
-                except (TimeoutError, mp.TimeoutError, RuntimeError, OSError) as exc:
-                    _append_parallel_diagnostic(
-                        "interaction_discovery",
-                        {
-                            "event": "parallel_batch_failure",
-                            "batch_start": start,
-                            "batch_stop": stop,
-                            "batch_size": len(jobs),
-                            "backend": parallel_backend,
-                            "n_jobs": spec.n_jobs,
-                            "timeout_seconds": batch_timeout_seconds,
-                            "exception_type": type(exc).__name__,
-                            "exception_message": str(exc),
-                            "controller_pid": os.getpid(),
-                            "worker_snapshot": _worker_process_snapshot(os.getpid()),
-                        },
-                    )
-                    raise RuntimeError(
-                        "Interaction discovery parallel batch failed; "
-                        "no serial fallback or retries are allowed for n_jobs>1."
-                    ) from exc
+            except (TimeoutError, mp.TimeoutError, RuntimeError, OSError) as exc:
+                _append_parallel_diagnostic(
+                    "interaction_discovery",
+                    {
+                        "event": "parallel_batch_failure",
+                        "batch_start": start,
+                        "batch_stop": stop,
+                        "batch_size": len(batch_items),
+                        "backend": parallel_backend,
+                        "n_jobs": spec.n_jobs,
+                        "timeout_seconds": batch_timeout_seconds,
+                        "exception_type": type(exc).__name__,
+                        "exception_message": str(exc),
+                        "controller_pid": os.getpid(),
+                        "worker_snapshot": _worker_process_snapshot(os.getpid()),
+                    },
+                )
+                raise RuntimeError(
+                    "Interaction discovery parallel batch failed; "
+                    "no serial fallback or retries are allowed for n_jobs>1."
+                ) from exc
             assert batch_result is not None
             all_results.extend(batch_result)
             _report_progress(

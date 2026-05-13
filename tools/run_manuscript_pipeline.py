@@ -468,6 +468,22 @@ def config_to_legacy_case_study(workflow_config: WorkflowConfig) -> dict[str, An
         interaction_discovery["permutation_count_B"] = itr.n_permutations - 1
     interaction_discovery["n_tree_estimators"] = itr.n_tree_estimators
     interaction_discovery["max_tree_depth"] = itr.max_tree_depth
+    parallelism = workflow_config.runtime.parallelism
+    if parallelism.enabled:
+        backend_map = {
+            "joblib": "threading",
+            "dask": "dask",
+            "ray": "threading",
+            "mpi": "threading",
+        }
+        interaction_discovery["parallel_backend"] = backend_map.get(
+            parallelism.backend,
+            "threading",
+        )
+        if parallelism.dask_workers is not None:
+            interaction_discovery["dask_workers"] = int(parallelism.dask_workers)
+        interaction_discovery["dask_cores_per_worker"] = int(parallelism.dask_cores_per_worker)
+        interaction_discovery["dask_memory_per_worker"] = str(parallelism.dask_memory_per_worker)
 
     nlr = workflow_config.stages.nonlinear_discovery
     nonlinear_discovery["edf_threshold"] = nlr.edf_threshold

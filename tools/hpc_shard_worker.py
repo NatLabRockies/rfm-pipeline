@@ -22,6 +22,7 @@ import logging
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -53,8 +54,7 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
 
-    from bsm_rfm.distributed.checkpoint import CheckpointManager
-    from bsm_rfm.distributed.manifest import load_manifest, update_shard_status
+    from bsm_rfm.distributed.manifest import load_manifest
 
     # Load manifest and select this task's shard
     shards = load_manifest(args.manifest)
@@ -71,34 +71,63 @@ def main() -> None:
         shard.feature_end_idx,
     )
 
-    # Initialize checkpoint manager
-    cm = CheckpointManager(args.output_root, shard.shard_id)
+    try:
+        run_shard(
+            shard=shard,
+            output_root=args.output_root,
+            config_path=args.config,
+            dry_run=args.dry_run,
+            manifest_path=args.manifest,
+        )
+    except Exception as e:
+        logger.error("shard=%s FAILED: %s", shard.shard_id, e)
+        sys.exit(1)
 
-    # Skip if already complete (idempotent re-run)
+
+def run_shard(
+    *,
+    shard,
+    output_root: str,
+    config_path: str | None = None,
+    dry_run: bool = False,
+    manifest_path: str | None = None,
+) -> None:
+    """Run one shard with checkpointing, usable from SLURM array or MPI runner."""
+    from bsm_rfm.distributed.checkpoint import CheckpointManager
+
+    cm = CheckpointManager(output_root, shard.shard_id)
     if cm.is_complete():
         logger.info("shard=%s already complete (_SUCCESS.json found), skipping", shard.shard_id)
-        sys.exit(0)
-
-    if args.dry_run:
+        return
+    if dry_run:
         logger.info("[dry-run] shard=%s validated — would run %s", shard.shard_id, shard.stage)
-        sys.exit(0)
+        return
 
-    # Mark running and update manifest
+    if manifest_path:
+        from bsm_rfm.distributed.manifest import update_shard_status
+
+        update_shard_status(manifest_path, shard.shard_id, "running")
+
     cm.mark_running()
-    update_shard_status(args.manifest, shard.shard_id, "running")
-
     start = time.monotonic()
     try:
+        args = SimpleNamespace(config=config_path)
         _run_shard_stage(shard, cm, args)
         elapsed = time.monotonic() - start
         logger.info("shard=%s COMPLETE in %.1fs", shard.shard_id, elapsed)
-        update_shard_status(args.manifest, shard.shard_id, "completed")
-    except Exception as e:
+        if manifest_path:
+            from bsm_rfm.distributed.manifest import update_shard_status
+
+            update_shard_status(manifest_path, shard.shard_id, "completed")
+    except Exception as exc:
         elapsed = time.monotonic() - start
-        logger.error("shard=%s FAILED after %.1fs: %s", shard.shard_id, elapsed, e)
-        cm.mark_failed(str(e))
-        update_shard_status(args.manifest, shard.shard_id, "failed", error_message=str(e))
-        sys.exit(1)
+        cm.mark_failed(str(exc))
+        if manifest_path:
+            from bsm_rfm.distributed.manifest import update_shard_status
+
+            update_shard_status(manifest_path, shard.shard_id, "failed", error_message=str(exc))
+        logger.error("shard=%s FAILED after %.1fs: %s", shard.shard_id, elapsed, exc)
+        raise
 
 
 def _run_shard_stage(shard, cm, args) -> None:

@@ -13,7 +13,9 @@ Covers:
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
@@ -383,6 +385,65 @@ def test_require_mpi4py_raises_without_mpi():
     else:
         # mpi4py is installed; _require_mpi4py should succeed silently
         _require_mpi4py()
+
+
+def test_run_mpi_worker_handles_shard_manifest_dataclass(monkeypatch):
+    from bsm_rfm.distributed.manifest import ShardManifest
+    from bsm_rfm.distributed.mpi_runner import run_mpi_worker
+
+    shard = ShardManifest(
+        shard_id="task-0000",
+        stage="interaction_discovery",
+        input_paths=["data/X.parquet"],
+        output_path="out/task-0000",
+    )
+    calls: list[str] = []
+
+    monkeypatch.setattr("bsm_rfm.distributed.mpi_runner._require_mpi4py", lambda: None)
+    monkeypatch.setattr("bsm_rfm.distributed.mpi_runner.get_rank_size", lambda: (0, 1))
+    monkeypatch.setattr("bsm_rfm.distributed.mpi_runner.assign_shards", lambda n, rank, size: [0])
+    monkeypatch.setattr("bsm_rfm.distributed.mpi_runner.barrier", lambda timeout=None: None)
+    monkeypatch.setattr(
+        "bsm_rfm.distributed.manifest.load_manifest",
+        lambda path: [shard],
+    )
+    monkeypatch.setattr(
+        "bsm_rfm.distributed.mpi_runner._run_shard",
+        lambda shard, config_path, stage: calls.append(shard.shard_id),
+    )
+
+    run_mpi_worker(manifest_path="manifest.jsonl", config_path="config.yml")
+    assert calls == ["task-0000"]
+
+
+def test_mpi_run_shard_delegates_to_hpc_worker(monkeypatch):
+    from bsm_rfm.distributed.manifest import ShardManifest
+    from bsm_rfm.distributed.mpi_runner import _run_shard
+
+    shard = ShardManifest(
+        shard_id="task-0003",
+        stage="interaction_discovery",
+        input_paths=["data/X.parquet"],
+        output_path="out/task-0003",
+    )
+
+    cfg = SimpleNamespace(output_dir="artifacts", run_id="mpi-run")
+    monkeypatch.setattr("bsm_rfm.distributed.config_distributed.load_config", lambda _: cfg)
+
+    calls: list[dict] = []
+    fake_worker = SimpleNamespace(
+        run_shard=lambda **kwargs: calls.append(kwargs),
+    )
+    monkeypatch.setitem(sys.modules, "hpc_shard_worker", fake_worker)
+
+    _run_shard(shard=shard, config_path="config.yml", stage="interaction_discovery")
+
+    assert len(calls) == 1
+    call = calls[0]
+    assert call["shard"].shard_id == "task-0003"
+    assert call["config_path"] == "config.yml"
+    assert call["dry_run"] is False
+    assert call["output_root"] == str(Path("artifacts") / "mpi-run")
 
 
 # ---------------------------------------------------------------------------

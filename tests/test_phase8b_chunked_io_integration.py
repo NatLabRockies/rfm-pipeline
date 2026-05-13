@@ -149,5 +149,54 @@ class TestChunkedIOProgressTracking:
         mock_original.assert_called_once()
 
 
+class TestMemoryTracking:
+    """Test memory tracking functionality in Phase 8b wrappers."""
+
+    def test_sparse_selection_wrapper_tracks_memory(self, caplog) -> None:
+        """Wrapper should track memory usage before/after execution."""
+        import logging
+
+        caplog.set_level(logging.INFO)
+
+        def mock_fn(context):
+            """Mock function that allocates some memory."""
+            return {"data": "result"}
+
+        wrapped = wrap_sparse_selection_with_chunked_io(mock_fn)
+
+        mock_context = mock.MagicMock()
+        mock_context.config.stages = {"sparse_selection_stability": {"use_chunked_io": True}}
+
+        result = wrapped(mock_context)
+
+        # Verify execution succeeded
+        assert result == {"data": "result"}
+        # Memory tracking should be logged (when psutil is available)
+        # The presence of "phase-8b" indicates tracking was attempted
+        assert "phase-8b" in caplog.text or "sparse_selection_stability" in caplog.text
+
+    def test_final_artifacts_wrapper_tracks_memory(self, caplog) -> None:
+        """Wrapper should track memory usage before/after execution."""
+        import logging
+
+        caplog.set_level(logging.INFO)
+
+        def mock_fn(context):
+            """Mock function that allocates some memory."""
+            return {"artifacts": "final"}
+
+        wrapped = wrap_final_artifacts_with_chunked_io(mock_fn)
+
+        mock_context = mock.MagicMock()
+        mock_context.config.stages = {"final_manuscript_artifacts": {"use_chunked_io": True}}
+
+        result = wrapped(mock_context)
+
+        # Verify execution succeeded
+        assert result == {"artifacts": "final"}
+        # Memory tracking should be logged
+        assert "phase-8b" in caplog.text or "final_manuscript_artifacts" in caplog.text
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -312,8 +312,6 @@ python tools/monitor_validation_timing.py artifacts/validation_300_sample_no_cap
 - ✅ Added fine-grained stage progress telemetry: JSON writer with live monitoring capability
 - ✅ Verified partial+resume flow end-to-end
 
-______________________________________________________________________
-
 ## Completed: Phase 8a Integration (Interaction Discovery Optimization Phases 1–3)
 
 **Status**: ✅ COMPLETE — All optimizations implemented, tested, validated, merged to main
@@ -400,8 +398,6 @@ Interaction pair counts (critical for downstream HC3 cost):
 1. **Profile interaction discovery subcomponents** (tree training vs SHAP vs aggregation) to identify further optimization opportunities
 1. **Investigate medium profile stagnation** (why no improvement despite optimizations?)
 1. **Consider Phase 4 (component pruning)** if interaction discovery remains >60% of total budget post-Phase 1–3
-
-______________________________________________________________________
 
 ## Completed: Phase 8a Integration (Interaction Discovery Optimization Phases 1–3)
 
@@ -1043,5 +1039,3 @@ ______________________________________________________________________
 **Effort estimate**: 60–80 hours (experiments + modeling + deployment)
 
 **Delivered alongside**: Phase 8 final report + HPC scaling benchmark suite (`tools/hpc_scaling_benchmark.py`, `tools/hpc_compute_calculator.py`)
-
-______________________________________________________________________

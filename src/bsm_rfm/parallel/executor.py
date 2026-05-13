@@ -101,8 +101,8 @@ class DaskExecutor(ParallelExecutor):
         items_list = list(items)
         logger.info(f"Submitting {len(items_list)} tasks to Dask")
         futures = [delayed(func, pure=True)(item) for item in items_list]
-        results = delayed(*futures).compute(scheduler="distributed", num_workers=self.n_workers)
-        return list(results)
+        results = [f.compute(scheduler="distributed") for f in futures]
+        return results
 
     def close(self) -> None:
         """Shut down Dask cluster."""

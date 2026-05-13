@@ -8,8 +8,8 @@ profile: autonomous
 current_milestone: Phase 8 — Scalable Execution (HPC + Out-of-Core)
 current_slice: Phase 8c — Distributed HPC (Dask/MPI) + GPU acceleration
 slice_status: in_progress
-last_validation: Phase 8b/8c/GPU — 61/61 tests pass, ruff clean; original-like all-features run COMPLETE with final nRMSE=0.0581 (3k sample, 1072 final features, 62 holdout rows)
-next_slice: (1) Implement distributed HPC compute (Dask/Ray/MPI) for multi-node parallelism; (2) Add GPU support for interaction_discovery stage
+last_validation: Phase 8c Milestone 1 foundation: Executor abstraction (7/7 tests passing, all committed 4385d6d, afc607c); ready for integration into interaction_discovery
+next_slice: (1) Audit manuscript_stages.py for joblib.Parallel calls; (2) Refactor interaction_discovery to use executor.map() with fallback; (3) Add integration tests with mock cluster; (4) Validate numerical equivalence
 
 ## Phase 8a — SLURM Array Baseline (2026-05-12)
 

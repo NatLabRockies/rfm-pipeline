@@ -24,6 +24,9 @@ wheel = ">=0.45"
 pre-commit = ">=3.8"
 jupyterlab = ">=4.5.7,<5"
 pixi-kernel = ">=0.7.1,<0.8"
+# Phase 8c: Distributed computing
+dask = ">=2023.12"
+dask-jobqueue = ">=0.8"
 
 [pypi-dependencies]
 build = ">=1.2"

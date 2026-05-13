@@ -6,10 +6,69 @@ base_branch: main
 autonomy_tier: 3
 profile: autonomous
 current_milestone: Phase 8 — Scalable Execution (HPC + Out-of-Core)
-current_slice: Phase 8b — Chunked I/O Integration (sparse_selection + final_artifacts)
-slice_status: in_progress (Slice 1 foundation complete, Slice 2 memory tracking complete)
-last_validation: Phase 8b Slice 2 memory tracking tests (11 tests) pass; all 95 distributed tests pass (HPC e2e + artifact resolution + Phase 8b)
-next_slice: (1) Phase 8b Slice 3 - sparse_selection streaming I/O, (2) Phase 8b Slice 4 - integration testing, (3) GPU scoring path (optional Phase 8c)
+current_slice: Phase 8c — CPU distributed validation scaffold (Kestrel 2→10→1000 node stress)
+slice_status: in_progress (CPU scaling assets/tests complete; awaiting Kestrel execution results)
+last_validation: `pixi run pytest -q tests/test_hpc_cpu_scaling_suite.py tests/test_distributed_phase8a.py` (37 tests) pass; `./test_repo.sh --check` pass
+next_slice: (1) Execute CPU scaling suite on Kestrel (2→10→1000), (2) then resume GPU scoring path (optional)
+
+## Phase 8c — CPU distributed scaling scaffold (2026-05-13)
+
+- Added Kestrel CPU scaling configs:
+  - `configs/hpc/kestrel_cpu_scale_2.yml`
+  - `configs/hpc/kestrel_cpu_scale_10.yml`
+  - `configs/hpc/kestrel_cpu_scale_1000.yml`
+- Added Kestrel suite script:
+  - `scripts/kestrel/submit_cpu_scaling_suite.sh`
+  - Supports `--submit`, `--dry-run`, `--stage`, and `--output-root`.
+  - Runs diagnostic-first, then 2→10→1000 node tiers via `pixi run bsm-hpc-submit`.
+- Added validation tests:
+  - `tests/test_hpc_cpu_scaling_suite.py`
+  - Verifies tier config concurrency + partition settings.
+  - Verifies rendered SLURM array throttle line for each tier (`%2`, `%10`, `%1000`).
+  - Verifies suite script targets all three tier configs.
+- Kestrel execution entry point:
+  - `bash scripts/kestrel/submit_cpu_scaling_suite.sh --submit --stage interaction_discovery`
+  - Use `--dry-run` first on login node to validate submission commands.
+
+## Priority update — CPU-first Kestrel validation (2026-05-13)
+
+- User-directed scope clarification:
+  - Defer GPU path completion until CPU distributed execution is validated on Kestrel.
+  - First validate repo stability and Kestrel-safe execution path.
+  - Then run staged CPU stress progression: 2 nodes → 10 nodes → 1000 nodes.
+- Implementation target for this slice:
+  - Add commit-ready scripts/config/tests in-repo so they can be pulled and run on Kestrel login/compute nodes without Copilot access.
+- GPU integration remains optional and queued after CPU scaling validation.
+
+## Phase 8b — integration testing (Slice 4) (2026-05-13)
+
+- Extended `tests/test_phase8b_chunked_io_integration.py` with stage-integration coverage:
+  - `TestStageIntegrationEquivalence.test_sparse_selection_wrapper_matches_unwrapped_stage_result`
+    - wraps real `run_sparse_selection_stability_stage` execution with chunked config
+    - validates summary/support equivalence versus unwrapped baseline on demo context
+    - verifies wrapper restores original `case_study_input_matrix` table reference after execution
+  - `TestStageIntegrationEquivalence.test_final_artifacts_wrapper_executes_real_stage`
+    - wraps real `run_final_manuscript_artifacts_stage` execution with chunked toggle
+    - validates final stage completion and artifact emission through wrapper path
+- Phase 8b integration test suite now includes 15 tests; all passing.
+- Phase 8b status: complete (wrapper foundation + memory tracking + sparse streaming + integration tests).
+
+## Phase 8b — sparse_selection streaming I/O integration (2026-05-13)
+
+- Implemented sparse-selection streaming path in `src/bsm_rfm/phase8b_chunked_integration.py`:
+  - Added runtime-aware stage config resolution for both dict-style and dataclass-style config containers.
+  - Added runtime-level fallback detection so chunked mode activates from `runtime.use_chunked_io` / `runtime.out_of_core.*` when stage-level toggle is absent.
+  - Added out-of-core setting resolver with legacy `chunked_io_config` compatibility.
+  - Added DataFrame chunking + streaming helpers:
+    - `_estimate_rows_per_chunk(...)`
+    - `_iter_frame_chunks(...)`
+    - `_stream_dataframe(...)`
+  - Updated `wrap_sparse_selection_with_chunked_io(...)` to stream `case_study_input_matrix` through chunked aggregation / spill buffer before stage execution and restore original table reference afterward.
+  - Kept wrapper behavior backward-compatible: delegates to original stage function and preserves result contract.
+- Extended `tests/test_phase8b_chunked_io_integration.py` with 2 focused streaming tests:
+  - stage-level chunked toggle drives input-table streaming
+  - runtime-level chunked toggle drives streaming when stage toggle is missing
+  - test count updated from 11 to 13 (all passing)
 
 ## Phase 8b — memory tracking integration (2026-05-13)
 

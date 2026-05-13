@@ -202,7 +202,9 @@ Run `SELECT * FROM todos` to see current task breakdown.
 - ✅ bsm_hpc_submit.py auto-populates shard manifest input_paths for interaction_discovery submissions
 - ✅ end-to-end HPC integration tests validate manifest generation, checkpoint tracking, reduce merge
 - ✅ Ray runner already implemented (experimental, gated by BSM_ENABLE_RAY_EXPERIMENTAL)
-- ⏳ remaining: GPU scoring path + optional production validation on Kestrel
+- ✅ CPU scaling scaffold added for Kestrel validation (2→10→1000 node configs + suite script + local tests)
+- ⏳ remaining (reprioritized 2026-05-13): CPU distributed validation on Kestrel
+  (repo-stability gate + 2→10→1000 CPU-node stress suite), then GPU scoring path
 
 ______________________________________________________________________
 

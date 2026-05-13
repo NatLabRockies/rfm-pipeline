@@ -149,7 +149,7 @@ Run `SELECT * FROM todos` to see current task breakdown.
 
 ### Phase 8 (PENDING): Scalable Execution — Local Out-of-Core + Optional Distributed HPC
 
-**Status**: Planning — environment discovery complete, method manifest finalized, ready for implementation
+**Status**: In progress — 8a/8b complete; 8c in active implementation (Dask integration + shard/reduce merge complete, MPI/Ray pending)
 
 **Scope**: Out-of-core/chunked processing (primary, local-first) + optional distributed HPC (secondary)
 
@@ -189,6 +189,15 @@ Run `SELECT * FROM todos` to see current task breakdown.
 - `docs/PHASE_8_SCALABLE_EXECUTION_PLAN.md` — detailed 12-section plan with local-first priority
 - `ai_context/methods/kestrel_slurm_distributed_compute_method_manifest.md` — method guidance
 - `kestrel_bsm_hpc_discovery_answers.md` — live Kestrel system info
+
+**8c progress checkpoint (2026-05-13)**:
+
+- ✅ interaction_discovery supports `parallel_backend=dask` with deterministic dask→threading fallback
+- ✅ workflow `runtime.parallelism` config maps into interaction runtime path
+- ✅ shard worker now runs real interaction scoring and emits per-shard pair outputs
+- ✅ reduce step now merges retained pairs and pair scores across shards
+- ✅ shard manifest caps effective shard count at feature-column cardinality
+- ⏳ remaining: real MPI runner + real Ray runner + full submit-path input wiring
 
 ______________________________________________________________________
 

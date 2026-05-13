@@ -20,6 +20,8 @@ import logging
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -82,19 +84,70 @@ def main() -> None:
     final_output.mkdir(parents=True, exist_ok=True)
 
     if args.stage == "interaction_discovery":
-        _reduce_interaction_discovery(shard_results, final_output)
+        _reduce_interaction_discovery(shard_results, final_output, output_root)
     else:
         _reduce_generic(shard_results, final_output, args.stage)
 
     logger.info("[reduce] COMPLETE — merged artifacts at %s", final_output)
 
 
-def _reduce_interaction_discovery(shard_results: list[dict], output_dir: Path) -> None:
-    """Merge interaction discovery shard results into a combined artifact.
+def _reduce_interaction_discovery(
+    shard_results: list[dict],
+    output_dir: Path,
+    output_root: Path,
+) -> None:
+    """Merge interaction-discovery shard CSV outputs into combined artifacts."""
+    retained_frames: list[pd.DataFrame] = []
+    pair_score_frames: list[pd.DataFrame] = []
 
-    Currently writes a summary JSON. Full merge (concatenating parquet results)
-    will be added as shard execution is fully implemented.
-    """
+    for shard in shard_results:
+        shard_id = str(shard.get("shard_id", ""))
+        shard_dir = output_root / shard_id
+        retained_name = str(shard.get("retained_pairs_file", "retained_interaction_pairs.csv"))
+        pair_scores_name = str(shard.get("pair_scores_file", "interaction_pair_scores.csv"))
+        retained_path = shard_dir / retained_name
+        pair_scores_path = shard_dir / pair_scores_name
+
+        if retained_path.exists():
+            retained_frames.append(pd.read_csv(retained_path))
+        if pair_scores_path.exists():
+            pair_score_frames.append(pd.read_csv(pair_scores_path))
+
+    merged_retained = (
+        pd.concat(retained_frames, ignore_index=True) if retained_frames else pd.DataFrame()
+    )
+    merged_pair_scores = (
+        pd.concat(pair_score_frames, ignore_index=True) if pair_score_frames else pd.DataFrame()
+    )
+
+    if not merged_retained.empty and "pair_name" in merged_retained.columns:
+        sort_cols = ["pair_name"]
+        ascending = [True]
+        if "interaction_score" in merged_retained.columns:
+            sort_cols = ["interaction_score", "pair_name"]
+            ascending = [False, True]
+        merged_retained = (
+            merged_retained.sort_values(sort_cols, ascending=ascending, ignore_index=True)
+            .drop_duplicates(subset=["pair_name"], keep="first")
+            .reset_index(drop=True)
+        )
+    if not merged_pair_scores.empty and "pair_name" in merged_pair_scores.columns:
+        sort_cols = ["pair_name"]
+        ascending = [True]
+        if "interaction_score" in merged_pair_scores.columns:
+            sort_cols = ["interaction_score", "pair_name"]
+            ascending = [False, True]
+        merged_pair_scores = (
+            merged_pair_scores.sort_values(sort_cols, ascending=ascending, ignore_index=True)
+            .drop_duplicates(subset=["pair_name"], keep="first")
+            .reset_index(drop=True)
+        )
+
+    retained_out = output_dir / "retained_interaction_pairs_merged.csv"
+    pair_scores_out = output_dir / "interaction_pair_scores_merged.csv"
+    merged_retained.to_csv(retained_out, index=False)
+    merged_pair_scores.to_csv(pair_scores_out, index=False)
+
     total_cols = sum(
         (r.get("feature_end_idx", 0) or 0) - (r.get("feature_start_idx", 0) or 0)
         for r in shard_results
@@ -103,13 +156,16 @@ def _reduce_interaction_discovery(shard_results: list[dict], output_dir: Path) -
         "stage": "interaction_discovery",
         "n_shards": len(shard_results),
         "total_feature_columns_covered": total_cols,
+        "n_merged_retained_pairs": int(len(merged_retained)),
+        "n_merged_pair_scores": int(len(merged_pair_scores)),
+        "merged_retained_pairs_file": retained_out.name,
+        "merged_pair_scores_file": pair_scores_out.name,
         "shards": [
             {
                 "shard_id": r["shard_id"],
                 "feature_start_idx": r.get("feature_start_idx"),
                 "feature_end_idx": r.get("feature_end_idx"),
                 "n_feature_cols": r.get("n_feature_cols"),
-                "n_rows": r.get("n_rows"),
                 "status": r.get("status"),
             }
             for r in shard_results

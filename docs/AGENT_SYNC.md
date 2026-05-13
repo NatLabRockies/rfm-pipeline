@@ -7,9 +7,32 @@ autonomy_tier: 3
 profile: autonomous
 current_milestone: Phase 8 — Scalable Execution (HPC + Out-of-Core)
 current_slice: Phase 8c — Distributed HPC (Dask/MPI) + GPU acceleration
-slice_status: in_progress
-last_validation: Phase 8c Milestone 1 integration: interaction_discovery supports dask executor + dask→joblib fallback; runtime.parallelism maps to legacy interaction config; focused distributed+interaction suites pass (84 tests)
-next_slice: (1) Wire distributed shard worker to execute real interaction shard scoring (not placeholder metadata); (2) Implement reduce merge of retained_interaction_pairs across shards; (3) Add integration tests for shard+reduce roundtrip
+slice_status: in_progress (milestone 1 + shard/reduce integration complete)
+last_validation: Phase 8c shard/reduce integration complete; distributed manifest caps shard count to feature columns, shard worker emits real interaction artifacts, reduce merges retained pairs + pair scores; focused suites (111 tests) and full `./test_repo.sh` gate pass
+next_slice: (1) implement real MPI runner path for distributed stage execution, (2) implement real Ray runner path, (3) wire bsm_hpc_submit to pass full interaction_discovery shard input set for cluster submission
+
+## Phase 8c — shard/reduce roundtrip completion (2026-05-13)
+
+- Completed real interaction shard execution in `tools/hpc_shard_worker.py`:
+  - resolves required shard inputs (`X.parquet`, holdout assignments, feature catalog, PCA scores, retained terms)
+  - loads interaction spec from workflow config or default case-study config
+  - runs `discover_manuscript_interactions(...)` on shard-selected retained features
+  - writes shard artifacts: `interaction_pair_scores.csv`, `retained_interaction_pairs.csv`, `interaction_null_summary.csv`, `component_interaction_scores.csv`, `interaction_discovery_summary.csv`, and enriched `shard_result.json`
+- Completed interaction reduce merge in `tools/hpc_reduce.py`:
+  - merges per-shard retained pairs + pair scores into:
+    - `retained_interaction_pairs_merged.csv`
+    - `interaction_pair_scores_merged.csv`
+  - deduplicates by `pair_name`, preferring highest `interaction_score`
+  - writes merge summary `interaction_discovery_merged.json`
+- Completed shard manifest partition safeguard in `src/bsm_rfm/distributed/manifest.py`:
+  - caps effective shard count at `expected_columns` to avoid empty shards when requested shards exceed feature columns
+- Added/updated focused tests:
+  - `tests/test_hpc_shard_reduce.py` (new)
+  - `tests/test_distributed_phase8a.py` (shard-cap behavior)
+- Validation:
+  - `pixi run pytest -q tests/test_distributed_phase8a.py tests/test_hpc_shard_reduce.py` ✅
+  - `pixi run pytest -q tests/test_parallel_executor.py tests/test_config_loader.py tests/test_manuscript_interaction_discovery.py tests/test_distributed_phase8a.py tests/test_hpc_shard_reduce.py tests/test_distributed_phase8bc_gpu.py` ✅
+  - `./test_repo.sh` ✅
 
 ## Phase 8a — SLURM Array Baseline (2026-05-12)
 

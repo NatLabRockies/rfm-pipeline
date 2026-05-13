@@ -1,0 +1,5 @@
+JobID|JobName|Partition|Account|State|ExitCode|Elapsed|Timelimit|AllocTRES|ReqTRES|MaxRSS|AveRSS|MaxVMSize|MaxDiskRead|MaxDiskWrite|NodeList
+13771246|bsm-gpu-debug-probe|debug-gpu|bsm|COMPLETED|0:0|00:00:09|00:30:00|billing=256,cpu=16,gres/gpu:h100=1,gres/gpu=1,mem=64G,node=1|billing=256,cpu=16,gres/gpu=1,mem=64G,node=1||||||x3102c0s41b0n0
+13771246.batch|batch||bsm|COMPLETED|0:0|00:00:09||cpu=16,gres/gpu:h100=1,gres/gpu=1,mem=64G,node=1||4648K|4648K|3687728K|0|0.00M|x3102c0s41b0n0
+13771246.extern|extern||bsm|COMPLETED|0:0|00:00:09||billing=256,cpu=16,gres/gpu:h100=1,gres/gpu=1,mem=64G,node=1|||||||x3102c0s41b0n0
+13771246.0|bash||bsm|COMPLETED|0:0|00:00:02||cpu=16,gres/gpu:h100=1,gres/gpu=1,mem=64G,node=1||12028K|12028K|3905524K|0|0.00M|x3102c0s41b0n0

@@ -163,7 +163,7 @@ def run_mpi_worker(
 
     for shard_idx in my_shards:
         shard = shards[shard_idx]
-        shard_id = shard.get("shard_id", str(shard_idx))
+        shard_id = getattr(shard, "shard_id", str(shard_idx))
         if dry_run:
             logger.info("[mpi_runner] rank=%d dry-run shard %s", rank, shard_id)
             continue
@@ -180,22 +180,12 @@ def run_mpi_worker(
         logger.info("[mpi_runner] all ranks complete for stage=%s", stage)
 
 
-def _run_shard(shard: dict, config_path: str, stage: str) -> None:
+def _run_shard(shard, config_path: str, stage: str, dry_run: bool = False) -> None:
     """Execute a single shard via the hpc_shard_worker entry point."""
-    # Re-use the existing shard worker logic rather than duplicating it.
-    # Import lazily to avoid circular imports.
-    from bsm_rfm.distributed.checkpoint import CheckpointManager
     from bsm_rfm.distributed.config_distributed import load_config
 
     config = load_config(config_path)
-    output_root = Path(config.output_dir) / config.run_id
-
-    checkpoint_mgr = CheckpointManager(output_root)
-    shard_id = shard.get("shard_id", "unknown")
-
-    if checkpoint_mgr.is_complete(shard_id):
-        logger.info("[mpi_runner] shard %s already complete, skipping", shard_id)
-        return
+    output_root = str(Path(config.output_dir) / config.run_id)
 
     # Delegate to shard worker function (avoids subprocess overhead inside MPI)
     # Actual implementation lives in tools/hpc_shard_worker.py
@@ -206,7 +196,12 @@ def _run_shard(shard: dict, config_path: str, stage: str) -> None:
             sys.path.insert(0, str(tools_dir))
         import hpc_shard_worker
 
-        hpc_shard_worker.run_shard(shard, config)
+        hpc_shard_worker.run_shard(
+            shard=shard,
+            output_root=output_root,
+            config_path=config_path,
+            dry_run=dry_run,
+        )
     except ImportError:
         logger.error(
             "[mpi_runner] Could not import hpc_shard_worker from tools/. "

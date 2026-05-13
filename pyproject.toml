@@ -81,6 +81,7 @@ convention = "numpy"
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["D"]
 "docs/conf.py" = ["D"]
+"tools/**/*.py" = ["D"]
 
 [tool.ruff.format]
 docstring-code-format = true

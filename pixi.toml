@@ -66,3 +66,8 @@ manuscript-reproduce = "env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THR
 manuscript-preprocess = "python scripts/preprocess_multiindex_data.py"
 workflow-run = "python tools/run_tracked_workflow.py"
 runtime-investigation = "python tools/run_runtime_investigation.py"
+
+# HPC / distributed execution
+bsm-hpc-submit = "python tools/bsm_hpc_submit.py"
+bsm-hpc-shard-worker = "python tools/hpc_shard_worker.py"
+bsm-hpc-reduce = "python tools/hpc_reduce.py"

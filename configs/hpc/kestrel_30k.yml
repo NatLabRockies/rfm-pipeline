@@ -1,0 +1,96 @@
+# BSM Manuscript Pipeline — NREL Kestrel HPC Configuration
+# Use this config for full-scale distributed execution on NREL Kestrel.
+#
+# Prerequisites:
+#   1. Pixi environment initialized on shared filesystem:
+#      cd /projects/bsm/<repo> && pixi install --locked
+#   2. Data on Kestrel:
+#      /projects/bsm/<repo>/artifacts/test_dataset_3k/   (or full dataset path)
+#   3. Submit from login node:
+#      pixi run bsm-hpc-submit --config configs/hpc/kestrel_30k.yml --stage interaction_discovery --submit
+#
+# Resource guide (adjust per actual run):
+#   debug partition:  max 1 hour, limited nodes — use for smoke tests
+#   shared partition: production runs, up to 48 hours
+#   Standard Kestrel node: 104 CPUs, 256 GB RAM (CPU nodes)
+
+dataset:
+  type: "synthetic_full"
+
+algorithm:
+  variance_threshold: 0.90
+
+runtime:
+  n_jobs: 104           # Full Kestrel CPU node
+  output_batch_size: null
+  use_chunked_io: true
+  chunked_io_config:
+    chunk_size_mb: 512
+    max_memory_budget_mb: 200000   # ~200 GB for large Kestrel nodes
+    enable_spill_to_disk: true
+
+stages:
+  empirical_null_screening:
+    n_permutations: 101
+    bh_q_threshold: 0.10
+  interaction_discovery:
+    n_permutations: 21
+    n_tree_estimators: 100
+    max_tree_depth: 3
+    p_threshold: 0.05
+  nonlinear_discovery:
+    edf_threshold: 2.5
+    transform_families: ["spline", "poly", "log"]
+  sparse_selection:
+    n_stability_subsamples: 12
+    subsample_fraction: 1.0
+    lasso_alpha_percentile: 50
+  final_artifacts:
+    bootstrap_count: 10
+    bootstrap_alpha: 0.05
+
+validation:
+  fast_mode: false
+  fast_mode_overrides: {}
+
+output:
+  artifact_dir: "/projects/bsm/bsm-public-rf/artifacts/kestrel_30k_run"
+  seed: 0
+  verbose: true
+
+# ---------------------------------------------------------------------------
+# Distributed execution settings (Phase 8a — SLURM array baseline)
+# ---------------------------------------------------------------------------
+distributed:
+  enabled: true
+  backend: slurm_array
+  run_id: bsm_kestrel_30k
+
+  # Path to shared Pixi environment (must be accessible from all compute nodes)
+  pixi_env_path: /projects/bsm/.pixi
+
+  slurm:
+    account: bsm
+    partition: shared
+    walltime: "08:00:00"
+    memory_gb: 240          # Leave headroom below 256 GB node limit
+    cpus_per_task: 104      # Full CPU node
+    max_concurrent_array_tasks: 50
+    log_dir: "/scratch/${USER}/bsm/bsm_kestrel_30k/logs"
+    requeue: false
+    signal_seconds_before_timeout: 60
+
+  kestrel:
+    projects_root: /projects/bsm
+    pixi_cache_dir: /projects/bsm/.cache/pixi
+    dask_network_interface: hsn0
+    max_array_size: 11000
+    debug_partition: debug
+    gpu_partition: gpu-h100s
+    production_partition: shared
+
+  spill:
+    scratch_root: "/scratch/${USER}/bsm"
+    tmpdir_spill_enabled: false   # $TMPDIR can be RAM-backed on Kestrel CPU nodes
+    min_free_gb: 20.0
+    spill_chunk_size_mb: 256

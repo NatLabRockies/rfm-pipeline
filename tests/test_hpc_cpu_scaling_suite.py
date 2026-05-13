@@ -6,25 +6,36 @@ from pathlib import Path
 
 import pytest
 
+from bsm_rfm.config import load_config
 from bsm_rfm.distributed.config_distributed import load_distributed_config
 from bsm_rfm.distributed.manifest import build_manifest, save_manifest
 from bsm_rfm.distributed.slurm_array_runner import SlurmArrayRunner
 
 _CPU_SCALING_CASES = [
-    ("configs/hpc/kestrel_cpu_scale_2.yml", 2, "debug"),
-    ("configs/hpc/kestrel_cpu_scale_10.yml", 10, "shared"),
-    ("configs/hpc/kestrel_cpu_scale_1000.yml", 1000, "shared"),
+    ("configs/hpc/kestrel_cpu_scale_2.yml", 2, "debug", "./artifacts/kestrel_cpu_scale_2_run"),
+    ("configs/hpc/kestrel_cpu_scale_10.yml", 10, "shared", "./artifacts/kestrel_cpu_scale_10_run"),
+    (
+        "configs/hpc/kestrel_cpu_scale_1000.yml",
+        1000,
+        "shared",
+        "./artifacts/kestrel_cpu_scale_1000_run",
+    ),
 ]
 
 
 @pytest.mark.parametrize(
-    ("config_path", "expected_nodes", "expected_partition"),
+    ("config_path", "expected_nodes", "expected_partition", "expected_artifact_dir"),
     _CPU_SCALING_CASES,
 )
 def test_cpu_scaling_configs_have_expected_slurm_concurrency(
-    config_path: str, expected_nodes: int, expected_partition: str
+    config_path: str,
+    expected_nodes: int,
+    expected_partition: str,
+    expected_artifact_dir: str,
 ) -> None:
+    workflow_cfg = load_config(config_path)
     cfg = load_distributed_config(config_path)
+    assert workflow_cfg.output.artifact_dir == expected_artifact_dir
     assert cfg.enabled is True
     assert cfg.backend == "slurm_array"
     assert cfg.slurm.partition == expected_partition
@@ -32,9 +43,9 @@ def test_cpu_scaling_configs_have_expected_slurm_concurrency(
     assert cfg.slurm.cpus_per_task == 104
 
 
-@pytest.mark.parametrize(("config_path", "expected_nodes", "_"), _CPU_SCALING_CASES)
+@pytest.mark.parametrize(("config_path", "expected_nodes", "_", "__"), _CPU_SCALING_CASES)
 def test_cpu_scaling_stage_script_renders_expected_array_throttle(
-    tmp_path: Path, config_path: str, expected_nodes: int, _: str
+    tmp_path: Path, config_path: str, expected_nodes: int, _: str, __: str
 ) -> None:
     cfg = load_distributed_config(config_path)
     shards = build_manifest(

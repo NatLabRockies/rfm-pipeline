@@ -47,7 +47,7 @@ validation:
   fast_mode_overrides: {}
 
 output:
-  artifact_dir: "/projects/bsm/bsm-public-rf/artifacts/kestrel_cpu_scale_1000_run"
+  artifact_dir: "./artifacts/kestrel_cpu_scale_1000_run"
   seed: 0
   verbose: true
 

@@ -1,0 +1,11 @@
+✨ Pixi task (runtime-investigation): python tools/run_runtime_investigation.py --base-config configs/validation_80_sample_workflow_smoke.yml --dataset-path artifacts/scaling_test_ladder_full_features --profile-dirs 5k,10k,15k --output-root artifacts/scaling_test_full_features --label full_features_scaling
+usage: run_runtime_investigation.py [-h] --base-config BASE_CONFIG
+                                    [--dataset-path DATASET_PATH]
+                                    [--output-root OUTPUT_ROOT]
+                                    [--label LABEL] [--profiles PROFILES]
+                                    [--generate-only] [--force-rerun]
+                                    [--progress-batch-size PROGRESS_BATCH_SIZE]
+                                    [--monitor-interval-seconds MONITOR_INTERVAL_SECONDS]
+                                    [--start-stage {output_conditioning,empirical_null_screen,interaction_discovery,nonlinear_discovery,sparse_selection,final_manuscript_artifacts}]
+                                    [--stop-stage {output_conditioning,empirical_null_screen,interaction_discovery,nonlinear_discovery,sparse_selection,final_manuscript_artifacts}]
+run_runtime_investigation.py: error: unrecognized arguments: --profile-dirs 5k,10k,15k

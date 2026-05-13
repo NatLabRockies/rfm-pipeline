@@ -115,3 +115,18 @@ def test_cpu_scaling_live_submit_scripts_exist_with_expected_defaults() -> None:
     assert "--partition=debug --time=01:00:00" in script_chain
     assert "--partition=shared --time=04:00:00 --dependency=afterok:${R2}" in script_chain
     assert "--partition=shared --time=08:00:00 --dependency=afterok:${R10}" in script_chain
+
+
+def test_cpu_scaling_collection_and_monitor_scripts_exist() -> None:
+    collector = Path("scripts/kestrel/collect_cpu_scaling_results.sh").read_text(encoding="utf-8")
+    monitor = Path("scripts/kestrel/watch_cpu_scaling_queue.sh").read_text(encoding="utf-8")
+
+    assert "set -euo pipefail" in collector
+    assert "interaction_discovery_merged.json" in collector
+    assert "retained_interaction_pairs_merged.csv" in collector
+    assert "cpu_scaling_results_summary.csv" in collector
+
+    assert "set -euo pipefail" in monitor
+    assert "squeue -u" in monitor
+    assert "sacct -u" in monitor
+    assert "collect_cpu_scaling_results.sh" in monitor

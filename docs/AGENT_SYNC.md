@@ -6,10 +6,22 @@ base_branch: main
 autonomy_tier: 3
 profile: autonomous
 current_milestone: Phase 8 — Scalable Execution (HPC + Out-of-Core)
-current_slice: Phase 8c — CPU distributed validation scaffold (Kestrel 2→10→1000 node stress)
-slice_status: in_progress (CPU scaling assets/tests complete; awaiting Kestrel execution results)
-last_validation: `pixi run pytest -q tests/test_hpc_cpu_scaling_suite.py tests/test_distributed_phase8a.py` (37 tests) pass; `./test_repo.sh --check` pass
-next_slice: (1) Execute CPU scaling suite on Kestrel (2→10→1000), (2) then resume GPU scoring path (optional)
+current_slice: Phase 8c — CPU distributed validation execution + GPU path resumption
+slice_status: in_progress (CPU jobs running on Kestrel; helper scripts added; GPU submit path resumed)
+last_validation: `pixi run ruff check src/bsm_rfm/distributed/slurm_array_runner.py tests/test_hpc_cpu_scaling_suite.py tests/test_distributed_phase8bc_gpu.py` pass; `pixi run pytest -q tests/test_hpc_cpu_scaling_suite.py tests/test_distributed_phase8bc_gpu.py` (44 tests) pass; `./test_repo.sh --check` pass
+next_slice: Continue GPU scoring path while CPU scaling queue runs; keep CPU 2→10→1000 results collection active
+
+## Phase 8c — live ops helpers + GPU submit-path kickoff (2026-05-13)
+
+- Added Kestrel live-ops helper scripts:
+  - `scripts/kestrel/collect_cpu_scaling_results.sh`
+  - `scripts/kestrel/watch_cpu_scaling_queue.sh`
+- Collector aggregates per-tier status for 2/10/1000 runs (manifest shard count, shard completion counts, merged outputs, latest logs) into:
+  - `artifacts/kestrel_cpu_scaling_suite/cpu_scaling_results_summary.csv`
+- Monitor helper shows `squeue`/`sacct` snapshots, tails latest array/reduce logs per tier, and refreshes collector output.
+- GPU kickoff hardening:
+  - `src/bsm_rfm/distributed/slurm_array_runner.py` `submit_all.sh` generation now prefers `gpu_stage` when present (GPU-enabled configs submit GPU array path by default).
+  - Added GPU coverage in `tests/test_distributed_phase8bc_gpu.py` to assert `submit_all.sh` references `submit_interaction_discovery_gpu_array.sh`.
 
 ## Phase 8c — CPU distributed scaling scaffold (2026-05-13)
 

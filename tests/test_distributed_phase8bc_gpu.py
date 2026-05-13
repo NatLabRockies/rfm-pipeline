@@ -215,6 +215,9 @@ def test_write_scripts_includes_gpu_scripts_when_enabled(tmp_path):
     assert "gpu_diagnostic" in scripts
     assert scripts["gpu_stage"].exists()
     assert scripts["gpu_diagnostic"].exists()
+    submit_all = scripts["submit_all"].read_text(encoding="utf-8")
+    assert "submit_interaction_discovery_gpu_array.sh" in submit_all
+    assert "submit_interaction_discovery_reduce.sh" in submit_all
 
 
 def test_write_scripts_no_gpu_scripts_when_disabled(tmp_path):

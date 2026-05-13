@@ -588,8 +588,10 @@ def _make_executable(path: Path) -> None:
 
 def _make_submit_all_script(scripts: dict[str, Path], stage: str) -> str:
     stage_path = scripts.get("stage")
+    gpu_stage_path = scripts.get("gpu_stage")
     reduce_path = scripts.get("reduce")
     diag_path = scripts.get("diagnostic")
+    primary_stage_path = gpu_stage_path or stage_path
 
     lines = [
         "#!/bin/bash",
@@ -604,9 +606,9 @@ def _make_submit_all_script(scripts: dict[str, Path], stage: str) -> str:
             f"# sbatch {diag_path.name}",
             "",
         ]
-    if stage_path:
+    if primary_stage_path:
         lines += [
-            f"ARRAY_JOB_ID=$(sbatch --parsable {stage_path.name})",
+            f"ARRAY_JOB_ID=$(sbatch --parsable {primary_stage_path.name})",
             'echo "Submitted array job: $ARRAY_JOB_ID"',
             "",
         ]

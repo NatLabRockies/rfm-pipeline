@@ -10,11 +10,19 @@ This test suite validates that:
 
 from __future__ import annotations
 
+from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
+import pandas as pd
 import pytest
 
 from bsm_rfm.config import load_config
+from bsm_rfm.manuscript_runtime import build_manuscript_notebook_context
+from bsm_rfm.manuscript_stages import (
+    run_final_manuscript_artifacts_stage,
+    run_sparse_selection_stability_stage,
+)
 from bsm_rfm.phase8b_chunked_integration import (
     wrap_final_artifacts_with_chunked_io,
     wrap_sparse_selection_with_chunked_io,
@@ -147,6 +155,185 @@ class TestChunkedIOProgressTracking:
         # Should detect config
         wrapped(mock_context)
         mock_original.assert_called_once()
+
+
+class TestSparseSelectionStreamingIO:
+    """Test sparse-selection streaming I/O behavior in wrapper."""
+
+    def test_sparse_selection_streams_input_table_with_stage_toggle(self) -> None:
+        """Wrapper should stream input matrix when stage-level chunked I/O is enabled."""
+        source_df = pd.DataFrame(
+            {
+                "sample_id": list(range(120)),
+                "x1": [float(i) for i in range(120)],
+                "x2": [float(i % 7) for i in range(120)],
+            }
+        )
+        seen = {}
+
+        def mock_fn(context):
+            seen["in_call_id"] = id(context.tables["case_study_input_matrix"])
+            return {"status": "ok"}
+
+        wrapped = wrap_sparse_selection_with_chunked_io(mock_fn)
+        context = SimpleNamespace(
+            tables={"case_study_input_matrix": source_df},
+            config=SimpleNamespace(
+                stages={"sparse_selection_stability": {"use_chunked_io": True}},
+                runtime=SimpleNamespace(
+                    use_chunked_io=False,
+                    chunked_io_config=None,
+                    out_of_core=SimpleNamespace(
+                        enabled=True,
+                        use_chunked_io=False,
+                        chunk_size_mb=1,
+                        max_memory_budget_mb=64,
+                        enable_spill_to_disk=False,
+                        temp_dir=None,
+                    ),
+                ),
+            ),
+        )
+
+        result = wrapped(context)
+
+        assert result == {"status": "ok"}
+        assert seen["in_call_id"] != id(source_df)
+        # Wrapper restores original table reference after stage execution.
+        assert context.tables["case_study_input_matrix"] is source_df
+
+    def test_sparse_selection_uses_runtime_chunked_toggle_when_stage_missing(self) -> None:
+        """Wrapper should fall back to runtime.use_chunked_io when stage key is absent."""
+        source_df = pd.DataFrame(
+            {
+                "sample_id": list(range(80)),
+                "x1": [float(i) for i in range(80)],
+            }
+        )
+        seen = {}
+
+        def mock_fn(context):
+            seen["in_call_id"] = id(context.tables["case_study_input_matrix"])
+            return {"status": "runtime-toggle"}
+
+        wrapped = wrap_sparse_selection_with_chunked_io(mock_fn)
+        context = SimpleNamespace(
+            tables={"case_study_input_matrix": source_df},
+            config=SimpleNamespace(
+                stages={},
+                runtime=SimpleNamespace(
+                    use_chunked_io=True,
+                    chunked_io_config={
+                        "chunk_size_mb": 1,
+                        "max_memory_budget_mb": 64,
+                        "enable_spill_to_disk": False,
+                    },
+                    out_of_core=SimpleNamespace(
+                        enabled=False,
+                        use_chunked_io=False,
+                        chunk_size_mb=512,
+                        max_memory_budget_mb=8000,
+                        enable_spill_to_disk=True,
+                        temp_dir=None,
+                    ),
+                ),
+            ),
+        )
+
+        result = wrapped(context)
+
+        assert result == {"status": "runtime-toggle"}
+        assert seen["in_call_id"] != id(source_df)
+        assert context.tables["case_study_input_matrix"] is source_df
+
+
+def _wrap_notebook_context_with_chunked_config(
+    *,
+    notebook_context,
+    stage_name: str,
+    use_chunked_io: bool,
+):
+    runtime_cfg = SimpleNamespace(
+        use_chunked_io=use_chunked_io,
+        chunked_io_config={
+            "chunk_size_mb": 1,
+            "max_memory_budget_mb": 64,
+            "enable_spill_to_disk": False,
+        },
+        out_of_core=SimpleNamespace(
+            enabled=use_chunked_io,
+            use_chunked_io=use_chunked_io,
+            chunk_size_mb=1,
+            max_memory_budget_mb=64,
+            enable_spill_to_disk=False,
+            temp_dir=None,
+        ),
+    )
+    stage_cfg = {stage_name: {"use_chunked_io": use_chunked_io}}
+    copied_tables = {name: frame.copy() for name, frame in notebook_context.tables.items()}
+    return SimpleNamespace(
+        notebook_name=notebook_context.notebook_name,
+        runtime=notebook_context.runtime,
+        tables=copied_tables,
+        case_study_config=notebook_context.case_study_config,
+        runtime_manifest=notebook_context.runtime_manifest,
+        config=SimpleNamespace(stages=stage_cfg, runtime=runtime_cfg),
+    )
+
+
+class TestStageIntegrationEquivalence:
+    """Integration tests for chunked wrapper behavior with real stage functions."""
+
+    def test_sparse_selection_wrapper_matches_unwrapped_stage_result(self) -> None:
+        """Chunked wrapper should preserve sparse-stage outputs on demo context."""
+        baseline_ctx = build_manuscript_notebook_context(
+            Path.cwd(), "06_sparse_selection_and_stability.ipynb"
+        )
+        baseline = run_sparse_selection_stability_stage(baseline_ctx)
+
+        wrapped_ctx = _wrap_notebook_context_with_chunked_config(
+            notebook_context=build_manuscript_notebook_context(
+                Path.cwd(), "06_sparse_selection_and_stability.ipynb"
+            ),
+            stage_name="sparse_selection_stability",
+            use_chunked_io=True,
+        )
+        original_input_ref = wrapped_ctx.tables["case_study_input_matrix"]
+        wrapped_fn = wrap_sparse_selection_with_chunked_io(run_sparse_selection_stability_stage)
+        wrapped = wrapped_fn(wrapped_ctx)
+
+        baseline_summary = baseline.sparse_selection.summary.loc[0]
+        wrapped_summary = wrapped.sparse_selection.summary.loc[0]
+        assert int(wrapped_summary["n_candidate_terms"]) == int(
+            baseline_summary["n_candidate_terms"]
+        )
+        assert int(wrapped_summary["n_full_support_terms"]) == int(
+            baseline_summary["n_full_support_terms"]
+        )
+        assert int(wrapped_summary["n_final_stable_support_terms"]) == int(
+            baseline_summary["n_final_stable_support_terms"]
+        )
+        assert set(wrapped.sparse_selection.final_stable_support["feature_name"]) == set(
+            baseline.sparse_selection.final_stable_support["feature_name"]
+        )
+        assert wrapped_ctx.tables["case_study_input_matrix"] is original_input_ref
+
+    def test_final_artifacts_wrapper_executes_real_stage(self) -> None:
+        """Final-artifacts wrapper should execute real stage path with chunked toggle."""
+        wrapped_ctx = _wrap_notebook_context_with_chunked_config(
+            notebook_context=build_manuscript_notebook_context(
+                Path.cwd(), "08_manuscript_tables_and_figures.ipynb"
+            ),
+            stage_name="final_manuscript_artifacts",
+            use_chunked_io=True,
+        )
+        wrapped_fn = wrap_final_artifacts_with_chunked_io(run_final_manuscript_artifacts_stage)
+        result = wrapped_fn(wrapped_ctx)
+
+        assert (
+            result.final_artifacts.summary.loc[0, "stage"] == "final_manuscript_tables_and_figures"
+        )
+        assert result.artifact_paths["workflow_stage_summary"].exists()
 
 
 class TestMemoryTracking:

@@ -1,0 +1,79 @@
+# BSM Manuscript Pipeline — Kestrel Debug / Smoke Test Configuration
+# Use this to validate your Kestrel environment before submitting full production runs.
+# Fits within debug partition limits (1 hour, limited nodes).
+#
+# Usage:
+#   pixi run bsm-hpc-submit --config configs/hpc/kestrel_debug_smoke.yml --diagnostic-only --submit
+
+dataset:
+  type: "synthetic_300_sample"
+
+algorithm:
+  variance_threshold: 0.90
+  retained_components: 5
+
+runtime:
+  n_jobs: 36
+  output_batch_size: null
+
+stages:
+  empirical_null_screening:
+    n_permutations: 12
+    bh_q_threshold: 1.00
+  interaction_discovery:
+    n_tree_estimators: 5
+    max_tree_depth: 4
+    p_threshold: 0.10
+  nonlinear_discovery:
+    edf_threshold: 2.5
+    transform_families: ["spline", "poly", "log"]
+  sparse_selection:
+    n_stability_subsamples: 4
+    subsample_fraction: 1.0
+    lasso_alpha_percentile: 50
+  final_artifacts:
+    bootstrap_count: 5
+    bootstrap_alpha: 0.05
+
+validation:
+  fast_mode: true
+  fast_mode_overrides:
+    output_cap: 120
+
+output:
+  artifact_dir: "/projects/bsm/bsm-public-rf/artifacts/kestrel_debug_smoke"
+  seed: 123
+  verbose: true
+
+distributed:
+  enabled: true
+  backend: slurm_array
+  run_id: bsm_kestrel_debug
+
+  pixi_env_path: /projects/bsm/.pixi
+
+  slurm:
+    account: bsm
+    partition: debug          # Debug partition for quick smoke tests
+    walltime: "00:30:00"
+    memory_gb: 32
+    cpus_per_task: 36
+    max_concurrent_array_tasks: 4
+    log_dir: "/scratch/${USER}/bsm/bsm_kestrel_debug/logs"
+    requeue: false
+    signal_seconds_before_timeout: 30
+
+  kestrel:
+    projects_root: /projects/bsm
+    pixi_cache_dir: /projects/bsm/.cache/pixi
+    dask_network_interface: hsn0
+    max_array_size: 11000
+    debug_partition: debug
+    gpu_partition: gpu-h100s
+    production_partition: shared
+
+  spill:
+    scratch_root: "/scratch/${USER}/bsm"
+    tmpdir_spill_enabled: false
+    min_free_gb: 5.0
+    spill_chunk_size_mb: 64

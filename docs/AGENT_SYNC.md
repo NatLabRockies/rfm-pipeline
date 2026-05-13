@@ -5,13 +5,13 @@ branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: Performance audit & architectural validation
-current_slice: A/B test: GBT+SHAP vs ElasticNet-only (PATH B complete, PATH A blocked)
-slice_status: blocked
-last_validation: PATH B (GBT full pipeline): 1114.5s total, interaction_discovery dominates 93.5% (1042.3s). NRMSE 0.089576. PATH A ElasticNet-only incomplete (config/I/O issues); architectural decision pending.
-next_slice: Complete PATH A (ElasticNet-only) full pipeline to enable model quality comparison; architectural decision (GBT vs ElasticNet) determines Phase 4 strategy
+current_milestone: Phase 8 — Scalable Execution (HPC + Out-of-Core)
+current_slice: Phase 8a SLURM array baseline — COMPLETE; Phase 8b (out-of-core chunk integration) next
+slice_status: in_progress
+last_validation: Phase 8a — 29/29 tests pass, ruff clean; full 30k original-like all-features run in progress (shell 83, 17/21 permutations at 18:31 MDT, ~18:50 expected completion)
+next_slice: (1) Wait for full-sample run completion and validate artifacts; (2) Phase 8b: integrate chunked I/O with sparse+final stages; (3) Phase 8c: Dask/MPI adapters
 
-## Runtime investigation workflow package (2026-05-11)
+## Phase 8a — SLURM Array Baseline (2026-05-12)
 
 - Added reusable single-command runtime ladder runner:
   - `tools/run_runtime_investigation.py`

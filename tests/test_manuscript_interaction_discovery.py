@@ -320,3 +320,167 @@ def test_interaction_discovery_uses_configured_parallel_backend_without_fallback
     assert calls[0] == (2, "threading")
     assert all(n_jobs == 2 and backend == "threading" for n_jobs, backend in calls)
     assert len(result.pair_scores) == 1
+
+
+def test_interaction_discovery_accepts_dask_backend_with_executor(
+    monkeypatch,
+) -> None:
+    sample_ids = list(range(1, 21))
+    x1 = [-1.0, -1.0, 1.0, 1.0] * 5
+    x2 = [-1.0, 1.0, -1.0, 1.0] * 5
+    pca_signal = [left * right for left, right in zip(x1, x2, strict=True)]
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2})
+    catalog = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2"],
+            "feature_type": ["first_order", "first_order"],
+        }
+    )
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 16 + ["holdout"] * 4})
+    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
+    retained_terms = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2"],
+            "feature_type": ["first_order", "first_order"],
+        }
+    )
+    spec = InteractionDiscoverySpec(
+        method="tree_shap_interaction_values",
+        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
+        null_threshold_quantile=0.9,
+        retained_pairs_reference=1,
+        permutation_count_B=3,
+        random_seed=123,
+        n_jobs=2,
+        parallel_backend="dask",
+    )
+
+    class FakeExecutor:
+        def map(self, fn, items, **kwargs):  # noqa: ANN001, ANN003
+            _ = kwargs
+            return [fn(item) for item in items]
+
+        def close(self) -> None:
+            return None
+
+    def _fake_get_executor(backend: str, **kwargs: object):  # noqa: ANN003
+        assert backend == "dask"
+        assert kwargs["n_workers"] == 2
+        return FakeExecutor()
+
+    def _fake_score_interaction_permutation(
+        y_base: np.ndarray,
+        permute_response: bool,
+        *,
+        n_pairs: int,
+        n_comp: int,
+        **_: object,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        _ = (y_base, permute_response)
+        scores = np.ones(n_pairs, dtype=float)
+        component_scores = np.ones((n_pairs, n_comp), dtype=float)
+        return scores, component_scores
+
+    monkeypatch.setattr(manuscript_stages, "get_executor", _fake_get_executor)
+    monkeypatch.setattr(
+        manuscript_stages,
+        "_score_interaction_permutation",
+        _fake_score_interaction_permutation,
+    )
+
+    result = discover_manuscript_interactions(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        spec,
+    )
+    assert len(result.pair_scores) == 1
+
+
+def test_interaction_discovery_falls_back_to_joblib_when_dask_executor_fails(
+    monkeypatch,
+) -> None:
+    sample_ids = list(range(1, 21))
+    x1 = [-1.0, -1.0, 1.0, 1.0] * 5
+    x2 = [-1.0, 1.0, -1.0, 1.0] * 5
+    pca_signal = [left * right for left, right in zip(x1, x2, strict=True)]
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2})
+    catalog = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2"],
+            "feature_type": ["first_order", "first_order"],
+        }
+    )
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 16 + ["holdout"] * 4})
+    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
+    retained_terms = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2"],
+            "feature_type": ["first_order", "first_order"],
+        }
+    )
+    spec = InteractionDiscoverySpec(
+        method="tree_shap_interaction_values",
+        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
+        null_threshold_quantile=0.9,
+        retained_pairs_reference=1,
+        permutation_count_B=3,
+        random_seed=123,
+        n_jobs=2,
+        parallel_backend="dask",
+    )
+
+    class FakeParallel:
+        def __init__(self, n_jobs: int, **kwargs: object) -> None:
+            self.n_jobs = n_jobs
+            self.backend = str(kwargs.get("backend", "loky"))
+
+        def __enter__(self) -> FakeParallel:
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+            return False
+
+        def __call__(
+            self,
+            jobs: list[tuple[object, tuple[object, ...], dict[str, object]]],
+        ) -> list[tuple[np.ndarray, np.ndarray]]:
+            _ = (self.n_jobs, self.backend)
+            return [func(*args, **kwargs) for func, args, kwargs in jobs]
+
+    def _fake_score_interaction_permutation(
+        y_base: np.ndarray,
+        permute_response: bool,
+        *,
+        n_pairs: int,
+        n_comp: int,
+        **_: object,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        _ = (y_base, permute_response)
+        scores = np.ones(n_pairs, dtype=float)
+        component_scores = np.ones((n_pairs, n_comp), dtype=float)
+        return scores, component_scores
+
+    def _raising_get_executor(backend: str, **kwargs: object):  # noqa: ANN003
+        _ = (backend, kwargs)
+        raise RuntimeError("dask unavailable")
+
+    monkeypatch.setattr(manuscript_stages, "get_executor", _raising_get_executor)
+    monkeypatch.setattr(manuscript_stages, "Parallel", FakeParallel)
+    monkeypatch.setattr(
+        manuscript_stages,
+        "_score_interaction_permutation",
+        _fake_score_interaction_permutation,
+    )
+
+    result = discover_manuscript_interactions(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        spec,
+    )
+    assert len(result.pair_scores) == 1

@@ -258,6 +258,17 @@ def _load_tables(output_column_limit: int | None, config: WorkflowConfig) -> dic
         .str.lower()
         .replace({"test": "holdout", "val": "holdout", "validation": "holdout"})
     )
+    # Resolve feature catalog: prefer dataset dir, fall back to repo artifacts/
+    _catalog_candidates = [
+        data_root / "actual_input_feature_catalog.parquet",
+        REPO_ROOT / "artifacts" / "actual_input_feature_catalog.parquet",
+    ]
+    _catalog_path = next((p for p in _catalog_candidates if p.exists()), None)
+    if _catalog_path is None:
+        raise FileNotFoundError(
+            "actual_input_feature_catalog.parquet not found. "
+            f"Copy it to {data_root}/ or {REPO_ROOT / 'artifacts'}/"
+        )
     return {
         "case_study_input_matrix": _read_parquet_with_mode(
             data_root / "X.parquet",
@@ -266,7 +277,7 @@ def _load_tables(output_column_limit: int | None, config: WorkflowConfig) -> dic
         "case_study_output_matrix": y,
         "fixed_holdout_assignments": holdout,
         "manuscript_feature_catalog": _read_parquet_with_mode(
-            REPO_ROOT / "artifacts" / "actual_input_feature_catalog.parquet",
+            _catalog_path,
             out_of_core=out_of_core,
         ),
     }

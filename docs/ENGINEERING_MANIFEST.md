@@ -200,7 +200,9 @@ Run `SELECT * FROM todos` to see current task breakdown.
 - ✅ MPI runner delegates to shard worker with dataclass-aware parameter passing
 - ✅ submit-path input resolution: auto-finds and resolves prior-stage artifacts (pca_scores, retained_terms, X, holdout, catalog)
 - ✅ bsm_hpc_submit.py auto-populates shard manifest input_paths for interaction_discovery submissions
-- ⏳ remaining: real Ray runner + end-to-end HPC integration test + GPU scoring path
+- ✅ end-to-end HPC integration tests validate manifest generation, checkpoint tracking, reduce merge
+- ✅ Ray runner already implemented (experimental, gated by BSM_ENABLE_RAY_EXPERIMENTAL)
+- ⏳ remaining: GPU scoring path + optional production validation on Kestrel
 
 ______________________________________________________________________
 

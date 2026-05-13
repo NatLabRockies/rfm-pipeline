@@ -7,9 +7,22 @@ autonomy_tier: 3
 profile: autonomous
 current_milestone: Phase 8 — Scalable Execution (HPC + Out-of-Core)
 current_slice: Phase 8c — Distributed HPC (Dask/MPI) + GPU acceleration
-slice_status: in_progress (shard/reduce/MPI complete; submit-inputs wiring complete)
-last_validation: Phase 8c submit-inputs resolution complete; 90 distributed tests pass (includes new test_hpc_artifact_input_resolution.py with 9 tests); artifact path resolver auto-wires interaction_discovery shard inputs through bsm_hpc_submit.py
-next_slice: (1) implement real Ray runner path (experimental), (2) end-to-end HPC integration test (submit → reduce → validate), (3) GPU scoring path implementation
+slice_status: in_progress (shard/reduce/MPI/submit-inputs/e2e-test complete)
+last_validation: Phase 8c end-to-end integration testing complete; 84 distributed tests pass (includes test_hpc_e2e_integration.py with 8 tests validating manifest generation, checkpoint tracking, reduce merge expectations); artifact path resolution working; shard feature-range assignment enables pair sharding
+next_slice: (1) GPU scoring path implementation (XGBoost device=cuda), (2) production validation on Kestrel (if time/resources), (3) Phase 8b spill/chunked I/O stage integration into sparse_selection and final_artifacts
+
+## Phase 8c — end-to-end integration testing (2026-05-13)
+
+- Added test suite `tests/test_hpc_e2e_integration.py`:
+  - TestE2EHPCManifestGeneration: validates manifest generation with resolved inputs, JSONL round-trip
+  - TestE2ESardWorkerExecution: verifies shard manifest carries all required inputs, feature ranges enable pair sharding
+  - TestE2EReduceMerge: validates per-shard output structure, deduplication by pair_name
+  - TestE2EManifestCheckpointIntegration: CheckpointManager idempotence, shard completion tracking
+- All 8 tests pass; manifest shards inherit feature ranges and resolved artifact paths
+- Validation:
+  - `pixi run pytest tests/test_hpc_e2e_integration.py` (8 tests) ✅
+  - `pixi run pytest tests/test_distributed_phase8{a,bc}_gpu.py tests/test_hpc_shard_reduce.py tests/test_hpc_artifact_input_resolution.py tests/test_hpc_e2e_integration.py` (84 tests) ✅
+- Commit: `69a3296` pushed to origin/main
 
 ## Phase 8c — submit-path input resolution (2026-05-13)
 

@@ -131,17 +131,19 @@ def build_manifest(
     list[ShardManifest]
         One manifest entry per shard, all with status='pending'.
     """
-    shards = []
-    cols_per_shard = (expected_columns // n_shards) if expected_columns > 0 else 0
+    shards: list[ShardManifest] = []
+    effective_n_shards = max(1, int(n_shards))
+    if expected_columns > 0:
+        effective_n_shards = min(effective_n_shards, int(expected_columns))
 
-    for i in range(n_shards):
+    for i in range(effective_n_shards):
         shard_id = f"task-{i:04d}"
-        feat_start = i * cols_per_shard if cols_per_shard > 0 else None
-        feat_end = (
-            ((i + 1) * cols_per_shard if i < n_shards - 1 else expected_columns)
-            if cols_per_shard > 0
-            else None
-        )
+        if expected_columns > 0:
+            feat_start = int(i * expected_columns / effective_n_shards)
+            feat_end = int((i + 1) * expected_columns / effective_n_shards)
+        else:
+            feat_start = None
+            feat_end = None
 
         shards.append(
             ShardManifest(

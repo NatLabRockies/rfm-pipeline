@@ -223,6 +223,23 @@ class TestShardManifest:
         assert summary["failed"] == 1
         assert summary["pending"] == 1
 
+    def test_build_manifest_limits_shards_when_columns_smaller_than_requested(self):
+        shards = build_manifest(
+            stage="interaction_discovery",
+            input_paths=["data/X.parquet"],
+            output_root="/tmp/outputs",
+            n_shards=10,
+            expected_rows=100,
+            expected_columns=3,
+        )
+        assert len(shards) == 3
+        assert shards[0].feature_start_idx == 0
+        assert shards[0].feature_end_idx == 1
+        assert shards[1].feature_start_idx == 1
+        assert shards[1].feature_end_idx == 2
+        assert shards[2].feature_start_idx == 2
+        assert shards[2].feature_end_idx == 3
+
 
 # ---------------------------------------------------------------------------
 # Checkpoint tests

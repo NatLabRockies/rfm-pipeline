@@ -6,10 +6,10 @@ base_branch: main
 autonomy_tier: 3
 profile: autonomous
 current_milestone: Phase 8 — Scalable Execution (HPC + Out-of-Core)
-current_slice: Phase 8b/8c/GPU — COMPLETE (commit 2edb478); Phase 8b out-of-core chunk integration into sparse_selection/final_artifacts next
+current_slice: Phase 8c — Distributed HPC (Dask/MPI) + GPU acceleration
 slice_status: in_progress
-last_validation: Phase 8b/8c/GPU — 61/61 tests pass, ruff clean; original-like all-features run still running (PID 98727, interaction+nonlinear complete, sparse_selection in progress ~108 min elapsed)
-next_slice: (1) Monitor original-like run to completion; (2) Phase 8b: integrate chunked I/O with sparse_selection bootstrap and final_artifacts bootstrap CI stages
+last_validation: Phase 8b/8c/GPU — 61/61 tests pass, ruff clean; original-like all-features run COMPLETE with final nRMSE=0.0581 (3k sample, 1072 final features, 62 holdout rows)
+next_slice: (1) Implement distributed HPC compute (Dask/Ray/MPI) for multi-node parallelism; (2) Add GPU support for interaction_discovery stage
 
 ## Phase 8a — SLURM Array Baseline (2026-05-12)
 
@@ -978,3 +978,70 @@ If further optimization needed:
 - Ramp testing: ✅ Complete (configuration scaling analysis done)
 - Runtime projections: ✅ Generated (3k→30k extrapolation)
 - Repository: ✅ Clean (no uncommitted changes)
+
+______________________________________________________________________
+
+## Phase 9 (FUTURE): Predictive Model + Performance Optimizer under Compute Constraints
+
+**Status**: Planning — research direction set, user prioritizes distributed HPC first
+
+**Objective**: Build a regression model + solver that helps users maximize model performance (minimize NRMSE) given:
+
+- User's compute budget (seconds, or cores × hours)
+- Dataset characteristics (n_samples, n_features, n_outputs)
+- Hardware profile (cores available, memory)
+- Configuration knobs (n_permutations, n_trees, max_retained_terms, interaction_discovery threshold, nonlinear_discovery threshold, sparse_selection EBIC gamma)
+
+**High-level approach**:
+
+1. **Collect multi-dimensional scaling experiments** (Phase 8 post-completion):
+
+   - Vary `n_samples ∈ {3k, 10k, 30k}` on single node
+   - Vary `n_features ∈ {50, 100, 200, 300, 500}` (controlled via max_retained_terms in stages 2-4)
+   - Vary `n_perms ∈ {5, 11, 21, 41, 101}` (empirical null stage)
+   - Vary `n_trees ∈ {25, 50, 100, 200}` (interaction SHAP scoring)
+   - Cross-sweep key pairs (e.g., features × perms)
+   - **Grid size**: ~100–200 unique configurations
+   - **Compute cost**: 48–72 hours on HPC (10-node weak scaling)
+
+1. **Fit performance regression model**:
+
+   - Inputs: (n_samples, n_features, n_perms, n_trees, interaction_pairs_discovered, nonlinear_transforms_discovered, final_support_count)
+   - Output: final_ols_holdout_nrmse (+ bootstrap CI)
+   - Method: Gaussian process regression or random forest (to capture interactions)
+   - **Validation**: held-out test set (20% of experiments)
+
+1. **Fit timing regression model**:
+
+   - Per-stage models: (n_samples, n_features, n_perms, n_trees, n_outputs, n_cores) → stage_time
+   - Aggregate: total_time = Σ stage_time
+   - Account for parallelization efficiency (sublinear scaling beyond ~32 cores)
+   - **Validation**: Kestrel multi-node timing validation
+
+1. **Build optimizer**:
+
+   - Input: (n_cores_available, compute_budget_seconds, n_samples, n_features, n_outputs)
+   - Search: max NRMSE_hat(config) subject to time_hat(config) ≤ budget_seconds
+   - Algorithm: evolutionary search or exhaustive grid (given config space size)
+   - Output: recommended (n_perms, n_trees, max_retained_terms, stage-specific thresholds)
+
+1. **Deploy as user-facing tool**:
+
+   - CLI: `pixi run perf-optimizer -- --cores 104 --budget 3600 --n-samples 30000 --n-features 500`
+   - Web interface (optional): interactive knob tuning with real-time estimate updates
+   - Documentation: "Performance Calculator User Guide"
+
+**Success criteria**:
+
+- [ ] Regression models predict held-out configs to ±15% NRMSE and ±20% runtime
+- [ ] Optimizer recommendations improve user performance by ≥10% vs default config
+- [ ] Tool runs in \<1 sec for typical queries
+- [ ] Documentation covers 10+ example scenarios (laptop, workstation, HPC)
+
+**Priority**: **AFTER Phase 8 (distributed HPC) is complete**. Current focus is on getting multi-node execution working and validating scaling properties.
+
+**Effort estimate**: 60–80 hours (experiments + modeling + deployment)
+
+**Delivered alongside**: Phase 8 final report + HPC scaling benchmark suite (`tools/hpc_scaling_benchmark.py`, `tools/hpc_compute_calculator.py`)
+
+______________________________________________________________________

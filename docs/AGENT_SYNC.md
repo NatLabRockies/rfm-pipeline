@@ -6,10 +6,10 @@ base_branch: main
 autonomy_tier: 3
 profile: autonomous
 current_milestone: Phase 8 — Scalable Execution (HPC + Out-of-Core)
-current_slice: Phase 8a SLURM array baseline — COMPLETE; Phase 8b (out-of-core chunk integration) next
+current_slice: Phase 8b/8c/GPU — COMPLETE (commit 2edb478); Phase 8b out-of-core chunk integration into sparse_selection/final_artifacts next
 slice_status: in_progress
-last_validation: Phase 8a — 29/29 tests pass, ruff clean; full 30k original-like all-features run in progress (shell 83, 17/21 permutations at 18:31 MDT, ~18:50 expected completion)
-next_slice: (1) Wait for full-sample run completion and validate artifacts; (2) Phase 8b: integrate chunked I/O with sparse+final stages; (3) Phase 8c: Dask/MPI adapters
+last_validation: Phase 8b/8c/GPU — 61/61 tests pass, ruff clean; original-like all-features run still running (PID 98727, interaction+nonlinear complete, sparse_selection in progress ~108 min elapsed)
+next_slice: (1) Monitor original-like run to completion; (2) Phase 8b: integrate chunked I/O with sparse_selection bootstrap and final_artifacts bootstrap CI stages
 
 ## Phase 8a — SLURM Array Baseline (2026-05-12)
 

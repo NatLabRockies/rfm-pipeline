@@ -228,11 +228,11 @@ def _build_stub_artifacts(
         "runtime": {"n_jobs": 1, "use_chunked_io": False},
         "stages": {
             "empirical_null_screening": {
-                # n_permutations must satisfy: 1/(n+1) < bh_q_threshold
-                # With 5 perms, min p = 0.167 > 0.10 → nothing retained.
-                # Use 21 perms: min p = 0.045 < 0.10 → terms can be retained.
+                # Stub purpose: seed retained_terms for timing, not filter rigorously.
+                # bh_q_threshold=1.0 retains everything up to max_retained_terms,
+                # guaranteeing >=2 terms regardless of permutation count.
                 "n_permutations": 21,
-                "bh_q_threshold": 0.10,
+                "bh_q_threshold": 1.0,
                 **({"max_retained_terms": max_rt} if max_rt is not None else {}),
             },
             "interaction_discovery": {
@@ -275,7 +275,23 @@ def _build_stub_artifacts(
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if result.returncode != 0:
         raise RuntimeError(f"Stub artifact build failed:\n{result.stderr[-2000:]}")
-    logger.info("[stub] stub artifacts ready")
+
+    # Validate that we have enough retained terms for interaction_discovery
+    retained_csv = stub_dir / "empirical_null_screen" / "retained_terms.csv"
+    if retained_csv.exists():
+        import csv as _csv
+
+        with retained_csv.open() as _f:
+            n_retained = sum(1 for _ in _csv.reader(_f)) - 1  # minus header
+        if n_retained < 2:
+            raise RuntimeError(
+                f"Stub produced only {n_retained} retained term(s); "
+                "interaction_discovery requires at least 2. "
+                "Try lowering --variance-threshold or check your feature catalog."
+            )
+        logger.info("[stub] stub artifacts ready (%d retained terms)", n_retained)
+    else:
+        logger.info("[stub] stub artifacts ready")
     return stub_dir
 
 

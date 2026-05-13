@@ -228,7 +228,10 @@ def _build_stub_artifacts(
         "runtime": {"n_jobs": 1, "use_chunked_io": False},
         "stages": {
             "empirical_null_screening": {
-                "n_permutations": 5,
+                # n_permutations must satisfy: 1/(n+1) < bh_q_threshold
+                # With 5 perms, min p = 0.167 > 0.10 → nothing retained.
+                # Use 21 perms: min p = 0.045 < 0.10 → terms can be retained.
+                "n_permutations": 21,
                 "bh_q_threshold": 0.10,
                 **({"max_retained_terms": max_rt} if max_rt is not None else {}),
             },

@@ -6,10 +6,28 @@ base_branch: main
 autonomy_tier: 3
 profile: autonomous
 current_milestone: Phase 8 — Scalable Execution (HPC + Out-of-Core)
-current_slice: Phase 8c — CPU distributed validation execution + GPU path resumption
-slice_status: in_progress (CPU jobs running on Kestrel; helper scripts added; GPU submit path resumed)
-last_validation: `pixi run ruff check src/bsm_rfm/distributed/slurm_array_runner.py tests/test_hpc_cpu_scaling_suite.py tests/test_distributed_phase8bc_gpu.py` pass; `pixi run pytest -q tests/test_hpc_cpu_scaling_suite.py tests/test_distributed_phase8bc_gpu.py` (44 tests) pass; `./test_repo.sh --check` pass
-next_slice: Continue GPU scoring path while CPU scaling queue runs; keep CPU 2→10→1000 results collection active
+current_slice: Phase 8c — GPU local execution tooling
+slice_status: in_progress (CPU jobs running on Kestrel; GPU local submit/monitor/collector tooling complete)
+last_validation: `pixi run ruff check tools/bsm_hpc_submit.py tests/test_distributed_phase8bc_gpu.py` pass; `pixi run pytest -q tests/test_distributed_phase8bc_gpu.py` (38 tests) pass; `./test_repo.sh --check` pass
+next_slice: Execute GPU interaction_discovery run on Kestrel with new helper scripts while CPU queue is active
+
+## Phase 8c — GPU local tooling completion (2026-05-13)
+
+- Added Kestrel GPU live scripts:
+  - `scripts/kestrel/submit_gpu_h100_live.sh`
+  - `scripts/kestrel/collect_gpu_interaction_results.sh`
+  - `scripts/kestrel/watch_gpu_interaction_queue.sh`
+- Updated GPU config for repo-local artifact path alignment:
+  - `configs/hpc/kestrel_gpu_h100.yml`
+  - `output.artifact_dir: ./artifacts/kestrel_gpu_h100_run`
+- Updated submit behavior in `tools/bsm_hpc_submit.py`:
+  - when GPU scripts exist, `--submit` now submits `gpu_stage` array script by default
+  - CPU array remains fallback when no GPU stage script exists
+- Added/updated tests in `tests/test_distributed_phase8bc_gpu.py`:
+  - GPU config artifact-dir assertion
+  - GPU submit helper script coverage
+  - collector/monitor script presence + command coverage
+  - `bsm_hpc_submit` GPU-stage selection and CPU fallback selection
 
 ## Phase 8c — live ops helpers + GPU submit-path kickoff (2026-05-13)
 

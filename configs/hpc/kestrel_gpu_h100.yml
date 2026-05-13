@@ -8,7 +8,7 @@
 #      /projects/bsm/<repo>/artifacts/test_dataset_3k/   (or full dataset path)
 #   3. Submit GPU job from login node:
 #      pixi run bsm-hpc-submit --config configs/hpc/kestrel_gpu_h100.yml \
-#          --stage interaction_discovery --backend slurm_array_gpu --submit
+#          --stage interaction_discovery --submit
 #
 # GPU resource guide:
 #   gpu-h100s partition: H100 80GB SXM5 GPUs, 4 per node
@@ -70,7 +70,7 @@ validation:
   fast_mode_overrides: {}
 
 output:
-  artifact_dir: "/projects/bsm/bsm-public-rf/artifacts/kestrel_gpu_h100_run"
+  artifact_dir: "./artifacts/kestrel_gpu_h100_run"
   seed: 0
   verbose: true
 

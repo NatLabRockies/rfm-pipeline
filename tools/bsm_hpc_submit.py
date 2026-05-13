@@ -194,7 +194,7 @@ def main() -> None:
 
     if args.submit:
         # Submit array job, then reduce with dependency
-        array_job_id = _submit(runner, scripts["stage"], args.dry_run)
+        array_job_id = _submit(runner, _select_array_script(scripts), args.dry_run)
         if array_job_id and not args.dry_run:
             # Regenerate reduce script with actual dependency
             reduce_content = runner.generate_reduce_script(
@@ -218,6 +218,19 @@ def _submit(runner, script_path: Path, dry_run: bool) -> int | None:
     except Exception as e:
         logger.error("[hpc-submit] submission failed: %s", e)
         return None
+
+
+def _select_array_script(scripts: dict[str, Path]) -> Path:
+    """Choose the preferred array script path from generated scripts.
+
+    Prefer GPU array submissions when GPU scripts are present, otherwise
+    use the CPU stage array script.
+    """
+    if "gpu_stage" in scripts:
+        return scripts["gpu_stage"]
+    if "stage" in scripts:
+        return scripts["stage"]
+    raise KeyError("No stage or gpu_stage script found for submission")
 
 
 def _make_executable(path: Path) -> None:
@@ -247,7 +260,10 @@ def _print_summary(scripts: dict, stage: str, run_id: str, submitted: bool, dry_
     else:
         print("Jobs submitted. Monitor with:")
         print("  squeue -u $USER")
-        log_parent = scripts.get("stage", scripts.get("diagnostic", "")).parent
+        log_parent = scripts.get(
+            "gpu_stage",
+            scripts.get("stage", scripts.get("diagnostic", "")),
+        ).parent
         print(f"  tail -f {log_parent}/bsm_{stage}_*.out")
     print()
 

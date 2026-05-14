@@ -21,6 +21,7 @@ hpc_workflow:
     stage: interaction_discovery
     local_cores: 4
     run_diagnostic: true
+    prepare_interaction_inputs: true
     cpu_tiers:
       - nodes: 2
         config_path: configs/hpc/kestrel_cpu_scale_2_smoke.yml

@@ -4,6 +4,45 @@ This guide explains how to run the BSM manuscript pipeline on HPC clusters (NREL
 
 ## Quick Start
 
+### 0. Unified local orchestration entrypoint (recommended)
+
+Use one local command to submit, check status, and collect artifacts without manually juggling HPC scripts:
+
+```bash
+# Submit CPU/GPU tiers defined in orchestration config
+pixi run hpc-workflow -- \
+    --config configs/hpc/kestrel_workflow_orchestration.yml \
+    --action submit
+
+# Check status snapshot
+pixi run hpc-workflow -- \
+    --config configs/hpc/kestrel_workflow_orchestration.yml \
+    --action status
+
+# Pull artifact bundle back locally
+pixi run hpc-workflow -- \
+    --config configs/hpc/kestrel_workflow_orchestration.yml \
+    --action collect
+```
+
+The orchestration config centralizes user/host/account, remote repo path, scratch/projects roots, artifact roots, local core count, CPU tier node counts, and optional GPU submission.
+
+`pullback.mode` controls local bundle size:
+
+- `manifest_only`: run manifest + status summary only
+- `reporting_bundle` (default): manifest + merged outputs + latest logs
+- `full`: full shard outputs and logs
+
+### 0a. One-command small distributed smoke test
+
+```bash
+bash scripts/kestrel/run_small_distributed_test_local.sh
+```
+
+This uses `configs/hpc/kestrel_workflow_small_distributed.yml` (2-node tier only, GPU disabled, manifest-only pullback).
+That orchestration config now targets `configs/hpc/kestrel_cpu_scale_2_smoke.yml`, which is tuned for lightweight end-to-end validation with a 30-minute SLURM walltime budget.
+It also enables `execution.prepare_interaction_inputs: true` to materialize `output_conditioning` + `empirical_null_screen` artifacts before submitting distributed `interaction_discovery`.
+
 ### 1. Validate your environment (debug partition smoke test)
 
 ```bash
@@ -239,6 +278,16 @@ pixi run bsm-hpc-reduce \
     --output-root artifacts/kestrel_30k_run/hpc_shards \
     --stage interaction_discovery
 ```
+
+### Migration notes: legacy scripts → unified runner
+
+| Legacy operation                               | Unified command                                                                                     |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `scripts/kestrel/submit_cpu_scaling_suite.sh`  | `pixi run hpc-workflow -- --config configs/hpc/kestrel_workflow_orchestration.yml --action submit`  |
+| `scripts/kestrel/status_all_tests.sh`          | `pixi run hpc-workflow -- --config configs/hpc/kestrel_workflow_orchestration.yml --action status`  |
+| `scripts/kestrel/pull_hpc_artifacts_bundle.sh` | `pixi run hpc-workflow -- --config configs/hpc/kestrel_workflow_orchestration.yml --action collect` |
+
+Legacy scripts remain available for low-level operations and debugging, but the orchestration runner is the default user-facing path.
 
 ______________________________________________________________________
 

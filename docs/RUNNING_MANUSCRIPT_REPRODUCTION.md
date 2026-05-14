@@ -32,6 +32,34 @@ pixi run runtime-investigation \
 
 For full details, see `docs/RUNTIME_INVESTIGATION_WORKFLOW.md`.
 
+### Unified HPC Workflow Driver (single local command)
+
+For HPC submissions and artifact collection without manual SSH/scp choreography:
+
+```bash
+pixi run hpc-workflow -- \
+  --config configs/hpc/kestrel_workflow_orchestration.yml \
+  --action submit
+```
+
+Then use:
+
+```bash
+pixi run hpc-workflow -- --config configs/hpc/kestrel_workflow_orchestration.yml --action status
+pixi run hpc-workflow -- --config configs/hpc/kestrel_workflow_orchestration.yml --action collect
+```
+
+Set `pullback.mode` in the orchestration config to `manifest_only`, `reporting_bundle`, or `full` depending on local storage constraints.
+
+Quick smoke path (2-node distributed test):
+
+```bash
+bash scripts/kestrel/run_small_distributed_test_local.sh
+```
+
+The smoke workflow uses `configs/hpc/kestrel_cpu_scale_2_smoke.yml` (lightweight params, 30-minute walltime target) to validate command plumbing quickly.
+For `interaction_discovery`, the small workflow also pre-materializes prerequisite `output_conditioning` and `empirical_null_screen` artifacts before SLURM submission.
+
 ### Run with Custom Output Directory
 
 ```bash

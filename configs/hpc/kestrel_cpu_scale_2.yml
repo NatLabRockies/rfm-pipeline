@@ -60,8 +60,8 @@ distributed:
 
   slurm:
     account: bsm
-    partition: debug
-    walltime: "01:00:00"
+    partition: shared
+    walltime: "02:00:00"
     memory_gb: 240
     cpus_per_task: 104
     max_concurrent_array_tasks: 2

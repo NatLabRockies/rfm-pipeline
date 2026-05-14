@@ -1,0 +1,37 @@
+# Unified HPC workflow orchestration config.
+# Use with:
+#   pixi run hpc-workflow -- --config configs/hpc/kestrel_workflow_orchestration.yml --action submit
+
+hpc_workflow:
+  cluster:
+    host: kl1.hpc.nrel.gov
+    user: "${USER}"
+    account: bsm
+
+  paths:
+    remote_repo_root: /home/dhetting/src/bsm-public-rf
+    remote_artifacts_root: /scratch/${USER}/bsm/bsm-public-rf/artifacts
+    remote_logs_root: /scratch/${USER}/bsm
+    remote_snapshot_root: /scratch/${USER}/bsm/kestrel_hpc_snapshots
+    local_bundle_dir: ./artifacts/kestrel_collected_bundles
+
+  execution:
+    stage: interaction_discovery
+    local_cores: 8
+    run_diagnostic: true
+    cpu_tiers:
+      - nodes: 2
+        config_path: configs/hpc/kestrel_cpu_scale_2.yml
+      - nodes: 10
+        config_path: configs/hpc/kestrel_cpu_scale_10.yml
+      - nodes: 1000
+        config_path: configs/hpc/kestrel_cpu_scale_1000.yml
+
+  gpu:
+    enabled: true
+    config_path: configs/hpc/kestrel_gpu_h100.yml
+    n_shards: 10
+
+  pullback:
+    mode: reporting_bundle  # manifest_only | reporting_bundle | full
+    keep_remote_snapshot: false

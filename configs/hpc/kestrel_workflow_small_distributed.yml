@@ -1,0 +1,35 @@
+# Small distributed orchestration config for quick end-to-end local->HPC smoke runs.
+#
+# Uses only the 2-node CPU tier and no GPU submission.
+# Intended entrypoint:
+#   bash scripts/kestrel/run_small_distributed_test_local.sh
+
+hpc_workflow:
+  cluster:
+    host: kl1.hpc.nrel.gov
+    user: "${USER}"
+    account: bsm
+
+  paths:
+    remote_repo_root: /home/dhetting/src/bsm-public-rf
+    remote_artifacts_root: /scratch/${USER}/bsm/bsm-public-rf/artifacts
+    remote_logs_root: /scratch/${USER}/bsm
+    remote_snapshot_root: /scratch/${USER}/bsm/kestrel_hpc_snapshots
+    local_bundle_dir: ./artifacts/kestrel_collected_bundles
+
+  execution:
+    stage: interaction_discovery
+    local_cores: 4
+    run_diagnostic: true
+    cpu_tiers:
+      - nodes: 2
+        config_path: configs/hpc/kestrel_cpu_scale_2_smoke.yml
+
+  gpu:
+    enabled: false
+    config_path: configs/hpc/kestrel_gpu_h100.yml
+    n_shards: 10
+
+  pullback:
+    mode: manifest_only  # fastest local pullback for smoke runs
+    keep_remote_snapshot: false

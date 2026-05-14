@@ -180,6 +180,39 @@ def _sync_required_datasets(
         _run_command(scp_cmd, dry_run=dry_run)
 
 
+def _sync_all_artifacts(
+    *,
+    ssh_dest: str,
+    remote_repo_root: str,
+    dry_run: bool,
+) -> None:
+    """Sync entire local artifacts directory to remote repo."""
+    local_artifacts = REPO_ROOT / "artifacts"
+    if not local_artifacts.exists():
+        print(f"[warning] Local artifacts dir does not exist: {local_artifacts}")
+        return
+
+    remote_artifacts = f"{remote_repo_root.rstrip('/')}/artifacts"
+
+    # Create remote artifacts dir
+    mkdir_cmd = [
+        "ssh",
+        "-T",
+        ssh_dest,
+        f"bash -lc {shlex.quote(f'mkdir -p {shlex.quote(remote_artifacts)}')}",
+    ]
+    _run_command(mkdir_cmd, dry_run=dry_run)
+
+    # Sync the entire artifacts tree
+    scp_cmd = [
+        "scp",
+        "-r",
+        str(local_artifacts) + "/",
+        f"{ssh_dest}:{remote_artifacts}/",
+    ]
+    _run_command(scp_cmd, dry_run=dry_run)
+
+
 def main() -> int:
     args = parse_args()
     config = load_hpc_workflow_config(args.config)
@@ -205,6 +238,12 @@ def main() -> int:
                 ssh_dest=ssh_dest,
                 remote_repo_root=config.paths.remote_repo_root,
                 cpu_tier_configs=cpu_tier_configs,
+                dry_run=args.dry_run,
+            )
+            # Also sync all local artifacts to remote for interaction_discovery to find
+            _sync_all_artifacts(
+                ssh_dest=ssh_dest,
+                remote_repo_root=config.paths.remote_repo_root,
                 dry_run=args.dry_run,
             )
         submit_cmds = build_remote_submit_commands(

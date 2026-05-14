@@ -4,14 +4,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
+# shellcheck source=common_paths.sh
+source "${REPO_ROOT}/scripts/kestrel/common_paths.sh"
+DEFAULT_ARTIFACTS_ROOT="$(kestrel_default_artifacts_root "${REPO_ROOT}")"
+
 INTERVAL_SECONDS=30
 TAIL_LINES=8
 RUN_ONCE=0
+ARTIFACTS_ROOT="${ARTIFACTS_ROOT:-${DEFAULT_ARTIFACTS_ROOT}}"
+LOGS_ROOT="${LOGS_ROOT:-$(kestrel_default_logs_root)}"
 
 usage() {
   cat <<'USAGE'
 Usage:
-  bash scripts/kestrel/watch_cpu_scaling_queue.sh [--interval SECONDS] [--tail-lines N] [--once]
+  bash scripts/kestrel/watch_cpu_scaling_queue.sh [--interval SECONDS] [--tail-lines N] [--artifacts-root DIR] [--logs-root DIR] [--once]
 
 Monitors CPU scaling jobs (2/10/1000) by:
   1) printing squeue/sacct entries for kestrel_cpu_scale_* jobs
@@ -28,6 +34,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --tail-lines)
       TAIL_LINES="${2:-}"
+      shift 2
+      ;;
+    --artifacts-root)
+      ARTIFACTS_ROOT="${2:-}"
+      shift 2
+      ;;
+    --logs-root)
+      LOGS_ROOT="${2:-}"
       shift 2
       ;;
     --once)
@@ -76,7 +90,7 @@ print_queue_snapshot() {
 
 tail_latest_logs_for_tier() {
   local tier="$1"
-  local log_dir="/scratch/${USER}/bsm/bsm_kestrel_cpu_scale_${tier}/logs"
+  local log_dir="${LOGS_ROOT}/bsm_kestrel_cpu_scale_${tier}/logs"
   local array_log
   local reduce_log
   array_log="$(ls -1t "${log_dir}"/bsm_interaction_discovery_*.out 2>/dev/null | head -n 1 || true)"
@@ -105,8 +119,8 @@ while true; do
   for tier in 2 10 1000; do
     tail_latest_logs_for_tier "${tier}"
   done
-  bash "${REPO_ROOT}/scripts/kestrel/collect_cpu_scaling_results.sh" >/dev/null
-  cat "${REPO_ROOT}/artifacts/kestrel_cpu_scaling_suite/cpu_scaling_results_summary.csv"
+  bash "${REPO_ROOT}/scripts/kestrel/collect_cpu_scaling_results.sh" --artifacts-root "${ARTIFACTS_ROOT}" >/dev/null
+  cat "${ARTIFACTS_ROOT}/kestrel_cpu_scaling_suite/cpu_scaling_results_summary.csv"
   echo
 
   if [[ "${RUN_ONCE}" -eq 1 ]]; then

@@ -149,9 +149,17 @@ Run `SELECT * FROM todos` to see current task breakdown.
 
 ### Phase 8 (PENDING): Scalable Execution — Local Out-of-Core + Optional Distributed HPC
 
-**Status**: In progress — 8a/8b complete; 8c in active implementation (Dask integration + shard/reduce merge complete, MPI/Ray pending)
+**Status**: In progress — 8a/8b complete; 8c largely complete; 8d/8e orchestration + pullback + figure integration slices implemented; live Kestrel execution checkpoint pending
 
 **Scope**: Out-of-core/chunked processing (primary, local-first) + optional distributed HPC (secondary)
+
+**User-priority clarification (2026-05-14)**:
+
+- HPC mechanics must be behind-the-scenes for end users.
+- Users should drive local cores, HPC node counts, account/user/host, and storage/repo roots via config.
+- One local script/notebook entrypoint should handle submit + progress checks + artifact collection.
+- Runtime-heavy artifacts should remain on HPC storage roots (`/scratch`, `/projects`) with minimal local pullback artifacts.
+- Legacy HPC figure-generation logic must be integrated so each study run emits publication-ready figures from the canonical workflow.
 
 **Objective**: Enable manuscript workflow execution on any dataset size, from laptop to HPC cluster
 
@@ -205,6 +213,17 @@ Run `SELECT * FROM todos` to see current task breakdown.
 - ✅ CPU scaling scaffold added for Kestrel validation (2→10→1000 node configs + suite script + local tests)
 - ⏳ remaining (reprioritized 2026-05-13): CPU distributed validation on Kestrel
   (repo-stability gate + 2→10→1000 CPU-node stress suite), then GPU scoring path
+
+**8d/8e progress checkpoint (2026-05-14)**:
+
+- ✅ Unified orchestration control plane (`tools/run_hpc_workflow.py`) with config-driven submit/status/collect.
+- ✅ Pullback policy modes implemented: `manifest_only`, `reporting_bundle`, `full`.
+- ✅ Remote HPC run manifest generation and local zip analysis via `tools/hpc_bundle_manifest.py`.
+- ✅ Shared path helper consolidation across Kestrel status/collect/watch scripts (`scripts/kestrel/common_paths.sh`).
+- ✅ Canonical final-stage figure registry expanded with legacy-style publication outputs:
+  - selected-by-module count/share figures
+  - bootstrap nRMSE summary figure
+- ⏳ next validation gate: execute unified runner on Kestrel live queue and verify reporting-bundle pullback contract end-to-end.
 
 ______________________________________________________________________
 

@@ -4,13 +4,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-RUN_DIR="${REPO_ROOT}/artifacts/kestrel_gpu_h100_run"
+# shellcheck source=common_paths.sh
+source "${REPO_ROOT}/scripts/kestrel/common_paths.sh"
+DEFAULT_ARTIFACTS_ROOT="$(kestrel_default_artifacts_root "${REPO_ROOT}")"
+ARTIFACTS_ROOT="${ARTIFACTS_ROOT:-${DEFAULT_ARTIFACTS_ROOT}}"
+LOGS_ROOT="${LOGS_ROOT:-$(kestrel_default_logs_root)}"
+RUN_DIR="${ARTIFACTS_ROOT}/kestrel_gpu_h100_run"
 OUT_FILE="${RUN_DIR}/gpu_interaction_results_summary.csv"
+RUN_DIR_SET=0
+OUT_FILE_SET=0
 
 usage() {
   cat <<'USAGE'
 Usage:
-  bash scripts/kestrel/collect_gpu_interaction_results.sh [--run-dir DIR] [--out FILE]
+  bash scripts/kestrel/collect_gpu_interaction_results.sh [--artifacts-root DIR] [--run-dir DIR] [--out FILE]
 
 Collects GPU interaction-discovery status from:
   - manifest + generated scripts under <run-dir>/hpc_scripts
@@ -22,12 +29,18 @@ USAGE
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --artifacts-root)
+      ARTIFACTS_ROOT="${2:-}"
+      shift 2
+      ;;
     --run-dir)
       RUN_DIR="${2:-}"
+      RUN_DIR_SET=1
       shift 2
       ;;
     --out)
       OUT_FILE="${2:-}"
+      OUT_FILE_SET=1
       shift 2
       ;;
     -h|--help)
@@ -41,6 +54,13 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "${RUN_DIR_SET}" -eq 0 ]]; then
+  RUN_DIR="${ARTIFACTS_ROOT}/kestrel_gpu_h100_run"
+fi
+if [[ "${OUT_FILE_SET}" -eq 0 ]]; then
+  OUT_FILE="${RUN_DIR}/gpu_interaction_results_summary.csv"
+fi
 
 SCRIPTS_DIR="${RUN_DIR}/hpc_scripts"
 SHARDS_DIR="${RUN_DIR}/hpc_shards"
@@ -81,10 +101,18 @@ manifest_shards=0
 shard_results=0
 completed_shards=0
 failed_shards=0
+retained_shards=0
 if [[ -d "${SHARDS_DIR}" ]]; then
   shard_results="$(find "${SHARDS_DIR}" -mindepth 2 -maxdepth 2 -type f -name shard_result.json | wc -l | tr -d ' ')"
   completed_shards="$(grep -R --include='shard_result.json' -h '"status": "completed"' "${SHARDS_DIR}" 2>/dev/null | wc -l | tr -d ' ')"
   failed_shards="$(grep -R --include='shard_result.json' -h '"status": "failed"' "${SHARDS_DIR}" 2>/dev/null | wc -l | tr -d ' ')"
+  retained_shards="$(find "${SHARDS_DIR}" -mindepth 2 -maxdepth 2 -type f -name retained_interaction_pairs.csv | wc -l | tr -d ' ')"
+fi
+if [[ "${retained_shards}" -gt "${completed_shards}" ]]; then
+  completed_shards="${retained_shards}"
+fi
+if [[ "${retained_shards}" -gt "${shard_results}" ]]; then
+  shard_results="${retained_shards}"
 fi
 
 merged_retained_pairs=0
@@ -97,7 +125,7 @@ merged_pair_scores=0
 log_dir=""
 if ! log_dir="$(resolve_log_dir "${STAGE_SCRIPT_GPU}")"; then
   if ! log_dir="$(resolve_log_dir "${STAGE_SCRIPT_CPU}")"; then
-    log_dir="/scratch/${USER}/bsm/bsm_kestrel_gpu_h100/logs"
+    log_dir="${LOGS_ROOT}/bsm_kestrel_gpu_h100/logs"
   fi
 fi
 

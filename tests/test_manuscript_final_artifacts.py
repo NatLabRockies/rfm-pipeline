@@ -198,6 +198,9 @@ def test_run_final_manuscript_artifacts_stage_executes_demo_context() -> None:
     assert final_artifacts.figure_specs["figure_name"].tolist() == [
         "figure_model_performance",
         "figure_support_composition",
+        "figure_selected_by_module_count",
+        "figure_selected_by_module_share",
+        "figure_nrmse_bootstrap_summary",
     ]
     assert result.artifact_paths["prefilter_support_features"].exists()
     assert result.artifact_paths["hc3_wald_intervals"].exists()
@@ -206,6 +209,9 @@ def test_run_final_manuscript_artifacts_stage_executes_demo_context() -> None:
     assert result.artifact_paths["workflow_stage_summary"].exists()
     assert result.artifact_paths["figure_model_performance_svg"].suffix == ".svg"
     assert result.artifact_paths["figure_model_performance_svg"].exists()
+    assert result.artifact_paths["figure_selected_by_module_count_svg"].exists()
+    assert result.artifact_paths["figure_selected_by_module_share_svg"].exists()
+    assert result.artifact_paths["figure_nrmse_bootstrap_summary_svg"].exists()
     assert result.artifact_paths["ablation_table"].exists()
     assert result.artifact_paths["per_output_nrmse"].exists()
     assert result.artifact_paths["per_output_nrmse_summary"].exists()

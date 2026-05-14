@@ -75,6 +75,8 @@ runtime-investigation = "python tools/run_runtime_investigation.py"
 bsm-hpc-submit = "python tools/bsm_hpc_submit.py"
 bsm-hpc-shard-worker = "python tools/hpc_shard_worker.py"
 bsm-hpc-reduce = "python tools/hpc_reduce.py"
+hpc-workflow = "python tools/run_hpc_workflow.py"
+hpc-small-test = "bash scripts/kestrel/run_small_distributed_test_local.sh"
 
 # HPC scaling benchmark + compute calculator
 hpc-scaling-benchmark = "python tools/hpc_scaling_benchmark.py"

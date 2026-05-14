@@ -31,6 +31,7 @@ from sklearn.linear_model import Lasso, MultiTaskElasticNetCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.extmath import randomized_svd
 
+from .features import canonical_module_from_factor_name
 from .final_ols import (
     fit_final_ols,
     make_coefficient_matrix_frame,
@@ -692,6 +693,10 @@ class FinalManuscriptArtifactsResult:
         Source data for the model-performance figure.
     figure_support_composition_data
         Source data for the final-support composition figure.
+    figure_selected_by_module_data
+        Source data for module-level selected-feature count/share figures.
+    figure_nrmse_summary_data
+        Source data for bootstrap nRMSE summary figure.
     figure_specs
         Registry of generated figure assets.
     svg_figures
@@ -713,6 +718,8 @@ class FinalManuscriptArtifactsResult:
     y_standardization: pd.DataFrame
     figure_model_performance_data: pd.DataFrame
     figure_support_composition_data: pd.DataFrame
+    figure_selected_by_module_data: pd.DataFrame
+    figure_nrmse_summary_data: pd.DataFrame
     figure_specs: pd.DataFrame
     svg_figures: dict[str, str]
     ablation_table: pd.DataFrame
@@ -3191,6 +3198,8 @@ def regenerate_final_manuscript_artifacts(
     )
     figure_model_performance_data = _build_model_performance_figure_data(model_performance)
     figure_support_composition_data = _build_support_composition_figure_data(final_support_features)
+    figure_selected_by_module_data = _build_selected_by_module_figure_data(final_support_features)
+    figure_nrmse_summary_data = _build_nrmse_summary_figure_data(ablation_table)
     svg_figures = {
         "figure_model_performance": _render_horizontal_bar_svg(
             figure_model_performance_data,
@@ -3204,10 +3213,25 @@ def regenerate_final_manuscript_artifacts(
             value_column="n_features",
             title="Final support composition",
         ),
+        "figure_selected_by_module_count": _render_horizontal_bar_svg(
+            figure_selected_by_module_data,
+            label_column="module",
+            value_column="n_selected_inputs",
+            title="Selected inputs by module (count)",
+        ),
+        "figure_selected_by_module_share": _render_horizontal_bar_svg(
+            figure_selected_by_module_data,
+            label_column="module",
+            value_column="share_selected_support",
+            title="Selected inputs by module (share)",
+        ),
+        "figure_nrmse_bootstrap_summary": _render_nrmse_summary_svg(figure_nrmse_summary_data),
     }
     figure_specs = _build_figure_specs(
         figure_model_performance_data=figure_model_performance_data,
         figure_support_composition_data=figure_support_composition_data,
+        figure_selected_by_module_data=figure_selected_by_module_data,
+        figure_nrmse_summary_data=figure_nrmse_summary_data,
         svg_figures=svg_figures,
     )
     summary = _build_final_artifact_summary(
@@ -3237,6 +3261,8 @@ def regenerate_final_manuscript_artifacts(
         y_standardization=y_standardization,
         figure_model_performance_data=figure_model_performance_data,
         figure_support_composition_data=figure_support_composition_data,
+        figure_selected_by_module_data=figure_selected_by_module_data,
+        figure_nrmse_summary_data=figure_nrmse_summary_data,
         figure_specs=figure_specs,
         svg_figures=svg_figures,
         ablation_table=ablation_table,
@@ -3326,6 +3352,14 @@ def write_final_manuscript_artifacts(
         "figure_support_composition_data": (
             figure_root / "figure_support_composition_data.csv",
             result.figure_support_composition_data,
+        ),
+        "figure_selected_by_module_data": (
+            figure_root / "figure_selected_by_module_data.csv",
+            result.figure_selected_by_module_data,
+        ),
+        "figure_nrmse_summary_data": (
+            figure_root / "figure_nrmse_summary_data.csv",
+            result.figure_nrmse_summary_data,
         ),
         "figure_specs": (figure_root / "figure_specs.csv", result.figure_specs),
         "final_artifact_summary": (
@@ -6341,10 +6375,44 @@ def _build_support_composition_figure_data(
     return counts.sort_values(["n_features", "feature_type"], ascending=[False, True])
 
 
+def _build_selected_by_module_figure_data(
+    final_support_features: pd.DataFrame,
+) -> pd.DataFrame:
+    """Summarize selected support features by coarse module prefix."""
+    if "feature_name" in final_support_features.columns:
+        names = final_support_features["feature_name"].astype(str)
+    else:
+        names = pd.Series(["unknown"] * len(final_support_features), dtype=str)
+    modules = names.map(canonical_module_from_factor_name)
+    counts = modules.value_counts().rename_axis("module").reset_index(name="n_selected_inputs")
+    total = int(counts["n_selected_inputs"].sum())
+    if total <= 0:
+        counts["share_selected_support"] = 0.0
+    else:
+        counts["share_selected_support"] = counts["n_selected_inputs"] / float(total)
+    return counts.sort_values(["n_selected_inputs", "module"], ascending=[False, True]).reset_index(
+        drop=True
+    )
+
+
+def _build_nrmse_summary_figure_data(ablation_table: pd.DataFrame) -> pd.DataFrame:
+    """Build manuscript-style nRMSE summary rows with confidence intervals."""
+    figure_data = ablation_table.loc[:, ["model_name", "nrmse", "ci_lower", "ci_upper"]].copy()
+    figure_data["nrmse"] = pd.to_numeric(figure_data["nrmse"], errors="coerce")
+    figure_data["ci_lower"] = pd.to_numeric(figure_data["ci_lower"], errors="coerce")
+    figure_data["ci_upper"] = pd.to_numeric(figure_data["ci_upper"], errors="coerce")
+    figure_data["ci_lower"] = figure_data["ci_lower"].fillna(figure_data["nrmse"])
+    figure_data["ci_upper"] = figure_data["ci_upper"].fillna(figure_data["nrmse"])
+    figure_data = figure_data.loc[np.isfinite(figure_data["nrmse"])]
+    return figure_data.sort_values(["nrmse", "model_name"], ignore_index=True)
+
+
 def _build_figure_specs(
     *,
     figure_model_performance_data: pd.DataFrame,
     figure_support_composition_data: pd.DataFrame,
+    figure_selected_by_module_data: pd.DataFrame,
+    figure_nrmse_summary_data: pd.DataFrame,
     svg_figures: dict[str, str],
 ) -> pd.DataFrame:
     """Build the generated figure registry table."""
@@ -6365,6 +6433,32 @@ def _build_figure_specs(
                 "n_source_rows": int(len(figure_support_composition_data)),
                 "description": "Final stable support count by feature type.",
                 "svg_bytes": len(svg_figures["figure_support_composition"].encode("utf-8")),
+            },
+            {
+                "figure_name": "figure_selected_by_module_count",
+                "source_data": "figure_selected_by_module_data.csv",
+                "asset": "figure_selected_by_module_count.svg",
+                "n_source_rows": int(len(figure_selected_by_module_data)),
+                "description": "Final support count by module.",
+                "svg_bytes": len(svg_figures["figure_selected_by_module_count"].encode("utf-8")),
+            },
+            {
+                "figure_name": "figure_selected_by_module_share",
+                "source_data": "figure_selected_by_module_data.csv",
+                "asset": "figure_selected_by_module_share.svg",
+                "n_source_rows": int(len(figure_selected_by_module_data)),
+                "description": "Final support share by module.",
+                "svg_bytes": len(svg_figures["figure_selected_by_module_share"].encode("utf-8")),
+            },
+            {
+                "figure_name": "figure_nrmse_bootstrap_summary",
+                "source_data": "figure_nrmse_summary_data.csv",
+                "asset": "figure_nrmse_bootstrap_summary.svg",
+                "n_source_rows": int(len(figure_nrmse_summary_data)),
+                "description": (
+                    "Model macro nRMSE point estimates with bootstrap confidence intervals."
+                ),
+                "svg_bytes": len(svg_figures["figure_nrmse_bootstrap_summary"].encode("utf-8")),
             },
         ]
     )
@@ -6413,6 +6507,74 @@ def _build_final_artifact_summary(
             }
         ]
     )
+
+
+def _render_nrmse_summary_svg(data: pd.DataFrame) -> str:
+    """Render a dependency-free SVG with point estimates and CI whiskers."""
+    from html import escape
+
+    rows = data.loc[:, ["model_name", "nrmse", "ci_lower", "ci_upper"]].copy()
+    rows["nrmse"] = pd.to_numeric(rows["nrmse"], errors="coerce")
+    rows["ci_lower"] = pd.to_numeric(rows["ci_lower"], errors="coerce")
+    rows["ci_upper"] = pd.to_numeric(rows["ci_upper"], errors="coerce")
+    rows = rows.loc[np.isfinite(rows["nrmse"])]
+    if rows.empty:
+        rows = pd.DataFrame(
+            {"model_name": ["no finite data"], "nrmse": [0.0], "ci_lower": [0.0], "ci_upper": [0.0]}
+        )
+    rows["ci_lower"] = rows["ci_lower"].fillna(rows["nrmse"])
+    rows["ci_upper"] = rows["ci_upper"].fillna(rows["nrmse"])
+
+    min_x = float(min(rows["ci_lower"].min(), rows["nrmse"].min()))
+    max_x = float(max(rows["ci_upper"].max(), rows["nrmse"].max()))
+    if not math.isfinite(min_x):
+        min_x = 0.0
+    if not math.isfinite(max_x):
+        max_x = 1.0
+    if max_x <= min_x:
+        max_x = min_x + 1.0
+
+    width = 860
+    row_height = 34
+    top_margin = 58
+    left_margin = 320
+    right_margin = 110
+    axis_width = width - left_margin - right_margin
+    height = top_margin + row_height * len(rows) + 40
+
+    def scale(value: float) -> float:
+        return left_margin + axis_width * (value - min_x) / (max_x - min_x)
+
+    elements = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="white"/>',
+        '<text x="24" y="32" font-family="sans-serif" font-size="20">'
+        "Macro nRMSE with bootstrap confidence intervals</text>",
+        f'<line x1="{left_margin}" y1="{top_margin - 14}" x2="{left_margin + axis_width}" '
+        f'y2="{top_margin - 14}" stroke="#9ca3af" stroke-width="1"/>',
+    ]
+    for row_index, (_, row) in enumerate(rows.iterrows()):
+        y = top_margin + row_index * row_height
+        label = escape(str(row["model_name"]))
+        lower = float(row["ci_lower"])
+        upper = float(row["ci_upper"])
+        point = float(row["nrmse"])
+        x_lower = scale(lower)
+        x_upper = scale(upper)
+        x_point = scale(point)
+        elements.extend(
+            [
+                f'<text x="24" y="{y + 18}" font-family="sans-serif" font-size="13">{label}</text>',
+                f'<line x1="{x_lower:.2f}" y1="{y + 12}" x2="{x_upper:.2f}" y2="{y + 12}" '
+                'stroke="#4b5563" stroke-width="2"/>',
+                f'<circle cx="{x_point:.2f}" cy="{y + 12}" r="4.2" fill="#111827"/>',
+                f'<text x="{x_upper + 8:.2f}" y="{y + 16}" font-family="sans-serif" font-size="12">'
+                f"{point:.4g}</text>",
+            ]
+        )
+    elements.append("</svg>")
+    return "".join(elements)
 
 
 def _render_horizontal_bar_svg(

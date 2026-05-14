@@ -4,14 +4,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
+# shellcheck source=common_paths.sh
+source "${REPO_ROOT}/scripts/kestrel/common_paths.sh"
+DEFAULT_ARTIFACTS_ROOT="$(kestrel_default_artifacts_root "${REPO_ROOT}")"
+
 INTERVAL_SECONDS=30
 TAIL_LINES=10
 RUN_ONCE=0
+ARTIFACTS_ROOT="${ARTIFACTS_ROOT:-${DEFAULT_ARTIFACTS_ROOT}}"
+LOGS_ROOT="${LOGS_ROOT:-$(kestrel_default_logs_root)}"
 
 usage() {
   cat <<'USAGE'
 Usage:
-  bash scripts/kestrel/watch_gpu_interaction_queue.sh [--interval SECONDS] [--tail-lines N] [--once]
+  bash scripts/kestrel/watch_gpu_interaction_queue.sh [--interval SECONDS] [--tail-lines N] [--artifacts-root DIR] [--logs-root DIR] [--once]
 
 Monitors GPU interaction-discovery jobs by:
   1) printing squeue/sacct entries for kestrel_gpu_h100 jobs
@@ -28,6 +34,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --tail-lines)
       TAIL_LINES="${2:-}"
+      shift 2
+      ;;
+    --artifacts-root)
+      ARTIFACTS_ROOT="${2:-}"
+      shift 2
+      ;;
+    --logs-root)
+      LOGS_ROOT="${2:-}"
       shift 2
       ;;
     --once)
@@ -75,7 +89,7 @@ print_queue_snapshot() {
 }
 
 tail_gpu_logs() {
-  local log_dir="/scratch/${USER}/bsm/bsm_kestrel_gpu_h100/logs"
+  local log_dir="${LOGS_ROOT}/bsm_kestrel_gpu_h100/logs"
   local gpu_array_log
   local cpu_array_log
   local reduce_log
@@ -108,8 +122,8 @@ while true; do
   date -u +"%Y-%m-%dT%H:%M:%SZ"
   print_queue_snapshot
   tail_gpu_logs
-  bash "${REPO_ROOT}/scripts/kestrel/collect_gpu_interaction_results.sh" >/dev/null
-  cat "${REPO_ROOT}/artifacts/kestrel_gpu_h100_run/gpu_interaction_results_summary.csv"
+  bash "${REPO_ROOT}/scripts/kestrel/collect_gpu_interaction_results.sh" --artifacts-root "${ARTIFACTS_ROOT}" >/dev/null
+  cat "${ARTIFACTS_ROOT}/kestrel_gpu_h100_run/gpu_interaction_results_summary.csv"
   echo
 
   if [[ "${RUN_ONCE}" -eq 1 ]]; then

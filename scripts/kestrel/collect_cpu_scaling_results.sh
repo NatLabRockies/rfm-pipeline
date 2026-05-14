@@ -4,30 +4,43 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-SUITE_ROOT="${REPO_ROOT}/artifacts/kestrel_cpu_scaling_suite"
+# shellcheck source=common_paths.sh
+source "${REPO_ROOT}/scripts/kestrel/common_paths.sh"
+DEFAULT_ARTIFACTS_ROOT="$(kestrel_default_artifacts_root "${REPO_ROOT}")"
+ARTIFACTS_ROOT="${ARTIFACTS_ROOT:-${DEFAULT_ARTIFACTS_ROOT}}"
+LOGS_ROOT="${LOGS_ROOT:-$(kestrel_default_logs_root)}"
+SUITE_ROOT="${ARTIFACTS_ROOT}/kestrel_cpu_scaling_suite"
 OUT_FILE="${SUITE_ROOT}/cpu_scaling_results_summary.csv"
+SUITE_ROOT_SET=0
+OUT_FILE_SET=0
 
 usage() {
   cat <<'USAGE'
 Usage:
-  bash scripts/kestrel/collect_cpu_scaling_results.sh [--suite-root DIR] [--out FILE]
+  bash scripts/kestrel/collect_cpu_scaling_results.sh [--artifacts-root DIR] [--suite-root DIR] [--out FILE]
 
 Collects CPU scaling status for tiers 2/10/1000 from:
-  - generated manifest/scripts under artifacts/kestrel_cpu_scaling_suite/
+  - generated manifest/scripts under artifacts/kestrel_cpu_scaling_suite/ or each run's hpc_scripts/
   - run artifacts under artifacts/kestrel_cpu_scale_{2,10,1000}_run/
-  - merged reduce outputs under .../_merged/
+  - merged reduce outputs under .../hpc_shards/_merged/
   - SLURM logs under each tier's configured log directory
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --artifacts-root)
+      ARTIFACTS_ROOT="${2:-}"
+      shift 2
+      ;;
     --suite-root)
       SUITE_ROOT="${2:-}"
+      SUITE_ROOT_SET=1
       shift 2
       ;;
     --out)
       OUT_FILE="${2:-}"
+      OUT_FILE_SET=1
       shift 2
       ;;
     -h|--help)
@@ -41,6 +54,13 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "${SUITE_ROOT_SET}" -eq 0 ]]; then
+  SUITE_ROOT="${ARTIFACTS_ROOT}/kestrel_cpu_scaling_suite"
+fi
+if [[ "${OUT_FILE_SET}" -eq 0 ]]; then
+  OUT_FILE="${SUITE_ROOT}/cpu_scaling_results_summary.csv"
+fi
 
 mkdir -p "$(dirname "${OUT_FILE}")"
 
@@ -68,14 +88,21 @@ latest_log() {
 printf '%s\n' "tier,run_dir,manifest_shards,shard_results,completed_shards,failed_shards,merged_retained_pairs,merged_pair_scores,status,log_dir,latest_array_log,latest_reduce_log" > "${OUT_FILE}"
 
 for tier in 2 10 1000; do
-  scripts_dir="${SUITE_ROOT}/cpu_nodes_${tier}/hpc_scripts"
-  run_dir="${REPO_ROOT}/artifacts/kestrel_cpu_scale_${tier}_run"
-  manifest_path="${scripts_dir}/manifest.jsonl"
-  merged_dir="${run_dir}/_merged"
+  suite_scripts_dir="${SUITE_ROOT}/cpu_nodes_${tier}/hpc_scripts"
+  run_dir="${ARTIFACTS_ROOT}/kestrel_cpu_scale_${tier}_run"
+  run_scripts_dir="${run_dir}/hpc_scripts"
+  shards_dir="${run_dir}/hpc_shards"
+  manifest_path="${suite_scripts_dir}/manifest.jsonl"
+  stage_script="${suite_scripts_dir}/submit_interaction_discovery_array.sh"
+  if [[ ! -f "${manifest_path}" && -f "${run_scripts_dir}/manifest.jsonl" ]]; then
+    manifest_path="${run_scripts_dir}/manifest.jsonl"
+    stage_script="${run_scripts_dir}/submit_interaction_discovery_array.sh"
+  fi
+
+  merged_dir="${shards_dir}/_merged"
   merged_json="${merged_dir}/interaction_discovery_merged.json"
   merged_retained="${merged_dir}/retained_interaction_pairs_merged.csv"
   merged_scores="${merged_dir}/interaction_pair_scores_merged.csv"
-  stage_script="${scripts_dir}/submit_interaction_discovery_array.sh"
 
   manifest_shards=0
   [[ -f "${manifest_path}" ]] && manifest_shards="$(wc -l < "${manifest_path}" | tr -d ' ')"
@@ -83,10 +110,18 @@ for tier in 2 10 1000; do
   shard_results=0
   completed_shards=0
   failed_shards=0
-  if [[ -d "${run_dir}" ]]; then
-    shard_results="$(find "${run_dir}" -mindepth 2 -maxdepth 2 -type f -name shard_result.json | wc -l | tr -d ' ')"
-    completed_shards="$(grep -R --include='shard_result.json' -h '"status": "completed"' "${run_dir}" 2>/dev/null | wc -l | tr -d ' ')"
-    failed_shards="$(grep -R --include='shard_result.json' -h '"status": "failed"' "${run_dir}" 2>/dev/null | wc -l | tr -d ' ')"
+  retained_shards=0
+  if [[ -d "${shards_dir}" ]]; then
+    shard_results="$(find "${shards_dir}" -mindepth 2 -maxdepth 2 -type f -name shard_result.json | wc -l | tr -d ' ')"
+    completed_shards="$(grep -R --include='shard_result.json' -h '"status": "completed"' "${shards_dir}" 2>/dev/null | wc -l | tr -d ' ')"
+    failed_shards="$(grep -R --include='shard_result.json' -h '"status": "failed"' "${shards_dir}" 2>/dev/null | wc -l | tr -d ' ')"
+    retained_shards="$(find "${shards_dir}" -mindepth 2 -maxdepth 2 -type f -name retained_interaction_pairs.csv | wc -l | tr -d ' ')"
+  fi
+  if [[ "${retained_shards}" -gt "${completed_shards}" ]]; then
+    completed_shards="${retained_shards}"
+  fi
+  if [[ "${retained_shards}" -gt "${shard_results}" ]]; then
+    shard_results="${retained_shards}"
   fi
 
   merged_retained_pairs=0
@@ -98,7 +133,7 @@ for tier in 2 10 1000; do
 
   log_dir=""
   if ! log_dir="$(resolve_log_dir "${stage_script}")"; then
-    log_dir="/scratch/${USER}/bsm/bsm_kestrel_cpu_scale_${tier}/logs"
+    log_dir="${LOGS_ROOT}/bsm_kestrel_cpu_scale_${tier}/logs"
   fi
   latest_array_log="$(latest_log "${log_dir}/bsm_interaction_discovery_*.out")"
   latest_reduce_log="$(latest_log "${log_dir}/bsm_reduce_interaction_discovery_*.out")"

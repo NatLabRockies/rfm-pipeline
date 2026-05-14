@@ -120,13 +120,17 @@ def test_cpu_scaling_live_submit_scripts_exist_with_expected_defaults() -> None:
 def test_cpu_scaling_collection_and_monitor_scripts_exist() -> None:
     collector = Path("scripts/kestrel/collect_cpu_scaling_results.sh").read_text(encoding="utf-8")
     monitor = Path("scripts/kestrel/watch_cpu_scaling_queue.sh").read_text(encoding="utf-8")
+    status = Path("scripts/kestrel/status_all_tests.sh").read_text(encoding="utf-8")
 
     assert "set -euo pipefail" in collector
     assert "interaction_discovery_merged.json" in collector
     assert "retained_interaction_pairs_merged.csv" in collector
     assert "cpu_scaling_results_summary.csv" in collector
+    assert "common_paths.sh" in collector
 
     assert "set -euo pipefail" in monitor
     assert "squeue -u" in monitor
     assert "sacct -u" in monitor
     assert "collect_cpu_scaling_results.sh" in monitor
+    assert "common_paths.sh" in monitor
+    assert "common_paths.sh" in status

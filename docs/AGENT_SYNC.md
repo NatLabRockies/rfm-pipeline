@@ -6,10 +6,86 @@ base_branch: main
 autonomy_tier: 3
 profile: autonomous
 current_milestone: Phase 8 — Scalable Execution (HPC + Out-of-Core)
-current_slice: Phase 8c — GPU local execution tooling
-slice_status: in_progress (CPU jobs running on Kestrel; GPU local submit/monitor/collector tooling complete)
-last_validation: `pixi run ruff check tools/bsm_hpc_submit.py tests/test_distributed_phase8bc_gpu.py` pass; `pixi run pytest -q tests/test_distributed_phase8bc_gpu.py` (38 tests) pass; `./test_repo.sh --check` pass
-next_slice: Execute GPU interaction_discovery run on Kestrel with new helper scripts while CPU queue is active
+current_slice: Phase 8g — fast 2-node smoke calibration
+slice_status: complete (small distributed orchestration now targets a dedicated lightweight 2-node smoke config with 30-minute walltime budget)
+last_validation: `pixi run ruff check tests/test_hpc_workflow_orchestration.py` pass; `pixi run pytest -q tests/test_hpc_workflow_orchestration.py` pass; `bash scripts/kestrel/run_small_distributed_test_local.sh --dry-run --poll-count 1 --poll-seconds 1` pass
+next_slice: Execute unified orchestration config on Kestrel live queue and collect manifest/reporting bundle outputs
+
+## Phase 8d — unified HPC orchestration UX (2026-05-14)
+
+- User scope clarification persisted:
+  - Hide HPC submission/monitor/collection mechanics behind one local config-driven entrypoint.
+  - User-facing config must include local cores, HPC node tiers, account/user/host, scratch/projects/repo roots, and artifact locations.
+  - Keep heavy runtime artifacts on HPC storage roots (`/scratch`, `/projects`), not local/home repo trees.
+- Slice implementation target:
+  - Add orchestration config loader + command builders.
+  - Add one local driver for `submit`, `status`, and `collect`.
+  - Wire docs and example config for operational use.
+
+## Phase 8f — local small distributed smoke runner (2026-05-14)
+
+- Added `configs/hpc/kestrel_workflow_small_distributed.yml`:
+  - single CPU tier (2 nodes), GPU disabled, `pullback.mode: manifest_only`
+  - Kestrel host/user/path defaults pointing to `/projects` + `/scratch`
+- Added local wrapper script `scripts/kestrel/run_small_distributed_test_local.sh`:
+  - executes submit → bounded status polling → collect
+  - supports `--dry-run`, `--poll-count`, `--poll-seconds`, `--config`
+  - prints explicit config fields to edit for user-specific account/path settings
+- Added/updated docs for smoke invocation:
+  - `docs/HPC_DISTRIBUTED_EXECUTION.md`
+  - `docs/RUNNING_MANUSCRIPT_REPRODUCTION.md`
+- Extended orchestration tests for:
+  - committed small config load expectations
+  - smoke script command-chain invariants
+
+## Phase 8g — lightweight 2-node smoke profile (2026-05-14)
+
+- Added dedicated lightweight distributed config:
+  - `configs/hpc/kestrel_cpu_scale_2_smoke.yml`
+  - low-cost synthetic dataset + reduced stage parameters + `validation.fast_mode: true`
+  - SLURM budget set to `walltime: "00:30:00"` and `max_concurrent_array_tasks: 2`
+- Updated small orchestration profile:
+  - `configs/hpc/kestrel_workflow_small_distributed.yml` now uses
+    `configs/hpc/kestrel_cpu_scale_2_smoke.yml`
+  - `remote_repo_root` reset to `/projects/bsm/bsm-public-rf`
+- Updated local smoke script guidance:
+  - `scripts/kestrel/run_small_distributed_test_local.sh` now points users to
+    `kestrel_cpu_scale_2_smoke.yml` for account/partition edits
+- Added test coverage for lightweight smoke expectations:
+  - verifies small orchestration links to smoke config
+  - verifies smoke config carries `synthetic_300_sample`, fast-mode, 30-minute
+    walltime, and array concurrency 2
+
+## Phase 8d/8e — remaining slices complete (2026-05-14)
+
+- Slice 2 (manifest + compact pullback policy):
+  - Added `tools/hpc_bundle_manifest.py` with:
+    - `create-run-manifest` (HPC-side run summary JSON/CSV generation)
+    - `analyze-zip` (local summary extraction from bundle)
+  - Reworked `scripts/kestrel/pull_hpc_artifacts_bundle.sh`:
+    - new `--pullback-mode` (`manifest_only`, `reporting_bundle`, `full`)
+    - manifest-first remote bundle generation
+    - mode-specific artifact selection before zip/scp
+  - `tools/run_hpc_workflow.py` now forwards pullback mode through orchestration config.
+- Slice 3 (path-resolution consolidation):
+  - Added `scripts/kestrel/common_paths.sh`.
+  - Updated `status_all_tests.sh`, collectors, and queue watchers to source shared helpers.
+- Slice 4 (legacy figure integration into canonical workflow):
+  - Expanded final-stage figure registry in `src/bsm_rfm/manuscript_stages.py` with:
+    - `figure_selected_by_module_count`
+    - `figure_selected_by_module_share`
+    - `figure_nrmse_bootstrap_summary`
+  - Added source tables:
+    - `figure_selected_by_module_data.csv`
+    - `figure_nrmse_summary_data.csv`
+- Slice 5 (tests/docs/migration updates):
+  - Added tests:
+    - `tests/test_hpc_bundle_manifest.py`
+    - extended `tests/test_hpc_workflow_orchestration.py`
+    - updated figure and script assertions in existing HPC/final-artifact tests
+  - Updated docs:
+    - pullback mode semantics
+    - legacy-script → unified-runner migration mapping
 
 ## Phase 8c — GPU local tooling completion (2026-05-13)
 

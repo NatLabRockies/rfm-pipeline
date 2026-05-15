@@ -224,6 +224,30 @@ def _sync_required_datasets(
         _run_command(scp_cmd, dry_run=dry_run)
 
 
+def _sync_repo_files(
+    *,
+    ssh_dest: str,
+    remote_repo_root: str,
+    relative_paths: list[str],
+    dry_run: bool,
+) -> None:
+    for rel_path in relative_paths:
+        local_path = REPO_ROOT / rel_path
+        if not local_path.exists():
+            raise FileNotFoundError(f"Required local repo file missing for HPC sync: {local_path}")
+        remote_path = f"{remote_repo_root.rstrip('/')}/{rel_path}"
+        remote_parent = str(Path(remote_path).parent).replace("\\", "/")
+        mkdir_cmd = [
+            "ssh",
+            "-T",
+            ssh_dest,
+            f"bash -lc {shlex.quote(f'mkdir -p {shlex.quote(remote_parent)}')}",
+        ]
+        _run_command(mkdir_cmd, dry_run=dry_run)
+        scp_cmd = ["scp", str(local_path), f"{ssh_dest}:{remote_path}"]
+        _run_command(scp_cmd, dry_run=dry_run)
+
+
 def main() -> int:
     args = parse_args()
     config = load_hpc_workflow_config(args.config)
@@ -265,6 +289,15 @@ def main() -> int:
             )
 
     if args.action in {"status", "full"}:
+        _sync_repo_files(
+            ssh_dest=ssh_dest,
+            remote_repo_root=config.paths.remote_repo_root,
+            relative_paths=[
+                "scripts/kestrel/common_paths.sh",
+                "scripts/kestrel/status_all_tests.sh",
+            ],
+            dry_run=args.dry_run,
+        )
         status_cmd = build_remote_status_command(config)
         _run_remote_shell(
             ssh_dest,
@@ -274,6 +307,14 @@ def main() -> int:
         )
 
     if args.action in {"collect", "full"}:
+        _sync_repo_files(
+            ssh_dest=ssh_dest,
+            remote_repo_root=config.paths.remote_repo_root,
+            relative_paths=[
+                "tools/hpc_bundle_manifest.py",
+            ],
+            dry_run=args.dry_run,
+        )
         collect_cmd = build_collect_command(config, repo_root=REPO_ROOT)
         _run_command(collect_cmd, dry_run=args.dry_run, env=local_env)
 

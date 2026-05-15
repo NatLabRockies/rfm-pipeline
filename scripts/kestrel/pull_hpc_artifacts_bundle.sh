@@ -96,14 +96,16 @@ fi
 mkdir -p "${LOCAL_OUT_DIR}"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 REMOTE_SNAPSHOT_ARG="${REMOTE_SNAPSHOT_ROOT:-__AUTO__}"
+REMOTE_OUTPUT_FILE="$(mktemp "${TMPDIR:-/tmp}/bsm_hpc_pull.XXXXXX")"
+trap 'rm -f "${REMOTE_OUTPUT_FILE}"' EXIT
 
 echo "==> Building remote bundle on ${HPC_HOST} (mode=${PULLBACK_MODE})"
-REMOTE_OUTPUT="$(ssh -T "${HPC_HOST}" "bash -s" -- \
+ssh -T "${HPC_HOST}" "bash -s" -- \
   "${HPC_REPO_ROOT}" \
   "${TS}" \
   "${REMOTE_SNAPSHOT_ARG}" \
   "${HPC_ARTIFACTS_ROOT}" \
-  "${PULLBACK_MODE}" <<'REMOTE_EOF'
+  "${PULLBACK_MODE}" >"${REMOTE_OUTPUT_FILE}" <<'REMOTE_EOF'
 set -euo pipefail
 
 HPC_REPO_ROOT="$1"
@@ -128,8 +130,16 @@ if [[ ! -d "${HPC_REPO_ROOT}" ]]; then
   echo "error: HPC repo root not found: ${HPC_REPO_ROOT}" >&2
   exit 2
 fi
+cd "${HPC_REPO_ROOT}"
 
-REMOTE_USER="$(id -un)"
+REMOTE_USER="${USER:-}"
+if [[ -z "${REMOTE_USER}" ]]; then
+  REMOTE_USER="$(id -un 2>/dev/null || true)"
+fi
+if [[ -z "${REMOTE_USER}" ]]; then
+  echo "error: unable to resolve remote username for scratch/log path defaults" >&2
+  exit 2
+fi
 if [[ "${HPC_ARTIFACTS_ROOT}" == "__AUTO__" ]]; then
   SCRATCH_ARTIFACTS_ROOT="/scratch/${REMOTE_USER}/bsm/bsm-public-rf/artifacts"
   if [[ -d "${SCRATCH_ARTIFACTS_ROOT}" || -L "${SCRATCH_ARTIFACTS_ROOT}" ]]; then
@@ -168,7 +178,13 @@ MANIFEST_CSV="${MANIFEST_DIR}/run_summary.csv"
 
 mkdir -p "${RUNS_DIR}" "${LOGS_DIR}" "${MANIFEST_DIR}"
 
-python3 "${HPC_REPO_ROOT}/tools/hpc_bundle_manifest.py" create-run-manifest \
+if command -v pixi >/dev/null 2>&1; then
+  PYTHON_RUNNER=(pixi run python)
+else
+  PYTHON_RUNNER=(python3)
+fi
+
+"${PYTHON_RUNNER[@]}" "${HPC_REPO_ROOT}/tools/hpc_bundle_manifest.py" create-run-manifest \
   --hpc-repo-root "${HPC_REPO_ROOT}" \
   --artifacts-root "${HPC_ARTIFACTS_ROOT}" \
   --logs-root "${LOGS_ROOT}" \
@@ -264,7 +280,7 @@ elif [[ "${PULLBACK_MODE}" == "reporting_bundle" ]]; then
   copy_reporting_target_gpu
 fi
 
-python3 - "${BUNDLE_DIR}" "${ZIP_PATH}" <<'PY'
+"${PYTHON_RUNNER[@]}" - "${BUNDLE_DIR}" "${ZIP_PATH}" <<'PY'
 import os
 import sys
 import zipfile
@@ -287,7 +303,8 @@ echo "REMOTE_SNAPSHOT_DIR=${SNAPSHOT_DIR}"
 echo "REMOTE_MANIFEST_JSON=${MANIFEST_JSON}"
 echo "REMOTE_MANIFEST_CSV=${MANIFEST_CSV}"
 REMOTE_EOF
-)"
+
+REMOTE_OUTPUT="$(cat "${REMOTE_OUTPUT_FILE}")"
 
 REMOTE_ZIP_PATH="$(printf '%s\n' "${REMOTE_OUTPUT}" | awk -F= '/^REMOTE_ZIP_PATH=/{print $2}' | tail -n 1)"
 REMOTE_SNAPSHOT_DIR="$(printf '%s\n' "${REMOTE_OUTPUT}" | awk -F= '/^REMOTE_SNAPSHOT_DIR=/{print $2}' | tail -n 1)"

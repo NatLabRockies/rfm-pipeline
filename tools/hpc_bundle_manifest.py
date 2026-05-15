@@ -10,6 +10,7 @@ import importlib.metadata
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import time
@@ -212,6 +213,206 @@ def _collect_stage_metrics(bundle_root: Path, target: str) -> dict[str, object]:
         "stage_summaries": stage_summaries,
         "retained_counts": retained_counts,
     }
+
+
+def _read_json_file(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if isinstance(payload, dict):
+        return payload
+    return {}
+
+
+def _extract_shell_commands(script_path: Path) -> list[str]:
+    commands: list[str] = []
+    pending_parts: list[str] = []
+    command_start = re.compile(r"^(pixi|python|python3|sbatch|bash)\b")
+
+    for raw in script_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if pending_parts:
+            pending_parts.append(line.rstrip("\\").strip())
+            if not line.endswith("\\"):
+                commands.append(" ".join(part for part in pending_parts if part))
+                pending_parts = []
+            continue
+        if not command_start.match(line):
+            continue
+        pending_parts = [line.rstrip("\\").strip()]
+        if not line.endswith("\\"):
+            commands.append(" ".join(part for part in pending_parts if part))
+            pending_parts = []
+    if pending_parts:
+        commands.append(" ".join(part for part in pending_parts if part))
+    return commands
+
+
+def _collect_target_script_trace(bundle_root: Path, target: str) -> list[dict[str, object]]:
+    script_dir = bundle_root / "runs" / target / "hpc_scripts"
+    if not script_dir.exists():
+        return []
+    traces: list[dict[str, object]] = []
+    for script_path in sorted(script_dir.glob("*.sh")):
+        directives = []
+        for raw in script_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw.strip()
+            if line.startswith("#SBATCH"):
+                directives.append(line)
+        traces.append(
+            {
+                "relative_path": script_path.relative_to(bundle_root).as_posix(),
+                "sha256": _sha256_file(script_path),
+                "sbatch_directives": directives,
+                "shell_commands": _extract_shell_commands(script_path),
+            }
+        )
+    return traces
+
+
+def _collect_execution_trace(
+    *,
+    bundle_root: Path,
+    target_specs: list[TargetSpec],
+) -> dict[str, object]:
+    targets: dict[str, dict[str, object]] = {}
+    all_commands: list[str] = []
+    for spec in target_specs:
+        target_root = bundle_root / "runs" / spec.target
+        run_root = target_root / "run_artifacts"
+        run_started_path = run_root / "run_started.json"
+        run_complete_path = run_root / "run_complete.json"
+        config_snapshot = bundle_root / "manifest" / "configs" / f"{spec.target}.yml"
+        suite_manifest = target_root / "hpc_scripts" / "suite_manifest.jsonl"
+        scripts = _collect_target_script_trace(bundle_root, spec.target)
+        for script in scripts:
+            for command in script.get("shell_commands", []):
+                all_commands.append(str(command))
+        targets[spec.target] = {
+            "target": spec.target,
+            "config_path_hpc": spec.config_path,
+            "config_snapshot": (
+                config_snapshot.relative_to(bundle_root).as_posix()
+                if config_snapshot.exists()
+                else ""
+            ),
+            "suite_manifest": (
+                suite_manifest.relative_to(bundle_root).as_posix()
+                if suite_manifest.exists()
+                else ""
+            ),
+            "run_started": _read_json_file(run_started_path),
+            "run_complete": _read_json_file(run_complete_path),
+            "submission_scripts": scripts,
+        }
+    unique_commands = sorted({command for command in all_commands if command.strip()})
+    return {
+        "generated_at_utc": _utc_now(),
+        "targets": targets,
+        "all_commands": unique_commands,
+    }
+
+
+def _build_reproduction_recipe(
+    *,
+    metadata: dict[str, object],
+    execution_trace: dict[str, object],
+    bundle_root: Path,
+) -> str:
+    provenance = metadata.get("provenance", {})
+    code = provenance.get("code", {}) if isinstance(provenance, dict) else {}
+    environment = provenance.get("environment", {}) if isinstance(provenance, dict) else {}
+    targets = execution_trace.get("targets", {})
+
+    lines = [
+        "# Study reproduction recipe",
+        "",
+        (
+            "This bundle captures run outputs, generated submit scripts, "
+            "and provenance for replay/audit."
+        ),
+        "",
+        "## Code provenance",
+        f"- git_commit: `{code.get('git_commit', '')}`",
+        f"- git_branch: `{code.get('git_branch', '')}`",
+        f"- git_describe: `{code.get('git_describe', '')}`",
+        f"- git_remote_origin: `{code.get('git_remote_origin', '')}`",
+        "",
+        "## Environment provenance",
+        f"- python_version: `{environment.get('python_version', '')}`",
+        f"- platform: `{environment.get('platform', '')}`",
+        f"- pixi_version: `{environment.get('pixi_version', '')}`",
+    ]
+
+    lockfiles = [
+        "manifest/environment/pixi.lock",
+        "manifest/environment/pixi.toml",
+        "manifest/environment/pyproject.toml",
+    ]
+    existing_lockfiles = [path for path in lockfiles if (bundle_root / path).exists()]
+    if existing_lockfiles:
+        lines.extend(
+            [
+                "",
+                "## Environment lock/config snapshots",
+                *[f"- `{path}`" for path in existing_lockfiles],
+            ]
+        )
+
+    commands = execution_trace.get("all_commands", [])
+    if isinstance(commands, list) and commands:
+        lines.extend(
+            [
+                "",
+                "## Command trace",
+                *[f"- `{str(command)}`" for command in commands],
+            ]
+        )
+
+    if isinstance(targets, dict):
+        for target, target_trace in sorted(targets.items()):
+            if not isinstance(target_trace, dict):
+                continue
+            lines.extend(["", f"## Target `{target}`"])
+            config_snapshot = str(target_trace.get("config_snapshot", ""))
+            if config_snapshot:
+                lines.append(f"- config_snapshot: `{config_snapshot}`")
+            suite_manifest = str(target_trace.get("suite_manifest", ""))
+            if suite_manifest:
+                lines.append(f"- suite_manifest: `{suite_manifest}`")
+            run_started = target_trace.get("run_started", {})
+            if isinstance(run_started, dict):
+                start_stage = run_started.get("start_stage", "")
+                stop_stage = run_started.get("stop_stage", "")
+                if start_stage or stop_stage:
+                    lines.append(f"- stage_window: `{start_stage}` -> `{stop_stage}`")
+            scripts = target_trace.get("submission_scripts", [])
+            if isinstance(scripts, list) and scripts:
+                lines.append("- generated_submit_scripts:")
+                for script in scripts:
+                    if not isinstance(script, dict):
+                        continue
+                    rel = str(script.get("relative_path", ""))
+                    sha = str(script.get("sha256", ""))
+                    if rel:
+                        lines.append(f"  - `{rel}` (sha256: `{sha}`)")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _path_for_metadata(path: Path | None, *, bundle_root: Path) -> str:
+    if path is None:
+        return ""
+    try:
+        return path.resolve().relative_to(bundle_root).as_posix()
+    except ValueError:
+        return str(path)
 
 
 def _shard_status_counts(shards_root: Path) -> tuple[int, int, int, int]:
@@ -461,6 +662,10 @@ def write_study_metadata(args: argparse.Namespace) -> int:
     target_specs = _load_target_specs(Path(args.target_specs_json))
     out_json = Path(args.output_json)
     out_csv = Path(args.output_csv)
+    commands_json_path = Path(args.commands_json) if getattr(args, "commands_json", "") else None
+    recipe_path = (
+        Path(args.reproduction_recipe_md) if getattr(args, "reproduction_recipe_md", "") else None
+    )
 
     inventory_rows: list[dict[str, str | int]] = []
     for path in sorted(bundle_root.rglob("*")):
@@ -474,6 +679,8 @@ def write_study_metadata(args: argparse.Namespace) -> int:
                 "sha256": _sha256_file(path),
             }
         )
+
+    execution_trace = _collect_execution_trace(bundle_root=bundle_root, target_specs=target_specs)
 
     metadata = {
         "manifest_version": "1",
@@ -493,6 +700,16 @@ def write_study_metadata(args: argparse.Namespace) -> int:
         "targets": [asdict(spec) for spec in target_specs],
         "stage_metrics": {
             spec.target: _collect_stage_metrics(bundle_root, spec.target) for spec in target_specs
+        },
+        "execution_trace": {
+            "n_targets": len(execution_trace.get("targets", {}))
+            if isinstance(execution_trace.get("targets", {}), dict)
+            else 0,
+            "n_traced_commands": len(execution_trace.get("all_commands", []))
+            if isinstance(execution_trace.get("all_commands", []), list)
+            else 0,
+            "commands_json": _path_for_metadata(commands_json_path, bundle_root=bundle_root),
+            "reproduction_recipe_md": _path_for_metadata(recipe_path, bundle_root=bundle_root),
         },
         "inventory": {
             "n_files": len(inventory_rows),
@@ -528,6 +745,23 @@ def write_study_metadata(args: argparse.Namespace) -> int:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(inventory_rows)
+
+    if commands_json_path:
+        commands_json_path.parent.mkdir(parents=True, exist_ok=True)
+        commands_json_path.write_text(
+            json.dumps(execution_trace, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    if recipe_path:
+        recipe_path.parent.mkdir(parents=True, exist_ok=True)
+        recipe_path.write_text(
+            _build_reproduction_recipe(
+                metadata=metadata,
+                execution_trace=execution_trace,
+                bundle_root=bundle_root,
+            ),
+            encoding="utf-8",
+        )
     return 0
 
 
@@ -559,6 +793,8 @@ def _build_parser() -> argparse.ArgumentParser:
     metadata_parser.add_argument("--pullback-mode", required=True)
     metadata_parser.add_argument("--output-json", required=True)
     metadata_parser.add_argument("--output-csv", required=True)
+    metadata_parser.add_argument("--commands-json", required=False, default="")
+    metadata_parser.add_argument("--reproduction-recipe-md", required=False, default="")
     metadata_parser.set_defaults(func=write_study_metadata)
     return parser
 

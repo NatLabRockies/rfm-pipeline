@@ -109,30 +109,18 @@ def test_sync_required_datasets_runs_mkdir_and_scp_when_missing(tmp_path: Path) 
     assert str(local_dataset) in scp_call
 
 
-def test_sync_repo_files_runs_mkdir_and_scp(tmp_path: Path) -> None:
-    rel_path = "scripts/kestrel/status_all_tests.sh"
-    local_file = tmp_path / rel_path
-    local_file.parent.mkdir(parents=True, exist_ok=True)
-    local_file.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
-
-    with (
-        patch("tools.run_hpc_workflow.REPO_ROOT", tmp_path),
-        patch("tools.run_hpc_workflow._run_command") as run_mock,
-    ):
-        run_hpc_workflow._sync_repo_files(
+def test_sync_remote_repo_via_git_uses_ff_only_pull() -> None:
+    with patch("tools.run_hpc_workflow._run_remote_shell") as run_mock:
+        run_hpc_workflow._sync_remote_repo_via_git(
             ssh_dest="alice@kl1.hpc.nrel.gov",
             remote_repo_root="/home/alice/src/bsm-public-rf",
-            relative_paths=[rel_path],
             dry_run=False,
         )
 
-    assert run_mock.call_count == 2
-    mkdir_call = run_mock.call_args_list[0][0][0]
-    scp_call = run_mock.call_args_list[1][0][0]
-    assert mkdir_call[:3] == ["ssh", "-T", "alice@kl1.hpc.nrel.gov"]
-    assert scp_call[0] == "scp"
-    assert str(local_file) in scp_call
-    assert (
-        "alice@kl1.hpc.nrel.gov:/home/alice/src/bsm-public-rf/scripts/kestrel/status_all_tests.sh"
-        in scp_call
-    )
+    args, kwargs = run_mock.call_args
+    assert args[0] == "alice@kl1.hpc.nrel.gov"
+    assert args[1] == "/home/alice/src/bsm-public-rf"
+    remote_cmd = args[2]
+    assert "git --no-pager status --porcelain" in remote_cmd
+    assert "git --no-pager pull --ff-only" in remote_cmd
+    assert kwargs["dry_run"] is False

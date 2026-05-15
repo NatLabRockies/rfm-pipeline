@@ -102,35 +102,79 @@ def _resolve_dataset_sync_specs(
     }
     specs: list[tuple[Path, str]] = []
     seen_remote: set[str] = set()
+
+    def _add_spec(local_path: Path, remote_path: str) -> None:
+        remote_norm = remote_path.replace("\\", "/")
+        if remote_norm in seen_remote:
+            return
+        seen_remote.add(remote_norm)
+        specs.append((local_path, remote_norm))
+
+    def _remote_from_config_path(path_value: str) -> str:
+        cfg_path = Path(path_value)
+        if cfg_path.is_absolute():
+            return cfg_path.as_posix()
+        return f"{remote_repo_root.rstrip('/')}/{cfg_path.as_posix()}"
+
     for config_path in cpu_tier_configs:
         tier_cfg_path = Path(config_path)
         if not tier_cfg_path.is_absolute():
             tier_cfg_path = REPO_ROOT / tier_cfg_path
         data = _load_yaml(tier_cfg_path)
+
         dataset = data.get("dataset", {}) or {}
+        local_dataset_root: Path | None = None
         rel_dataset_path: Path | None = None
         dataset_path = dataset.get("path")
         if dataset_path:
             dataset_candidate = Path(str(dataset_path))
-            if not dataset_candidate.is_absolute():
+            if dataset_candidate.is_absolute():
+                local_dataset_root = dataset_candidate
+            else:
                 rel_dataset_path = dataset_candidate
+                local_dataset_root = REPO_ROOT / rel_dataset_path
         else:
             rel_dataset_path = dataset_type_paths.get(str(dataset.get("type", "")))
-        if rel_dataset_path is None:
+            if rel_dataset_path is not None:
+                local_dataset_root = REPO_ROOT / rel_dataset_path
+
+        if local_dataset_root is None:
             continue
-        local_path = REPO_ROOT / rel_dataset_path
-        remote_path = f"{remote_repo_root.rstrip('/')}/{rel_dataset_path.as_posix()}"
-        if remote_path in seen_remote:
-            continue
-        seen_remote.add(remote_path)
-        specs.append((local_path, remote_path))
+
+        if rel_dataset_path is not None:
+            remote_dataset_root = f"{remote_repo_root.rstrip('/')}/{rel_dataset_path.as_posix()}"
+        else:
+            remote_dataset_root = (
+                f"{remote_repo_root.rstrip('/')}/artifacts/{local_dataset_root.name}"
+            )
+        _add_spec(local_dataset_root, remote_dataset_root)
+
+        output = data.get("output", {}) or {}
+        artifact_dir_value = str(output.get("artifact_dir", "./artifacts"))
+        remote_artifact_dir = _remote_from_config_path(artifact_dir_value).rstrip("/")
+
+        for dataset_file in ("X.parquet", "Y.parquet", "holdout_assignments.parquet"):
+            _add_spec(
+                local_dataset_root / dataset_file,
+                f"{remote_artifact_dir}/{dataset_file}",
+            )
+
+        catalog_candidates = [
+            local_dataset_root / "actual_input_feature_catalog.parquet",
+            REPO_ROOT / "artifacts" / "actual_input_feature_catalog.parquet",
+        ]
+        catalog_source = next((p for p in catalog_candidates if p.exists()), catalog_candidates[-1])
+        _add_spec(
+            catalog_source,
+            f"{remote_artifact_dir}/actual_input_feature_catalog.parquet",
+        )
 
     local_catalog = REPO_ROOT / "artifacts" / "actual_input_feature_catalog.parquet"
     remote_catalog = (
         f"{remote_repo_root.rstrip('/')}/artifacts/actual_input_feature_catalog.parquet"
     )
-    if local_catalog.exists() and remote_catalog not in seen_remote:
-        specs.append((local_catalog, remote_catalog))
+    if local_catalog.exists():
+        _add_spec(local_catalog, remote_catalog)
     return specs
 
 
@@ -180,39 +224,6 @@ def _sync_required_datasets(
         _run_command(scp_cmd, dry_run=dry_run)
 
 
-def _sync_all_artifacts(
-    *,
-    ssh_dest: str,
-    remote_repo_root: str,
-    dry_run: bool,
-) -> None:
-    """Sync entire local artifacts directory to remote repo."""
-    local_artifacts = REPO_ROOT / "artifacts"
-    if not local_artifacts.exists():
-        print(f"[warning] Local artifacts dir does not exist: {local_artifacts}")
-        return
-
-    remote_artifacts = f"{remote_repo_root.rstrip('/')}/artifacts"
-
-    # Create remote artifacts dir
-    mkdir_cmd = [
-        "ssh",
-        "-T",
-        ssh_dest,
-        f"bash -lc {shlex.quote(f'mkdir -p {shlex.quote(remote_artifacts)}')}",
-    ]
-    _run_command(mkdir_cmd, dry_run=dry_run)
-
-    # Sync the entire artifacts tree
-    scp_cmd = [
-        "scp",
-        "-r",
-        str(local_artifacts) + "/",
-        f"{ssh_dest}:{remote_artifacts}/",
-    ]
-    _run_command(scp_cmd, dry_run=dry_run)
-
-
 def main() -> int:
     args = parse_args()
     config = load_hpc_workflow_config(args.config)
@@ -238,12 +249,6 @@ def main() -> int:
                 ssh_dest=ssh_dest,
                 remote_repo_root=config.paths.remote_repo_root,
                 cpu_tier_configs=cpu_tier_configs,
-                dry_run=args.dry_run,
-            )
-            # Also sync all local artifacts to remote for interaction_discovery to find
-            _sync_all_artifacts(
-                ssh_dest=ssh_dest,
-                remote_repo_root=config.paths.remote_repo_root,
                 dry_run=args.dry_run,
             )
         submit_cmds = build_remote_submit_commands(

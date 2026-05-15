@@ -47,6 +47,35 @@ def test_resolve_dataset_sync_specs_for_synthetic_dataset(tmp_path: Path) -> Non
     assert remote == "/home/alice/src/bsm-public-rf/artifacts/test_dataset_300"
 
 
+def test_resolve_dataset_sync_specs_stages_interaction_inputs_into_artifact_dir(
+    tmp_path: Path,
+) -> None:
+    tier_cfg = tmp_path / "tier.yml"
+    tier_cfg.write_text(
+        (
+            "dataset:\n"
+            "  type: synthetic_300_sample\n"
+            "output:\n"
+            "  artifact_dir: ./artifacts/kestrel_cpu_scale_2_smoke_run\n"
+        ),
+        encoding="utf-8",
+    )
+
+    specs = run_hpc_workflow._resolve_dataset_sync_specs(
+        "/home/alice/src/bsm-public-rf",
+        [str(tier_cfg)],
+    )
+    local_by_remote = {remote: local for local, remote in specs}
+
+    remote_root = "/home/alice/src/bsm-public-rf/artifacts/kestrel_cpu_scale_2_smoke_run"
+    assert f"{remote_root}/X.parquet" in local_by_remote
+    assert f"{remote_root}/holdout_assignments.parquet" in local_by_remote
+    assert f"{remote_root}/actual_input_feature_catalog.parquet" in local_by_remote
+    assert local_by_remote[f"{remote_root}/actual_input_feature_catalog.parquet"].name == (
+        "actual_input_feature_catalog.parquet"
+    )
+
+
 def test_sync_required_datasets_runs_mkdir_and_scp_when_missing(tmp_path: Path) -> None:
     local_dataset = tmp_path / "test_dataset_300"
     local_dataset.mkdir(parents=True)

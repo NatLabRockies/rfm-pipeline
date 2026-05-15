@@ -16,7 +16,8 @@ echo "==========================================================================
 echo "Publication-Ready Full-Dataset Study: DRY-RUN SUBMISSION"
 echo "================================================================================"
 echo ""
-echo "Config: configs/hpc/kestrel_publication_full_dataset.yml"
+echo "Orchestration config: configs/hpc/kestrel_publication_orchestration.yml"
+echo "Pipeline config: configs/hpc/kestrel_publication_full_dataset.yml"
 echo "Dataset: real_full_dataset (30,000 samples)"
 echo "Mode: DRY-RUN (scripts generated but NOT submitted)"
 echo ""
@@ -25,7 +26,7 @@ echo ""
 
 # Run dry-run
 pixi run hpc-workflow -- \
-  --config configs/hpc/kestrel_publication_full_dataset.yml \
+  --config configs/hpc/kestrel_publication_orchestration.yml \
   --action submit \
   --dry-run
 

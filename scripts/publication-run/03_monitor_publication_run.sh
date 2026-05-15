@@ -20,7 +20,7 @@ echo "==========================================================================
 echo "Publication-Ready Full-Dataset Study: MONITOR EXECUTION"
 echo "================================================================================"
 echo ""
-echo "Config: configs/hpc/kestrel_publication_full_dataset.yml"
+echo "Orchestration config: configs/hpc/kestrel_publication_orchestration.yml"
 echo "Check interval: $INTERVAL seconds"
 echo ""
 echo "Polling HPC for job status and stage progress..."
@@ -28,7 +28,7 @@ echo ""
 
 # Run status check
 pixi run hpc-workflow -- \
-  --config configs/hpc/kestrel_publication_full_dataset.yml \
+  --config configs/hpc/kestrel_publication_orchestration.yml \
   --action status
 
 echo ""

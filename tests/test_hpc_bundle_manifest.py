@@ -94,10 +94,26 @@ def test_analyze_zip_reads_manifest_summary(tmp_path: Path) -> None:
 def test_write_study_metadata_writes_manifest_and_inventory(tmp_path: Path) -> None:
     bundle_root = tmp_path / "bundle"
     sample_file = (
-        bundle_root / "runs" / "cpu_2" / "final_manuscript_artifacts" / "figures" / "a.svg"
+        bundle_root
+        / "runs"
+        / "cpu_2"
+        / "run_artifacts"
+        / "final_manuscript_artifacts"
+        / "figures"
+        / "a.svg"
     )
     sample_file.parent.mkdir(parents=True, exist_ok=True)
     sample_file.write_text("<svg/>", encoding="utf-8")
+    retained_terms = (
+        bundle_root
+        / "runs"
+        / "cpu_2"
+        / "run_artifacts"
+        / "empirical_null_screen"
+        / "retained_terms.csv"
+    )
+    retained_terms.parent.mkdir(parents=True, exist_ok=True)
+    retained_terms.write_text("feature_name\nf1\nf2\n", encoding="utf-8")
 
     target_specs = {
         "targets": [
@@ -132,7 +148,8 @@ def test_write_study_metadata_writes_manifest_and_inventory(tmp_path: Path) -> N
 
     payload = json.loads(out_json.read_text(encoding="utf-8"))
     assert payload["pullback_mode"] == "study_package"
-    assert payload["inventory"]["n_files"] == 1
+    assert payload["inventory"]["n_files"] == 2
     assert payload["figure_assets"]
+    assert payload["stage_metrics"]["cpu_2"]["retained_counts"]["n_retained_first_order_terms"] == 2
     csv_text = out_csv.read_text(encoding="utf-8")
     assert "relative_path,size_bytes,sha256" in csv_text

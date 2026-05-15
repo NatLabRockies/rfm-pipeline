@@ -161,6 +161,59 @@ def _load_target_specs(path: Path) -> list[TargetSpec]:
     return specs
 
 
+def _read_csv_first_row(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    with path.open(encoding="utf-8", errors="replace") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            return {str(k): str(v) for k, v in row.items()}
+    return {}
+
+
+def _collect_stage_metrics(bundle_root: Path, target: str) -> dict[str, object]:
+    run_root = bundle_root / "runs" / target / "run_artifacts"
+    if not run_root.exists():
+        return {}
+
+    stage_summary_files = {
+        "output_conditioning": run_root / "output_conditioning" / "output_conditioning_summary.csv",
+        "empirical_null_screen": (
+            run_root / "empirical_null_screen" / "empirical_null_screen_summary.csv"
+        ),
+        "interaction_discovery": (
+            run_root / "interaction_discovery" / "interaction_discovery_summary.csv"
+        ),
+        "nonlinear_discovery": run_root / "nonlinear_discovery" / "nonlinear_discovery_summary.csv",
+        "sparse_selection": run_root / "sparse_selection" / "sparse_selection_summary.csv",
+        "final_manuscript_artifacts": (
+            run_root / "final_manuscript_artifacts" / "final_artifact_summary.csv"
+        ),
+    }
+    retained_files = {
+        "n_retained_first_order_terms": (run_root / "empirical_null_screen" / "retained_terms.csv"),
+        "n_retained_interactions": (
+            run_root / "interaction_discovery" / "retained_interaction_pairs.csv"
+        ),
+        "n_retained_nonlinear_terms": (
+            run_root / "nonlinear_discovery" / "retained_transformations.csv"
+        ),
+        "n_final_stable_support_terms": (
+            run_root / "sparse_selection" / "final_stable_support.csv"
+        ),
+    }
+
+    stage_summaries = {}
+    for stage, path in stage_summary_files.items():
+        if path.exists():
+            stage_summaries[stage] = _read_csv_first_row(path)
+    retained_counts = {name: _count_csv_rows(path) for name, path in retained_files.items()}
+    return {
+        "stage_summaries": stage_summaries,
+        "retained_counts": retained_counts,
+    }
+
+
 def _shard_status_counts(shards_root: Path) -> tuple[int, int, int, int]:
     shard_result_paths = list(shards_root.glob("*/shard_result.json"))
     shard_results = len(shard_result_paths)
@@ -438,6 +491,9 @@ def write_study_metadata(args: argparse.Namespace) -> int:
             },
         },
         "targets": [asdict(spec) for spec in target_specs],
+        "stage_metrics": {
+            spec.target: _collect_stage_metrics(bundle_root, spec.target) for spec in target_specs
+        },
         "inventory": {
             "n_files": len(inventory_rows),
             "total_bytes": int(sum(int(row["size_bytes"]) for row in inventory_rows)),

@@ -17,9 +17,9 @@ Usage:
   bash scripts/kestrel/run_small_distributed_test_local.sh [options]
 
 Runs a small distributed smoke workflow locally via the unified orchestration runner:
-  1) submit (2-node distributed tier + diagnostic)
+  1) submit (lightweight full pipeline materialization + 2-node distributed interaction smoke)
   2) status snapshots (poll loop)
-  3) collect (manifest-only by default)
+  3) collect (study-package pullback by default)
 
 Options:
   --config FILE         Orchestration config (default: configs/hpc/kestrel_workflow_small_distributed.yml)

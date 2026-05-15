@@ -99,6 +99,7 @@ def _resolve_dataset_sync_specs(
     dataset_type_paths = {
         "synthetic_300_sample": Path("artifacts/test_dataset_300"),
         "synthetic_full": Path("artifacts/test_dataset_3k"),
+        "real_full_dataset": Path("artifacts/preprocessed_real_data"),
     }
     specs: list[tuple[Path, str]] = []
     seen_remote: set[str] = set()

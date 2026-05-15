@@ -31,7 +31,7 @@
 #   BSM_XGBOOST_TREE_METHOD=hist   (GPU tree method)
 
 dataset:
-  type: "synthetic_full"
+  type: "real_full_dataset"
 
 algorithm:
   variance_threshold: 0.90

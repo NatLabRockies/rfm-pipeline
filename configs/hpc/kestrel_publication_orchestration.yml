@@ -19,7 +19,7 @@ hpc_workflow:
     remote_snapshot_root: /scratch/${USER}/bsm/kestrel_hpc_snapshots
     local_bundle_dir: ./artifacts/publication_full_dataset_results
 
-  # Execution: run full 7-stage pipeline on single large CPU tier
+  # Execution: run full 7-stage pipeline with thousands of independent jobs
   execution:
     stage: output_conditioning          # Start from first stage (full pipeline)
     local_cores: 8
@@ -27,7 +27,7 @@ hpc_workflow:
     prepare_full_pipeline_artifacts: true  # Generate all 7 stages
     prepare_interaction_inputs: false
     cpu_tiers:
-      - nodes: 1                        # Single large-node submission (orchestrates all 7 stages)
+      - nodes: 1000                     # 1000 shards = ~1000 concurrent jobs per stage
         config_path: configs/hpc/kestrel_publication_full_dataset.yml
 
   gpu:

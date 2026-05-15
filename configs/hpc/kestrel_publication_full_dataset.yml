@@ -88,10 +88,10 @@ distributed:
   slurm:
     account: bsm
     partition: shared
-    walltime: "04:00:00"             # 4-hour chunks (multiple waves instead of 24h)
+    walltime: "04:00:00"             # 4-hour windows (jobs queue and run sequentially)
     memory_gb: 240                   # Leave headroom below 256 GB node limit
     cpus_per_task: 104               # Full CPU node
-    max_concurrent_array_tasks: 1    # Run one shard at a time (submit new jobs later)
+    max_concurrent_array_tasks: 1    # Serialize: one shard at a time, rest queue
     log_dir: "/scratch/${USER}/bsm/bsm_kestrel_publication_full/logs"
     requeue: false
     signal_seconds_before_timeout: 60

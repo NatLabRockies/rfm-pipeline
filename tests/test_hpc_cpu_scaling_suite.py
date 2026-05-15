@@ -12,8 +12,18 @@ from bsm_rfm.distributed.manifest import build_manifest, save_manifest
 from bsm_rfm.distributed.slurm_array_runner import SlurmArrayRunner
 
 _CPU_SCALING_CASES = [
-    ("configs/hpc/kestrel_cpu_scale_2.yml", 2, "debug", "./artifacts/kestrel_cpu_scale_2_run"),
-    ("configs/hpc/kestrel_cpu_scale_10.yml", 10, "shared", "./artifacts/kestrel_cpu_scale_10_run"),
+    (
+        "configs/hpc/kestrel_cpu_scale_2.yml",
+        2,
+        "shared",
+        "/scratch/dhetting/bsm/artifacts/kestrel_cpu_scale_2_run",
+    ),
+    (
+        "configs/hpc/kestrel_cpu_scale_10.yml",
+        10,
+        "shared",
+        "./artifacts/kestrel_cpu_scale_10_run",
+    ),
     (
         "configs/hpc/kestrel_cpu_scale_1000.yml",
         1000,

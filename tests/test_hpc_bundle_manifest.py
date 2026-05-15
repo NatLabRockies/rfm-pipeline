@@ -8,7 +8,7 @@ import json
 import zipfile
 from pathlib import Path
 
-from tools.hpc_bundle_manifest import analyze_zip, create_run_manifest
+from tools.hpc_bundle_manifest import analyze_zip, create_run_manifest, write_study_metadata
 
 
 def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -89,3 +89,50 @@ def test_analyze_zip_reads_manifest_summary(tmp_path: Path) -> None:
     text = out_txt.read_text(encoding="utf-8")
     assert "HPC artifact analysis (manifest-driven)" in text
     assert "LOOKS_ACTIVE" in text
+
+
+def test_write_study_metadata_writes_manifest_and_inventory(tmp_path: Path) -> None:
+    bundle_root = tmp_path / "bundle"
+    sample_file = (
+        bundle_root / "runs" / "cpu_2" / "final_manuscript_artifacts" / "figures" / "a.svg"
+    )
+    sample_file.parent.mkdir(parents=True, exist_ok=True)
+    sample_file.write_text("<svg/>", encoding="utf-8")
+
+    target_specs = {
+        "targets": [
+            {
+                "target": "cpu_2",
+                "run_dir": (
+                    "/scratch/alice/bsm/bsm-public-rf/artifacts/kestrel_cpu_scale_2_smoke_run"
+                ),
+                "log_dir": "/scratch/alice/bsm/bsm_kestrel_cpu_scale_2_smoke/logs",
+                "suite_manifest_path": "",
+                "gpu_mode": False,
+                "config_path": (
+                    "/home/alice/src/bsm-public-rf/configs/hpc/kestrel_cpu_scale_2_smoke.yml"
+                ),
+            }
+        ]
+    }
+    target_specs_path = tmp_path / "target_specs.json"
+    target_specs_path.write_text(json.dumps(target_specs), encoding="utf-8")
+
+    out_json = tmp_path / "manifest" / "study_metadata_manifest.json"
+    out_csv = tmp_path / "manifest" / "study_file_inventory.csv"
+    args = argparse.Namespace(
+        bundle_root=str(bundle_root),
+        hpc_repo_root=str(tmp_path),
+        target_specs_json=str(target_specs_path),
+        pullback_mode="study_package",
+        output_json=str(out_json),
+        output_csv=str(out_csv),
+    )
+    write_study_metadata(args)
+
+    payload = json.loads(out_json.read_text(encoding="utf-8"))
+    assert payload["pullback_mode"] == "study_package"
+    assert payload["inventory"]["n_files"] == 1
+    assert payload["figure_assets"]
+    csv_text = out_csv.read_text(encoding="utf-8")
+    assert "relative_path,size_bytes,sha256" in csv_text

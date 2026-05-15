@@ -32,5 +32,5 @@ hpc_workflow:
     n_shards: 10
 
   pullback:
-    mode: manifest_only  # fastest local pullback for smoke runs
+    mode: study_package  # collect reproducibility package (tables, figures, metadata, logs)
     keep_remote_snapshot: false

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-_VALID_PULLBACK_MODES = {"manifest_only", "reporting_bundle", "full"}
+_VALID_PULLBACK_MODES = {"manifest_only", "reporting_bundle", "full", "study_package"}
 _VALID_STAGES = {
     "output_conditioning",
     "empirical_null_screening",
@@ -298,6 +298,10 @@ def build_remote_status_command(config: HpcWorkflowConfig) -> str:
 
 def build_collect_command(config: HpcWorkflowConfig, *, repo_root: Path) -> list[str]:
     """Build local artifact pull command from config."""
+    cpu_tier_specs = ",".join(
+        f"{tier.nodes}={tier.config_path}" for tier in config.execution.cpu_tiers
+    )
+    include_gpu = "1" if config.gpu.enabled else "0"
     script_path = repo_root / "scripts" / "kestrel" / "pull_hpc_artifacts_bundle.sh"
     cmd = [
         "bash",
@@ -314,6 +318,12 @@ def build_collect_command(config: HpcWorkflowConfig, *, repo_root: Path) -> list
         config.paths.local_bundle_dir,
         "--pullback-mode",
         config.pullback.mode,
+        "--cpu-tier-specs",
+        cpu_tier_specs,
+        "--include-gpu",
+        include_gpu,
+        "--gpu-config",
+        config.gpu.config_path,
     ]
     if config.pullback.keep_remote_snapshot:
         cmd.append("--keep-remote")

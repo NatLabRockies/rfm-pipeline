@@ -1,0 +1,21 @@
+{
+  "snapshot_id": "legacy_figure_reference_20240613_068",
+  "source_root": "/Users/dhetting/Box Sync/2022-08-09_BSM_reduction/data/study_results/model_factors.20240613/068",
+  "purpose": "Pinned legacy figure-generation reference notebooks and representative run_all outputs for manuscript figure parity work.",
+  "copied_files": [
+    "notebooks/external_notebooks_snapshot.zip",
+    "reference_outputs/figures/fig_feature_type_distribution.png",
+    "reference_outputs/figures/fig_influential_by_module.png",
+    "reference_outputs/figures/fig_module_pair_heatmap.png",
+    "reference_outputs/figures/fig_module_total_interactions.png",
+    "reference_outputs/summaries/feature_type_counts.csv",
+    "reference_outputs/summaries/influential_counts_by_module.csv",
+    "reference_outputs/summaries/interaction_counts_by_module_pair.csv",
+    "reference_outputs/summaries/interaction_density_module_matrix.csv",
+    "reference_outputs/summaries/module_total_interactions.csv",
+    "reference_outputs/inputs/influential_inputs_final_descriptions.csv",
+    "reference_outputs/inputs/influential_inputs_final.nl.csv",
+    "reference_outputs/inputs/input_counts_by_module.csv",
+    "sha256_manifest.txt"
+  ]
+}

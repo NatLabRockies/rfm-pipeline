@@ -16,7 +16,7 @@ echo "==========================================================================
 echo "Publication-Ready Full-Dataset Study: COLLECT FINAL ARTIFACTS"
 echo "================================================================================"
 echo ""
-echo "Config: configs/hpc/kestrel_publication_full_dataset.yml"
+echo "Orchestration config: configs/hpc/kestrel_publication_orchestration.yml"
 echo "Mode: reporting_bundle (final tables, figures, metadata)"
 echo ""
 echo "⏳ Collecting artifacts from HPC..."
@@ -24,7 +24,7 @@ echo ""
 
 # Run collection
 pixi run hpc-workflow -- \
-  --config configs/hpc/kestrel_publication_full_dataset.yml \
+  --config configs/hpc/kestrel_publication_orchestration.yml \
   --action collect
 
 echo ""

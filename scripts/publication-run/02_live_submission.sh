@@ -16,7 +16,8 @@ echo "==========================================================================
 echo "Publication-Ready Full-Dataset Study: LIVE SUBMISSION"
 echo "================================================================================"
 echo ""
-echo "Config: configs/hpc/kestrel_publication_full_dataset.yml"
+echo "Orchestration config: configs/hpc/kestrel_publication_orchestration.yml"
+echo "Pipeline config: configs/hpc/kestrel_publication_full_dataset.yml"
 echo "Dataset: real_full_dataset (30,000 samples, 160 inputs, 23,497 outputs)"
 echo "Hyperparameters: Quality-first (201 null perms, 250 trees, 100 bootstrap)"
 echo "Walltime: 24 hours | Partition: shared | Memory: 240 GB"
@@ -28,8 +29,9 @@ echo ""
 START_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Run live submission (not dry-run)
+# Note: uses orchestration config which points to pipeline config
 SUBMIT_OUTPUT=$(pixi run hpc-workflow -- \
-  --config configs/hpc/kestrel_publication_full_dataset.yml \
+  --config configs/hpc/kestrel_publication_orchestration.yml \
   --action submit 2>&1)
 
 echo "$SUBMIT_OUTPUT"

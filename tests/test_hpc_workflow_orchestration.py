@@ -34,7 +34,7 @@ def test_committed_small_distributed_orchestration_config_loads() -> None:
     assert cfg.execution.cpu_tiers[0].config_path == "configs/hpc/kestrel_cpu_scale_2_smoke.yml"
     assert cfg.execution.prepare_interaction_inputs is True
     assert cfg.gpu.enabled is False
-    assert cfg.pullback.mode == "manifest_only"
+    assert cfg.pullback.mode == "study_package"
 
 
 def test_committed_cpu_scale_2_smoke_config_is_lightweight() -> None:
@@ -196,6 +196,9 @@ def test_status_and_collect_commands_bind_configured_paths(tmp_path: Path) -> No
     assert "--hpc-artifacts-root /scratch/alice/bsm/bsm-public-rf/artifacts" in collect_str
     assert "--remote-snapshot-root /scratch/alice/bsm/kestrel_hpc_snapshots" in collect_str
     assert "--pullback-mode reporting_bundle" in collect_str
+    assert "--cpu-tier-specs 2=configs/hpc/kestrel_cpu_scale_2.yml" in collect_str
+    assert "--include-gpu 0" in collect_str
+    assert "--gpu-config configs/hpc/kestrel_gpu_h100.yml" in collect_str
 
 
 def test_default_cpu_suite_output_root_uses_artifacts_root(tmp_path: Path) -> None:

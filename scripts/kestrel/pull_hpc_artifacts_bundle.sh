@@ -13,6 +13,9 @@ HPC_ARTIFACTS_ROOT="${HPC_ARTIFACTS_ROOT:-__AUTO__}"
 LOCAL_OUT_DIR="${LOCAL_OUT_DIR:-${REPO_ROOT}/artifacts/kestrel_collected_bundles}"
 REMOTE_SNAPSHOT_ROOT="${REMOTE_SNAPSHOT_ROOT:-}"
 PULLBACK_MODE="${PULLBACK_MODE:-reporting_bundle}"
+CPU_TIER_SPECS="${CPU_TIER_SPECS:-2=configs/hpc/kestrel_cpu_scale_2.yml,10=configs/hpc/kestrel_cpu_scale_10.yml,1000=configs/hpc/kestrel_cpu_scale_1000.yml}"
+INCLUDE_GPU="${INCLUDE_GPU:-1}"
+GPU_CONFIG_PATH="${GPU_CONFIG_PATH:-configs/hpc/kestrel_gpu_h100.yml}"
 KEEP_REMOTE=0
 
 usage() {
@@ -31,7 +34,10 @@ Options:
   --hpc-artifacts-root DIR   Artifact root on HPC (default: auto; prefers /scratch/$USER/bsm/bsm-public-rf/artifacts)
   --local-out-dir DIR        Local destination for bundles (default: ./artifacts/kestrel_collected_bundles)
   --remote-snapshot-root DIR Remote snapshot root (default: auto)
-  --pullback-mode MODE       manifest_only | reporting_bundle | full (default: reporting_bundle)
+  --pullback-mode MODE       manifest_only | reporting_bundle | full | study_package (default: reporting_bundle)
+  --cpu-tier-specs SPECS     Comma list: <nodes>=<config-path> (default: 2/10/1000 configs)
+  --include-gpu 0|1          Include GPU target in manifest/bundle (default: 1)
+  --gpu-config PATH          GPU config path relative to remote repo root
   --keep-remote              Keep remote snapshot dir + zip after download
   -h, --help                 Show this help
 USAGE
@@ -63,6 +69,18 @@ while [[ $# -gt 0 ]]; do
       PULLBACK_MODE="${2:-}"
       shift 2
       ;;
+    --cpu-tier-specs)
+      CPU_TIER_SPECS="${2:-}"
+      shift 2
+      ;;
+    --include-gpu)
+      INCLUDE_GPU="${2:-}"
+      shift 2
+      ;;
+    --gpu-config)
+      GPU_CONFIG_PATH="${2:-}"
+      shift 2
+      ;;
     --keep-remote)
       KEEP_REMOTE=1
       shift
@@ -80,13 +98,18 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "${PULLBACK_MODE}" in
-  manifest_only|reporting_bundle|full)
+  manifest_only|reporting_bundle|full|study_package)
     ;;
   *)
-    echo "error: --pullback-mode must be one of: manifest_only, reporting_bundle, full" >&2
+    echo "error: --pullback-mode must be one of: manifest_only, reporting_bundle, full, study_package" >&2
     exit 2
     ;;
 esac
+
+if [[ "${INCLUDE_GPU}" != "0" && "${INCLUDE_GPU}" != "1" ]]; then
+  echo "error: --include-gpu must be 0 or 1" >&2
+  exit 2
+fi
 
 if [[ -z "${HPC_HOST}" || -z "${HPC_REPO_ROOT}" || -z "${LOCAL_OUT_DIR}" ]]; then
   echo "error: host/repo-root/local-out-dir cannot be empty" >&2
@@ -105,7 +128,10 @@ ssh -T "${HPC_HOST}" "bash -s" -- \
   "${TS}" \
   "${REMOTE_SNAPSHOT_ARG}" \
   "${HPC_ARTIFACTS_ROOT}" \
-  "${PULLBACK_MODE}" >"${REMOTE_OUTPUT_FILE}" <<'REMOTE_EOF'
+  "${PULLBACK_MODE}" \
+  "${CPU_TIER_SPECS}" \
+  "${INCLUDE_GPU}" \
+  "${GPU_CONFIG_PATH}" >"${REMOTE_OUTPUT_FILE}" <<'REMOTE_EOF'
 set -euo pipefail
 
 HPC_REPO_ROOT="$1"
@@ -113,18 +139,26 @@ TS="$2"
 REMOTE_SNAPSHOT_ROOT="${3:-__AUTO__}"
 HPC_ARTIFACTS_ROOT="${4:-__AUTO__}"
 PULLBACK_MODE="${5:-reporting_bundle}"
+CPU_TIER_SPECS="${6:-}"
+INCLUDE_GPU="${7:-1}"
+GPU_CONFIG_PATH="${8:-configs/hpc/kestrel_gpu_h100.yml}"
 
 if [[ "${REMOTE_SNAPSHOT_ROOT}" == "__AUTO__" ]]; then
   REMOTE_SNAPSHOT_ROOT=""
 fi
 case "${PULLBACK_MODE}" in
-  manifest_only|reporting_bundle|full)
+  manifest_only|reporting_bundle|full|study_package)
     ;;
   *)
     echo "error: invalid pullback mode: ${PULLBACK_MODE}" >&2
     exit 2
     ;;
 esac
+
+if [[ "${INCLUDE_GPU}" != "0" && "${INCLUDE_GPU}" != "1" ]]; then
+  echo "error: INCLUDE_GPU must be 0 or 1" >&2
+  exit 2
+fi
 
 if [[ ! -d "${HPC_REPO_ROOT}" ]]; then
   echo "error: HPC repo root not found: ${HPC_REPO_ROOT}" >&2
@@ -175,6 +209,9 @@ LOGS_ROOT="/scratch/${REMOTE_USER}/bsm"
 SUITE_ROOT="${HPC_ARTIFACTS_ROOT}/kestrel_cpu_scaling_suite"
 MANIFEST_JSON="${MANIFEST_DIR}/hpc_run_manifest.json"
 MANIFEST_CSV="${MANIFEST_DIR}/run_summary.csv"
+TARGET_SPECS_JSON="${MANIFEST_DIR}/target_specs.json"
+STUDY_METADATA_JSON="${MANIFEST_DIR}/study_metadata_manifest.json"
+STUDY_FILE_INVENTORY_CSV="${MANIFEST_DIR}/study_file_inventory.csv"
 
 mkdir -p "${RUNS_DIR}" "${LOGS_DIR}" "${MANIFEST_DIR}"
 
@@ -184,12 +221,138 @@ else
   PYTHON_RUNNER=(python3)
 fi
 
+"${PYTHON_RUNNER[@]}" - \
+  "${HPC_REPO_ROOT}" \
+  "${LOGS_ROOT}" \
+  "${SUITE_ROOT}" \
+  "${CPU_TIER_SPECS}" \
+  "${INCLUDE_GPU}" \
+  "${GPU_CONFIG_PATH}" \
+  "${REMOTE_USER}" \
+  "${TARGET_SPECS_JSON}" <<'PY'
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+import yaml
+
+
+def _resolve_path(repo_root: Path, raw: str, default_value: str) -> str:
+    value = str(raw or default_value)
+    path = Path(value)
+    if path.is_absolute():
+        return str(path)
+    return str((repo_root / path).resolve())
+
+
+def _expand_log_dir(template: str, *, run_id: str, remote_user: str) -> str:
+    value = str(template)
+    value = value.replace("${RUN_ID}", run_id).replace("${USER}", remote_user)
+    return os.path.expandvars(value)
+
+
+repo_root = Path(sys.argv[1]).resolve()
+logs_root = Path(sys.argv[2]).resolve()
+suite_root = Path(sys.argv[3]).resolve()
+cpu_tier_specs = sys.argv[4]
+include_gpu = sys.argv[5] == "1"
+gpu_config_path = sys.argv[6]
+remote_user = sys.argv[7]
+out_path = Path(sys.argv[8]).resolve()
+
+targets: list[dict[str, object]] = []
+for token in [part.strip() for part in cpu_tier_specs.split(",") if part.strip()]:
+    if "=" not in token:
+        raise SystemExit(f"Invalid cpu tier token (expected <nodes>=<config>): {token}")
+    nodes_raw, cfg_raw = token.split("=", 1)
+    nodes = int(nodes_raw.strip())
+    cfg_path = Path(cfg_raw.strip())
+    if not cfg_path.is_absolute():
+        cfg_path = (repo_root / cfg_path).resolve()
+    cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+    output = cfg.get("output", {}) or {}
+    distributed = cfg.get("distributed", {}) or {}
+    slurm = distributed.get("slurm", {}) or {}
+    run_id = str(distributed.get("run_id", f"bsm_kestrel_cpu_scale_{nodes}"))
+    run_dir = _resolve_path(
+        repo_root,
+        str(output.get("artifact_dir", f"./artifacts/kestrel_cpu_scale_{nodes}_run")),
+        f"./artifacts/kestrel_cpu_scale_{nodes}_run",
+    )
+    log_dir = _expand_log_dir(
+        str(slurm.get("log_dir", str(logs_root / run_id / "logs"))),
+        run_id=run_id,
+        remote_user=remote_user,
+    )
+    suite_manifest = str((suite_root / f"cpu_nodes_{nodes}" / "hpc_scripts" / "manifest.jsonl").resolve())
+    targets.append(
+        {
+            "target": f"cpu_{nodes}",
+            "kind": "cpu",
+            "nodes": nodes,
+            "config_path": str(cfg_path),
+            "run_id": run_id,
+            "run_dir": run_dir,
+            "log_dir": log_dir,
+            "suite_manifest_path": suite_manifest,
+            "gpu_mode": False,
+        }
+    )
+
+if include_gpu:
+    gpu_cfg_path = Path(gpu_config_path)
+    if not gpu_cfg_path.is_absolute():
+        gpu_cfg_path = (repo_root / gpu_cfg_path).resolve()
+    gpu_cfg = yaml.safe_load(gpu_cfg_path.read_text(encoding="utf-8")) or {}
+    output = gpu_cfg.get("output", {}) or {}
+    distributed = gpu_cfg.get("distributed", {}) or {}
+    slurm = distributed.get("slurm", {}) or {}
+    run_id = str(distributed.get("run_id", "bsm_kestrel_gpu_h100"))
+    run_dir = _resolve_path(
+        repo_root,
+        str(output.get("artifact_dir", "./artifacts/kestrel_gpu_h100_run")),
+        "./artifacts/kestrel_gpu_h100_run",
+    )
+    log_dir = _expand_log_dir(
+        str(slurm.get("log_dir", str(logs_root / run_id / "logs"))),
+        run_id=run_id,
+        remote_user=remote_user,
+    )
+    targets.append(
+        {
+            "target": "gpu_h100",
+            "kind": "gpu",
+            "nodes": 0,
+            "config_path": str(gpu_cfg_path),
+            "run_id": run_id,
+            "run_dir": run_dir,
+            "log_dir": log_dir,
+            "suite_manifest_path": "",
+            "gpu_mode": True,
+        }
+    )
+
+payload = {
+    "generated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    "hpc_repo_root": str(repo_root),
+    "cpu_tier_specs": cpu_tier_specs,
+    "include_gpu": include_gpu,
+    "gpu_config_path": str((repo_root / gpu_config_path).resolve()),
+    "targets": targets,
+}
+out_path.parent.mkdir(parents=True, exist_ok=True)
+out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+
 "${PYTHON_RUNNER[@]}" "${HPC_REPO_ROOT}/tools/hpc_bundle_manifest.py" create-run-manifest \
   --hpc-repo-root "${HPC_REPO_ROOT}" \
   --artifacts-root "${HPC_ARTIFACTS_ROOT}" \
   --logs-root "${LOGS_ROOT}" \
   --suite-root "${SUITE_ROOT}" \
   --pullback-mode "${PULLBACK_MODE}" \
+  --target-specs-json "${TARGET_SPECS_JSON}" \
   --output-json "${MANIFEST_JSON}" \
   --output-csv "${MANIFEST_CSV}"
 
@@ -228,57 +391,66 @@ copy_latest_match() {
   fi
 }
 
-copy_reporting_target_cpu() {
-  local tier="$1"
-  local run_dir="${HPC_ARTIFACTS_ROOT}/kestrel_cpu_scale_${tier}_run"
-  local out_run="${RUNS_DIR}/cpu_${tier}"
-  local out_logs="${LOGS_DIR}/cpu_${tier}"
-  local log_dir="${LOGS_ROOT}/bsm_kestrel_cpu_scale_${tier}/logs"
-
-  copy_tree "${run_dir}/hpc_scripts" "${out_run}/hpc_scripts"
-  copy_tree "${run_dir}/hpc_shards/_merged" "${out_run}/hpc_shards/_merged"
-  copy_file_if_exists "${SUITE_ROOT}/cpu_nodes_${tier}/hpc_scripts/manifest.jsonl" \
-    "${out_run}/hpc_scripts/suite_manifest.jsonl"
-  copy_latest_match "${log_dir}/bsm_interaction_discovery_*.out" "${out_logs}"
-  copy_latest_match "${log_dir}/bsm_reduce_interaction_discovery_*.out" "${out_logs}"
-}
-
-copy_reporting_target_gpu() {
-  local run_dir="${HPC_ARTIFACTS_ROOT}/kestrel_gpu_h100_run"
-  local out_run="${RUNS_DIR}/gpu_h100"
-  local out_logs="${LOGS_DIR}/gpu_h100"
-  local log_dir="${LOGS_ROOT}/bsm_kestrel_gpu_h100/logs"
-
-  copy_tree "${run_dir}/hpc_scripts" "${out_run}/hpc_scripts"
-  copy_tree "${run_dir}/hpc_shards/_merged" "${out_run}/hpc_shards/_merged"
-  copy_latest_match "${log_dir}/bsm_gpu_interaction_discovery_*.out" "${out_logs}"
-  copy_latest_match "${log_dir}/bsm_interaction_discovery_*.out" "${out_logs}"
-  copy_latest_match "${log_dir}/bsm_reduce_interaction_discovery_*.out" "${out_logs}"
-}
-
-if [[ "${PULLBACK_MODE}" == "full" ]]; then
-  if [[ -d "${SUITE_ROOT}" || -L "${SUITE_ROOT}" ]]; then
-    copy_tree "${SUITE_ROOT}" "${RUNS_DIR}/cpu_scaling_suite"
-  else
-    copy_tree "${HPC_REPO_ROOT}/artifacts/kestrel_cpu_scaling_suite" "${RUNS_DIR}/cpu_scaling_suite"
-  fi
-  for tier in 2 10 1000; do
-    run_dir="${HPC_ARTIFACTS_ROOT}/kestrel_cpu_scale_${tier}_run"
-    copy_tree "${run_dir}/hpc_scripts" "${RUNS_DIR}/cpu_${tier}/hpc_scripts"
-    copy_tree "${run_dir}/hpc_shards" "${RUNS_DIR}/cpu_${tier}/hpc_shards"
-    copy_tree "${LOGS_ROOT}/bsm_kestrel_cpu_scale_${tier}/logs" "${LOGS_DIR}/cpu_${tier}"
-  done
-  gpu_run_dir="${HPC_ARTIFACTS_ROOT}/kestrel_gpu_h100_run"
-  copy_tree "${gpu_run_dir}/hpc_scripts" "${RUNS_DIR}/gpu_h100/hpc_scripts"
-  copy_tree "${gpu_run_dir}/hpc_shards" "${RUNS_DIR}/gpu_h100/hpc_shards"
-  copy_tree "${LOGS_ROOT}/bsm_kestrel_gpu_h100/logs" "${LOGS_DIR}/gpu_h100"
-elif [[ "${PULLBACK_MODE}" == "reporting_bundle" ]]; then
+if [[ "${PULLBACK_MODE}" == "full" || "${PULLBACK_MODE}" == "reporting_bundle" || "${PULLBACK_MODE}" == "study_package" ]]; then
   copy_tree "${SUITE_ROOT}" "${RUNS_DIR}/cpu_scaling_suite"
-  for tier in 2 10 1000; do
-    copy_reporting_target_cpu "${tier}"
-  done
-  copy_reporting_target_gpu
 fi
+
+while IFS=$'\t' read -r target kind run_dir log_dir suite_manifest config_path gpu_mode; do
+  [[ -z "${target}" ]] && continue
+  out_run="${RUNS_DIR}/${target}"
+  out_logs="${LOGS_DIR}/${target}"
+  if [[ "${PULLBACK_MODE}" == "reporting_bundle" ]]; then
+    copy_tree "${run_dir}/hpc_scripts" "${out_run}/hpc_scripts"
+    copy_tree "${run_dir}/hpc_shards/_merged" "${out_run}/hpc_shards/_merged"
+    if [[ -n "${suite_manifest}" ]]; then
+      copy_file_if_exists "${suite_manifest}" "${out_run}/hpc_scripts/suite_manifest.jsonl"
+    fi
+    if [[ "${gpu_mode}" == "1" ]]; then
+      copy_latest_match "${log_dir}/bsm_gpu_interaction_discovery_*.out" "${out_logs}"
+    fi
+    copy_latest_match "${log_dir}/bsm_interaction_discovery_*.out" "${out_logs}"
+    copy_latest_match "${log_dir}/bsm_reduce_interaction_discovery_*.out" "${out_logs}"
+  elif [[ "${PULLBACK_MODE}" == "full" ]]; then
+    copy_tree "${run_dir}/hpc_scripts" "${out_run}/hpc_scripts"
+    copy_tree "${run_dir}/hpc_shards" "${out_run}/hpc_shards"
+    copy_tree "${log_dir}" "${out_logs}"
+  elif [[ "${PULLBACK_MODE}" == "study_package" ]]; then
+    copy_tree "${run_dir}" "${out_run}/run_artifacts"
+    copy_tree "${log_dir}" "${out_logs}"
+    if [[ -n "${suite_manifest}" ]]; then
+      copy_file_if_exists "${suite_manifest}" "${out_run}/hpc_scripts/suite_manifest.jsonl"
+    fi
+    if [[ -n "${config_path}" ]]; then
+      copy_file_if_exists "${config_path}" "${MANIFEST_DIR}/configs/${target}.yml"
+    fi
+  fi
+done < <("${PYTHON_RUNNER[@]}" - "${TARGET_SPECS_JSON}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+for target in payload.get("targets", []):
+    row = [
+        str(target.get("target", "")),
+        str(target.get("kind", "")),
+        str(target.get("run_dir", "")),
+        str(target.get("log_dir", "")),
+        str(target.get("suite_manifest_path", "")),
+        str(target.get("config_path", "")),
+        "1" if bool(target.get("gpu_mode", False)) else "0",
+    ]
+    print("\t".join(row))
+PY
+)
+
+"${PYTHON_RUNNER[@]}" "${HPC_REPO_ROOT}/tools/hpc_bundle_manifest.py" write-study-metadata \
+  --bundle-root "${BUNDLE_DIR}" \
+  --hpc-repo-root "${HPC_REPO_ROOT}" \
+  --target-specs-json "${TARGET_SPECS_JSON}" \
+  --pullback-mode "${PULLBACK_MODE}" \
+  --output-json "${STUDY_METADATA_JSON}" \
+  --output-csv "${STUDY_FILE_INVENTORY_CSV}"
 
 "${PYTHON_RUNNER[@]}" - "${BUNDLE_DIR}" "${ZIP_PATH}" <<'PY'
 import os

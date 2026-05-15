@@ -5,8 +5,13 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
+import importlib.metadata
 import json
 import os
+import platform
+import shutil
+import subprocess
 import time
 import zipfile
 from dataclasses import asdict, dataclass
@@ -31,6 +36,18 @@ class TargetSummary:
     log_dir: str
     latest_array_log: str
     latest_reduce_log: str
+
+
+@dataclass
+class TargetSpec:
+    """Config-resolved target metadata used for summaries and bundle assembly."""
+
+    target: str
+    run_dir: str
+    log_dir: str
+    suite_manifest_path: str = ""
+    gpu_mode: bool = False
+    config_path: str = ""
 
 
 def _utc_now() -> str:
@@ -69,6 +86,79 @@ def _latest_glob(pattern: str) -> str:
         return ""
     matches.sort(key=lambda p: os.path.getmtime(p))
     return matches[-1]
+
+
+def _safe_run(cmd: list[str], cwd: Path | None = None) -> str:
+    try:
+        result = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            cwd=str(cwd) if cwd else None,
+        )
+    except Exception:
+        return ""
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _collect_code_provenance(hpc_repo_root: Path) -> dict[str, str | bool]:
+    return {
+        "git_commit": _safe_run(["git", "rev-parse", "HEAD"], cwd=hpc_repo_root),
+        "git_commit_short": _safe_run(["git", "rev-parse", "--short", "HEAD"], cwd=hpc_repo_root),
+        "git_branch": _safe_run(["git", "branch", "--show-current"], cwd=hpc_repo_root),
+        "git_describe": _safe_run(["git", "describe", "--tags", "--always"], cwd=hpc_repo_root),
+        "git_remote_origin": _safe_run(
+            ["git", "config", "--get", "remote.origin.url"], cwd=hpc_repo_root
+        ),
+        "git_is_dirty": bool(_safe_run(["git", "status", "--porcelain"], cwd=hpc_repo_root)),
+    }
+
+
+def _collect_package_versions() -> dict[str, str]:
+    packages = (
+        "numpy",
+        "pandas",
+        "scikit-learn",
+        "xgboost",
+        "shap",
+        "pyarrow",
+        "scipy",
+    )
+    versions: dict[str, str] = {}
+    for pkg in packages:
+        try:
+            versions[pkg] = importlib.metadata.version(pkg)
+        except importlib.metadata.PackageNotFoundError:
+            versions[pkg] = ""
+    return versions
+
+
+def _load_target_specs(path: Path) -> list[TargetSpec]:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    specs: list[TargetSpec] = []
+    for entry in raw.get("targets", []):
+        specs.append(
+            TargetSpec(
+                target=str(entry.get("target", "")),
+                run_dir=str(entry.get("run_dir", "")),
+                log_dir=str(entry.get("log_dir", "")),
+                suite_manifest_path=str(entry.get("suite_manifest_path", "")),
+                gpu_mode=bool(entry.get("gpu_mode", False)),
+                config_path=str(entry.get("config_path", "")),
+            )
+        )
+    return specs
 
 
 def _shard_status_counts(shards_root: Path) -> tuple[int, int, int, int]:
@@ -171,28 +261,45 @@ def create_run_manifest(args: argparse.Namespace) -> int:
     artifacts_root = Path(args.artifacts_root)
     logs_root = Path(args.logs_root)
     suite_root = Path(args.suite_root)
+    hpc_repo_root = Path(args.hpc_repo_root)
 
     rows: list[TargetSummary] = []
-    for tier in (2, 10, 1000):
+    target_specs_json = getattr(args, "target_specs_json", None)
+    if target_specs_json:
+        target_specs = _load_target_specs(Path(target_specs_json))
+        for spec in target_specs:
+            rows.append(
+                _summarize_target(
+                    target=spec.target,
+                    run_dir=Path(spec.run_dir),
+                    suite_manifest_fallback=(
+                        Path(spec.suite_manifest_path) if spec.suite_manifest_path else None
+                    ),
+                    log_dir=Path(spec.log_dir),
+                    gpu_mode=spec.gpu_mode,
+                )
+            )
+    else:
+        for tier in (2, 10, 1000):
+            rows.append(
+                _summarize_target(
+                    target=f"cpu_{tier}",
+                    run_dir=artifacts_root / f"kestrel_cpu_scale_{tier}_run",
+                    suite_manifest_fallback=(
+                        suite_root / f"cpu_nodes_{tier}" / "hpc_scripts" / "manifest.jsonl"
+                    ),
+                    log_dir=logs_root / f"bsm_kestrel_cpu_scale_{tier}" / "logs",
+                    gpu_mode=False,
+                )
+            )
         rows.append(
             _summarize_target(
-                target=f"cpu_{tier}",
-                run_dir=artifacts_root / f"kestrel_cpu_scale_{tier}_run",
-                suite_manifest_fallback=(
-                    suite_root / f"cpu_nodes_{tier}" / "hpc_scripts" / "manifest.jsonl"
-                ),
-                log_dir=logs_root / f"bsm_kestrel_cpu_scale_{tier}" / "logs",
-                gpu_mode=False,
+                target="gpu_h100",
+                run_dir=artifacts_root / "kestrel_gpu_h100_run",
+                log_dir=logs_root / "bsm_kestrel_gpu_h100" / "logs",
+                gpu_mode=True,
             )
         )
-    rows.append(
-        _summarize_target(
-            target="gpu_h100",
-            run_dir=artifacts_root / "kestrel_gpu_h100_run",
-            log_dir=logs_root / "bsm_kestrel_gpu_h100" / "logs",
-            gpu_mode=True,
-        )
-    )
 
     payload = {
         "manifest_version": "1",
@@ -210,6 +317,15 @@ def create_run_manifest(args: argparse.Namespace) -> int:
             "n_failed_shards": sum(row.failed_shards for row in rows),
             "n_completed_shards": sum(row.completed_shards for row in rows),
             "n_manifest_shards": sum(row.manifest_shards for row in rows),
+        },
+        "provenance": {
+            "code": _collect_code_provenance(hpc_repo_root),
+            "environment": {
+                "python_version": platform.python_version(),
+                "platform": platform.platform(),
+                "pixi_version": _safe_run(["pixi", "--version"]) if shutil.which("pixi") else "",
+                "package_versions": _collect_package_versions(),
+            },
         },
     }
 
@@ -285,6 +401,80 @@ def analyze_zip(args: argparse.Namespace) -> int:
     return 0
 
 
+def write_study_metadata(args: argparse.Namespace) -> int:
+    """Write reproducibility metadata + file inventory for a collected study bundle."""
+    bundle_root = Path(args.bundle_root).resolve()
+    hpc_repo_root = Path(args.hpc_repo_root).resolve()
+    target_specs = _load_target_specs(Path(args.target_specs_json))
+    out_json = Path(args.output_json)
+    out_csv = Path(args.output_csv)
+
+    inventory_rows: list[dict[str, str | int]] = []
+    for path in sorted(bundle_root.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(bundle_root).as_posix()
+        inventory_rows.append(
+            {
+                "relative_path": rel,
+                "size_bytes": int(path.stat().st_size),
+                "sha256": _sha256_file(path),
+            }
+        )
+
+    metadata = {
+        "manifest_version": "1",
+        "generated_at_utc": _utc_now(),
+        "pullback_mode": args.pullback_mode,
+        "bundle_root": str(bundle_root),
+        "hpc_repo_root": str(hpc_repo_root),
+        "provenance": {
+            "code": _collect_code_provenance(hpc_repo_root),
+            "environment": {
+                "python_version": platform.python_version(),
+                "platform": platform.platform(),
+                "pixi_version": _safe_run(["pixi", "--version"]) if shutil.which("pixi") else "",
+                "package_versions": _collect_package_versions(),
+            },
+        },
+        "targets": [asdict(spec) for spec in target_specs],
+        "inventory": {
+            "n_files": len(inventory_rows),
+            "total_bytes": int(sum(int(row["size_bytes"]) for row in inventory_rows)),
+        },
+        "final_artifacts": sorted(
+            [
+                row["relative_path"]
+                for row in inventory_rows
+                if str(row["relative_path"]).startswith("runs/")
+                and "/final_manuscript_artifacts/" in str(row["relative_path"])
+            ]
+        ),
+        "figure_assets": sorted(
+            [
+                row["relative_path"]
+                for row in inventory_rows
+                if str(row["relative_path"]).startswith("runs/")
+                and (
+                    str(row["relative_path"]).endswith(".svg")
+                    or "/figures/" in str(row["relative_path"])
+                )
+            ]
+        ),
+    }
+
+    out_json.parent.mkdir(parents=True, exist_ok=True)
+    out_json.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
+    with out_csv.open("w", newline="", encoding="utf-8") as handle:
+        fieldnames = ["relative_path", "size_bytes", "sha256"]
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(inventory_rows)
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -295,6 +485,7 @@ def _build_parser() -> argparse.ArgumentParser:
     create_parser.add_argument("--logs-root", required=True)
     create_parser.add_argument("--suite-root", required=True)
     create_parser.add_argument("--pullback-mode", required=True)
+    create_parser.add_argument("--target-specs-json", required=False)
     create_parser.add_argument("--output-json", required=True)
     create_parser.add_argument("--output-csv", required=True)
     create_parser.set_defaults(func=create_run_manifest)
@@ -304,6 +495,15 @@ def _build_parser() -> argparse.ArgumentParser:
     analyze_parser.add_argument("--out-csv", required=True)
     analyze_parser.add_argument("--out-txt", required=True)
     analyze_parser.set_defaults(func=analyze_zip)
+
+    metadata_parser = subparsers.add_parser("write-study-metadata")
+    metadata_parser.add_argument("--bundle-root", required=True)
+    metadata_parser.add_argument("--hpc-repo-root", required=True)
+    metadata_parser.add_argument("--target-specs-json", required=True)
+    metadata_parser.add_argument("--pullback-mode", required=True)
+    metadata_parser.add_argument("--output-json", required=True)
+    metadata_parser.add_argument("--output-csv", required=True)
+    metadata_parser.set_defaults(func=write_study_metadata)
     return parser
 
 

@@ -9,7 +9,7 @@
 #       --stage interaction_discovery --n-shards 2 --submit
 
 dataset:
-  type: "synthetic_full"
+  type: "real_full_dataset"
 
 algorithm:
   variance_threshold: 0.90

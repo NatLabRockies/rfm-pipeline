@@ -21,7 +21,7 @@
 #     --action submit
 
 dataset:
-  type: "synthetic_full"
+  type: "real_full_dataset"
 
 algorithm:
   # Conservative variance threshold — retain more features for analysis

@@ -74,6 +74,7 @@ class HpcExecutionConfig:
     local_cores: int = 1
     run_diagnostic: bool = True
     prepare_interaction_inputs: bool = False
+    prepare_full_pipeline_artifacts: bool = False
     cpu_tiers: list[CpuTierConfig] = field(default_factory=_default_cpu_tiers)
 
 
@@ -196,10 +197,7 @@ def build_remote_submit_commands(
         common_flags.append("--dry-run")
 
     commands: list[str] = []
-    if (
-        config.execution.stage == "interaction_discovery"
-        and config.execution.prepare_interaction_inputs
-    ):
+    if config.execution.stage == "interaction_discovery":
         prep_configs: list[str] = []
         seen_configs: set[str] = set()
         for tier in config.execution.cpu_tiers:
@@ -207,19 +205,34 @@ def build_remote_submit_commands(
                 continue
             seen_configs.add(tier.config_path)
             prep_configs.append(tier.config_path)
-        for prep_cfg in prep_configs:
-            cmd = [
-                "pixi",
-                "run",
-                "python",
-                "tools/run_manuscript_pipeline.py",
-                prep_cfg,
-                "--start-stage",
-                "output_conditioning",
-                "--stop-stage",
-                "empirical_null_screen",
-            ]
-            commands.append(_shell_join(cmd))
+        if config.execution.prepare_full_pipeline_artifacts:
+            for prep_cfg in prep_configs:
+                cmd = [
+                    "pixi",
+                    "run",
+                    "python",
+                    "tools/run_manuscript_pipeline.py",
+                    prep_cfg,
+                    "--start-stage",
+                    "output_conditioning",
+                    "--stop-stage",
+                    "final_manuscript_artifacts",
+                ]
+                commands.append(_shell_join(cmd))
+        elif config.execution.prepare_interaction_inputs:
+            for prep_cfg in prep_configs:
+                cmd = [
+                    "pixi",
+                    "run",
+                    "python",
+                    "tools/run_manuscript_pipeline.py",
+                    prep_cfg,
+                    "--start-stage",
+                    "output_conditioning",
+                    "--stop-stage",
+                    "empirical_null_screen",
+                ]
+                commands.append(_shell_join(cmd))
 
     first_tier_cfg = config.execution.cpu_tiers[0].config_path
     if config.execution.run_diagnostic:

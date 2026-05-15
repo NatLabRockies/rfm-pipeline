@@ -32,7 +32,8 @@ def test_committed_small_distributed_orchestration_config_loads() -> None:
     assert len(cfg.execution.cpu_tiers) == 1
     assert cfg.execution.cpu_tiers[0].nodes == 2
     assert cfg.execution.cpu_tiers[0].config_path == "configs/hpc/kestrel_cpu_scale_2_smoke.yml"
-    assert cfg.execution.prepare_interaction_inputs is True
+    assert cfg.execution.prepare_interaction_inputs is False
+    assert cfg.execution.prepare_full_pipeline_artifacts is True
     assert cfg.gpu.enabled is False
     assert cfg.pullback.mode == "study_package"
 
@@ -153,6 +154,37 @@ def test_submit_commands_prepare_interaction_inputs_when_enabled(tmp_path: Path)
     )
     assert "--start-stage output_conditioning" in commands[0]
     assert "--stop-stage empirical_null_screen" in commands[0]
+    assert any("--diagnostic-only" in command for command in commands)
+    assert any("--stage interaction_discovery" in command for command in commands)
+
+
+def test_submit_commands_prepare_full_pipeline_when_enabled(tmp_path: Path) -> None:
+    config_path = tmp_path / "hpc.yml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "cluster": {"host": "kl1.hpc.nrel.gov", "user": "alice"},
+                "execution": {
+                    "stage": "interaction_discovery",
+                    "prepare_full_pipeline_artifacts": True,
+                    "cpu_tiers": [
+                        {"nodes": 2, "config_path": "configs/hpc/kestrel_cpu_scale_2_smoke.yml"},
+                    ],
+                },
+                "gpu": {"enabled": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_hpc_workflow_config(config_path)
+
+    commands = build_remote_submit_commands(cfg, submit=True, dry_run=False)
+    assert commands
+    assert commands[0].startswith(
+        "pixi run python tools/run_manuscript_pipeline.py configs/hpc/kestrel_cpu_scale_2_smoke.yml"
+    )
+    assert "--start-stage output_conditioning" in commands[0]
+    assert "--stop-stage final_manuscript_artifacts" in commands[0]
     assert any("--diagnostic-only" in command for command in commands)
     assert any("--stage interaction_discovery" in command for command in commands)
 

@@ -114,6 +114,35 @@ def test_write_study_metadata_writes_manifest_and_inventory(tmp_path: Path) -> N
     )
     retained_terms.parent.mkdir(parents=True, exist_ok=True)
     retained_terms.write_text("feature_name\nf1\nf2\n", encoding="utf-8")
+    submit_script = (
+        bundle_root / "runs" / "cpu_2" / "hpc_scripts" / "submit_interaction_discovery_array.sh"
+    )
+    submit_script.parent.mkdir(parents=True, exist_ok=True)
+    submit_script.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "#SBATCH --account=bsm",
+                "pixi run python tools/hpc_shard_worker.py \\",
+                "  --manifest manifest.jsonl \\",
+                "  --task-id 0",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    run_started = bundle_root / "runs" / "cpu_2" / "run_artifacts" / "run_started.json"
+    run_started.parent.mkdir(parents=True, exist_ok=True)
+    run_started.write_text(
+        json.dumps(
+            {"start_stage": "output_conditioning", "stop_stage": "final_manuscript_artifacts"}
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    env_dir = bundle_root / "manifest" / "environment"
+    env_dir.mkdir(parents=True, exist_ok=True)
+    (env_dir / "pixi.lock").write_text("lock", encoding="utf-8")
 
     target_specs = {
         "targets": [
@@ -136,6 +165,8 @@ def test_write_study_metadata_writes_manifest_and_inventory(tmp_path: Path) -> N
 
     out_json = tmp_path / "manifest" / "study_metadata_manifest.json"
     out_csv = tmp_path / "manifest" / "study_file_inventory.csv"
+    out_commands = tmp_path / "manifest" / "commands.json"
+    out_recipe = tmp_path / "manifest" / "reproduction_recipe.md"
     args = argparse.Namespace(
         bundle_root=str(bundle_root),
         hpc_repo_root=str(tmp_path),
@@ -143,13 +174,28 @@ def test_write_study_metadata_writes_manifest_and_inventory(tmp_path: Path) -> N
         pullback_mode="study_package",
         output_json=str(out_json),
         output_csv=str(out_csv),
+        commands_json=str(out_commands),
+        reproduction_recipe_md=str(out_recipe),
     )
     write_study_metadata(args)
 
     payload = json.loads(out_json.read_text(encoding="utf-8"))
     assert payload["pullback_mode"] == "study_package"
-    assert payload["inventory"]["n_files"] == 2
+    assert payload["inventory"]["n_files"] == 5
     assert payload["figure_assets"]
     assert payload["stage_metrics"]["cpu_2"]["retained_counts"]["n_retained_first_order_terms"] == 2
+    assert payload["execution_trace"]["n_targets"] == 1
+    assert payload["execution_trace"]["n_traced_commands"] == 1
     csv_text = out_csv.read_text(encoding="utf-8")
     assert "relative_path,size_bytes,sha256" in csv_text
+    commands_payload = json.loads(out_commands.read_text(encoding="utf-8"))
+    target_trace = commands_payload["targets"]["cpu_2"]
+    assert target_trace["submission_scripts"]
+    assert target_trace["run_started"]["start_stage"] == "output_conditioning"
+    assert (
+        "pixi run python tools/hpc_shard_worker.py --manifest manifest.jsonl --task-id 0"
+        in (commands_payload["all_commands"])
+    )
+    recipe_text = out_recipe.read_text(encoding="utf-8")
+    assert "manifest/environment/pixi.lock" in recipe_text
+    assert "Target `cpu_2`" in recipe_text

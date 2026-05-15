@@ -212,6 +212,8 @@ MANIFEST_CSV="${MANIFEST_DIR}/run_summary.csv"
 TARGET_SPECS_JSON="${MANIFEST_DIR}/target_specs.json"
 STUDY_METADATA_JSON="${MANIFEST_DIR}/study_metadata_manifest.json"
 STUDY_FILE_INVENTORY_CSV="${MANIFEST_DIR}/study_file_inventory.csv"
+REPRO_COMMANDS_JSON="${MANIFEST_DIR}/commands.json"
+REPRO_RECIPE_MD="${MANIFEST_DIR}/reproduction_recipe.md"
 
 mkdir -p "${RUNS_DIR}" "${LOGS_DIR}" "${MANIFEST_DIR}"
 
@@ -395,6 +397,12 @@ if [[ "${PULLBACK_MODE}" == "full" || "${PULLBACK_MODE}" == "reporting_bundle" |
   copy_tree "${SUITE_ROOT}" "${RUNS_DIR}/cpu_scaling_suite"
 fi
 
+if [[ "${PULLBACK_MODE}" == "study_package" ]]; then
+  copy_file_if_exists "${HPC_REPO_ROOT}/pixi.lock" "${MANIFEST_DIR}/environment/pixi.lock"
+  copy_file_if_exists "${HPC_REPO_ROOT}/pixi.toml" "${MANIFEST_DIR}/environment/pixi.toml"
+  copy_file_if_exists "${HPC_REPO_ROOT}/pyproject.toml" "${MANIFEST_DIR}/environment/pyproject.toml"
+fi
+
 while IFS=$'\t' read -r target kind run_dir log_dir suite_manifest config_path gpu_mode; do
   [[ -z "${target}" ]] && continue
   out_run="${RUNS_DIR}/${target}"
@@ -403,6 +411,7 @@ while IFS=$'\t' read -r target kind run_dir log_dir suite_manifest config_path g
     copy_tree "${run_dir}/hpc_scripts" "${out_run}/hpc_scripts"
     copy_tree "${run_dir}/hpc_shards/_merged" "${out_run}/hpc_shards/_merged"
     if [[ -n "${suite_manifest}" ]]; then
+      copy_tree "$(dirname "${suite_manifest}")" "${out_run}/hpc_scripts"
       copy_file_if_exists "${suite_manifest}" "${out_run}/hpc_scripts/suite_manifest.jsonl"
     fi
     if [[ "${gpu_mode}" == "1" ]]; then
@@ -414,10 +423,15 @@ while IFS=$'\t' read -r target kind run_dir log_dir suite_manifest config_path g
     copy_tree "${run_dir}/hpc_scripts" "${out_run}/hpc_scripts"
     copy_tree "${run_dir}/hpc_shards" "${out_run}/hpc_shards"
     copy_tree "${log_dir}" "${out_logs}"
+    if [[ -n "${suite_manifest}" ]]; then
+      copy_tree "$(dirname "${suite_manifest}")" "${out_run}/hpc_scripts"
+      copy_file_if_exists "${suite_manifest}" "${out_run}/hpc_scripts/suite_manifest.jsonl"
+    fi
   elif [[ "${PULLBACK_MODE}" == "study_package" ]]; then
     copy_tree "${run_dir}" "${out_run}/run_artifacts"
     copy_tree "${log_dir}" "${out_logs}"
     if [[ -n "${suite_manifest}" ]]; then
+      copy_tree "$(dirname "${suite_manifest}")" "${out_run}/hpc_scripts"
       copy_file_if_exists "${suite_manifest}" "${out_run}/hpc_scripts/suite_manifest.jsonl"
     fi
     if [[ -n "${config_path}" ]]; then
@@ -450,7 +464,9 @@ PY
   --target-specs-json "${TARGET_SPECS_JSON}" \
   --pullback-mode "${PULLBACK_MODE}" \
   --output-json "${STUDY_METADATA_JSON}" \
-  --output-csv "${STUDY_FILE_INVENTORY_CSV}"
+  --output-csv "${STUDY_FILE_INVENTORY_CSV}" \
+  --commands-json "${REPRO_COMMANDS_JSON}" \
+  --reproduction-recipe-md "${REPRO_RECIPE_MD}"
 
 "${PYTHON_RUNNER[@]}" - "${BUNDLE_DIR}" "${ZIP_PATH}" <<'PY'
 import os

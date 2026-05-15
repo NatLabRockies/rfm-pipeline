@@ -184,6 +184,9 @@ def test_status_and_collect_commands_bind_configured_paths(tmp_path: Path) -> No
     status_cmd = build_remote_status_command(cfg)
     assert "ARTIFACTS_ROOT=/scratch/alice/bsm/bsm-public-rf/artifacts" in status_cmd
     assert "LOGS_ROOT=/scratch/alice/bsm" in status_cmd
+    assert "STATUS_CPU_TIERS=2" in status_cmd
+    assert "STATUS_INCLUDE_GPU=0" in status_cmd
+    assert "STATUS_GPU_SHARDS=10" in status_cmd
     assert "status_all_tests.sh" in status_cmd
 
     collect_cmd = build_collect_command(cfg, repo_root=Path.cwd())

@@ -275,9 +275,23 @@ def build_remote_submit_commands(
 
 def build_remote_status_command(config: HpcWorkflowConfig) -> str:
     """Build one-shot remote status command using configured artifact/log roots."""
+    cpu_tiers: list[str] = []
+    seen_tiers: set[int] = set()
+    for tier in config.execution.cpu_tiers:
+        if tier.nodes in seen_tiers:
+            continue
+        seen_tiers.add(tier.nodes)
+        cpu_tiers.append(str(tier.nodes))
+    cpu_tiers_csv = ",".join(cpu_tiers) if cpu_tiers else "2,10,1000"
+    include_gpu = "1" if config.gpu.enabled else "0"
+    gpu_shards = str(config.gpu.n_shards)
+
     return (
         f"ARTIFACTS_ROOT={shlex.quote(resolved_remote_artifacts_root(config))} "
         f"LOGS_ROOT={shlex.quote(resolved_remote_logs_root(config))} "
+        f"STATUS_CPU_TIERS={shlex.quote(cpu_tiers_csv)} "
+        f"STATUS_INCLUDE_GPU={shlex.quote(include_gpu)} "
+        f"STATUS_GPU_SHARDS={shlex.quote(gpu_shards)} "
         "bash scripts/kestrel/status_all_tests.sh"
     )
 

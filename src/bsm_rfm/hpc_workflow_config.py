@@ -58,7 +58,7 @@ class GpuWorkflowConfig:
 class HpcPathConfig:
     """Local/remote filesystem locations used by orchestration actions."""
 
-    remote_repo_root: str = "/projects/bsm/bsm-public-rf"
+    remote_repo_root: str = "/home/dhetting/src/bsm-public-rf"
     remote_artifacts_root: str = "/scratch/${USER}/bsm/bsm-public-rf/artifacts"
     remote_logs_root: str = "/scratch/${USER}/bsm"
     remote_snapshot_root: str = "/scratch/${USER}/bsm/kestrel_hpc_snapshots"

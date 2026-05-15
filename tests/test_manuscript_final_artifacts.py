@@ -201,6 +201,10 @@ def test_run_final_manuscript_artifacts_stage_executes_demo_context() -> None:
         "figure_selected_by_module_count",
         "figure_selected_by_module_share",
         "figure_nrmse_bootstrap_summary",
+        "fig_feature_type_distribution",
+        "fig_influential_by_module",
+        "fig_module_pair_heatmap",
+        "fig_module_total_interactions",
     ]
     assert result.artifact_paths["prefilter_support_features"].exists()
     assert result.artifact_paths["hc3_wald_intervals"].exists()
@@ -212,6 +216,15 @@ def test_run_final_manuscript_artifacts_stage_executes_demo_context() -> None:
     assert result.artifact_paths["figure_selected_by_module_count_svg"].exists()
     assert result.artifact_paths["figure_selected_by_module_share_svg"].exists()
     assert result.artifact_paths["figure_nrmse_bootstrap_summary_svg"].exists()
+    assert result.artifact_paths["fig_feature_type_distribution_svg"].exists()
+    assert result.artifact_paths["fig_influential_by_module_svg"].exists()
+    assert result.artifact_paths["fig_module_pair_heatmap_svg"].exists()
+    assert result.artifact_paths["fig_module_total_interactions_svg"].exists()
+    assert result.artifact_paths["feature_type_counts"].exists()
+    assert result.artifact_paths["influential_counts_by_module"].exists()
+    assert result.artifact_paths["interaction_counts_by_module_pair"].exists()
+    assert result.artifact_paths["interaction_density_module_matrix"].exists()
+    assert result.artifact_paths["module_total_interactions"].exists()
     assert result.artifact_paths["ablation_table"].exists()
     assert result.artifact_paths["per_output_nrmse"].exists()
     assert result.artifact_paths["per_output_nrmse_summary"].exists()

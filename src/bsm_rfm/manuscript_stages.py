@@ -697,6 +697,16 @@ class FinalManuscriptArtifactsResult:
         Source data for module-level selected-feature count/share figures.
     figure_nrmse_summary_data
         Source data for bootstrap nRMSE summary figure.
+    legacy_feature_type_counts
+        Legacy-compatible feature-type summary used by influential-factor figures.
+    legacy_influential_counts_by_module
+        Legacy-compatible influential-feature count summary by module.
+    legacy_interaction_counts_by_module_pair
+        Legacy-compatible interaction pair count summary by module pair.
+    legacy_interaction_density_module_matrix
+        Legacy-compatible symmetric interaction-density matrix by module.
+    legacy_module_total_interactions
+        Legacy-compatible per-module total interaction counts.
     figure_specs
         Registry of generated figure assets.
     svg_figures
@@ -720,6 +730,11 @@ class FinalManuscriptArtifactsResult:
     figure_support_composition_data: pd.DataFrame
     figure_selected_by_module_data: pd.DataFrame
     figure_nrmse_summary_data: pd.DataFrame
+    legacy_feature_type_counts: pd.DataFrame
+    legacy_influential_counts_by_module: pd.DataFrame
+    legacy_interaction_counts_by_module_pair: pd.DataFrame
+    legacy_interaction_density_module_matrix: pd.DataFrame
+    legacy_module_total_interactions: pd.DataFrame
     figure_specs: pd.DataFrame
     svg_figures: dict[str, str]
     ablation_table: pd.DataFrame
@@ -3200,6 +3215,20 @@ def regenerate_final_manuscript_artifacts(
     figure_support_composition_data = _build_support_composition_figure_data(final_support_features)
     figure_selected_by_module_data = _build_selected_by_module_figure_data(final_support_features)
     figure_nrmse_summary_data = _build_nrmse_summary_figure_data(ablation_table)
+    legacy_feature_type_counts = _build_legacy_feature_type_counts(final_support_features)
+    legacy_influential_counts_by_module = _build_legacy_influential_counts_by_module(
+        final_support_features
+    )
+    (
+        legacy_interaction_counts_by_module_pair,
+        legacy_interaction_density_matrix_indexed,
+    ) = _build_legacy_interaction_counts_by_module_pair(final_support_features)
+    legacy_interaction_density_module_matrix = (
+        legacy_interaction_density_matrix_indexed.reset_index().rename(columns={"index": "module"})
+    )
+    legacy_module_total_interactions = _build_legacy_module_total_interactions(
+        legacy_interaction_density_matrix_indexed
+    )
     svg_figures = {
         "figure_model_performance": _render_horizontal_bar_svg(
             figure_model_performance_data,
@@ -3226,12 +3255,38 @@ def regenerate_final_manuscript_artifacts(
             title="Selected inputs by module (share)",
         ),
         "figure_nrmse_bootstrap_summary": _render_nrmse_summary_svg(figure_nrmse_summary_data),
+        "fig_feature_type_distribution": _render_horizontal_bar_svg(
+            legacy_feature_type_counts,
+            label_column="feature_type",
+            value_column="count",
+            title="Distribution of Influential Feature Types",
+        ),
+        "fig_influential_by_module": _render_horizontal_bar_svg(
+            legacy_influential_counts_by_module.sort_values("module", ignore_index=True),
+            label_column="module",
+            value_column="count",
+            title="Influential Features by Module",
+        ),
+        "fig_module_pair_heatmap": _render_module_pair_heatmap_svg(
+            legacy_interaction_density_matrix_indexed
+        ),
+        "fig_module_total_interactions": _render_horizontal_bar_svg(
+            legacy_module_total_interactions,
+            label_column="module",
+            value_column="total_interactions",
+            title="Total Interactions by Module",
+        ),
     }
     figure_specs = _build_figure_specs(
         figure_model_performance_data=figure_model_performance_data,
         figure_support_composition_data=figure_support_composition_data,
         figure_selected_by_module_data=figure_selected_by_module_data,
         figure_nrmse_summary_data=figure_nrmse_summary_data,
+        legacy_feature_type_counts=legacy_feature_type_counts,
+        legacy_influential_counts_by_module=legacy_influential_counts_by_module,
+        legacy_interaction_counts_by_module_pair=legacy_interaction_counts_by_module_pair,
+        legacy_interaction_density_module_matrix=legacy_interaction_density_module_matrix,
+        legacy_module_total_interactions=legacy_module_total_interactions,
         svg_figures=svg_figures,
     )
     summary = _build_final_artifact_summary(
@@ -3263,6 +3318,11 @@ def regenerate_final_manuscript_artifacts(
         figure_support_composition_data=figure_support_composition_data,
         figure_selected_by_module_data=figure_selected_by_module_data,
         figure_nrmse_summary_data=figure_nrmse_summary_data,
+        legacy_feature_type_counts=legacy_feature_type_counts,
+        legacy_influential_counts_by_module=legacy_influential_counts_by_module,
+        legacy_interaction_counts_by_module_pair=legacy_interaction_counts_by_module_pair,
+        legacy_interaction_density_module_matrix=legacy_interaction_density_module_matrix,
+        legacy_module_total_interactions=legacy_module_total_interactions,
         figure_specs=figure_specs,
         svg_figures=svg_figures,
         ablation_table=ablation_table,
@@ -3360,6 +3420,26 @@ def write_final_manuscript_artifacts(
         "figure_nrmse_summary_data": (
             figure_root / "figure_nrmse_summary_data.csv",
             result.figure_nrmse_summary_data,
+        ),
+        "feature_type_counts": (
+            figure_root / "feature_type_counts.csv",
+            result.legacy_feature_type_counts,
+        ),
+        "influential_counts_by_module": (
+            figure_root / "influential_counts_by_module.csv",
+            result.legacy_influential_counts_by_module,
+        ),
+        "interaction_counts_by_module_pair": (
+            figure_root / "interaction_counts_by_module_pair.csv",
+            result.legacy_interaction_counts_by_module_pair,
+        ),
+        "interaction_density_module_matrix": (
+            figure_root / "interaction_density_module_matrix.csv",
+            result.legacy_interaction_density_module_matrix,
+        ),
+        "module_total_interactions": (
+            figure_root / "module_total_interactions.csv",
+            result.legacy_module_total_interactions,
         ),
         "figure_specs": (figure_root / "figure_specs.csv", result.figure_specs),
         "final_artifact_summary": (
@@ -6367,10 +6447,11 @@ def _build_support_composition_figure_data(
     final_support_features: pd.DataFrame,
 ) -> pd.DataFrame:
     """Count final support terms by feature type for figure rendering."""
-    if "feature_type" in final_support_features.columns:
-        values = final_support_features["feature_type"].fillna("unknown").astype(str)
+    if "feature_name" in final_support_features.columns:
+        names = final_support_features["feature_name"].astype(str)
     else:
-        values = pd.Series(["unknown"] * len(final_support_features))
+        names = pd.Series([""], dtype=str)
+    values = names.map(_legacy_feature_type_label)
     counts = values.value_counts().rename_axis("feature_type").reset_index(name="n_features")
     return counts.sort_values(["n_features", "feature_type"], ascending=[False, True])
 
@@ -6383,7 +6464,7 @@ def _build_selected_by_module_figure_data(
         names = final_support_features["feature_name"].astype(str)
     else:
         names = pd.Series(["unknown"] * len(final_support_features), dtype=str)
-    modules = names.map(canonical_module_from_factor_name)
+    modules = names.map(_legacy_module_from_factor_name)
     counts = modules.value_counts().rename_axis("module").reset_index(name="n_selected_inputs")
     total = int(counts["n_selected_inputs"].sum())
     if total <= 0:
@@ -6407,12 +6488,252 @@ def _build_nrmse_summary_figure_data(ablation_table: pd.DataFrame) -> pd.DataFra
     return figure_data.sort_values(["nrmse", "model_name"], ignore_index=True)
 
 
+def _legacy_normalize_factor_token(name: str) -> str:
+    """Normalize legacy scenario-control shorthand tokens."""
+    normalized = str(name).strip()
+    if normalized == "UAEORO":
+        return "OI.Use AEO Reference Oil"
+    if normalized == "AFSC":
+        return "FM.Use Agnostic FS Conversion"
+    return normalized
+
+
+def _legacy_strip_nonlinear_marker(feature_name: str) -> str:
+    """Remove common nonlinear prefixes/suffixes used in legacy workflows."""
+    name = str(feature_name).strip()
+    for prefix in ("inverse_", "log1p_", "sqrt_", "exp_"):
+        if name.startswith(prefix):
+            return name.removeprefix(prefix)
+    for suffix in ("_quadratic", "_logarithmic", "_inverse", "_exponential", "_squared"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    parsed = _parse_supported_transformation_name(name)
+    if parsed is not None:
+        return parsed[0]
+    return name
+
+
+def _legacy_feature_type_label(feature_name: str) -> str:
+    """Classify a feature into the legacy figure categories."""
+    name = str(feature_name)
+    lowered = name.lower()
+    if "*" in name:
+        return "Second Order"
+    nonlinear_tokens = (
+        "_quadratic",
+        "_logarithmic",
+        "_inverse",
+        "_exponential",
+        "_squared",
+        "inverse_",
+        "log1p_",
+        "sqrt_",
+        "exp_",
+    )
+    if any(token in lowered for token in nonlinear_tokens):
+        return "Non-Linear"
+    return "First Order"
+
+
+def _legacy_module_from_factor_name(name: str) -> str:
+    """Map feature/factor names to legacy manuscript module labels."""
+    factor = _legacy_normalize_factor_token(_legacy_strip_nonlinear_marker(str(name)))
+    lowered = factor.lower()
+    if "to jet" in lowered or "atj" in lowered:
+        return "Starch Ethanol to Jet"
+
+    token = factor.split(".", 1)[0].strip() if "." in factor else factor.strip()
+    token_map = {
+        "AHC": "Algal Hydrocarbons",
+        "CHC": "Cellulosic Hydrocarbons",
+        "OHC": "Oil Hydrocarbons",
+        "OI": "Oil Industry",
+        "SE": "Starch Ethanol Hydrocarbons",
+        "WW": "Wet Waste Hydrocarbons",
+        "FM": "Cellulosic Hydrocarbons",
+    }
+    if token in token_map:
+        return token_map[token]
+    if factor in {"OI.Use AEO Reference Oil"}:
+        return "Oil Industry"
+    if factor in {"FM.Use Agnostic FS Conversion"}:
+        return "Cellulosic Hydrocarbons"
+    return canonical_module_from_factor_name(factor)
+
+
+def _legacy_partner_modules_from_feature_name(feature_name: str) -> list[str]:
+    """Return module labels represented by one feature term."""
+    term = str(feature_name)
+    if "*" in term:
+        modules = {
+            _legacy_module_from_factor_name(part)
+            for part in [piece.strip() for piece in term.split("*") if piece.strip()]
+        }
+        return sorted(module for module in modules if module)
+    return [_legacy_module_from_factor_name(term)]
+
+
+def _build_legacy_feature_type_counts(
+    final_support_features: pd.DataFrame,
+) -> pd.DataFrame:
+    """Build legacy feature-type summary equivalent to influential run_all output."""
+    if "feature_name" in final_support_features.columns:
+        names = final_support_features["feature_name"].astype(str)
+    else:
+        names = pd.Series([], dtype=str)
+    labels = names.map(_legacy_feature_type_label)
+    order = ["First Order", "Second Order", "Non-Linear"]
+    counts = labels.value_counts().reindex(order).fillna(0).astype(int)
+    return counts.rename_axis("feature_type").reset_index(name="count")
+
+
+def _build_legacy_influential_counts_by_module(
+    final_support_features: pd.DataFrame,
+) -> pd.DataFrame:
+    """Build legacy module-count summary from final selected support features."""
+    if "feature_name" in final_support_features.columns:
+        names = final_support_features["feature_name"].astype(str)
+    else:
+        names = pd.Series([], dtype=str)
+    counts: dict[str, int] = {}
+    for feature_name in names:
+        modules = set(_legacy_partner_modules_from_feature_name(feature_name))
+        for module in modules:
+            counts[module] = counts.get(module, 0) + 1
+    rows = sorted(counts.items(), key=lambda item: item[0])
+    return pd.DataFrame(rows, columns=["module", "count"])
+
+
+def _build_legacy_interaction_counts_by_module_pair(
+    final_support_features: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Build legacy module-pair interaction summaries from selected interaction terms."""
+    if "feature_name" in final_support_features.columns:
+        names = final_support_features["feature_name"].astype(str)
+    else:
+        names = pd.Series([], dtype=str)
+    interaction_names = names[names.str.contains(r"\*", regex=True)]
+
+    pair_counts: dict[tuple[str, str], int] = {}
+    module_set: set[str] = set()
+    for feature_name in interaction_names:
+        partners = [piece.strip() for piece in str(feature_name).split("*") if piece.strip()]
+        if len(partners) < 2:
+            continue
+        modules_a = set(_legacy_partner_modules_from_feature_name(partners[0]))
+        modules_b = set(_legacy_partner_modules_from_feature_name(partners[1]))
+        pairs_for_feature = {tuple(sorted((a, b))) for a in modules_a for b in modules_b}
+        for pair in pairs_for_feature:
+            pair_counts[pair] = pair_counts.get(pair, 0) + 1
+            module_set.update(pair)
+    if not module_set:
+        module_set = {
+            module
+            for module in _build_legacy_influential_counts_by_module(final_support_features)[
+                "module"
+            ].astype(str)
+        }
+    ordered_modules = sorted(module_set)
+
+    pair_rows = [
+        {"module_a": module_a, "module_b": module_b, "count": count}
+        for (module_a, module_b), count in sorted(pair_counts.items())
+    ]
+    pair_counts_df = pd.DataFrame(pair_rows, columns=["module_a", "module_b", "count"])
+
+    matrix = pd.DataFrame(0, index=ordered_modules, columns=ordered_modules, dtype=int)
+    for (module_a, module_b), count in pair_counts.items():
+        matrix.loc[module_a, module_b] += int(count)
+        matrix.loc[module_b, module_a] += int(count)
+    return pair_counts_df, matrix
+
+
+def _build_legacy_module_total_interactions(module_matrix: pd.DataFrame) -> pd.DataFrame:
+    """Build legacy per-module total interaction counts from a symmetric matrix."""
+    if module_matrix.empty:
+        return pd.DataFrame(columns=["module", "total_interactions"])
+    totals = module_matrix.sum(axis=1).rename("total_interactions").reset_index()
+    totals = totals.rename(columns={totals.columns[0]: "module"})
+    return totals.sort_values("module", ascending=True, ignore_index=True)
+
+
+def _render_module_pair_heatmap_svg(module_matrix: pd.DataFrame) -> str:
+    """Render legacy-style module-pair interaction heatmap as SVG text."""
+    from html import escape
+
+    if module_matrix.empty:
+        module_matrix = pd.DataFrame([[0]], index=["no data"], columns=["no data"])
+    modules = [str(v) for v in module_matrix.index]
+    values = module_matrix.to_numpy(dtype=float)
+    max_value = float(np.nanmax(values)) if values.size else 0.0
+    if not math.isfinite(max_value) or max_value <= 0.0:
+        max_value = 1.0
+
+    n = len(modules)
+    cell = 48
+    left_margin = 260
+    top_margin = 140
+    width = left_margin + cell * n + 40
+    height = top_margin + cell * n + 60
+
+    def color_for(value: float) -> str:
+        ratio = max(0.0, min(1.0, float(value) / max_value))
+        # white (#ffffff) -> slate blue (#334155)
+        r = int(round(255 - (255 - 51) * ratio))
+        g = int(round(255 - (255 - 65) * ratio))
+        b = int(round(255 - (255 - 85) * ratio))
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    elements = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="white"/>',
+        '<text x="24" y="36" font-family="sans-serif" font-size="20">'
+        "Interaction Density by Module Pair</text>",
+    ]
+
+    for j, module in enumerate(modules):
+        x = left_margin + j * cell + (cell / 2.0)
+        elements.append(
+            f'<text x="{x:.2f}" y="{top_margin - 18}" font-family="sans-serif" '
+            'font-size="11" text-anchor="middle" '
+            f'transform="rotate(-35 {x:.2f},{top_margin - 18})">'
+            f"{escape(module)}</text>"
+        )
+    for i, module in enumerate(modules):
+        y = top_margin + i * cell + (cell / 2.0)
+        elements.append(
+            f'<text x="24" y="{y + 4:.2f}" font-family="sans-serif" font-size="11">'
+            f"{escape(module)}</text>"
+        )
+        for j, _ in enumerate(modules):
+            value = float(values[i, j])
+            x0 = left_margin + j * cell
+            y0 = top_margin + i * cell
+            elements.append(
+                f'<rect x="{x0:.2f}" y="{y0:.2f}" width="{cell}" height="{cell}" '
+                f'fill="{color_for(value)}" stroke="#d1d5db" stroke-width="1"/>'
+            )
+            elements.append(
+                f'<text x="{x0 + cell / 2.0:.2f}" y="{y0 + cell / 2.0 + 4:.2f}" '
+                'font-family="sans-serif" font-size="11" text-anchor="middle" fill="#111827">'
+                f"{int(round(value))}</text>"
+            )
+    elements.append("</svg>")
+    return "".join(elements)
+
+
 def _build_figure_specs(
     *,
     figure_model_performance_data: pd.DataFrame,
     figure_support_composition_data: pd.DataFrame,
     figure_selected_by_module_data: pd.DataFrame,
     figure_nrmse_summary_data: pd.DataFrame,
+    legacy_feature_type_counts: pd.DataFrame,
+    legacy_influential_counts_by_module: pd.DataFrame,
+    legacy_interaction_counts_by_module_pair: pd.DataFrame,
+    legacy_interaction_density_module_matrix: pd.DataFrame,
+    legacy_module_total_interactions: pd.DataFrame,
     svg_figures: dict[str, str],
 ) -> pd.DataFrame:
     """Build the generated figure registry table."""
@@ -6459,6 +6780,38 @@ def _build_figure_specs(
                     "Model macro nRMSE point estimates with bootstrap confidence intervals."
                 ),
                 "svg_bytes": len(svg_figures["figure_nrmse_bootstrap_summary"].encode("utf-8")),
+            },
+            {
+                "figure_name": "fig_feature_type_distribution",
+                "source_data": "feature_type_counts.csv",
+                "asset": "fig_feature_type_distribution.svg",
+                "n_source_rows": int(len(legacy_feature_type_counts)),
+                "description": "Legacy influential feature type distribution summary.",
+                "svg_bytes": len(svg_figures["fig_feature_type_distribution"].encode("utf-8")),
+            },
+            {
+                "figure_name": "fig_influential_by_module",
+                "source_data": "influential_counts_by_module.csv",
+                "asset": "fig_influential_by_module.svg",
+                "n_source_rows": int(len(legacy_influential_counts_by_module)),
+                "description": "Legacy influential feature count summary by module.",
+                "svg_bytes": len(svg_figures["fig_influential_by_module"].encode("utf-8")),
+            },
+            {
+                "figure_name": "fig_module_pair_heatmap",
+                "source_data": "interaction_density_module_matrix.csv",
+                "asset": "fig_module_pair_heatmap.svg",
+                "n_source_rows": int(len(legacy_interaction_counts_by_module_pair)),
+                "description": "Legacy interaction-density heatmap by module pair.",
+                "svg_bytes": len(svg_figures["fig_module_pair_heatmap"].encode("utf-8")),
+            },
+            {
+                "figure_name": "fig_module_total_interactions",
+                "source_data": "module_total_interactions.csv",
+                "asset": "fig_module_total_interactions.svg",
+                "n_source_rows": int(len(legacy_module_total_interactions)),
+                "description": "Legacy total interaction counts by module.",
+                "svg_bytes": len(svg_figures["fig_module_total_interactions"].encode("utf-8")),
             },
         ]
     )

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
+import bsm_rfm.manuscript_stages as manuscript_stages
 from bsm_rfm.manuscript_runtime import (
     build_manuscript_notebook_context,
     load_manuscript_case_study_config,
@@ -305,4 +307,227 @@ def test_demo_sparse_selection_final_stable_support_nonempty_ci_parity_guard() -
     )
     assert not ss.final_stable_support.empty, (
         f"final_stable_support DataFrame is empty. {diagnostic}"
+    )
+
+
+def test_sparse_selection_reuses_checkpointed_resamples(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sample_ids = list(range(1, 61))
+    x1 = [float(index) for index in range(60)]
+    x2 = [1.0 if index % 2 == 0 else -1.0 for index in range(60)]
+    x3 = [float((index % 5) - 2) for index in range(60)]
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2, "x3": x3})
+    catalog = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2", "x3"],
+            "feature_type": ["first_order", "first_order", "first_order"],
+            "origin": ["test", "test", "test"],
+        }
+    )
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 48 + ["holdout"] * 12})
+    pca_scores = pd.DataFrame(
+        {
+            "sample_id": sample_ids,
+            "PC1": [3.0 * value for value in x1],
+            "PC2": [-1.5 * value for value in x1],
+        }
+    )
+    retained_terms = pd.DataFrame({"feature_name": ["x1", "x2", "x3"]})
+    retained_pairs = pd.DataFrame({"pair_name": []})
+    retained_transformations = pd.DataFrame({"feature_name": []})
+    spec = SparseSelectionStabilitySpec(
+        model_class="l1_penalized_linear_model_per_retained_component",
+        ebic_gamma=0.5,
+        support_aggregation_rule="union_nonzero_support_across_retained_components",
+        resampling_scheme="6_subsamples_of_80_percent_rows_without_replacement_seed_123",
+        subsample_count=6,
+        subsample_fraction=0.80,
+        jaccard_threshold=0.50,
+        spearman_threshold=0.50,
+        random_seed=123,
+        n_jobs=1,
+    )
+
+    call_counter = {"count": 0}
+
+    def _fake_run_one_stability_resample(
+        resample_id: int,
+        row_indices: np.ndarray,
+        x_scaled: np.ndarray,
+        y_scaled: np.ndarray,
+        feature_names: list[str],
+        component_names: list[str],
+        spec: SparseSelectionStabilitySpec,
+        active_features: np.ndarray,
+        full_support_mask: np.ndarray,
+        full_importance: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, dict]:
+        _ = (row_indices, y_scaled, component_names, spec, active_features, full_support_mask)
+        call_counter["count"] += 1
+        support = np.zeros(len(feature_names), dtype=bool)
+        support[0] = True
+        importance = np.zeros(len(feature_names), dtype=float)
+        importance[0] = float(full_importance.max() if len(full_importance) else 1.0)
+        summary_row = {
+            "resample_id": int(resample_id),
+            "subsample_size": int(len(x_scaled)),
+            "selected_support_size": int(support.sum()),
+            "jaccard_with_full_support": 1.0,
+            "spearman_with_full_importance": 1.0,
+        }
+        return support, importance, summary_row
+
+    monkeypatch.setattr(
+        manuscript_stages,
+        "_run_one_stability_resample",
+        _fake_run_one_stability_resample,
+    )
+    checkpoint_root = tmp_path / "sparse_selection"
+    first = select_manuscript_sparse_support(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        retained_pairs,
+        retained_transformations,
+        spec,
+        checkpoint_dir=checkpoint_root,
+    )
+    assert call_counter["count"] > 0
+
+    def _should_not_recompute(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("checkpointed stability resamples should be reused")
+
+    monkeypatch.setattr(
+        manuscript_stages,
+        "_run_one_stability_resample",
+        _should_not_recompute,
+    )
+    second = select_manuscript_sparse_support(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        retained_pairs,
+        retained_transformations,
+        spec,
+        checkpoint_dir=checkpoint_root,
+    )
+    assert first.summary.equals(second.summary)
+
+
+def test_sparse_selection_supports_active_resample_subsets(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sample_ids = list(range(1, 61))
+    x1 = [float(index) for index in range(60)]
+    x2 = [1.0 if index % 2 == 0 else -1.0 for index in range(60)]
+    x3 = [float((index % 5) - 2) for index in range(60)]
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2, "x3": x3})
+    catalog = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2", "x3"],
+            "feature_type": ["first_order", "first_order", "first_order"],
+            "origin": ["test", "test", "test"],
+        }
+    )
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 48 + ["holdout"] * 12})
+    pca_scores = pd.DataFrame(
+        {
+            "sample_id": sample_ids,
+            "PC1": [3.0 * value for value in x1],
+            "PC2": [-1.5 * value for value in x1],
+        }
+    )
+    retained_terms = pd.DataFrame({"feature_name": ["x1", "x2", "x3"]})
+    retained_pairs = pd.DataFrame({"pair_name": []})
+    retained_transformations = pd.DataFrame({"feature_name": []})
+    spec = SparseSelectionStabilitySpec(
+        model_class="l1_penalized_linear_model_per_retained_component",
+        ebic_gamma=0.5,
+        support_aggregation_rule="union_nonzero_support_across_retained_components",
+        resampling_scheme="6_subsamples_of_80_percent_rows_without_replacement_seed_123",
+        subsample_count=6,
+        subsample_fraction=0.80,
+        jaccard_threshold=0.50,
+        spearman_threshold=0.50,
+        random_seed=123,
+        n_jobs=1,
+    )
+
+    call_counter = {"count": 0}
+
+    def _fake_run_one_stability_resample(
+        resample_id: int,
+        row_indices: np.ndarray,
+        x_scaled: np.ndarray,
+        y_scaled: np.ndarray,
+        feature_names: list[str],
+        component_names: list[str],
+        spec: SparseSelectionStabilitySpec,
+        active_features: np.ndarray,
+        full_support_mask: np.ndarray,
+        full_importance: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, dict]:
+        _ = (row_indices, y_scaled, component_names, spec, active_features, full_support_mask)
+        call_counter["count"] += 1
+        support = np.zeros(len(feature_names), dtype=bool)
+        support[0] = True
+        importance = np.zeros(len(feature_names), dtype=float)
+        importance[0] = float(full_importance.max() if len(full_importance) else 1.0)
+        summary_row = {
+            "resample_id": int(resample_id),
+            "subsample_size": int(len(x_scaled)),
+            "selected_support_size": int(support.sum()),
+            "jaccard_with_full_support": 1.0,
+            "spearman_with_full_importance": 1.0,
+        }
+        return support, importance, summary_row
+
+    monkeypatch.setattr(
+        manuscript_stages,
+        "_run_one_stability_resample",
+        _fake_run_one_stability_resample,
+    )
+    checkpoint_root = tmp_path / "sparse_selection_subset"
+    active_subset = {1, 4}
+
+    select_manuscript_sparse_support(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        retained_pairs,
+        retained_transformations,
+        spec,
+        checkpoint_dir=checkpoint_root,
+        active_resample_indices=active_subset,
+    )
+    assert call_counter["count"] == len(active_subset)
+
+    def _should_not_recompute(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("checkpointed subset resamples should be reused")
+
+    monkeypatch.setattr(
+        manuscript_stages,
+        "_run_one_stability_resample",
+        _should_not_recompute,
+    )
+    select_manuscript_sparse_support(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        retained_pairs,
+        retained_transformations,
+        spec,
+        checkpoint_dir=checkpoint_root,
+        active_resample_indices=active_subset,
     )

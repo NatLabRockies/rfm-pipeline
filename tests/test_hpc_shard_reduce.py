@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -205,3 +206,118 @@ def test_hpc_reduce_merges_interaction_pair_outputs(tmp_path):
     merged_scores = pd.read_csv(merged_dir / "interaction_pair_scores_merged.csv")
     assert set(merged_retained["pair_name"]) == {"x1:x2", "x1:x3"}
     assert set(merged_scores["pair_name"]) == {"x1:x2", "x1:x3"}
+
+
+def test_hpc_shard_worker_dispatches_noninteraction_stage(tmp_path, monkeypatch):
+    from tools import hpc_shard_worker
+
+    config_path = tmp_path / "case_study.yaml"
+    config_path.write_text("pipeline:\n  stage_order: [output_conditioning]\n")
+    shard = ShardManifest(
+        shard_id="task-0000",
+        stage="output_conditioning",
+        input_paths=[str(config_path)],
+        output_path=str(tmp_path / "out" / "task-0000"),
+        expected_rows=10,
+        expected_columns=5,
+        feature_start_idx=0,
+        feature_end_idx=2,
+    )
+    cm = CheckpointManager(str(tmp_path / "out"), shard.shard_id)
+    cm.mark_running()
+    call_record: dict[str, str | None] = {}
+
+    def _fake_run_output_conditioning_shard(
+        shard_manifest: ShardManifest,
+        checkpoint_manager: CheckpointManager,
+        *,
+        config_path: str,
+    ) -> None:
+        _ = shard_manifest
+        call_record["config_path"] = config_path
+        (checkpoint_manager.staging_dir / "shard_result.json").write_text(
+            json.dumps({"shard_id": "task-0000", "stage": "output_conditioning"})
+        )
+
+    monkeypatch.setattr(
+        hpc_shard_worker,
+        "_run_output_conditioning_shard",
+        _fake_run_output_conditioning_shard,
+    )
+
+    hpc_shard_worker._run_shard_stage(
+        shard,
+        cm,
+        SimpleNamespace(config=str(config_path)),
+    )
+
+    assert call_record["config_path"] == str(config_path)
+    assert (cm.final_dir / "_SUCCESS.json").exists()
+
+
+def test_hpc_reduce_materializes_noninteraction_stage(tmp_path, monkeypatch):
+    from tools import hpc_reduce
+
+    output_root = tmp_path / "outputs"
+    output_dir = tmp_path / "merged"
+    output_root.mkdir(parents=True)
+    output_dir.mkdir(parents=True)
+
+    for shard_id in ("task-0000", "task-0001"):
+        shard_dir = output_root / shard_id
+        shard_dir.mkdir(parents=True)
+        (shard_dir / "shard_result.json").write_text(
+            json.dumps(
+                {
+                    "shard_id": shard_id,
+                    "stage": "output_conditioning",
+                    "status": "checkpoint_warmup_complete",
+                }
+            )
+        )
+
+    monkeypatch.setattr(
+        hpc_reduce,
+        "_load_workflow_tables_and_case_config",
+        lambda config_path: (
+            {
+                "case_study_output_matrix": pd.DataFrame(),
+                "fixed_holdout_assignments": pd.DataFrame(),
+            },
+            object(),
+        ),
+    )
+    monkeypatch.setattr(
+        hpc_reduce,
+        "output_conditioning_spec_from_case_study_config",
+        lambda case_config: object(),
+    )
+    monkeypatch.setattr(
+        hpc_reduce,
+        "condition_manuscript_outputs",
+        lambda outputs, holdout, spec: SimpleNamespace(
+            summary=pd.DataFrame([{"stage": "output_conditioning"}])
+        ),
+    )
+    monkeypatch.setattr(
+        hpc_reduce,
+        "write_output_conditioning_artifacts",
+        lambda conditioning, artifact_root: {
+            "summary": artifact_root / "output_conditioning/summary.csv"
+        },
+    )
+
+    hpc_reduce._reduce_checkpoint_warmed_stage(
+        stage="output_conditioning",
+        shard_results=[
+            {"shard_id": "task-0000", "stage": "output_conditioning"},
+            {"shard_id": "task-0001", "stage": "output_conditioning"},
+        ],
+        output_dir=output_dir,
+        output_root=output_root,
+        config_path=str(tmp_path / "case_study.yaml"),
+    )
+
+    merged = json.loads((output_dir / "output_conditioning_merged.json").read_text())
+    assert merged["stage"] == "output_conditioning"
+    assert merged["status"] == "materialized_from_checkpoints"

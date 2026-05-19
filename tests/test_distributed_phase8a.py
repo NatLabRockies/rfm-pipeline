@@ -376,13 +376,34 @@ class TestSlurmArrayRunner:
         assert "interaction_discovery" in script
         assert "test_run" in script
         assert "hpc_shard_worker.py" in script
+        # Bash-level success check must be present
+        assert "_SUCCESS.json" in script
 
-    def test_generate_reduce_script_content(self, tmp_path):
+    def test_generate_stage_script_sparse_task_ids(self, tmp_path):
+        runner = self._make_runner(tmp_path, n_shards=10)
+        # Simulate a restart where only tasks 1, 3, 5 remain
+        script = runner.generate_stage_script("interaction_discovery", task_ids=[1, 3, 5])
+        assert "#SBATCH --array=1,3,5%2" in script
+
+    def test_generate_stage_script_consecutive_ranges(self, tmp_path):
+        runner = self._make_runner(tmp_path, n_shards=10)
+        script = runner.generate_stage_script("interaction_discovery", task_ids=[0, 1, 2, 5, 6])
+        assert "#SBATCH --array=0-2,5-6%2" in script
+
+    def test_generate_reduce_script_uses_afterany(self, tmp_path):
         runner = self._make_runner(tmp_path)
         script = runner.generate_reduce_script("interaction_discovery", after_job_id=12345)
         assert "#!/bin/bash" in script
-        assert "--dependency=afterok:12345" in script
+        assert "--dependency=afterany:12345" in script
         assert "hpc_reduce.py" in script
+        # Self-guard completeness check
+        assert "_SUCCESS.json" in script
+        assert "N_EXPECTED" in script
+
+    def test_generate_reduce_script_no_dependency(self, tmp_path):
+        runner = self._make_runner(tmp_path)
+        script = runner.generate_reduce_script("interaction_discovery", after_job_id=None)
+        assert "--dependency=" not in script
 
     def test_generate_diagnostic_script(self, tmp_path):
         runner = self._make_runner(tmp_path)
@@ -408,6 +429,32 @@ class TestSlurmArrayRunner:
             mode = path.stat().st_mode
             assert mode & stat.S_IXUSR, f"{path.name} not executable"
 
+    def test_write_scripts_reduce_only_when_no_incomplete(self, tmp_path):
+        """task_ids=[] means all shards done — no stage script, only reduce + diagnostic."""
+        runner = self._make_runner(tmp_path)
+        script_dir = tmp_path / "scripts"
+        scripts = runner.write_scripts(script_dir, stage="interaction_discovery", task_ids=[])
+        assert "stage" not in scripts
+        assert scripts["reduce"].exists()
+        assert scripts["diagnostic"].exists()
+
+    def test_write_scripts_sparse_task_ids(self, tmp_path):
+        """task_ids=[1,3] produces a sparse array spec in the stage script."""
+        runner = self._make_runner(tmp_path, n_shards=4)
+        script_dir = tmp_path / "scripts"
+        scripts = runner.write_scripts(script_dir, stage="interaction_discovery", task_ids=[1, 3])
+        assert scripts["stage"].exists()
+        content = scripts["stage"].read_text()
+        assert "#SBATCH --array=1,3%2" in content
+
+    def test_submit_all_uses_afterany(self, tmp_path):
+        runner = self._make_runner(tmp_path)
+        script_dir = tmp_path / "scripts"
+        scripts = runner.write_scripts(script_dir, stage="interaction_discovery")
+        submit_all = scripts["submit_all"].read_text()
+        assert "afterany" in submit_all
+        assert "afterok" not in submit_all
+
     def test_invalid_config_raises(self, tmp_path):
         cfg = DistributedConfig(backend="invalid_backend")
         manifest_path = tmp_path / "manifest.jsonl"
@@ -428,3 +475,116 @@ class TestSlurmArrayRunner:
         runner = SlurmArrayRunner(cfg, manifest_path, str(tmp_path / "out"), repo_root=tmp_path)
         with pytest.raises(ValueError, match="No shards"):
             runner.generate_stage_script("interaction_discovery")
+
+
+# ---------------------------------------------------------------------------
+# _task_ids_to_array_spec helper tests
+# ---------------------------------------------------------------------------
+
+
+class TestTaskIdsToArraySpec:
+    from bsm_rfm.distributed.slurm_array_runner import _task_ids_to_array_spec
+
+    def test_single_id(self):
+        from bsm_rfm.distributed.slurm_array_runner import _task_ids_to_array_spec
+
+        assert _task_ids_to_array_spec([5], 10) == "5%10"
+
+    def test_consecutive_range(self):
+        from bsm_rfm.distributed.slurm_array_runner import _task_ids_to_array_spec
+
+        assert _task_ids_to_array_spec([0, 1, 2, 3], 500) == "0-3%500"
+
+    def test_sparse_list(self):
+        from bsm_rfm.distributed.slurm_array_runner import _task_ids_to_array_spec
+
+        assert _task_ids_to_array_spec([0, 1, 2, 5, 6, 10], 50) == "0-2,5-6,10%50"
+
+    def test_full_range_1000(self):
+        from bsm_rfm.distributed.slurm_array_runner import _task_ids_to_array_spec
+
+        spec = _task_ids_to_array_spec(list(range(1000)), 500)
+        assert spec == "0-999%500"
+
+    def test_deduplicates_ids(self):
+        from bsm_rfm.distributed.slurm_array_runner import _task_ids_to_array_spec
+
+        assert _task_ids_to_array_spec([3, 3, 3], 1) == "3%1"
+
+    def test_empty_raises(self):
+        from bsm_rfm.distributed.slurm_array_runner import _task_ids_to_array_spec
+
+        with pytest.raises(ValueError):
+            _task_ids_to_array_spec([], 10)
+
+
+# ---------------------------------------------------------------------------
+# Restart idempotency helpers
+# ---------------------------------------------------------------------------
+
+
+class TestFindIncompleteTaskIds:
+    """Tests for the _find_incomplete_task_ids helper in bsm_hpc_submit."""
+
+    def _write_success(self, output_root: Path, task_id: int) -> None:
+        shard_dir = output_root / f"task-{task_id:04d}"
+        shard_dir.mkdir(parents=True, exist_ok=True)
+        (shard_dir / "_SUCCESS.json").write_text('{"shard_id": "ok"}')
+
+    def test_all_incomplete(self, tmp_path):
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
+        from bsm_hpc_submit import _find_incomplete_task_ids
+
+        result = _find_incomplete_task_ids(tmp_path / "shards", 5)
+        assert result == [0, 1, 2, 3, 4]
+
+    def test_some_complete(self, tmp_path):
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
+        from bsm_hpc_submit import _find_incomplete_task_ids
+
+        root = tmp_path / "shards"
+        self._write_success(root, 0)
+        self._write_success(root, 2)
+        result = _find_incomplete_task_ids(root, 4)
+        assert result == [1, 3]
+
+    def test_all_complete(self, tmp_path):
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
+        from bsm_hpc_submit import _find_incomplete_task_ids
+
+        root = tmp_path / "shards"
+        for i in range(3):
+            self._write_success(root, i)
+        result = _find_incomplete_task_ids(root, 3)
+        assert result == []
+
+
+class TestReconcileManifestFromFs:
+    def test_reconciles_stale_statuses(self, tmp_path):
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
+        from bsm_hpc_submit import _reconcile_manifest_from_fs
+
+        shards = build_manifest(
+            stage="output_conditioning",
+            input_paths=[],
+            output_root=str(tmp_path / "shards"),
+            n_shards=3,
+        )
+        # Simulate shard 0 having completed on disk but manifest shows pending
+        shard_dir = tmp_path / "shards" / "task-0000"
+        shard_dir.mkdir(parents=True)
+        (shard_dir / "_SUCCESS.json").write_text("{}")
+
+        updated, n_reconciled = _reconcile_manifest_from_fs(shards, tmp_path / "shards")
+        assert n_reconciled == 1
+        assert updated[0].status == "completed"
+        assert updated[1].status == "pending"
+        assert updated[2].status == "pending"

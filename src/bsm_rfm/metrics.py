@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -64,6 +67,8 @@ def bootstrap_macro_nrmse_ci(
     random_state: int = 123,
     sample_size: int | None = None,
     n_jobs: int = 1,
+    checkpoint_dir: Path | None = None,
+    active_bootstrap_indices: set[int] | None = None,
 ) -> dict[str, Any]:
     """Estimate a percentile bootstrap interval for macro nRMSE.
 
@@ -89,6 +94,14 @@ def bootstrap_macro_nrmse_ci(
         Number of parallel jobs for bootstrap replicates. ``1`` runs serially;
         ``-1`` uses all available CPUs. Row-index draws are pre-generated before
         parallelization so results are bit-identical regardless of ``n_jobs``.
+    checkpoint_dir
+        Optional checkpoint root. When provided, per-replicate bootstrap values are
+        cached and reused across reruns so interrupted runs continue from remaining
+        replicates.
+    active_bootstrap_indices
+        Optional subset of 0-based replicate indices to compute in this invocation.
+        Used by distributed shard workers to warm checkpoint files without recomputing
+        all replicates in every shard.
 
     Returns
     -------
@@ -123,17 +136,91 @@ def bootstrap_macro_nrmse_ci(
     rng = np.random.RandomState(random_state)
     idx_draws = rng.randint(0, n_rows, size=(int(n_boot), draw_size))
 
+    checkpoint_run_dir: Path | None = None
+    if checkpoint_dir is not None:
+        signature_payload = {
+            "n_rows": int(n_rows),
+            "n_outputs": int(Y_true.shape[1]),
+            "n_boot": int(n_boot),
+            "draw_size": int(draw_size),
+            "alpha": float(alpha),
+            "random_state": int(random_state),
+            "min_range": float(min_range),
+            "y_true_shape": list(Y_true.shape),
+            "y_pred_shape": list(Y_pred.shape),
+            "y_ref_shape": list(Y_ref.shape),
+            "y_true_mean": float(np.nanmean(Y_true)),
+            "y_pred_mean": float(np.nanmean(Y_pred)),
+            "y_ref_mean": float(np.nanmean(Y_ref)),
+        }
+        signature = hashlib.sha256(
+            json.dumps(signature_payload, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        checkpoint_run_dir = Path(checkpoint_dir) / signature
+        checkpoint_run_dir.mkdir(parents=True, exist_ok=True)
+        metadata_path = checkpoint_run_dir / "checkpoint_metadata.json"
+        if not metadata_path.exists():
+            metadata_path.write_text(
+                json.dumps(
+                    signature_payload,
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
     def _one_replicate(idx: np.ndarray) -> float:
         val, _, _ = macro_nrmse_with_ref(Y_true[idx], Y_pred[idx], Y_ref, min_range=min_range)
         return val
 
-    if n_jobs == 1:
-        boot = np.array([_one_replicate(idx) for idx in idx_draws], dtype=np.float64)
-    else:
-        boot = np.array(
-            Parallel(n_jobs=n_jobs)(delayed(_one_replicate)(idx) for idx in idx_draws),
-            dtype=np.float64,
-        )
+    def _replicate_path(rep_index: int) -> Path | None:
+        if checkpoint_run_dir is None:
+            return None
+        return checkpoint_run_dir / f"replicate_{rep_index:06d}.npy"
+
+    boot = np.full(int(n_boot), np.nan, dtype=np.float64)
+    active_indices = (
+        set(range(int(n_boot)))
+        if active_bootstrap_indices is None
+        else {int(index) for index in active_bootstrap_indices if 0 <= int(index) < int(n_boot)}
+    )
+    if not active_indices:
+        raise ValueError("active_bootstrap_indices must include at least one valid index.")
+    pending_indices: list[int] = []
+    for rep_index in range(int(n_boot)):
+        cached_path = _replicate_path(rep_index)
+        if cached_path is None or not cached_path.exists():
+            if rep_index in active_indices:
+                pending_indices.append(rep_index)
+            continue
+        try:
+            cached = np.load(cached_path, allow_pickle=False)
+        except (OSError, ValueError):
+            if rep_index in active_indices:
+                pending_indices.append(rep_index)
+            continue
+        cached_arr = np.asarray(cached, dtype=np.float64).reshape(-1)
+        if cached_arr.size != 1:
+            if rep_index in active_indices:
+                pending_indices.append(rep_index)
+            continue
+        boot[rep_index] = float(cached_arr[0])
+
+    if pending_indices:
+        if n_jobs == 1:
+            computed_values = [_one_replicate(idx_draws[i]) for i in pending_indices]
+        else:
+            computed_values = Parallel(n_jobs=n_jobs)(
+                delayed(_one_replicate)(idx_draws[i]) for i in pending_indices
+            )
+        for rep_index, value in zip(pending_indices, computed_values, strict=True):
+            boot[rep_index] = float(value)
+            cached_path = _replicate_path(rep_index)
+            if cached_path is not None:
+                temp_path = cached_path.with_suffix(".tmp.npy")
+                np.save(temp_path, np.array([boot[rep_index]], dtype=np.float64))
+                temp_path.replace(cached_path)
 
     valid = np.isfinite(boot)
     if not np.any(valid):

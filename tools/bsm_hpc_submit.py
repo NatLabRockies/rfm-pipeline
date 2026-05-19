@@ -37,6 +37,28 @@ logging.basicConfig(
 logger = logging.getLogger("bsm.hpc_submit")
 
 
+def _find_incomplete_task_ids(output_root: Path, n_shards: int) -> list[int]:
+    """Return 0-based task IDs whose ``_SUCCESS.json`` marker is absent."""
+    return [
+        i for i in range(n_shards) if not (output_root / f"task-{i:04d}" / "_SUCCESS.json").exists()
+    ]
+
+
+def _reconcile_manifest_from_fs(shards: list, output_root: Path) -> tuple[list, int]:
+    """Update manifest statuses from ``_SUCCESS.json`` markers on disk.
+
+    Returns the updated shard list and the number of records that were
+    changed from a non-completed status to *completed*.
+    """
+    reconciled = 0
+    for shard in shards:
+        if (output_root / shard.shard_id / "_SUCCESS.json").exists():
+            if shard.status != "completed":
+                shard.status = "completed"
+                reconciled += 1
+    return shards, reconciled
+
+
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Generate and optionally submit BSM HPC SLURM scripts",
@@ -98,6 +120,12 @@ def _parse_args() -> argparse.Namespace:
         default=32,
         help="Memory (GB) for reduce job (default: 32)",
     )
+    p.add_argument(
+        "--force-rebuild",
+        action="store_true",
+        help="Rebuild manifest from scratch even if one already exists "
+        "(ignores any previously-completed shard state)",
+    )
     return p.parse_args()
 
 
@@ -108,8 +136,7 @@ def main() -> None:
     from bsm_rfm.config import load_config
     from bsm_rfm.distributed.config_distributed import load_distributed_config
     from bsm_rfm.distributed.manifest import (
-        build_manifest,
-        resolve_interaction_discovery_shard_inputs,
+        load_manifest,
         save_manifest,
     )
     from bsm_rfm.distributed.slurm_array_runner import SlurmArrayRunner
@@ -132,6 +159,7 @@ def main() -> None:
     script_dir.mkdir(parents=True, exist_ok=True)
 
     manifest_path = script_dir / "manifest.jsonl"
+    output_root = artifact_dir / "hpc_shards"
 
     # Build shard manifest
     n_shards = args.n_shards or dist_cfg.slurm.max_concurrent_array_tasks
@@ -142,36 +170,52 @@ def main() -> None:
         dist_cfg.run_id,
     )
 
-    if not args.diagnostic_only:
-        # Auto-resolve input paths for interaction_discovery stage
-        input_paths = []
-        if args.stage == "interaction_discovery":
-            try:
-                resolved_inputs = resolve_interaction_discovery_shard_inputs(artifact_dir)
-                input_paths = list(resolved_inputs.values())
-                logger.info(
-                    "[hpc-submit] resolved %d interaction_discovery inputs: %s",
-                    len(input_paths),
-                    ", ".join(k for k in resolved_inputs.keys()),
-                )
-            except FileNotFoundError as e:
-                logger.error("[hpc-submit] failed to resolve interaction_discovery inputs: %s", e)
-                raise
+    incomplete_ids: list[int] | None = None  # None → diagnostic-only path
 
-        shards = build_manifest(
-            stage=args.stage,
-            input_paths=input_paths,
-            output_root=str(artifact_dir / "hpc_shards"),
-            n_shards=n_shards,
+    if not args.diagnostic_only:
+        if manifest_path.exists() and not args.force_rebuild:
+            # Reuse existing manifest: reconcile statuses from filesystem
+            existing = load_manifest(manifest_path)
+            if len(existing) == n_shards:
+                shards, n_reconciled = _reconcile_manifest_from_fs(existing, output_root)
+                if n_reconciled:
+                    save_manifest(shards, manifest_path)
+                    logger.info(
+                        "[hpc-submit] reconciled %d stale shard(s) from _SUCCESS.json markers",
+                        n_reconciled,
+                    )
+                logger.info("[hpc-submit] loaded existing manifest (%d shards)", n_shards)
+            else:
+                logger.warning(
+                    "[hpc-submit] manifest has %d shards but config requests %d — rebuilding",
+                    len(existing),
+                    n_shards,
+                )
+                shards = _build_fresh_manifest(args, artifact_dir, n_shards, workflow)
+                save_manifest(shards, manifest_path)
+                logger.info("[hpc-submit] wrote fresh manifest (%d shards)", n_shards)
+        else:
+            shards = _build_fresh_manifest(args, artifact_dir, n_shards, workflow)
+            save_manifest(shards, manifest_path)
+            logger.info("[hpc-submit] wrote manifest with %d shards to %s", n_shards, manifest_path)
+
+        # Determine which task IDs still need to run
+        incomplete_ids = _find_incomplete_task_ids(output_root, n_shards)
+        n_complete = n_shards - len(incomplete_ids)
+        logger.info(
+            "[hpc-submit] %d / %d shards already complete, %d still needed",
+            n_complete,
+            n_shards,
+            len(incomplete_ids),
         )
-        save_manifest(shards, manifest_path)
-        logger.info("[hpc-submit] wrote manifest with %d shards to %s", len(shards), manifest_path)
+        if not incomplete_ids:
+            logger.info("[hpc-submit] all shards complete — skipping array job, reduce only")
 
     # Build runner and generate scripts
     runner = SlurmArrayRunner(
         config=dist_cfg,
-        manifest_path=manifest_path if not args.diagnostic_only else manifest_path,
-        output_root=str(artifact_dir / "hpc_shards"),
+        manifest_path=manifest_path,
+        output_root=str(output_root),
         repo_root=Path.cwd(),
     )
 
@@ -185,28 +229,108 @@ def main() -> None:
         _print_summary(scripts, args.stage, dist_cfg.run_id, args.submit, args.dry_run)
         return
 
+    # incomplete_ids=[] → reduce-only (no stage script); otherwise sparse or full array
     scripts = runner.write_scripts(
         output_dir=script_dir,
         stage=args.stage,
         reduce_walltime=args.reduce_walltime,
         reduce_memory_gb=args.reduce_memory_gb,
+        task_ids=incomplete_ids,
     )
 
     if args.submit:
-        # Submit array job, then reduce with dependency
-        array_job_id = _submit(runner, _select_array_script(scripts), args.dry_run)
-        if array_job_id and not args.dry_run:
-            # Regenerate reduce script with actual dependency
-            reduce_content = runner.generate_reduce_script(
-                args.stage,
-                after_job_id=array_job_id,
-                reduce_walltime=args.reduce_walltime,
-                reduce_memory_gb=args.reduce_memory_gb,
+        if incomplete_ids:
+            # Submit sparse array for incomplete shards only
+            array_job_id = _submit(runner, _select_array_script(scripts), args.dry_run)
+            if array_job_id and not args.dry_run:
+                # Regenerate reduce with afterany dependency on the new array job
+                reduce_content = runner.generate_reduce_script(
+                    args.stage,
+                    after_job_id=array_job_id,
+                    reduce_walltime=args.reduce_walltime,
+                    reduce_memory_gb=args.reduce_memory_gb,
+                )
+                scripts["reduce"].write_text(reduce_content)
+            _submit(runner, scripts["reduce"], args.dry_run)
+        else:
+            # All shards done — submit reduce directly with no dependency
+            logger.info(
+                "[hpc-submit] all %d shards already complete; submitting reduce directly",
+                n_shards,
             )
-            scripts["reduce"].write_text(reduce_content)
-        _submit(runner, scripts["reduce"], args.dry_run)
+            _submit(runner, scripts["reduce"], args.dry_run)
 
     _print_summary(scripts, args.stage, dist_cfg.run_id, args.submit, args.dry_run)
+
+
+def _build_fresh_manifest(args, artifact_dir: Path, n_shards: int, workflow) -> list:
+    """Build a fresh shard manifest from pipeline inputs."""
+    from bsm_rfm.distributed.manifest import (
+        build_manifest,
+        resolve_interaction_discovery_shard_inputs,
+    )
+
+    input_paths: list[str] = [str(Path(args.config).resolve())]
+    expected_columns = _estimate_stage_work_items(args.stage, workflow, artifact_dir)
+    if args.stage == "interaction_discovery":
+        try:
+            resolved_inputs = resolve_interaction_discovery_shard_inputs(artifact_dir)
+            input_paths.extend(list(resolved_inputs.values()))
+            logger.info(
+                "[hpc-submit] resolved %d interaction_discovery inputs: %s",
+                len(resolved_inputs),
+                ", ".join(k for k in resolved_inputs.keys()),
+            )
+        except FileNotFoundError as e:
+            logger.error("[hpc-submit] failed to resolve interaction_discovery inputs: %s", e)
+            raise
+
+    return build_manifest(
+        stage=args.stage,
+        input_paths=input_paths,
+        output_root=str(artifact_dir / "hpc_shards"),
+        n_shards=n_shards,
+        expected_columns=expected_columns,
+    )
+
+
+def _estimate_stage_work_items(stage: str, workflow, artifact_dir: Path) -> int:
+    """Estimate stage work-item cardinality for shard-range partitioning."""
+    if stage == "output_conditioning":
+        return 1
+    if stage == "empirical_null_screening":
+        return max(1, int(workflow.stages.empirical_null_screening.n_permutations) - 1)
+    if stage == "interaction_discovery":
+        retained_terms_path = artifact_dir / "empirical_null_screen" / "retained_terms.csv"
+        if not retained_terms_path.exists():
+            return 0
+        try:
+            import pandas as pd
+
+            retained_terms = pd.read_csv(retained_terms_path)
+            if "feature_name" not in retained_terms.columns:
+                return 0
+            return int(retained_terms["feature_name"].astype(str).nunique())
+        except Exception:
+            return 0
+    if stage == "nonlinear_discovery":
+        retained_terms_path = artifact_dir / "empirical_null_screen" / "retained_terms.csv"
+        if not retained_terms_path.exists():
+            return 0
+        try:
+            import pandas as pd
+
+            retained_terms = pd.read_csv(retained_terms_path)
+            if "feature_name" not in retained_terms.columns:
+                return 0
+            return int(retained_terms["feature_name"].astype(str).nunique())
+        except Exception:
+            return 0
+    if stage == "sparse_selection":
+        return max(1, int(workflow.stages.sparse_selection.n_stability_subsamples))
+    if stage == "final_manuscript_artifacts":
+        return max(1, int(workflow.stages.final_artifacts.bootstrap_count))
+    return 0
 
 
 def _submit(runner, script_path: Path, dry_run: bool) -> int | None:

@@ -290,14 +290,35 @@ def build_remote_status_command(config: HpcWorkflowConfig) -> str:
     """Build one-shot remote status command using configured artifact/log roots."""
     cpu_tiers: list[str] = []
     seen_tiers: set[int] = set()
+    tier_shard_dirs: list[str] = []
+
     for tier in config.execution.cpu_tiers:
         if tier.nodes in seen_tiers:
             continue
         seen_tiers.add(tier.nodes)
         cpu_tiers.append(str(tier.nodes))
+
+        # Resolve actual shard output dir from the tier's workflow config so the
+        # status script checks the right path (not just the ARTIFACTS_ROOT pattern).
+        try:
+            from bsm_rfm.config import load_config as _load_wf
+
+            wf = _load_wf(tier.config_path)
+            artifact_dir: str = wf.output.artifact_dir
+            # Relative paths are resolved against the remote repo root
+            if not os.path.isabs(artifact_dir):
+                artifact_dir = (
+                    config.paths.remote_repo_root.rstrip("/") + "/" + artifact_dir.lstrip("./")
+                )
+            shard_dir = artifact_dir.rstrip("/") + "/hpc_shards"
+            tier_shard_dirs.append(f"{tier.nodes}:{shard_dir}:{tier.nodes}")
+        except Exception:
+            pass  # status script falls back to derived path
+
     cpu_tiers_csv = ",".join(cpu_tiers) if cpu_tiers else "2,10,1000"
     include_gpu = "1" if config.gpu.enabled else "0"
     gpu_shards = str(config.gpu.n_shards)
+    tier_shard_dirs_str = ",".join(tier_shard_dirs)
 
     return (
         f"ARTIFACTS_ROOT={shlex.quote(resolved_remote_artifacts_root(config))} "
@@ -305,6 +326,7 @@ def build_remote_status_command(config: HpcWorkflowConfig) -> str:
         f"STATUS_CPU_TIERS={shlex.quote(cpu_tiers_csv)} "
         f"STATUS_INCLUDE_GPU={shlex.quote(include_gpu)} "
         f"STATUS_GPU_SHARDS={shlex.quote(gpu_shards)} "
+        f"STATUS_TIER_SHARD_DIRS={shlex.quote(tier_shard_dirs_str)} "
         "bash scripts/kestrel/status_all_tests.sh"
     )
 

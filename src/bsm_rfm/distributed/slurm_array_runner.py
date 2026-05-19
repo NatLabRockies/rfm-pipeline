@@ -30,6 +30,40 @@ from bsm_rfm.distributed.manifest import ShardManifest, load_manifest, manifest_
 
 logger = logging.getLogger(__name__)
 
+
+def _task_ids_to_array_spec(task_ids: list[int], max_concurrent: int) -> str:
+    """Convert a list of task IDs to a compact SLURM ``--array`` spec string.
+
+    Consecutive IDs are compressed into ranges::
+
+        [0, 1, 2, 5, 6, 10] → "0-2,5-6,10%<max_concurrent>"
+
+    This produces the smallest possible spec so restarts with only a handful
+    of missing tasks stay under SLURM's array-spec length limits.
+
+    Parameters
+    ----------
+    task_ids
+        Non-empty list of 0-based SLURM array task IDs to include.
+    max_concurrent
+        Maximum number of simultaneously running tasks (the ``%N`` suffix).
+    """
+    if not task_ids:
+        raise ValueError("task_ids must not be empty")
+    ids = sorted(set(task_ids))
+    ranges: list[str] = []
+    start = ids[0]
+    end = ids[0]
+    for i in ids[1:]:
+        if i == end + 1:
+            end = i
+        else:
+            ranges.append(f"{start}" if start == end else f"{start}-{end}")
+            start = end = i
+    ranges.append(f"{start}" if start == end else f"{start}-{end}")
+    return ",".join(ranges) + f"%{max_concurrent}"
+
+
 _STAGE_SBATCH_TEMPLATE = """\
 #!/bin/bash
 #SBATCH --job-name=bsm_{stage}_{run_id}
@@ -38,7 +72,7 @@ _STAGE_SBATCH_TEMPLATE = """\
 #SBATCH --time={walltime}
 #SBATCH --mem={memory_mb}M
 #SBATCH --cpus-per-task={cpus_per_task}
-#SBATCH --array=0-{max_task_idx}%{max_concurrent}
+#SBATCH --array={array_spec}
 #SBATCH --output={log_dir}/bsm_{stage}_%A_%a.out
 #SBATCH --error={log_dir}/bsm_{stage}_%A_%a.err
 {requeue_line}
@@ -65,8 +99,16 @@ STAGE="{stage}"
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] BSM shard ${{TASK_ID}} starting on $(hostname)"
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SLURM_JOB_ID=${{SLURM_JOB_ID}}"
 
+# Skip if shard is already complete (retry-safe)
+SHARD_ID=$(printf 'task-%04d' ${{TASK_ID}})
+SUCCESS_MARKER="${{OUTPUT_ROOT}}/${{SHARD_ID}}/_SUCCESS.json"
+if [ -f "${{SUCCESS_MARKER}}" ]; then
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] shard ${{SHARD_ID}} already complete, skipping"
+  exit 0
+fi
+
 # Create scratch working directory for this task
-WORK_DIR="${{SCRATCH_ROOT}}/${{RUN_ID}}/task-$(printf '%04d' ${{TASK_ID}})"
+WORK_DIR="${{SCRATCH_ROOT}}/${{RUN_ID}}/${{SHARD_ID}}"
 mkdir -p "${{WORK_DIR}}"
 
 cd "{repo_root}"
@@ -111,6 +153,17 @@ STAGE="{stage}"
 RUN_ID="{run_id}"
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] BSM reduce ${{STAGE}} starting on $(hostname)"
+
+# Self-guard: all shards must have _SUCCESS.json before aggregation
+N_EXPECTED={n_shards}
+N_COMPLETE=$(find "${{OUTPUT_ROOT}}" -maxdepth 2 -name '_SUCCESS.json' 2>/dev/null | wc -l)
+N_COMPLETE=${{N_COMPLETE// /}}
+if [[ "${{N_COMPLETE}}" -lt "${{N_EXPECTED}}" ]]; then
+  echo "ERROR: Only ${{N_COMPLETE}} / ${{N_EXPECTED}} shards have _SUCCESS.json — aborting reduce"
+  echo "       Resubmit missing shards, then requeue this reduce job."
+  exit 1
+fi
+echo "Verified: ${{N_COMPLETE}} / ${{N_EXPECTED}} shards complete"
 
 cd "{repo_root}"
 
@@ -208,7 +261,15 @@ echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SLURM_JOB_ID=${{SLURM_JOB_ID}}"
 nvidia-smi --query-gpu=name,memory.total \\
     --format=csv,noheader || echo "WARNING: nvidia-smi not available"
 
-WORK_DIR="${{SCRATCH_ROOT}}/${{RUN_ID}}/task-$(printf '%04d' ${{TASK_ID}})"
+# Skip if shard is already complete (retry-safe)
+SHARD_ID=$(printf 'task-%04d' ${{TASK_ID}})
+SUCCESS_MARKER="${{OUTPUT_ROOT}}/${{SHARD_ID}}/_SUCCESS.json"
+if [ -f "${{SUCCESS_MARKER}}" ]; then
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] shard ${{SHARD_ID}} already complete, skipping"
+  exit 0
+fi
+
+WORK_DIR="${{SCRATCH_ROOT}}/${{RUN_ID}}/${{SHARD_ID}}"
 mkdir -p "${{WORK_DIR}}"
 
 cd "{repo_root}"
@@ -357,6 +418,13 @@ class SlurmArrayRunner:
             "cpus_per_task": slurm.cpus_per_task,
             "max_task_idx": max(0, self.n_shards - 1),
             "max_concurrent": slurm.max_concurrent_array_tasks,
+            "array_spec": (
+                _task_ids_to_array_spec(
+                    list(range(self.n_shards)), slurm.max_concurrent_array_tasks
+                )
+                if self.n_shards > 0
+                else f"0%{slurm.max_concurrent_array_tasks}"
+            ),
             "log_dir": log_dir,
             "requeue_line": (
                 "#SBATCH --requeue"
@@ -379,13 +447,17 @@ class SlurmArrayRunner:
             "xgboost_tree_method": gpu.xgboost_tree_method,
         }
 
-    def generate_stage_script(self, stage: str) -> str:
+    def generate_stage_script(self, stage: str, task_ids: list[int] | None = None) -> str:
         """Generate a SLURM array sbatch script for a pipeline stage.
 
         Parameters
         ----------
         stage
             Pipeline stage name (e.g. 'interaction_discovery').
+        task_ids
+            Optional explicit list of task IDs to include in the array spec.
+            If provided, only those IDs are submitted (sparse restart spec).
+            If None, all shards (0 … n_shards-1) are included.
 
         Returns
         -------
@@ -394,7 +466,12 @@ class SlurmArrayRunner:
         """
         if self.n_shards == 0:
             raise ValueError("No shards in manifest — run build_manifest() first")
-        return _STAGE_SBATCH_TEMPLATE.format(**self._common_vars(stage))
+        vars_ = self._common_vars(stage)
+        if task_ids is not None:
+            vars_["array_spec"] = _task_ids_to_array_spec(
+                task_ids, self.config.slurm.max_concurrent_array_tasks
+            )
+        return _STAGE_SBATCH_TEMPLATE.format(**vars_)
 
     def generate_reduce_script(
         self,
@@ -406,8 +483,11 @@ class SlurmArrayRunner:
         """Generate a SLURM reduce job sbatch script.
 
         The reduce job aggregates shard outputs into a single stage artifact.
-        It is submitted with a dependency on the array job so it runs only
-        after all array tasks complete.
+        When *after_job_id* is given, the job depends on ``afterany:<job_id>``
+        so it runs after all array tasks finish regardless of their exit codes.
+        The script itself checks that all ``_SUCCESS.json`` markers exist before
+        proceeding, so partial failures cause it to self-abort with a clear
+        message rather than silently aggregating incomplete data.
 
         Parameters
         ----------
@@ -415,7 +495,7 @@ class SlurmArrayRunner:
             Pipeline stage name.
         after_job_id
             SLURM job ID of the array job to depend on. If provided, adds
-            #SBATCH --dependency=afterok:<job_id>.
+            ``#SBATCH --dependency=afterany:<job_id>``.
         reduce_walltime
             Walltime for the reduce job.
         reduce_memory_gb
@@ -430,16 +510,16 @@ class SlurmArrayRunner:
         vars_["reduce_walltime"] = reduce_walltime
         vars_["reduce_memory_mb"] = reduce_memory_gb * 1024
         if after_job_id:
-            vars_["dependency_line"] = f"#SBATCH --dependency=afterok:{after_job_id}"
+            vars_["dependency_line"] = f"#SBATCH --dependency=afterany:{after_job_id}"
         else:
-            vars_["dependency_line"] = "# No dependency (submit after array job)"
+            vars_["dependency_line"] = "# No dependency (submit after array job completes)"
         return _REDUCE_SBATCH_TEMPLATE.format(**vars_)
 
     def generate_diagnostic_script(self) -> str:
         """Generate a smoke-test diagnostic sbatch script."""
         return _DIAGNOSTIC_SBATCH_TEMPLATE.format(**self._common_vars("diagnostic"))
 
-    def generate_gpu_stage_script(self, stage: str) -> str:
+    def generate_gpu_stage_script(self, stage: str, task_ids: list[int] | None = None) -> str:
         """Generate a GPU-accelerated SLURM array sbatch script.
 
         Targets the GPU partition (gpu-h100s on Kestrel) and sets
@@ -451,6 +531,9 @@ class SlurmArrayRunner:
         stage
             Pipeline stage name. GPU acceleration is most effective for
             interaction_discovery.
+        task_ids
+            Optional explicit list of task IDs (sparse restart). If None,
+            all shards are included.
 
         Returns
         -------
@@ -464,7 +547,12 @@ class SlurmArrayRunner:
                 "GPU script requested but config.gpu.enabled is False. "
                 "Set distributed.gpu.enabled: true in your config."
             )
-        return _GPU_STAGE_SBATCH_TEMPLATE.format(**self._common_vars(stage))
+        vars_ = self._common_vars(stage)
+        if task_ids is not None:
+            vars_["array_spec"] = _task_ids_to_array_spec(
+                task_ids, self.config.slurm.max_concurrent_array_tasks
+            )
+        return _GPU_STAGE_SBATCH_TEMPLATE.format(**vars_)
 
     def generate_gpu_diagnostic_script(self) -> str:
         """Generate a GPU environment smoke-test sbatch script."""
@@ -476,6 +564,7 @@ class SlurmArrayRunner:
         stage: str = "interaction_discovery",
         reduce_walltime: str = "02:00:00",
         reduce_memory_gb: int = 32,
+        task_ids: list[int] | None = None,
     ) -> dict[str, Path]:
         """Write all sbatch scripts to output_dir and make them executable.
 
@@ -489,6 +578,12 @@ class SlurmArrayRunner:
             Walltime for the reduce job.
         reduce_memory_gb
             Memory (GB) for the reduce job.
+        task_ids
+            Optional explicit list of incomplete task IDs. When provided and
+            non-empty, the stage array script uses a sparse ``--array`` spec
+            covering only those IDs (idempotent restart).  When provided as
+            an empty list, the stage script is omitted entirely (all shards
+            already complete — only the reduce script is written).
 
         Returns
         -------
@@ -498,12 +593,17 @@ class SlurmArrayRunner:
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
 
+        # task_ids=None → full range; task_ids=[] → skip array, reduce only;
+        # task_ids=[...] → sparse spec for those IDs
+        write_array = (task_ids is None) or (len(task_ids) > 0)
+
         scripts = {}
         if self.n_shards > 0:
-            stage_script = out / f"submit_{stage}_array.sh"
-            stage_script.write_text(self.generate_stage_script(stage))
-            _make_executable(stage_script)
-            scripts["stage"] = stage_script
+            if write_array:
+                stage_script = out / f"submit_{stage}_array.sh"
+                stage_script.write_text(self.generate_stage_script(stage, task_ids=task_ids))
+                _make_executable(stage_script)
+                scripts["stage"] = stage_script
 
             reduce_script = out / f"submit_{stage}_reduce.sh"
             reduce_script.write_text(
@@ -517,9 +617,9 @@ class SlurmArrayRunner:
             scripts["reduce"] = reduce_script
 
             # GPU scripts (when GPU is enabled in config)
-            if self.config.gpu.enabled:
+            if self.config.gpu.enabled and write_array:
                 gpu_script = out / f"submit_{stage}_gpu_array.sh"
-                gpu_script.write_text(self.generate_gpu_stage_script(stage))
+                gpu_script.write_text(self.generate_gpu_stage_script(stage, task_ids=task_ids))
                 _make_executable(gpu_script)
                 scripts["gpu_stage"] = gpu_script
 
@@ -614,7 +714,7 @@ def _make_submit_all_script(scripts: dict[str, Path], stage: str) -> str:
         ]
     if reduce_path:
         lines += [
-            f"REDUCE_JOB_ID=$(sbatch --parsable --dependency=afterok:$ARRAY_JOB_ID {reduce_path.name})",  # noqa: E501
+            f"REDUCE_JOB_ID=$(sbatch --parsable --dependency=afterany:$ARRAY_JOB_ID {reduce_path.name})",  # noqa: E501
             'echo "Submitted reduce job: $REDUCE_JOB_ID (depends on $ARRAY_JOB_ID)"',
             "",
             "echo 'Monitor progress:'",

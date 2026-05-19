@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
+import bsm_rfm.manuscript_stages as manuscript_stages
 from bsm_rfm.manuscript_runtime import (
     build_manuscript_notebook_context,
     load_manuscript_case_study_config,
@@ -154,3 +155,92 @@ def test_run_nonlinear_discovery_stage_executes_demo_context() -> None:
     assert result.nonlinear.summary.loc[0, "n_candidate_transformations"] == 6
     assert result.artifact_paths["transformation_scores"].exists()
     assert result.artifact_paths["nonlinear_discovery_provenance"].exists()
+
+
+def test_nonlinear_discovery_reuses_checkpointed_feature_scores(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sample_ids = list(range(1, 41))
+    x1 = [float(value) for value in range(1, 41)]
+    pca_signal = [value**2 for value in x1]
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1})
+    catalog = pd.DataFrame({"feature_name": ["x1"], "feature_type": ["first_order"]})
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 32 + ["holdout"] * 8})
+    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
+    retained_terms = pd.DataFrame(
+        {
+            "feature_name": ["x1"],
+            "feature_type": ["first_order"],
+        }
+    )
+    spec = NonlinearDiscoverySpec(
+        method="gam_plus_restricted_parametric_replacement",
+        curvature_rule="edf_gt_1_and_smooth_pvalue_lt_0p01",
+        replacement_selection_rule="minimum_training_rmse_against_gam_smooth",
+        identified_transformations_reference=112,
+        final_support_transformations_reference=37,
+        n_jobs=1,
+    )
+    checkpoint_root = tmp_path / "nonlinear_discovery"
+
+    score_counter = {"count": 0}
+
+    def _fake_score_one_nonlinear_feature(
+        base_feat: str,
+        base_candidates: list[tuple[str, str, str]],
+        x_vals,  # noqa: ANN001
+        y_scaled,  # noqa: ANN001
+        component_names: list[str],
+        active_comp_indices: list[int],
+        edf_threshold: float,
+        gam_p_threshold: float,
+    ) -> tuple[str, dict, list[tuple[tuple[str, str], tuple[float, float]]]]:
+        _ = (x_vals, y_scaled, edf_threshold, gam_p_threshold)
+        score_counter["count"] += 1
+        best_component = component_names[active_comp_indices[0]]
+        feature_result = {
+            "nonlinear": True,
+            "best_transform_name": base_candidates[0][0],
+            "best_edf": 3.0,
+            "best_p": 1.0e-4,
+            "best_comp_name": best_component,
+            "best_rmse": 0.01,
+        }
+        cache_entries = [((base_feat, best_component), (3.0, 1.0e-4))]
+        return base_feat, feature_result, cache_entries
+
+    monkeypatch.setattr(
+        manuscript_stages,
+        "_score_one_nonlinear_feature",
+        _fake_score_one_nonlinear_feature,
+    )
+    first = discover_manuscript_nonlinear_transformations(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        spec,
+        checkpoint_dir=checkpoint_root,
+    )
+    assert score_counter["count"] > 0
+
+    def _should_not_recompute(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("checkpointed nonlinear base-feature scores should be reused")
+
+    monkeypatch.setattr(
+        manuscript_stages,
+        "_score_one_nonlinear_feature",
+        _should_not_recompute,
+    )
+    second = discover_manuscript_nonlinear_transformations(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        spec,
+        checkpoint_dir=checkpoint_root,
+    )
+    assert first.summary.equals(second.summary)

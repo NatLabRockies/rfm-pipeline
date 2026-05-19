@@ -154,6 +154,61 @@ def _worker_process_snapshot(parent_pid: int) -> list[dict[str, str]]:
     return snapshot
 
 
+def _checkpoint_run_dir(
+    checkpoint_dir: Path | None,
+    *,
+    stage: str,
+    signature_payload: dict[str, Any],
+) -> Path | None:
+    """Resolve deterministic checkpoint directory for a stage/signature payload."""
+    if checkpoint_dir is None:
+        return None
+    payload = {"stage": stage, **signature_payload}
+    signature = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+    run_dir = checkpoint_dir / signature
+    run_dir.mkdir(parents=True, exist_ok=True)
+    metadata_path = run_dir / "checkpoint_metadata.json"
+    if not metadata_path.exists():
+        metadata_path.write_text(
+            json.dumps(
+                {
+                    "created_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "signature": signature,
+                    **payload,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    return run_dir
+
+
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    """Write JSON atomically to avoid partial checkpoint writes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    temp_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temp_path.replace(path)
+
+
+def _read_json_dict(path: Path) -> dict[str, Any] | None:
+    """Read JSON dictionary payload; return None on malformed or missing files."""
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
 @dataclass(frozen=True)
 class OutputConditioningSpec:
     """Frozen output-conditioning settings from the manuscript case-study contract.
@@ -1117,6 +1172,9 @@ def screen_manuscript_empirical_null_terms(
     holdout_assignments: pd.DataFrame,
     pca_scores: pd.DataFrame,
     spec: EmpiricalNullScreeningSpec,
+    *,
+    checkpoint_dir: Path | None = None,
+    active_permutation_indices: set[int] | None = None,
 ) -> EmpiricalNullScreeningResult:
     """Screen manuscript terms with a coefficient-row-norm empirical null.
 
@@ -1170,12 +1228,25 @@ def screen_manuscript_empirical_null_terms(
     coefficients = (x_scaled.T @ y_scaled) / float(len(x_scaled))
     observed = np.linalg.norm(coefficients, axis=1)
     observed[~feature_active] = 0.0
+    train_ids_digest = hashlib.sha256(
+        "|".join(str(sample_id) for sample_id in train_ids).encode("utf-8")
+    ).hexdigest()
     null_statistics = _permutation_row_norm_null(
         x_scaled,
         y_scaled,
         n_permutations=spec.permutation_count_B,
         random_seed=spec.random_seed,
         n_jobs=spec.n_jobs,
+        active_permutation_indices=active_permutation_indices,
+        checkpoint_dir=(
+            None if checkpoint_dir is None else checkpoint_dir / "_permutation_checkpoints"
+        ),
+        checkpoint_signature_payload={
+            "feature_names": feature_names,
+            "component_names": component_names,
+            "train_ids_sha256": train_ids_digest,
+            "statistic": spec.statistic,
+        },
     )
     null_statistics[:, ~feature_active] = 0.0
     p_values = (1.0 + (null_statistics >= observed[None, :]).sum(axis=0)) / (
@@ -1293,6 +1364,7 @@ def run_empirical_null_screening_stage(context: Any) -> EmpiricalNullScreeningSt
         context.tables["fixed_holdout_assignments"],
         conditioning.pca_scores,
         screening_spec,
+        checkpoint_dir=context.runtime.output_root / "empirical_null_screen",
     )
     artifact_paths = write_empirical_null_screening_artifacts(
         screening,
@@ -1585,6 +1657,8 @@ def discover_manuscript_interactions(
     pca_scores: pd.DataFrame,
     retained_terms: pd.DataFrame,
     spec: InteractionDiscoverySpec,
+    *,
+    checkpoint_dir: Path | None = None,
 ) -> InteractionDiscoveryResult:
     """Discover candidate interaction pairs via specified method (GBT+SHAP or ElasticNet).
 
@@ -1606,6 +1680,9 @@ def discover_manuscript_interactions(
         Empirical-null retained-term table with at least a ``feature_name`` column.
     spec
         Interaction-discovery specification.
+    checkpoint_dir
+        Optional directory for per-permutation checkpoints. When provided, completed permutation
+        scores are persisted and reused on subsequent reruns with the same discovery signature.
 
     Returns
     -------
@@ -1764,7 +1841,112 @@ def discover_manuscript_interactions(
     )
 
     total_scores = len(seeds)
-    all_results: list[tuple[np.ndarray, np.ndarray]] = []
+    checkpoint_root: Path | None = checkpoint_dir
+    if checkpoint_root is None:
+        env_checkpoint_dir = os.getenv("BSM_INTERACTION_CHECKPOINT_DIR")
+        if env_checkpoint_dir:
+            checkpoint_root = Path(env_checkpoint_dir)
+    checkpoint_run_dir: Path | None = None
+    if checkpoint_root is not None:
+        train_ids_digest = hashlib.sha256(
+            "|".join(str(sample_id) for sample_id in train_ids).encode("utf-8")
+        ).hexdigest()
+        checkpoint_signature_payload = {
+            "method": spec.method,
+            "aggregation_rule": spec.aggregation_rule,
+            "null_threshold_quantile": float(spec.null_threshold_quantile),
+            "permutation_count_B": int(spec.permutation_count_B),
+            "random_seed": int(spec.random_seed),
+            "n_tree_estimators": int(spec.n_tree_estimators),
+            "max_tree_depth": int(spec.max_tree_depth),
+            "n_pairs": int(n_pairs),
+            "pair_names": [pair_name for pair_name, _, _ in candidates],
+            "component_names": [str(name) for name in component_names],
+            "train_ids_sha256": train_ids_digest,
+        }
+        checkpoint_signature = hashlib.sha256(
+            json.dumps(checkpoint_signature_payload, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        checkpoint_run_dir = checkpoint_root / checkpoint_signature
+        checkpoint_run_dir.mkdir(parents=True, exist_ok=True)
+        metadata_path = checkpoint_run_dir / "checkpoint_metadata.json"
+        if not metadata_path.exists():
+            metadata_path.write_text(
+                json.dumps(
+                    {
+                        "created_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "signature": checkpoint_signature,
+                        **checkpoint_signature_payload,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+    def _score_checkpoint_path(score_index: int) -> Path | None:
+        if checkpoint_run_dir is None:
+            return None
+        return checkpoint_run_dir / f"score_{score_index:06d}.npz"
+
+    def _load_checkpoint_score(score_index: int) -> tuple[np.ndarray, np.ndarray] | None:
+        score_path = _score_checkpoint_path(score_index)
+        if score_path is None or not score_path.exists():
+            return None
+        try:
+            with np.load(score_path, allow_pickle=False) as data:
+                scores = np.asarray(data["scores"], dtype=float)
+                component_scores = np.asarray(data["component_scores"], dtype=float)
+        except (OSError, ValueError, KeyError) as exc:
+            _append_parallel_diagnostic(
+                "interaction_discovery",
+                {
+                    "event": "checkpoint_read_failure",
+                    "score_index": score_index,
+                    "checkpoint_path": str(score_path),
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc),
+                },
+            )
+            return None
+        if scores.shape != (n_pairs,) or component_scores.shape != (n_pairs, n_comp):
+            _append_parallel_diagnostic(
+                "interaction_discovery",
+                {
+                    "event": "checkpoint_shape_mismatch",
+                    "score_index": score_index,
+                    "checkpoint_path": str(score_path),
+                    "scores_shape": list(scores.shape),
+                    "component_scores_shape": list(component_scores.shape),
+                    "expected_scores_shape": [n_pairs],
+                    "expected_component_scores_shape": [n_pairs, n_comp],
+                },
+            )
+            return None
+        return scores, component_scores
+
+    def _save_checkpoint_score(score_index: int, result: tuple[np.ndarray, np.ndarray]) -> None:
+        score_path = _score_checkpoint_path(score_index)
+        if score_path is None:
+            return
+        scores, component_scores = result
+        temp_path = score_path.with_suffix(".tmp.npz")
+        np.savez_compressed(
+            temp_path,
+            scores=np.asarray(scores, dtype=float),
+            component_scores=np.asarray(component_scores, dtype=float),
+        )
+        temp_path.replace(score_path)
+
+    cached_prefix = 0
+    for score_index in range(total_scores):
+        score_path = _score_checkpoint_path(score_index)
+        if score_path is None or not score_path.exists():
+            break
+        cached_prefix += 1
+
+    indexed_results: dict[int, tuple[np.ndarray, np.ndarray]] = {}
     # Use divisor 8 instead of 25 for larger batches (reduce parallelization overhead)
     batch_size = _progress_batch_size(total_scores, 8)
     batch_timeout_seconds = int(
@@ -1775,49 +1957,65 @@ def discover_manuscript_interactions(
         raise ValueError(
             "interaction_discovery.parallel_backend must be 'loky', 'threading', or 'dask'."
         )
+    start_detail = "starting interaction score permutations"
+    if cached_prefix > 0:
+        start_detail = (
+            "resuming interaction score permutations from checkpoints "
+            f"({cached_prefix}/{total_scores})"
+        )
     _report_progress(
         stage="interaction_discovery",
-        completed=0,
+        completed=cached_prefix,
         total=total_scores,
         unit="permutation_scores",
-        detail="starting interaction score permutations",
+        detail=start_detail,
     )
     with tempfile.TemporaryDirectory(prefix="bsm-interaction-joblib-") as temp_dir:
         for start in range(0, total_scores, batch_size):
             stop = min(start + batch_size, total_scores)
             batch_items = list(enumerate(seeds[start:stop], start=start))
-            batch_result: list[tuple[np.ndarray, np.ndarray]] | None = None
-            try:
-                batch_result = _run_interaction_jobs(
-                    batch_items,
-                    n_jobs=1 if spec.n_jobs <= 1 else spec.n_jobs,
-                    backend=parallel_backend,
-                    timeout_seconds=(None if spec.n_jobs <= 1 else batch_timeout_seconds),
-                    temp_folder=(None if spec.n_jobs <= 1 else temp_dir),
-                )
-            except (TimeoutError, mp.TimeoutError, RuntimeError, OSError) as exc:
-                _append_parallel_diagnostic(
-                    "interaction_discovery",
-                    {
-                        "event": "parallel_batch_failure",
-                        "batch_start": start,
-                        "batch_stop": stop,
-                        "batch_size": len(batch_items),
-                        "backend": parallel_backend,
-                        "n_jobs": spec.n_jobs,
-                        "timeout_seconds": batch_timeout_seconds,
-                        "exception_type": type(exc).__name__,
-                        "exception_message": str(exc),
-                        "controller_pid": os.getpid(),
-                        "worker_snapshot": _worker_process_snapshot(os.getpid()),
-                    },
-                )
-                raise RuntimeError(
-                    "Interaction discovery parallel batch failed; "
-                    "no serial fallback or retries are allowed for n_jobs>1."
-                ) from exc
-            assert batch_result is not None
-            all_results.extend(batch_result)
+            missing_batch_items: list[tuple[int, int]] = []
+            for score_index, seed in batch_items:
+                checkpointed = _load_checkpoint_score(score_index)
+                if checkpointed is not None:
+                    indexed_results[score_index] = checkpointed
+                else:
+                    missing_batch_items.append((score_index, seed))
+            if missing_batch_items:
+                batch_result: list[tuple[np.ndarray, np.ndarray]] | None = None
+                try:
+                    batch_result = _run_interaction_jobs(
+                        missing_batch_items,
+                        n_jobs=1 if spec.n_jobs <= 1 else spec.n_jobs,
+                        backend=parallel_backend,
+                        timeout_seconds=(None if spec.n_jobs <= 1 else batch_timeout_seconds),
+                        temp_folder=(None if spec.n_jobs <= 1 else temp_dir),
+                    )
+                except (TimeoutError, mp.TimeoutError, RuntimeError, OSError) as exc:
+                    _append_parallel_diagnostic(
+                        "interaction_discovery",
+                        {
+                            "event": "parallel_batch_failure",
+                            "batch_start": start,
+                            "batch_stop": stop,
+                            "batch_size": len(missing_batch_items),
+                            "backend": parallel_backend,
+                            "n_jobs": spec.n_jobs,
+                            "timeout_seconds": batch_timeout_seconds,
+                            "exception_type": type(exc).__name__,
+                            "exception_message": str(exc),
+                            "controller_pid": os.getpid(),
+                            "worker_snapshot": _worker_process_snapshot(os.getpid()),
+                        },
+                    )
+                    raise RuntimeError(
+                        "Interaction discovery parallel batch failed; "
+                        "no serial fallback or retries are allowed for n_jobs>1."
+                    ) from exc
+                assert batch_result is not None
+                for (score_index, _), result in zip(missing_batch_items, batch_result, strict=True):
+                    indexed_results[score_index] = result
+                    _save_checkpoint_score(score_index, result)
             _report_progress(
                 stage="interaction_discovery",
                 completed=stop,
@@ -1825,6 +2023,7 @@ def discover_manuscript_interactions(
                 unit="permutation_scores",
             )
 
+    all_results = [indexed_results[idx] for idx in range(total_scores)]
     observed_scores, observed_comp = all_results[0]
     null_statistics = np.zeros((spec.permutation_count_B, n_pairs))
     for b in range(spec.permutation_count_B):
@@ -1940,6 +2139,7 @@ def run_interaction_discovery_stage(context: Any) -> InteractionDiscoveryStageRe
         context.tables["fixed_holdout_assignments"],
         conditioning.pca_scores,
         screening_spec,
+        checkpoint_dir=context.runtime.output_root / "empirical_null_screen",
     )
     interaction_spec = interaction_discovery_spec_from_case_study_config(context.case_study_config)
     interactions = discover_manuscript_interactions(
@@ -1949,6 +2149,7 @@ def run_interaction_discovery_stage(context: Any) -> InteractionDiscoveryStageRe
         conditioning.pca_scores,
         screening.retained_terms,
         interaction_spec,
+        checkpoint_dir=context.runtime.output_root / "interaction_discovery" / "_batch_checkpoints",
     )
     artifact_paths = write_interaction_discovery_artifacts(
         interactions,
@@ -2009,6 +2210,9 @@ def discover_manuscript_nonlinear_transformations(
     pca_scores: pd.DataFrame,
     retained_terms: pd.DataFrame,
     spec: NonlinearDiscoverySpec,
+    *,
+    checkpoint_dir: Path | None = None,
+    active_feature_indices: set[int] | None = None,
 ) -> NonlinearDiscoveryResult:
     """Detect nonlinear transformations via GAM curvature diagnostics.
 
@@ -2095,22 +2299,94 @@ def discover_manuscript_nonlinear_transformations(
     gam_p_threshold = 0.01
 
     base_feat_list = list(candidates_by_base.keys())
+    base_feature_index = {name: idx for idx, name in enumerate(base_feat_list)}
     feature_results: dict[str, dict] = {}
     total_features = len(base_feat_list)
+    active_feature_set = (
+        set(range(total_features))
+        if active_feature_indices is None
+        else {
+            int(index) for index in active_feature_indices if 0 <= int(index) < int(total_features)
+        }
+    )
+    if not active_feature_set:
+        raise ValueError("active_feature_indices must include at least one valid feature index.")
+    active_feature_total = max(1, len(active_feature_set))
     batch_size = _progress_batch_size(total_features, 50)
+    train_ids_digest = hashlib.sha256(
+        "|".join(str(sample_id) for sample_id in train_ids).encode("utf-8")
+    ).hexdigest()
+    checkpoint_run_dir = _checkpoint_run_dir(
+        checkpoint_dir,
+        stage="nonlinear_discovery",
+        signature_payload={
+            "base_features": base_feat_list,
+            "component_names": component_names,
+            "train_ids_sha256": train_ids_digest,
+            "minimum_curvature_score": float(spec.minimum_curvature_score),
+        },
+    )
+
+    def _feature_checkpoint_path(base_index: int) -> Path | None:
+        if checkpoint_run_dir is None:
+            return None
+        return checkpoint_run_dir / f"feature_{base_index:06d}.json"
+
+    cached_feature_count = 0
+    cached_active_feature_count = 0
+    for base_index, base_feat in enumerate(base_feat_list):
+        checkpoint_path = _feature_checkpoint_path(base_index)
+        payload = _read_json_dict(checkpoint_path) if checkpoint_path is not None else None
+        if payload is None:
+            continue
+        if payload.get("base_feature") != base_feat:
+            continue
+        result_payload = payload.get("feature_result")
+        cache_payload = payload.get("cache_entries")
+        if not isinstance(result_payload, dict) or not isinstance(cache_payload, list):
+            continue
+        feature_results[base_feat] = result_payload
+        for entry in cache_payload:
+            if not isinstance(entry, dict):
+                continue
+            component = entry.get("component")
+            if not isinstance(component, str):
+                continue
+            try:
+                edf = float(entry["edf"])
+                p_value = float(entry["p_value"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            gam_cache[(base_feat, component)] = (edf, p_value)
+        cached_feature_count += 1
+        if base_index in active_feature_set:
+            cached_active_feature_count += 1
+
+    start_detail = "starting nonlinear base-feature scoring"
+    if cached_feature_count > 0:
+        start_detail = (
+            "resuming nonlinear base-feature scoring "
+            f"({cached_active_feature_count}/{active_feature_total})"
+        )
     _report_progress(
         stage="nonlinear_discovery",
-        completed=0,
-        total=total_features,
+        completed=cached_active_feature_count,
+        total=active_feature_total,
         unit="base_features",
-        detail="starting nonlinear base-feature scoring",
+        detail=start_detail,
     )
     with Parallel(n_jobs=spec.n_jobs) as parallel:
         for start in range(0, total_features, batch_size):
             stop = min(start + batch_size, total_features)
+            batch_indices = list(range(start, stop))
+            missing_batch = [
+                idx
+                for idx in batch_indices
+                if idx in active_feature_set and base_feat_list[idx] not in feature_results
+            ]
             jobs = [
                 delayed(_score_one_nonlinear_feature)(
-                    base_feat,
+                    base_feat_list[idx],
                     candidates_by_base[base_feat],
                     x_by_base[base_feat],
                     y_scaled,
@@ -2119,18 +2395,59 @@ def discover_manuscript_nonlinear_transformations(
                     edf_threshold,
                     gam_p_threshold,
                 )
-                for base_feat in base_feat_list[start:stop]
+                for idx in missing_batch
+                for base_feat in [base_feat_list[idx]]
             ]
-            for base_feat, feat_result, cache_entries in parallel(jobs):
-                feature_results[base_feat] = feat_result
-                for key, val in cache_entries:
-                    gam_cache[key] = val
+            if jobs:
+                for base_feat, feat_result, cache_entries in parallel(jobs):
+                    feature_results[base_feat] = feat_result
+                    serialized_cache_entries: list[dict[str, Any]] = []
+                    for key, val in cache_entries:
+                        gam_cache[key] = val
+                        serialized_cache_entries.append(
+                            {
+                                "component": str(key[1]),
+                                "edf": float(val[0]),
+                                "p_value": float(val[1]),
+                            }
+                        )
+                    base_index = base_feature_index[base_feat]
+                    checkpoint_path = _feature_checkpoint_path(base_index)
+                    if checkpoint_path is not None:
+                        _write_json_atomic(
+                            checkpoint_path,
+                            {
+                                "base_feature": base_feat,
+                                "feature_result": feat_result,
+                                "cache_entries": serialized_cache_entries,
+                            },
+                        )
             _report_progress(
                 stage="nonlinear_discovery",
-                completed=stop,
-                total=total_features,
+                completed=sum(
+                    1
+                    for idx, base_feat in enumerate(base_feat_list)
+                    if idx in active_feature_set and base_feat in feature_results
+                ),
+                total=active_feature_total,
                 unit="base_features",
             )
+
+    for base_feat in base_feat_list:
+        if base_feat in feature_results:
+            continue
+        default_transform = candidates_by_base[base_feat][0][0]
+        default_component = component_names[active_comp_indices[0] if active_comp_indices else 0]
+        feature_results[base_feat] = {
+            "nonlinear": False,
+            "best_transform_name": default_transform,
+            "best_edf": 2.0,
+            "best_p": 1.0,
+            "best_comp_name": default_component,
+            "best_rmse": float("nan"),
+        }
+        for component_name in component_names:
+            gam_cache.setdefault((base_feat, component_name), (2.0, 1.0))
 
     nonlinear_bases = {b for b, fr in feature_results.items() if fr["nonlinear"]}
 
@@ -2268,6 +2585,7 @@ def run_nonlinear_discovery_stage(context: Any) -> NonlinearDiscoveryStageResult
         context.tables["fixed_holdout_assignments"],
         conditioning.pca_scores,
         screening_spec,
+        checkpoint_dir=context.runtime.output_root / "empirical_null_screen",
     )
     nonlinear_spec = nonlinear_discovery_spec_from_case_study_config(context.case_study_config)
     nonlinear = discover_manuscript_nonlinear_transformations(
@@ -2277,6 +2595,7 @@ def run_nonlinear_discovery_stage(context: Any) -> NonlinearDiscoveryStageResult
         conditioning.pca_scores,
         screening.retained_terms,
         nonlinear_spec,
+        checkpoint_dir=context.runtime.output_root / "nonlinear_discovery",
     )
     artifact_paths = write_nonlinear_discovery_artifacts(
         nonlinear,
@@ -2356,6 +2675,9 @@ def select_manuscript_sparse_support(
     retained_interaction_pairs: pd.DataFrame,
     retained_transformations: pd.DataFrame,
     spec: SparseSelectionStabilitySpec,
+    *,
+    checkpoint_dir: Path | None = None,
+    active_resample_indices: set[int] | None = None,
 ) -> SparseSelectionStabilityResult:
     """Run EBIC-selected L1 sparse selection plus deterministic stability filtering.
 
@@ -2440,6 +2762,10 @@ def select_manuscript_sparse_support(
         full_importance=full_importance,
         spec=spec,
         active_features=feature_active,
+        active_resample_indices=active_resample_indices,
+        checkpoint_dir=(
+            None if checkpoint_dir is None else checkpoint_dir / "_resample_checkpoints"
+        ),
     )
 
     mean_jaccard = float(resample_summary["jaccard_with_full_support"].mean())
@@ -2590,6 +2916,7 @@ def run_sparse_selection_stability_stage(context: Any) -> SparseSelectionStabili
         context.tables["fixed_holdout_assignments"],
         conditioning.pca_scores,
         screening_spec,
+        checkpoint_dir=context.runtime.output_root / "empirical_null_screen",
     )
     interaction_spec = interaction_discovery_spec_from_case_study_config(context.case_study_config)
     interactions = discover_manuscript_interactions(
@@ -2599,6 +2926,7 @@ def run_sparse_selection_stability_stage(context: Any) -> SparseSelectionStabili
         conditioning.pca_scores,
         screening.retained_terms,
         interaction_spec,
+        checkpoint_dir=context.runtime.output_root / "interaction_discovery" / "_batch_checkpoints",
     )
     nonlinear_spec = nonlinear_discovery_spec_from_case_study_config(context.case_study_config)
     nonlinear = discover_manuscript_nonlinear_transformations(
@@ -2608,6 +2936,7 @@ def run_sparse_selection_stability_stage(context: Any) -> SparseSelectionStabili
         conditioning.pca_scores,
         screening.retained_terms,
         nonlinear_spec,
+        checkpoint_dir=context.runtime.output_root / "nonlinear_discovery",
     )
     sparse_spec = sparse_selection_stability_spec_from_case_study_config(context.case_study_config)
     sparse_selection = select_manuscript_sparse_support(
@@ -2619,6 +2948,7 @@ def run_sparse_selection_stability_stage(context: Any) -> SparseSelectionStabili
         interactions.retained_pairs,
         nonlinear.retained_transformations,
         sparse_spec,
+        checkpoint_dir=context.runtime.output_root / "sparse_selection",
     )
     artifact_paths = write_sparse_selection_stability_artifacts(
         sparse_selection,
@@ -2695,6 +3025,8 @@ def _fit_ablation_ols_nrmse(
     spec: FinalManuscriptArtifactsSpec,
     *,
     prebuilt_design: pd.DataFrame | None = None,
+    checkpoint_dir: Path | None = None,
+    active_bootstrap_indices: set[int] | None = None,
 ) -> dict[str, Any]:
     """Fit an OLS ablation model and return a performance row dict.
 
@@ -2742,6 +3074,8 @@ def _fit_ablation_ols_nrmse(
         alpha=spec.bootstrap_alpha,
         random_state=spec.random_seed,
         n_jobs=spec.n_jobs,
+        checkpoint_dir=checkpoint_dir,
+        active_bootstrap_indices=active_bootstrap_indices,
     )
     return {
         "n_features": n_features,
@@ -2764,6 +3098,9 @@ def _compute_ablation_table(
     null_predictions: np.ndarray,
     final_metric: dict[str, Any],
     spec: FinalManuscriptArtifactsSpec,
+    *,
+    checkpoint_dir: Path | None = None,
+    active_bootstrap_indices: set[int] | None = None,
 ) -> pd.DataFrame:
     """Build a five-row ablation performance table.
 
@@ -2797,6 +3134,8 @@ def _compute_ablation_table(
         alpha=spec.bootstrap_alpha,
         random_state=spec.random_seed,
         n_jobs=spec.n_jobs,
+        checkpoint_dir=(None if checkpoint_dir is None else checkpoint_dir / "null_mean"),
+        active_bootstrap_indices=active_bootstrap_indices,
     )
     ablation_done = 1
     _report_progress(
@@ -2847,7 +3186,14 @@ def _compute_ablation_table(
     rows.append(
         {
             "model_name": "main_effects_ols",
-            **_fit_ablation_ols_nrmse(first_order_names, **common_kwargs),
+            **_fit_ablation_ols_nrmse(
+                first_order_names,
+                **common_kwargs,
+                checkpoint_dir=(
+                    None if checkpoint_dir is None else checkpoint_dir / "main_effects_ols"
+                ),
+                active_bootstrap_indices=active_bootstrap_indices,
+            ),
         }
     )
     _report_progress(
@@ -2861,7 +3207,14 @@ def _compute_ablation_table(
     rows.append(
         {
             "model_name": "screened_ols",
-            **_fit_ablation_ols_nrmse(screened_names, **common_kwargs),
+            **_fit_ablation_ols_nrmse(
+                screened_names,
+                **common_kwargs,
+                checkpoint_dir=(
+                    None if checkpoint_dir is None else checkpoint_dir / "screened_ols"
+                ),
+                active_bootstrap_indices=active_bootstrap_indices,
+            ),
         }
     )
     _report_progress(
@@ -2875,7 +3228,14 @@ def _compute_ablation_table(
     rows.append(
         {
             "model_name": "penalized_ols",
-            **_fit_ablation_ols_nrmse(prefilter_feature_names, **common_kwargs),
+            **_fit_ablation_ols_nrmse(
+                prefilter_feature_names,
+                **common_kwargs,
+                checkpoint_dir=(
+                    None if checkpoint_dir is None else checkpoint_dir / "penalized_ols"
+                ),
+                active_bootstrap_indices=active_bootstrap_indices,
+            ),
         }
     )
     _report_progress(
@@ -2971,6 +3331,9 @@ def regenerate_final_manuscript_artifacts(
     nonlinear: NonlinearDiscoveryResult,
     sparse_selection: SparseSelectionStabilityResult,
     spec: FinalManuscriptArtifactsSpec,
+    *,
+    checkpoint_dir: Path | None = None,
+    active_bootstrap_indices: set[int] | None = None,
 ) -> FinalManuscriptArtifactsResult:
     """Regenerate final OLS, manuscript tables, and figure-source artifacts.
 
@@ -3115,6 +3478,10 @@ def regenerate_final_manuscript_artifacts(
         alpha=spec.bootstrap_alpha,
         random_state=spec.random_seed,
         n_jobs=spec.n_jobs,
+        active_bootstrap_indices=active_bootstrap_indices,
+        checkpoint_dir=(
+            None if checkpoint_dir is None else checkpoint_dir / "_bootstrap_final_ols"
+        ),
     )
     final_step = 5
     _final_progress(f"final metric bootstrap complete; n_boot={spec.bootstrap_count}")
@@ -3131,6 +3498,10 @@ def regenerate_final_manuscript_artifacts(
         alpha=spec.bootstrap_alpha,
         random_state=spec.random_seed,
         n_jobs=spec.n_jobs,
+        active_bootstrap_indices=active_bootstrap_indices,
+        checkpoint_dir=(
+            None if checkpoint_dir is None else checkpoint_dir / "_bootstrap_null_mean"
+        ),
     )
     final_step = 6
     _final_progress("null metric bootstrap complete")
@@ -3148,6 +3519,8 @@ def regenerate_final_manuscript_artifacts(
         null_predictions=null_predictions,
         final_metric=final_metric,
         spec=spec,
+        checkpoint_dir=(None if checkpoint_dir is None else checkpoint_dir / "_ablation"),
+        active_bootstrap_indices=active_bootstrap_indices,
     )
     final_step = 7
     _final_progress("ablation table complete")
@@ -3487,6 +3860,7 @@ def run_final_manuscript_artifacts_stage(
         context.tables["fixed_holdout_assignments"],
         conditioning.pca_scores,
         screening_spec,
+        checkpoint_dir=context.runtime.output_root / "empirical_null_screen",
     )
     interaction_spec = interaction_discovery_spec_from_case_study_config(context.case_study_config)
     interactions = discover_manuscript_interactions(
@@ -3496,6 +3870,7 @@ def run_final_manuscript_artifacts_stage(
         conditioning.pca_scores,
         screening.retained_terms,
         interaction_spec,
+        checkpoint_dir=context.runtime.output_root / "interaction_discovery" / "_batch_checkpoints",
     )
     nonlinear_spec = nonlinear_discovery_spec_from_case_study_config(context.case_study_config)
     nonlinear = discover_manuscript_nonlinear_transformations(
@@ -3505,6 +3880,7 @@ def run_final_manuscript_artifacts_stage(
         conditioning.pca_scores,
         screening.retained_terms,
         nonlinear_spec,
+        checkpoint_dir=context.runtime.output_root / "nonlinear_discovery",
     )
     sparse_spec = sparse_selection_stability_spec_from_case_study_config(context.case_study_config)
     sparse_selection = select_manuscript_sparse_support(
@@ -3516,6 +3892,7 @@ def run_final_manuscript_artifacts_stage(
         interactions.retained_pairs,
         nonlinear.retained_transformations,
         sparse_spec,
+        checkpoint_dir=context.runtime.output_root / "sparse_selection",
     )
     final_spec = final_manuscript_artifacts_spec_from_case_study_config(context.case_study_config)
     final_artifacts = regenerate_final_manuscript_artifacts(
@@ -3529,6 +3906,7 @@ def run_final_manuscript_artifacts_stage(
         nonlinear,
         sparse_selection,
         final_spec,
+        checkpoint_dir=context.runtime.output_root / "final_manuscript_artifacts",
     )
     artifact_paths = write_final_manuscript_artifacts(
         final_artifacts,
@@ -3578,6 +3956,7 @@ def run_manuscript_reproduction_stage_chain(
         context.tables["fixed_holdout_assignments"],
         conditioning.pca_scores,
         screening_spec,
+        checkpoint_dir=context.runtime.output_root / "empirical_null_screen",
     )
     screening_paths = write_empirical_null_screening_artifacts(
         screening,
@@ -3596,6 +3975,7 @@ def run_manuscript_reproduction_stage_chain(
         conditioning.pca_scores,
         screening.retained_terms,
         interaction_spec,
+        checkpoint_dir=context.runtime.output_root / "interaction_discovery" / "_batch_checkpoints",
     )
     interaction_paths = write_interaction_discovery_artifacts(
         interactions,
@@ -3614,6 +3994,7 @@ def run_manuscript_reproduction_stage_chain(
         conditioning.pca_scores,
         screening.retained_terms,
         nonlinear_spec,
+        checkpoint_dir=context.runtime.output_root / "nonlinear_discovery",
     )
     nonlinear_paths = write_nonlinear_discovery_artifacts(
         nonlinear,
@@ -3634,6 +4015,7 @@ def run_manuscript_reproduction_stage_chain(
         interactions.retained_pairs,
         nonlinear.retained_transformations,
         sparse_spec,
+        checkpoint_dir=context.runtime.output_root / "sparse_selection",
     )
     sparse_paths = write_sparse_selection_stability_artifacts(
         sparse_selection,
@@ -3656,6 +4038,7 @@ def run_manuscript_reproduction_stage_chain(
         nonlinear,
         sparse_selection,
         final_spec,
+        checkpoint_dir=context.runtime.output_root / "final_manuscript_artifacts",
     )
     final_paths = write_final_manuscript_artifacts(
         final_artifacts,
@@ -4337,6 +4720,8 @@ def _run_stability_resamples(
     full_importance: np.ndarray,
     spec: SparseSelectionStabilitySpec,
     active_features: np.ndarray,
+    active_resample_indices: set[int] | None = None,
+    checkpoint_dir: Path | None = None,
 ) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     """Run stability resamples with optional adaptive early stopping."""
     rng = np.random.default_rng(spec.random_seed)
@@ -4390,6 +4775,72 @@ def _run_stability_resamples(
     support_rows = []
     importance_rows = []
     summary_rows = []
+    active_resample_set = (
+        set(range(1, spec.subsample_count + 1))
+        if active_resample_indices is None
+        else {
+            int(index)
+            for index in active_resample_indices
+            if 1 <= int(index) <= int(spec.subsample_count)
+        }
+    )
+    if not active_resample_set:
+        raise ValueError("active_resample_indices must include at least one valid resample id.")
+    active_resample_total = max(1, len(active_resample_set))
+    checkpoint_signature = {
+        "subsample_count": int(spec.subsample_count),
+        "subsample_fraction": float(spec.subsample_fraction),
+        "random_seed": int(spec.random_seed),
+        "n_rows": int(n_rows),
+        "n_features": int(len(feature_names)),
+        "component_names": component_names,
+        "feature_names": feature_names,
+        "jaccard_threshold": float(spec.jaccard_threshold),
+        "spearman_threshold": float(spec.spearman_threshold),
+        "active_features_sha256": hashlib.sha256(
+            active_features.astype(np.uint8).tobytes()
+        ).hexdigest(),
+        "full_support_mask_sha256": hashlib.sha256(
+            full_support_mask.astype(np.uint8).tobytes()
+        ).hexdigest(),
+        "full_importance_sha256": hashlib.sha256(
+            np.round(full_importance.astype(float), 12).tobytes()
+        ).hexdigest(),
+    }
+    checkpoint_run_dir = _checkpoint_run_dir(
+        checkpoint_dir,
+        stage="sparse_selection",
+        signature_payload=checkpoint_signature,
+    )
+
+    def _resample_checkpoint_paths(resample_id: int) -> tuple[Path | None, Path | None]:
+        if checkpoint_run_dir is None:
+            return None, None
+        stem = f"resample_{resample_id:06d}"
+        return checkpoint_run_dir / f"{stem}.npz", checkpoint_run_dir / f"{stem}.json"
+
+    cached_resamples: dict[int, tuple[np.ndarray, np.ndarray, dict[str, Any]]] = {}
+    for resample_id in range(1, spec.subsample_count + 1):
+        npz_path, json_path = _resample_checkpoint_paths(resample_id)
+        if npz_path is None or json_path is None:
+            break
+        if not npz_path.exists() or not json_path.exists():
+            continue
+        payload = _read_json_dict(json_path)
+        if payload is None:
+            continue
+        try:
+            with np.load(npz_path, allow_pickle=False) as arrays:
+                support_mask = np.asarray(arrays["support_mask"], dtype=bool)
+                importance = np.asarray(arrays["importance"], dtype=float)
+        except (OSError, KeyError, ValueError):
+            continue
+        if support_mask.shape != (len(feature_names),) or importance.shape != (len(feature_names),):
+            continue
+        if int(payload.get("resample_id", -1)) != resample_id:
+            continue
+        cached_resamples[resample_id] = (support_mask, importance, payload)
+
     batch_size = max(
         1,
         min(
@@ -4397,12 +4848,18 @@ def _run_stability_resamples(
             spec.subsample_count // 20 if spec.subsample_count > 20 else spec.subsample_count,
         ),
     )
+    cached_active_count = sum(1 for idx in active_resample_set if idx in cached_resamples)
+    start_detail = "starting sparse stability resampling"
+    if cached_resamples:
+        start_detail = (
+            f"resuming sparse stability resampling ({cached_active_count}/{active_resample_total})"
+        )
     _report_progress(
         stage="sparse_selection",
-        completed=0,
-        total=spec.subsample_count,
+        completed=cached_active_count,
+        total=active_resample_total,
         unit="stability_resamples",
-        detail="starting sparse stability resampling",
+        detail=start_detail,
     )
 
     actual_resample_count = spec.subsample_count
@@ -4411,6 +4868,7 @@ def _run_stability_resamples(
     with Parallel(n_jobs=spec.n_jobs) as parallel:
         for start in range(0, spec.subsample_count, batch_size):
             stop = min(start + batch_size, spec.subsample_count)
+            batch_ids = list(range(start + 1, stop + 1))
             jobs = [
                 delayed(_run_one_stability_resample)(
                     resample_id,
@@ -4428,21 +4886,41 @@ def _run_stability_resamples(
                     all_row_indices[start:stop],
                     start=start + 1,
                 )
+                if resample_id in active_resample_set and resample_id not in cached_resamples
             ]
-            for support_mask, importance, summary_row in parallel(jobs):
-                support_rows.append(support_mask)
-                importance_rows.append(importance)
-                summary_rows.append(summary_row)
+            for cached_id in batch_ids:
+                if cached_id in active_resample_set and cached_id in cached_resamples:
+                    support_mask, importance, summary_row = cached_resamples[cached_id]
+                    support_rows.append(support_mask)
+                    importance_rows.append(importance)
+                    summary_rows.append(summary_row)
+            if jobs:
+                for support_mask, importance, summary_row in parallel(jobs):
+                    support_rows.append(support_mask)
+                    importance_rows.append(importance)
+                    summary_rows.append(summary_row)
+                    resample_id = int(summary_row["resample_id"])
+                    npz_path, json_path = _resample_checkpoint_paths(resample_id)
+                    if npz_path is not None and json_path is not None:
+                        temp_npz = npz_path.with_suffix(".tmp.npz")
+                        np.savez_compressed(
+                            temp_npz,
+                            support_mask=np.asarray(support_mask, dtype=bool),
+                            importance=np.asarray(importance, dtype=float),
+                        )
+                        temp_npz.replace(npz_path)
+                        _write_json_atomic(json_path, summary_row)
             _report_progress(
                 stage="sparse_selection",
-                completed=stop,
-                total=spec.subsample_count,
+                completed=len(summary_rows),
+                total=active_resample_total,
                 unit="stability_resamples",
             )
 
             # Check for early stopping after each batch
             if (
                 spec.adaptive_early_stopping_enabled
+                and active_resample_indices is None
                 and len(summary_rows) >= spec.stability_convergence_window
                 and not early_stopped
             ):
@@ -4485,13 +4963,37 @@ def _run_stability_resamples(
                         support_rows.append(support_mask)
                         importance_rows.append(importance)
                         summary_rows.append(summary_row)
+                        resample_id = int(summary_row["resample_id"])
+                        npz_path, json_path = _resample_checkpoint_paths(resample_id)
+                        if npz_path is not None and json_path is not None:
+                            temp_npz = npz_path.with_suffix(".tmp.npz")
+                            np.savez_compressed(
+                                temp_npz,
+                                support_mask=np.asarray(support_mask, dtype=bool),
+                                importance=np.asarray(importance, dtype=float),
+                            )
+                            temp_npz.replace(npz_path)
+                            _write_json_atomic(json_path, summary_row)
                     break
 
     # Sort by resample_id to restore deterministic order after parallel execution.
-    summary_rows.sort(key=lambda r: r["resample_id"])
-    order = [r["resample_id"] - 1 for r in summary_rows]
-    support_rows = [support_rows[i] for i in order]
-    importance_rows = [importance_rows[i] for i in order]
+    ordered_results = sorted(
+        (
+            int(summary_row["resample_id"]),
+            summary_row,
+            support_row,
+            importance_row,
+        )
+        for summary_row, support_row, importance_row in zip(
+            summary_rows,
+            support_rows,
+            importance_rows,
+            strict=True,
+        )
+    )
+    summary_rows = [summary_row for _, summary_row, _, _ in ordered_results]
+    support_rows = [support_row for _, _, support_row, _ in ordered_results]
+    importance_rows = [importance_row for _, _, _, importance_row in ordered_results]
 
     return (
         pd.DataFrame.from_records(summary_rows),
@@ -5397,6 +5899,9 @@ def _permutation_row_norm_null(
     n_permutations: int,
     random_seed: int,
     n_jobs: int = 1,
+    active_permutation_indices: set[int] | None = None,
+    checkpoint_dir: Path | None = None,
+    checkpoint_signature_payload: dict[str, Any] | None = None,
 ) -> np.ndarray:
     """Compute featurewise coefficient-row-norm statistics under response permutations."""
     rng = np.random.default_rng(random_seed)
@@ -5409,26 +5914,89 @@ def _permutation_row_norm_null(
         coefficients = (x_scaled.T @ permuted) / n_rows
         return np.linalg.norm(coefficients, axis=1)
 
-    null_statistics = np.zeros((n_permutations, x_scaled.shape[1]), dtype=float)
-    batch_size = _progress_batch_size(n_permutations, 50)
+    n_features = int(x_scaled.shape[1])
+    null_statistics = np.full((n_permutations, n_features), np.nan, dtype=float)
+    active_indices = (
+        set(range(n_permutations))
+        if active_permutation_indices is None
+        else {
+            int(index)
+            for index in active_permutation_indices
+            if 0 <= int(index) < int(n_permutations)
+        }
+    )
+    if not active_indices:
+        raise ValueError("active_permutation_indices must include at least one valid index.")
+    checkpoint_run_dir = _checkpoint_run_dir(
+        checkpoint_dir,
+        stage="empirical_null_screen",
+        signature_payload={
+            "n_permutations": int(n_permutations),
+            "random_seed": int(random_seed),
+            "n_rows": int(len(x_scaled)),
+            "n_features": n_features,
+            "n_components": int(y_scaled.shape[1]),
+            **(checkpoint_signature_payload or {}),
+        },
+    )
+
+    def _perm_checkpoint_path(index: int) -> Path | None:
+        if checkpoint_run_dir is None:
+            return None
+        return checkpoint_run_dir / f"perm_{index:06d}.npy"
+
+    pending: list[int] = []
+    for perm_index in range(n_permutations):
+        cache_path = _perm_checkpoint_path(perm_index)
+        if cache_path is None or not cache_path.exists():
+            if perm_index in active_indices:
+                pending.append(perm_index)
+            continue
+        try:
+            cached = np.load(cache_path, allow_pickle=False)
+        except (OSError, ValueError):
+            if perm_index in active_indices:
+                pending.append(perm_index)
+            continue
+        cached = np.asarray(cached, dtype=float)
+        if cached.shape != (n_features,):
+            if perm_index in active_indices:
+                pending.append(perm_index)
+            continue
+        null_statistics[perm_index] = cached
+
+    batch_size = _progress_batch_size(max(1, len(active_indices)), 50)
+    completed = len(active_indices) - len(pending)
+    start_detail = "starting empirical null permutations"
+    if completed > 0:
+        start_detail = (
+            f"resuming empirical null permutations ({completed}/{max(1, len(active_indices))})"
+        )
     _report_progress(
         stage="empirical_null_screen",
-        completed=0,
-        total=n_permutations,
+        completed=completed,
+        total=max(1, len(active_indices)),
         unit="permutations",
-        detail="starting empirical null permutations",
+        detail=start_detail,
     )
     with Parallel(n_jobs=n_jobs) as parallel:
-        for start in range(0, n_permutations, batch_size):
-            stop = min(start + batch_size, n_permutations)
-            jobs = [delayed(_one_permutation)(seed) for seed in seeds[start:stop]]
+        for start in range(0, len(pending), batch_size):
+            stop = min(start + batch_size, len(pending))
+            batch_indices = pending[start:stop]
+            jobs = [delayed(_one_permutation)(seeds[i]) for i in batch_indices]
             batch = parallel(jobs)
-            for i, row in enumerate(batch, start=start):
-                null_statistics[i] = row
+            for permutation_index, row in zip(batch_indices, batch, strict=True):
+                null_statistics[permutation_index] = row
+                cache_path = _perm_checkpoint_path(permutation_index)
+                if cache_path is not None:
+                    temp_path = cache_path.with_suffix(".tmp.npy")
+                    np.save(temp_path, np.asarray(row, dtype=float))
+                    temp_path.replace(cache_path)
+            completed += len(batch_indices)
             _report_progress(
                 stage="empirical_null_screen",
-                completed=stop,
-                total=n_permutations,
+                completed=completed,
+                total=max(1, len(active_indices)),
                 unit="permutations",
             )
     return null_statistics

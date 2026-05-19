@@ -730,6 +730,7 @@ def main() -> int:
                     ctx.tables["fixed_holdout_assignments"],
                     conditioning.pca_scores,
                     spec,
+                    checkpoint_dir=output_root / "empirical_null_screen",
                 )
                 write_empirical_null_screening_artifacts(screening, output_root)
                 summary = screening.summary
@@ -745,6 +746,7 @@ def main() -> int:
                     conditioning.pca_scores,
                     screening.retained_terms,
                     spec,
+                    checkpoint_dir=output_root / "interaction_discovery" / "_batch_checkpoints",
                 )
                 write_interaction_discovery_artifacts(interactions, output_root)
                 summary = interactions.summary
@@ -760,6 +762,7 @@ def main() -> int:
                     conditioning.pca_scores,
                     screening.retained_terms,
                     spec,
+                    checkpoint_dir=output_root / "nonlinear_discovery",
                 )
                 write_nonlinear_discovery_artifacts(nonlinear, output_root)
                 summary = nonlinear.summary
@@ -782,6 +785,7 @@ def main() -> int:
                     interactions.retained_pairs,
                     nonlinear.retained_transformations,
                     spec,
+                    checkpoint_dir=output_root / "sparse_selection",
                 )
                 write_sparse_selection_stability_artifacts(sparse_selection, output_root)
                 summary = sparse_selection.summary
@@ -807,6 +811,7 @@ def main() -> int:
                     nonlinear,
                     sparse_selection,
                     spec,
+                    checkpoint_dir=output_root / "final_manuscript_artifacts",
                 )
                 write_final_manuscript_artifacts(final_artifacts, output_root)
                 summary = final_artifacts.summary

@@ -161,6 +161,11 @@ Run `SELECT * FROM todos` to see current task breakdown.
 - Runtime-heavy artifacts should remain on HPC storage roots (`/scratch`, `/projects`) with minimal local pullback artifacts.
 - Legacy HPC figure-generation logic must be integrated so each study run emits publication-ready figures from the canonical workflow.
 
+**User-priority clarification (2026-05-19)**:
+
+- All workflow stages must support resume from persisted progress/checkpoints after
+  timeout/interruption; restarting full stages is not acceptable for full-dataset HPC runs.
+
 **Objective**: Enable manuscript workflow execution on any dataset size, from laptop to HPC cluster
 
 **Three sequential sub-phases**:

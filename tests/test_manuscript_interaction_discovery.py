@@ -484,3 +484,142 @@ def test_interaction_discovery_falls_back_to_joblib_when_dask_executor_fails(
         spec,
     )
     assert len(result.pair_scores) == 1
+
+
+def test_interaction_discovery_resumes_from_checkpointed_permutation_scores(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sample_ids = list(range(1, 21))
+    x1 = [-1.0, -1.0, 1.0, 1.0] * 5
+    x2 = [-1.0, 1.0, -1.0, 1.0] * 5
+    pca_signal = [left * right for left, right in zip(x1, x2, strict=True)]
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2})
+    catalog = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2"],
+            "feature_type": ["first_order", "first_order"],
+        }
+    )
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 16 + ["holdout"] * 4})
+    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
+    retained_terms = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2"],
+            "feature_type": ["first_order", "first_order"],
+        }
+    )
+    spec = InteractionDiscoverySpec(
+        method="tree_shap_interaction_values",
+        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
+        null_threshold_quantile=0.9,
+        retained_pairs_reference=1,
+        permutation_count_B=5,
+        random_seed=123,
+        n_jobs=1,
+        parallel_backend="threading",
+    )
+    checkpoint_root = tmp_path / "interaction_checkpoints"
+    monkeypatch.setenv("BSM_PROGRESS_BATCH_SIZE", "2")
+
+    interrupted_call_counter = {"count": 0}
+
+    def _fail_midway_score_interaction_permutation(
+        y_base: np.ndarray,
+        permute_response: bool,
+        *,
+        n_pairs: int,
+        n_comp: int,
+        **_: object,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        _ = (y_base, permute_response)
+        interrupted_call_counter["count"] += 1
+        if interrupted_call_counter["count"] >= 3:
+            raise RuntimeError("simulated worker interruption")
+        score = float(interrupted_call_counter["count"])
+        return np.full(n_pairs, score), np.full((n_pairs, n_comp), score)
+
+    monkeypatch.setattr(
+        manuscript_stages,
+        "_score_interaction_permutation",
+        _fail_midway_score_interaction_permutation,
+    )
+
+    with pytest.raises(RuntimeError, match="parallel batch failed"):
+        discover_manuscript_interactions(
+            inputs,
+            catalog,
+            holdout,
+            pca_scores,
+            retained_terms,
+            spec,
+            checkpoint_dir=checkpoint_root,
+        )
+
+    score_files_after_interrupt = sorted(checkpoint_root.rglob("score_*.npz"))
+    assert len(score_files_after_interrupt) == 2
+
+    resumed_call_counter = {"count": 0}
+
+    def _resume_score_interaction_permutation(
+        y_base: np.ndarray,
+        permute_response: bool,
+        *,
+        n_pairs: int,
+        n_comp: int,
+        **_: object,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        _ = (y_base, permute_response)
+        resumed_call_counter["count"] += 1
+        score = float(resumed_call_counter["count"] + 10)
+        return np.full(n_pairs, score), np.full((n_pairs, n_comp), score)
+
+    monkeypatch.setattr(
+        manuscript_stages,
+        "_score_interaction_permutation",
+        _resume_score_interaction_permutation,
+    )
+
+    resumed_result = discover_manuscript_interactions(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        spec,
+        checkpoint_dir=checkpoint_root,
+    )
+    assert resumed_call_counter["count"] == 4
+    assert len(resumed_result.pair_scores) == 1
+
+    loaded_call_counter = {"count": 0}
+
+    def _should_not_run_score_interaction_permutation(
+        y_base: np.ndarray,
+        permute_response: bool,
+        *,
+        n_pairs: int,
+        n_comp: int,
+        **_: object,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        _ = (y_base, permute_response)
+        loaded_call_counter["count"] += 1
+        raise AssertionError("checkpoint resume should skip recomputation")
+
+    monkeypatch.setattr(
+        manuscript_stages,
+        "_score_interaction_permutation",
+        _should_not_run_score_interaction_permutation,
+    )
+
+    loaded_result = discover_manuscript_interactions(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        spec,
+        checkpoint_dir=checkpoint_root,
+    )
+    assert loaded_call_counter["count"] == 0
+    assert len(loaded_result.pair_scores) == 1

@@ -1,17 +1,8 @@
 r"""HPC shard worker — runs inside each SLURM array task.
 
 Selects the shard at TASK_ID from the manifest, executes the designated
-pipeline stage over its assigned feature range, validates outputs, then
+pipeline stage over its assigned work-item range, validates outputs, then
 promotes them with an atomic _SUCCESS.json marker.
-
-Called by the generated sbatch script::
-
-    pixi run python tools/hpc_shard_worker.py \\
-        --manifest manifest.jsonl \\
-        --task-id $SLURM_ARRAY_TASK_ID \\
-        --output-root /scratch/bsm/run/outputs \\
-        --work-dir /scratch/bsm/run/task-0042 \\
-        --stage interaction_discovery
 """
 
 from __future__ import annotations
@@ -23,10 +14,39 @@ import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pandas as pd
 
-from bsm_rfm.manuscript_stages import discover_manuscript_interactions
+from bsm_rfm.config import apply_fast_mode_overrides, load_config
+from bsm_rfm.manuscript_runtime import load_manuscript_case_study_config
+from bsm_rfm.manuscript_stages import (
+    condition_manuscript_outputs,
+    discover_manuscript_interactions,
+    discover_manuscript_nonlinear_transformations,
+    empirical_null_screening_spec_from_case_study_config,
+    final_manuscript_artifacts_spec_from_case_study_config,
+    nonlinear_discovery_spec_from_case_study_config,
+    output_conditioning_spec_from_case_study_config,
+    regenerate_final_manuscript_artifacts,
+    screen_manuscript_empirical_null_terms,
+    select_manuscript_sparse_support,
+    sparse_selection_stability_spec_from_case_study_config,
+)
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from tools.run_manuscript_pipeline import (  # noqa: E402
+    _load_empirical_null_screening_result,
+    _load_interaction_discovery_result,
+    _load_nonlinear_discovery_result,
+    _load_output_conditioning_result,
+    _load_sparse_selection_result,
+    _load_tables,
+    config_to_legacy_case_study,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,7 +76,6 @@ def main() -> None:
 
     from bsm_rfm.distributed.manifest import load_manifest
 
-    # Load manifest and select this task's shard
     shards = load_manifest(args.manifest)
     if args.task_id >= len(shards):
         logger.error("task_id=%d out of range (manifest has %d shards)", args.task_id, len(shards))
@@ -71,11 +90,12 @@ def main() -> None:
         shard.feature_end_idx,
     )
 
+    resolved_config = _resolve_config_path(shard, args.config)
     try:
         run_shard(
             shard=shard,
             output_root=args.output_root,
-            config_path=args.config,
+            config_path=resolved_config,
             dry_run=args.dry_run,
             manifest_path=args.manifest,
         )
@@ -134,8 +154,6 @@ def _run_shard_stage(shard, cm, args) -> None:
     """Dispatch to the appropriate stage runner."""
     stage = shard.stage
     logger.info("[shard] running stage=%s for shard=%s", stage, shard.shard_id)
-
-    # Ensure staging dir exists
     cm.staging_dir.mkdir(parents=True, exist_ok=True)
 
     if stage == "interaction_discovery":
@@ -145,21 +163,271 @@ def _run_shard_stage(shard, cm, args) -> None:
             "retained_interaction_pairs.csv",
             "interaction_pair_scores.csv",
         ]
-    else:
-        # Generic pass-through: run the full pipeline stage for this shard's inputs
-        # Stages other than interaction_discovery are not yet shard-parallelized —
-        # the single-node runner handles them. Log a warning and write a placeholder.
-        logger.warning(
-            "[shard] stage=%s is not yet shard-parallelized; writing placeholder _SUCCESS",
-            stage,
-        )
-        _write_placeholder(shard, cm)
+    elif stage == "output_conditioning":
+        _run_output_conditioning_shard(shard, cm, config_path=_require_config(stage, args.config))
         expected_files = ["shard_result.json"]
+    elif stage == "empirical_null_screening":
+        _run_empirical_null_screening_shard(
+            shard,
+            cm,
+            config_path=_require_config(stage, args.config),
+        )
+        expected_files = ["shard_result.json"]
+    elif stage == "nonlinear_discovery":
+        _run_nonlinear_discovery_shard(shard, cm, config_path=_require_config(stage, args.config))
+        expected_files = ["shard_result.json"]
+    elif stage == "sparse_selection":
+        _run_sparse_selection_shard(shard, cm, config_path=_require_config(stage, args.config))
+        expected_files = ["shard_result.json"]
+    elif stage == "final_manuscript_artifacts":
+        _run_final_manuscript_artifacts_shard(
+            shard,
+            cm,
+            config_path=_require_config(stage, args.config),
+        )
+        expected_files = ["shard_result.json"]
+    else:
+        raise ValueError(f"Unsupported shard stage: {stage}")
 
-    # Validate and promote
     cm.validate_and_promote(
         expected_files=expected_files,
         metadata={"stage": stage, "shard_id": shard.shard_id},
+    )
+
+
+def _resolve_config_path(shard, explicit_config: str | None) -> str | None:
+    if explicit_config:
+        return explicit_config
+    for raw_path in getattr(shard, "input_paths", []):
+        path = Path(raw_path)
+        if path.suffix.lower() in {".yml", ".yaml"} and path.exists():
+            return str(path)
+    return None
+
+
+def _require_config(stage: str, config_path: str | None) -> str:
+    if config_path:
+        return config_path
+    raise ValueError(
+        f"Stage '{stage}' requires --config (or YAML config path in manifest input_paths)."
+    )
+
+
+def _artifact_root_from_output_root(output_root: Path) -> Path:
+    return output_root.resolve().parent
+
+
+def _load_workflow_tables_and_case_config(
+    config_path: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    workflow = apply_fast_mode_overrides(load_config(config_path))
+    output_cap = (
+        workflow.validation.fast_mode_overrides.output_cap
+        if workflow.validation.fast_mode
+        else None
+    )
+    tables = _load_tables(output_column_limit=output_cap, config=workflow)
+    case_study_config = config_to_legacy_case_study(workflow)
+    return tables, case_study_config
+
+
+def _shard_index_subset(
+    shard,
+    total_items: int,
+    *,
+    one_based: bool = False,
+) -> set[int]:
+    if total_items <= 0:
+        raise ValueError("total_items must be positive for shard partitioning.")
+    start = int(shard.feature_start_idx or 0)
+    end = int(shard.feature_end_idx or total_items)
+    start = max(0, min(start, total_items))
+    end = max(start, min(end, total_items))
+    if start == end:
+        raise ValueError(
+            f"Shard {shard.shard_id} has empty work-item range for total_items={total_items}."
+        )
+    if one_based:
+        return {idx + 1 for idx in range(start, end)}
+    return set(range(start, end))
+
+
+def _write_checkpoint_warmup_result(
+    *,
+    shard,
+    cm,
+    stage: str,
+    config_path: str,
+    work_item_start: int,
+    work_item_end: int,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    payload: dict[str, Any] = {
+        "shard_id": shard.shard_id,
+        "stage": stage,
+        "status": "checkpoint_warmup_complete",
+        "config_path": config_path,
+        "work_item_start": int(work_item_start),
+        "work_item_end": int(work_item_end),
+    }
+    if extra:
+        payload.update(extra)
+    (cm.staging_dir / "shard_result.json").write_text(json.dumps(payload, indent=2))
+
+
+def _run_output_conditioning_shard(shard, cm, *, config_path: str) -> None:
+    tables, case_study_config = _load_workflow_tables_and_case_config(config_path)
+    spec = output_conditioning_spec_from_case_study_config(case_study_config)
+    conditioning = condition_manuscript_outputs(
+        tables["case_study_output_matrix"],
+        tables["fixed_holdout_assignments"],
+        spec,
+    )
+    _write_checkpoint_warmup_result(
+        shard=shard,
+        cm=cm,
+        stage="output_conditioning",
+        config_path=config_path,
+        work_item_start=int(shard.feature_start_idx or 0),
+        work_item_end=int(shard.feature_end_idx or 1),
+        extra={
+            "n_retained_outputs": int(len(conditioning.retained_output_names)),
+            "n_retained_components": int(len(conditioning.pca_explained_variance)),
+        },
+    )
+
+
+def _run_empirical_null_screening_shard(shard, cm, *, config_path: str) -> None:
+    tables, case_study_config = _load_workflow_tables_and_case_config(config_path)
+    artifact_root = _artifact_root_from_output_root(cm.output_root)
+    conditioning = _load_output_conditioning_result(artifact_root)
+    spec = empirical_null_screening_spec_from_case_study_config(case_study_config)
+    active_permutation_indices = _shard_index_subset(shard, spec.permutation_count_B)
+    screening = screen_manuscript_empirical_null_terms(
+        tables["case_study_input_matrix"],
+        tables["manuscript_feature_catalog"],
+        tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        spec,
+        checkpoint_dir=artifact_root / "empirical_null_screen",
+        active_permutation_indices=active_permutation_indices,
+    )
+    _write_checkpoint_warmup_result(
+        shard=shard,
+        cm=cm,
+        stage="empirical_null_screening",
+        config_path=config_path,
+        work_item_start=min(active_permutation_indices),
+        work_item_end=max(active_permutation_indices) + 1,
+        extra={
+            "n_target_permutations": int(len(active_permutation_indices)),
+            "n_retained_terms_preview": int(len(screening.retained_terms)),
+        },
+    )
+
+
+def _run_nonlinear_discovery_shard(shard, cm, *, config_path: str) -> None:
+    tables, case_study_config = _load_workflow_tables_and_case_config(config_path)
+    artifact_root = _artifact_root_from_output_root(cm.output_root)
+    conditioning = _load_output_conditioning_result(artifact_root)
+    screening = _load_empirical_null_screening_result(artifact_root)
+    spec = nonlinear_discovery_spec_from_case_study_config(case_study_config)
+    total_features = int(screening.retained_terms["feature_name"].astype(str).nunique())
+    active_feature_indices = _shard_index_subset(shard, max(1, total_features))
+    nonlinear = discover_manuscript_nonlinear_transformations(
+        tables["case_study_input_matrix"],
+        tables["manuscript_feature_catalog"],
+        tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening.retained_terms,
+        spec,
+        checkpoint_dir=artifact_root / "nonlinear_discovery",
+        active_feature_indices=active_feature_indices,
+    )
+    _write_checkpoint_warmup_result(
+        shard=shard,
+        cm=cm,
+        stage="nonlinear_discovery",
+        config_path=config_path,
+        work_item_start=min(active_feature_indices),
+        work_item_end=max(active_feature_indices) + 1,
+        extra={
+            "n_target_base_features": int(len(active_feature_indices)),
+            "n_retained_transformations_preview": int(len(nonlinear.retained_transformations)),
+        },
+    )
+
+
+def _run_sparse_selection_shard(shard, cm, *, config_path: str) -> None:
+    tables, case_study_config = _load_workflow_tables_and_case_config(config_path)
+    artifact_root = _artifact_root_from_output_root(cm.output_root)
+    conditioning = _load_output_conditioning_result(artifact_root)
+    screening = _load_empirical_null_screening_result(artifact_root)
+    interactions = _load_interaction_discovery_result(artifact_root)
+    nonlinear = _load_nonlinear_discovery_result(artifact_root)
+    spec = sparse_selection_stability_spec_from_case_study_config(case_study_config)
+    active_resample_indices = _shard_index_subset(shard, spec.subsample_count, one_based=True)
+    sparse_selection = select_manuscript_sparse_support(
+        tables["case_study_input_matrix"],
+        tables["manuscript_feature_catalog"],
+        tables["fixed_holdout_assignments"],
+        conditioning.pca_scores,
+        screening.retained_terms,
+        interactions.retained_pairs,
+        nonlinear.retained_transformations,
+        spec,
+        checkpoint_dir=artifact_root / "sparse_selection",
+        active_resample_indices=active_resample_indices,
+    )
+    _write_checkpoint_warmup_result(
+        shard=shard,
+        cm=cm,
+        stage="sparse_selection",
+        config_path=config_path,
+        work_item_start=min(active_resample_indices),
+        work_item_end=max(active_resample_indices) + 1,
+        extra={
+            "n_target_resamples": int(len(active_resample_indices)),
+            "n_final_support_preview": int(len(sparse_selection.final_stable_support)),
+        },
+    )
+
+
+def _run_final_manuscript_artifacts_shard(shard, cm, *, config_path: str) -> None:
+    tables, case_study_config = _load_workflow_tables_and_case_config(config_path)
+    artifact_root = _artifact_root_from_output_root(cm.output_root)
+    conditioning = _load_output_conditioning_result(artifact_root)
+    screening = _load_empirical_null_screening_result(artifact_root)
+    interactions = _load_interaction_discovery_result(artifact_root)
+    nonlinear = _load_nonlinear_discovery_result(artifact_root)
+    sparse_selection = _load_sparse_selection_result(artifact_root)
+    spec = final_manuscript_artifacts_spec_from_case_study_config(case_study_config)
+    active_bootstrap_indices = _shard_index_subset(shard, spec.bootstrap_count)
+    final_artifacts = regenerate_final_manuscript_artifacts(
+        tables["case_study_input_matrix"],
+        tables["case_study_output_matrix"],
+        tables["manuscript_feature_catalog"],
+        tables["fixed_holdout_assignments"],
+        conditioning,
+        screening,
+        interactions,
+        nonlinear,
+        sparse_selection,
+        spec,
+        checkpoint_dir=artifact_root / "final_manuscript_artifacts",
+        active_bootstrap_indices=active_bootstrap_indices,
+    )
+    _write_checkpoint_warmup_result(
+        shard=shard,
+        cm=cm,
+        stage="final_manuscript_artifacts",
+        config_path=config_path,
+        work_item_start=min(active_bootstrap_indices),
+        work_item_end=max(active_bootstrap_indices) + 1,
+        extra={
+            "n_target_bootstraps": int(len(active_bootstrap_indices)),
+            "n_final_support_preview": int(len(final_artifacts.final_support_features)),
+        },
     )
 
 
@@ -189,14 +457,10 @@ def _resolve_interaction_inputs(input_paths: list[str]) -> dict[str, Path]:
 
 
 def _load_interaction_spec(config_path: str | None):
-    from bsm_rfm.manuscript_runtime import load_manuscript_case_study_config
     from bsm_rfm.manuscript_stages import interaction_discovery_spec_from_case_study_config
 
     if config_path:
-        from bsm_rfm.config import load_config
-        from tools.run_manuscript_pipeline import config_to_legacy_case_study
-
-        workflow_config = load_config(config_path)
+        workflow_config = apply_fast_mode_overrides(load_config(config_path))
         case_study_config = config_to_legacy_case_study(workflow_config)
     else:
         case_study_config = load_manuscript_case_study_config(Path.cwd())
@@ -242,14 +506,7 @@ def _write_interaction_shard_outputs(
 
 
 def _run_interaction_shard(shard, cm, config_path: str | None = None) -> None:
-    """Run interaction discovery scoring for the feature range assigned to this shard.
-
-    The shard covers features [feature_start_idx, feature_end_idx) of the full
-    feature set. We load X/Y from input_paths, subset to the shard's columns,
-    and run the interaction scoring pipeline.
-
-    Outputs a shard_result.json with the discovered pairs and scores.
-    """
+    """Run interaction discovery scoring for the feature range assigned to this shard."""
     logger.info(
         "[interaction_shard] feature_range=[%s, %s) input_paths=%s",
         shard.feature_start_idx,
@@ -307,18 +564,6 @@ def _run_interaction_shard(shard, cm, config_path: str | None = None) -> None:
         interactions=interactions,
         selected_features=selected_features,
     )
-
-
-def _write_placeholder(shard, cm) -> None:
-    """Write a placeholder shard_result.json for unsupported stages."""
-    result = {
-        "shard_id": shard.shard_id,
-        "stage": shard.stage,
-        "status": "placeholder",
-        "note": "Stage not yet shard-parallelized; run via single-node pipeline",
-    }
-    result_path = cm.staging_dir / "shard_result.json"
-    result_path.write_text(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":

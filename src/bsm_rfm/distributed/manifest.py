@@ -7,11 +7,15 @@ SLURM_ARRAY_TASK_ID (0-indexed).
 
 from __future__ import annotations
 
+import fcntl
 import json
+import logging
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Literal
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -209,9 +213,10 @@ def update_shard_status(
 ) -> None:
     """Update the status of a single shard in the manifest file (in-place).
 
-    Reads the full manifest, updates the matching record, and writes it back.
-    Thread-safe for single-writer use; SLURM array tasks each write to their
-    own shard_id so contention is not expected.
+    Uses file locking to safely handle concurrent writes from multiple SLURM
+    array tasks. Each task updates its own shard_id, so lock contention is
+    minimal, but locking prevents read-during-write corruption that broke the
+    first run.
 
     Parameters
     ----------
@@ -224,21 +229,30 @@ def update_shard_status(
     error_message
         Optional error string (set when status='failed').
     """
-    shards = load_manifest(manifest_path)
-    now = _now_utc()
-    for shard in shards:
-        if shard.shard_id == shard_id:
-            shard.status = status
-            if status == "running":
-                shard.attempt += 1
-                shard.started_at = now
-                shard.completed_at = None
-                shard.error_message = None
-            elif status in {"completed", "failed"}:
-                shard.completed_at = now
-                shard.error_message = error_message
-            break
-    save_manifest(shards, manifest_path)
+    manifest_path = Path(manifest_path)
+    lock_path = manifest_path.parent / f"{manifest_path.name}.lock"
+
+    # Use lock file to serialize writes
+    with lock_path.open("a") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            shards = load_manifest(manifest_path)
+            now = _now_utc()
+            for shard in shards:
+                if shard.shard_id == shard_id:
+                    shard.status = status
+                    if status == "running":
+                        shard.attempt += 1
+                        shard.started_at = now
+                        shard.completed_at = None
+                        shard.error_message = None
+                    elif status in {"completed", "failed"}:
+                        shard.completed_at = now
+                        shard.error_message = error_message
+                    break
+            save_manifest(shards, manifest_path)
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def manifest_summary(shards: list[ShardManifest]) -> dict[str, int]:

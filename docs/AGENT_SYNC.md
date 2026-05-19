@@ -11,6 +11,43 @@ slice_status: complete (small distributed orchestration now targets a dedicated 
 last_validation: `pixi run ruff check tests/test_hpc_workflow_orchestration.py` pass; `pixi run pytest -q tests/test_hpc_workflow_orchestration.py` pass; `bash scripts/kestrel/run_small_distributed_test_local.sh --dry-run --poll-count 1 --poll-seconds 1` pass
 next_slice: Execute unified orchestration config on Kestrel live queue and collect manifest/reporting bundle outputs
 
+## Full-data runtime resiliency hotfix (2026-05-19)
+
+- User clarification persisted: long-running stages must resume from in-stage progress, not restart
+  from zero after walltime/timeouts.
+- Implemented per-permutation checkpoint/resume for `interaction_discovery` in
+  `discover_manuscript_interactions(...)`:
+  - optional `checkpoint_dir` parameter
+  - per-score `score_*.npz` persistence keyed by deterministic stage signature
+  - automatic reuse of completed scores on rerun; only missing scores are recomputed
+- Wired checkpoint path from runtime/output-root callers:
+  - `tools/run_manuscript_pipeline.py`
+  - `run_interaction_discovery_stage(...)`
+  - `run_sparse_selection_stability_stage(...)`
+  - `run_final_manuscript_artifacts_stage(...)`
+  - `run_manuscript_reproduction_stage_chain(...)`
+- Added regression coverage:
+  - `test_interaction_discovery_resumes_from_checkpointed_permutation_scores`
+  - verifies partial-interruption recovery and zero-recompute reuse on subsequent reruns.
+
+## Full-data all-stage resume extension (2026-05-19)
+
+- User clarification persisted: resume-without-loss applies to all stages, not only interaction.
+- Implemented checkpoint/resume across remaining long-running stage internals:
+  - `empirical_null_screen`: per-permutation null-score checkpoints.
+  - `nonlinear_discovery`: per-base-feature GAM scoring checkpoints.
+  - `sparse_selection`: per-resample stability checkpoints.
+  - `final_manuscript_artifacts`: bootstrap-replicate checkpoints for final/null metrics and
+    ablation model bootstraps.
+- Routed checkpoint dirs from pipeline/stage callers:
+  - `tools/run_manuscript_pipeline.py`
+  - notebook stage wrappers and reproduction stage-chain functions.
+- Added regression coverage:
+  - `test_empirical_null_screening_reuses_checkpointed_permutations`
+  - `test_nonlinear_discovery_reuses_checkpointed_feature_scores`
+  - `test_sparse_selection_reuses_checkpointed_resamples`
+  - `test_bootstrap_macro_nrmse_ci_reuses_checkpointed_replicates`
+
 ## Phase 8d — unified HPC orchestration UX (2026-05-14)
 
 - User scope clarification persisted:

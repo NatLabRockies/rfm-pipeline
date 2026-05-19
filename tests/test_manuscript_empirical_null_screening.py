@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
+import bsm_rfm.manuscript_stages as manuscript_stages
 from bsm_rfm.manuscript_runtime import (
     build_manuscript_notebook_context,
     load_manuscript_case_study_config,
@@ -217,3 +218,179 @@ def test_run_empirical_null_screening_stage_executes_demo_context() -> None:
     assert result.screening.summary.loc[0, "stage"] == "empirical_null_screening"
     assert result.screening.summary.loc[0, "n_candidate_terms"] == 4
     assert result.artifact_paths["retained_terms"].exists()
+
+
+def test_empirical_null_screening_reuses_checkpointed_permutations(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sample_ids = list(range(1, 21))
+    x_signal = [float(value) for value in range(20)]
+    x_noise = [0.0, 3.0, 1.0, 4.0, 2.0] * 4
+    inputs = pd.DataFrame(
+        {
+            "sample_id": sample_ids,
+            "x_signal": x_signal,
+            "x_noise": x_noise,
+        }
+    )
+    catalog = pd.DataFrame(
+        {
+            "feature_name": ["x_signal", "x_noise", "x_signal:x_noise"],
+            "feature_type": ["first_order", "first_order", "interaction"],
+        }
+    )
+    holdout = pd.DataFrame(
+        {
+            "sample_id": sample_ids,
+            "split": ["train"] * 16 + ["holdout"] * 4,
+        }
+    )
+    pca_scores = pd.DataFrame(
+        {
+            "sample_id": sample_ids,
+            "PC1": [2.0 * value for value in x_signal],
+            "PC2": [0.25 * value for value in x_signal],
+        }
+    )
+    spec = EmpiricalNullScreeningSpec(
+        statistic="coefficient_row_l2_norm",
+        permutation_count_B=11,
+        bh_q_screen=0.20,
+        retained_terms_reference=349,
+        random_seed=123,
+        n_jobs=2,
+    )
+
+    call_counter = {"jobs": 0}
+
+    class FakeParallel:
+        def __init__(self, n_jobs: int, **kwargs: object) -> None:
+            _ = (n_jobs, kwargs)
+
+        def __enter__(self) -> FakeParallel:
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+            return False
+
+        def __call__(
+            self,
+            jobs: list[tuple[object, tuple[object, ...], dict[str, object]]],
+        ) -> list[object]:
+            call_counter["jobs"] += len(jobs)
+            return [func(*args, **kwargs) for func, args, kwargs in jobs]
+
+    monkeypatch.setattr(manuscript_stages, "Parallel", FakeParallel)
+    checkpoint_root = tmp_path / "empirical_null_screen"
+
+    first = screen_manuscript_empirical_null_terms(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        spec,
+        checkpoint_dir=checkpoint_root,
+    )
+    assert call_counter["jobs"] > 0
+
+    call_counter["jobs"] = 0
+    second = screen_manuscript_empirical_null_terms(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        spec,
+        checkpoint_dir=checkpoint_root,
+    )
+    assert call_counter["jobs"] == 0
+    assert first.retained_terms.equals(second.retained_terms)
+
+
+def test_empirical_null_screening_supports_active_permutation_subsets(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sample_ids = list(range(1, 21))
+    x_signal = [float(value) for value in range(20)]
+    x_noise = [0.0, 3.0, 1.0, 4.0, 2.0] * 4
+    inputs = pd.DataFrame(
+        {
+            "sample_id": sample_ids,
+            "x_signal": x_signal,
+            "x_noise": x_noise,
+        }
+    )
+    catalog = pd.DataFrame(
+        {
+            "feature_name": ["x_signal", "x_noise", "x_signal:x_noise"],
+            "feature_type": ["first_order", "first_order", "interaction"],
+        }
+    )
+    holdout = pd.DataFrame(
+        {
+            "sample_id": sample_ids,
+            "split": ["train"] * 16 + ["holdout"] * 4,
+        }
+    )
+    pca_scores = pd.DataFrame(
+        {
+            "sample_id": sample_ids,
+            "PC1": [2.0 * value for value in x_signal],
+            "PC2": [0.25 * value for value in x_signal],
+        }
+    )
+    spec = EmpiricalNullScreeningSpec(
+        statistic="coefficient_row_l2_norm",
+        permutation_count_B=11,
+        bh_q_screen=0.20,
+        retained_terms_reference=349,
+        random_seed=123,
+        n_jobs=2,
+    )
+
+    call_counter = {"jobs": 0}
+
+    class FakeParallel:
+        def __init__(self, n_jobs: int, **kwargs: object) -> None:
+            _ = (n_jobs, kwargs)
+
+        def __enter__(self) -> FakeParallel:
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+            return False
+
+        def __call__(
+            self,
+            jobs: list[tuple[object, tuple[object, ...], dict[str, object]]],
+        ) -> list[object]:
+            call_counter["jobs"] += len(jobs)
+            return [func(*args, **kwargs) for func, args, kwargs in jobs]
+
+    monkeypatch.setattr(manuscript_stages, "Parallel", FakeParallel)
+    checkpoint_root = tmp_path / "empirical_null_screen_subset"
+    active_subset = {1, 3, 5}
+
+    screen_manuscript_empirical_null_terms(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        spec,
+        checkpoint_dir=checkpoint_root,
+        active_permutation_indices=active_subset,
+    )
+    assert call_counter["jobs"] == len(active_subset)
+
+    call_counter["jobs"] = 0
+    screen_manuscript_empirical_null_terms(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        spec,
+        checkpoint_dir=checkpoint_root,
+        active_permutation_indices=active_subset,
+    )
+    assert call_counter["jobs"] == 0

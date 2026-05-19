@@ -186,6 +186,7 @@ submit_stage() {
   local stage_shard_dir="${ARTIFACT_ROOT}/hpc_shards_${stage}"
   local active_shard_symlink="${ARTIFACT_ROOT}/hpc_shards"
 
+  rm -rf "${stage_script_dir}"
   mkdir -p "${stage_script_dir}" "${stage_shard_dir}" "${stage_log_dir}"
   ln -sfn "${stage_shard_dir}" "${active_shard_symlink}"
 

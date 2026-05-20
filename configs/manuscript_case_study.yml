@@ -105,6 +105,11 @@ case_study:
   final_inferential_filter:
     interval_method: hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs
     interval_method_status: frozen_repo_decision
+    feature_pruning:
+      error_scale_quantile: 0.95
+      # Optional overrides for manual tuning:
+      # delta_threshold_override: 0.005
+      # remove_count_override: 200
 
   final_model:
     final_predictor_count: 340

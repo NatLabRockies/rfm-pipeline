@@ -247,8 +247,7 @@ submit_stage() {
     return 1
   fi
   echo -e "${stage}\t${array_job_id}\t${reduce_job_id}\tcompleted" >> "${STAGE_JOBS_FILE}"
-
-  printf '%s' "${reduce_job_id}"
+  STAGE_REDUCE_JOB_ID="${reduce_job_id}"
 }
 
 echo "[controller] study_id=${STUDY_ID}"
@@ -260,12 +259,14 @@ cd "${REPO_ROOT}"
 pixi install --locked
 
 previous_reduce_job_id=""
+STAGE_REDUCE_JOB_ID=""
 for i in "${!STAGES[@]}"; do
   stage="${STAGES[i]}"
-  if ! previous_reduce_job_id="$(submit_stage "${stage}" "${i}" "${previous_reduce_job_id}")"; then
+  if ! submit_stage "${stage}" "${i}" "${previous_reduce_job_id}"; then
     echo "[controller] pipeline failed at stage=${stage}" >&2
     exit 1
   fi
+  previous_reduce_job_id="${STAGE_REDUCE_JOB_ID}"
 done
 
 touch "${METADATA_ROOT}/RUN_COMPLETE"

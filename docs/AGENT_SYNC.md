@@ -11,6 +11,30 @@ slice_status: complete (small distributed orchestration now targets a dedicated 
 last_validation: `pixi run ruff check tests/test_hpc_workflow_orchestration.py` pass; `pixi run pytest -q tests/test_hpc_workflow_orchestration.py` pass; `bash scripts/kestrel/run_small_distributed_test_local.sh --dry-run --poll-count 1 --poll-seconds 1` pass
 next_slice: Execute unified orchestration config on Kestrel live queue and collect manifest/reporting bundle outputs
 
+## Final-stage feature-pruning diagnostics (2026-05-20)
+
+- User clarification persisted: pruning decisions must be tunable/inspectable, with automatic
+  elbow detection and explicit user override capability.
+- Implemented final-stage post-fit diagnostics in `src/bsm_rfm/manuscript_stages.py`:
+  - per-feature no-refit `delta_nrmse_when_feature_removed` impact table
+  - robust utility auto-cutoff (parsimony gain vs normalized cumulative error penalty)
+  - override controls via config (`feature_pruning.delta_threshold_override` or
+    `feature_pruning.remove_count_override`)
+  - pruning frontier curve data + SVG with automatic/effective cutoff lines
+- Implemented auto-refit integration:
+  - compute pruning diagnostics from HC3-retained fit
+  - apply effective cutoff to remove features
+  - refit final OLS on pruned support
+  - downstream final metrics/tables now report post-pruning refit outputs
+- New final artifact outputs:
+  - `final_model/feature_pruning_impact.csv`
+  - `tables/feature_pruning_summary.csv`
+  - `figures/figure_feature_pruning_curve_data.csv`
+  - `figures/figure_feature_pruning_curve.svg`
+- Validation:
+  - `pixi run ruff check src/bsm_rfm/manuscript_stages.py tests/test_manuscript_final_artifacts.py tests/test_hc3_inferential_filter.py`
+  - `pixi run pytest -q tests/test_hc3_inferential_filter.py tests/test_manuscript_final_artifacts.py`
+
 ## Full-data runtime resiliency hotfix (2026-05-19)
 
 - User clarification persisted: long-running stages must resume from in-stage progress, not restart

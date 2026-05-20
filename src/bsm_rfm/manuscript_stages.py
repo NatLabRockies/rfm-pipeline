@@ -13,6 +13,7 @@ import json
 import math
 import multiprocessing as mp
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -38,7 +39,12 @@ from .final_ols import (
     make_standardization_frame,
     predict_final_ols,
 )
-from .metrics import bootstrap_macro_nrmse_ci, make_null_mean_prediction, per_output_nrmse_frame
+from .metrics import (
+    bootstrap_macro_nrmse_ci,
+    macro_nrmse_with_ref,
+    make_null_mean_prediction,
+    per_output_nrmse_frame,
+)
 from .parallel import get_executor
 
 _PROGRESS_TELEMETRY_PATH: Path | None = None
@@ -713,6 +719,9 @@ class FinalManuscriptArtifactsSpec:
     hc3_output_max_outputs: int | None = None
     hc3_output_random_seed: int = 123
     hc3_output_subset_metric: str = "variance"
+    pruning_error_scale_quantile: float = 0.95
+    pruning_delta_threshold_override: float | None = None
+    pruning_remove_count_override: int | None = None
     n_jobs: int = 1
 
 
@@ -790,6 +799,9 @@ class FinalManuscriptArtifactsResult:
     legacy_interaction_counts_by_module_pair: pd.DataFrame
     legacy_interaction_density_module_matrix: pd.DataFrame
     legacy_module_total_interactions: pd.DataFrame
+    feature_pruning_impact: pd.DataFrame
+    figure_feature_pruning_curve_data: pd.DataFrame
+    feature_pruning_summary: pd.DataFrame
     figure_specs: pd.DataFrame
     svg_figures: dict[str, str]
     ablation_table: pd.DataFrame
@@ -2978,6 +2990,7 @@ def final_manuscript_artifacts_spec_from_case_study_config(
     case_study = case_study_config["case_study"]
     final_model = case_study["final_model"]
     inferential_filter = case_study["final_inferential_filter"]
+    feature_pruning = inferential_filter.get("feature_pruning", {})
     interface = case_study.get("interface", {})
     runtime = case_study.get("runtime", {})
     return FinalManuscriptArtifactsSpec(
@@ -3009,6 +3022,17 @@ def final_manuscript_artifacts_spec_from_case_study_config(
         ),
         hc3_output_random_seed=int(inferential_filter.get("random_seed", 123)),
         hc3_output_subset_metric=str(inferential_filter.get("subset_metric", "variance")),
+        pruning_error_scale_quantile=float(feature_pruning.get("error_scale_quantile", 0.95)),
+        pruning_delta_threshold_override=(
+            float(feature_pruning["delta_threshold_override"])
+            if feature_pruning.get("delta_threshold_override") is not None
+            else None
+        ),
+        pruning_remove_count_override=(
+            int(feature_pruning["remove_count_override"])
+            if feature_pruning.get("remove_count_override") is not None
+            else None
+        ),
         n_jobs=int(runtime.get("n_jobs", 1)),
     )
 
@@ -3146,12 +3170,7 @@ def _compute_ablation_table(
         detail="null_mean complete",
     )
 
-    first_order_names = list(
-        feature_catalog.loc[
-            feature_catalog["feature_type"].astype(str).str.lower() == "first_order",
-            "feature_name",
-        ]
-    )
+    first_order_names = _ablation_main_effect_feature_names(feature_catalog, input_matrix)
     screened_names = list(screening_retained_terms["feature_name"])
 
     # Build one superset design covering all ablation models; subset columns per model.
@@ -3263,6 +3282,46 @@ def _compute_ablation_table(
         detail="all models complete",
     )
     return pd.DataFrame(rows)
+
+
+def _ablation_main_effect_feature_names(
+    feature_catalog: pd.DataFrame,
+    input_matrix: pd.DataFrame,
+) -> list[str]:
+    """Return direct-input feature names for the main-effects ablation model.
+
+    Main effects should include first-order terms regardless of whether the catalog labels
+    them as ``first_order`` (legacy) or ``numeric`` (current publication catalog).
+    """
+    if "feature_name" not in feature_catalog.columns:
+        raise ValueError("feature_catalog must include a feature_name column.")
+    if "sample_id" not in input_matrix.columns:
+        raise ValueError("input_matrix must include a sample_id column.")
+
+    feature_types = (
+        feature_catalog["feature_type"].astype(str).str.lower()
+        if "feature_type" in feature_catalog.columns
+        else pd.Series([""] * len(feature_catalog), index=feature_catalog.index)
+    )
+    available_inputs = {
+        str(column) for column in input_matrix.columns if str(column) != "sample_id"
+    }
+
+    names: list[str] = []
+    for feature_name, feature_type in zip(
+        feature_catalog["feature_name"].astype(str),
+        feature_types,
+        strict=False,
+    ):
+        if feature_name not in available_inputs:
+            continue
+        if feature_type in {"first_order", "numeric"}:
+            names.append(feature_name)
+
+    deduped = list(dict.fromkeys(names))
+    if deduped:
+        return deduped
+    return [str(column) for column in input_matrix.columns if str(column) != "sample_id"]
 
 
 def _build_per_output_nrmse_summary(per_output_df: pd.DataFrame) -> pd.DataFrame:
@@ -3428,7 +3487,70 @@ def regenerate_final_manuscript_artifacts(
     )
     final_step = 2
     _final_progress("hc3 inferential filter complete")
-    final_feature_names = _hc3_retained_feature_names(hc3_filter_summary)
+    hc3_feature_names = _hc3_retained_feature_names(hc3_filter_summary)
+    hc3_catalog = _feature_catalog_subset(feature_catalog, hc3_feature_names)
+    hc3_support_features = _build_final_support_features(
+        final_feature_names=hc3_feature_names,
+        final_catalog=hc3_catalog,
+        sparse_selection=sparse_selection,
+    )
+    hc3_support_features = hc3_support_features.merge(
+        hc3_filter_summary,
+        on="feature_name",
+        how="left",
+        validate="one_to_one",
+    )
+    final_design = build_manuscript_feature_design(input_matrix, hc3_catalog)
+    x_hc3_train = _indexed_by_sample_id(
+        _align_table_by_sample_id(final_design, train_ids, hc3_feature_names, "final design"),
+        train_ids,
+    )
+    x_hc3_holdout = _indexed_by_sample_id(
+        _align_table_by_sample_id(
+            final_design,
+            holdout_ids,
+            hc3_feature_names,
+            "final holdout design",
+        ),
+        holdout_ids,
+    )
+    y_holdout = _indexed_by_sample_id(
+        _align_output_matrix(output_matrix, holdout_ids, retained_outputs),
+        holdout_ids,
+    )
+    final_step = 3
+    _final_progress(
+        "final design aligned; "
+        f"outputs={len(retained_outputs)}, hc3_features={len(hc3_feature_names)}"
+    )
+
+    hc3_fit = fit_final_ols(x_hc3_train, y_train)
+    hc3_predictions = predict_final_ols(hc3_fit, x_hc3_holdout)
+    feature_pruning_impact, figure_feature_pruning_curve_data, feature_pruning_summary = (
+        _build_feature_pruning_diagnostics(
+            final_fit=hc3_fit,
+            x_holdout=x_hc3_holdout,
+            y_holdout=y_holdout,
+            y_train=y_train,
+            final_support_features=hc3_support_features,
+            spec=spec,
+        )
+    )
+    auto_remove_count = int(feature_pruning_summary.loc[0, "auto_remove_count"])
+    effective_remove_count = int(feature_pruning_summary.loc[0, "effective_remove_count"])
+    removed_feature_names = set(
+        feature_pruning_impact.loc[
+            feature_pruning_impact["selected_by_effective_cutoff"].astype(bool),
+            "feature_name",
+        ].astype(str)
+    )
+    final_feature_names = [
+        str(name) for name in hc3_feature_names if str(name) not in removed_feature_names
+    ]
+    if not final_feature_names:
+        raise ValueError(
+            "Feature pruning removed all HC3-retained features; at least one is required."
+        )
     final_catalog = _feature_catalog_subset(feature_catalog, final_feature_names)
     final_support_features = _build_final_support_features(
         final_feature_names=final_feature_names,
@@ -3441,34 +3563,33 @@ def regenerate_final_manuscript_artifacts(
         how="left",
         validate="one_to_one",
     )
-    final_design = build_manuscript_feature_design(input_matrix, final_catalog)
-    x_train = _indexed_by_sample_id(
-        _align_table_by_sample_id(final_design, train_ids, final_feature_names, "final design"),
-        train_ids,
+    pruning_columns = [
+        "feature_name",
+        "delta_nrmse_when_feature_removed",
+        "delta_nrmse_nonnegative",
+        "remove_rank",
+        "selected_by_auto_cutoff",
+        "selected_by_effective_cutoff",
+    ]
+    final_support_features = final_support_features.merge(
+        feature_pruning_impact.loc[:, pruning_columns],
+        on="feature_name",
+        how="left",
+        validate="one_to_one",
     )
-    x_holdout = _indexed_by_sample_id(
-        _align_table_by_sample_id(
-            final_design,
-            holdout_ids,
-            final_feature_names,
-            "final holdout design",
-        ),
-        holdout_ids,
-    )
-    y_holdout = _indexed_by_sample_id(
-        _align_output_matrix(output_matrix, holdout_ids, retained_outputs),
-        holdout_ids,
-    )
-    final_step = 3
-    _final_progress(
-        "final design aligned; "
-        f"outputs={len(retained_outputs)}, features={len(final_feature_names)}"
-    )
-
-    final_fit = fit_final_ols(x_train, y_train)
-    final_predictions = predict_final_ols(final_fit, x_holdout)
+    x_train = x_hc3_train.loc[:, final_feature_names].copy()
+    x_holdout = x_hc3_holdout.loc[:, final_feature_names].copy()
+    if len(final_feature_names) == len(hc3_feature_names):
+        final_fit = hc3_fit
+        final_predictions = hc3_predictions
+    else:
+        final_fit = fit_final_ols(x_train, y_train)
+        final_predictions = predict_final_ols(final_fit, x_holdout)
     final_step = 4
-    _final_progress("final OLS fit + predictions complete")
+    _final_progress(
+        "final OLS fit + predictions complete; "
+        f"pruned_features={len(hc3_feature_names) - len(final_feature_names)}"
+    )
     final_metric = bootstrap_macro_nrmse_ci(
         y_holdout.to_numpy(dtype=float),
         final_predictions.to_numpy(dtype=float),
@@ -3535,6 +3656,12 @@ def regenerate_final_manuscript_artifacts(
     per_output_nrmse_summary = _build_per_output_nrmse_summary(per_output_nrmse)
     final_step = 8
     _final_progress("per-output metrics complete")
+    feature_pruning_summary = feature_pruning_summary.copy()
+    feature_pruning_summary["final_refit_holdout_nrmse"] = float(final_metric["point_estimate"])
+    feature_pruning_summary["final_refit_n_features"] = int(len(final_feature_names))
+    feature_pruning_summary["final_refit_removed_features"] = int(
+        len(hc3_feature_names) - len(final_feature_names)
+    )
 
     coefficient_matrix_raw_scale = make_coefficient_matrix_frame(
         final_fit.coef_raw_scale,
@@ -3563,6 +3690,7 @@ def regenerate_final_manuscript_artifacts(
         n_training_rows=len(x_train),
         n_holdout_rows=len(x_holdout),
         n_prefilter_features=len(prefilter_feature_names),
+        n_hc3_features=len(hc3_feature_names),
         n_features=len(final_feature_names),
         n_outputs=len(retained_outputs),
         final_metric=final_metric,
@@ -3649,12 +3777,18 @@ def regenerate_final_manuscript_artifacts(
             value_column="total_interactions",
             title="Total Interactions by Module",
         ),
+        "figure_feature_pruning_curve": _render_feature_pruning_curve_svg(
+            figure_feature_pruning_curve_data,
+            auto_remove_count=auto_remove_count,
+            effective_remove_count=effective_remove_count,
+        ),
     }
     figure_specs = _build_figure_specs(
         figure_model_performance_data=figure_model_performance_data,
         figure_support_composition_data=figure_support_composition_data,
         figure_selected_by_module_data=figure_selected_by_module_data,
         figure_nrmse_summary_data=figure_nrmse_summary_data,
+        figure_feature_pruning_curve_data=figure_feature_pruning_curve_data,
         legacy_feature_type_counts=legacy_feature_type_counts,
         legacy_influential_counts_by_module=legacy_influential_counts_by_module,
         legacy_interaction_counts_by_module_pair=legacy_interaction_counts_by_module_pair,
@@ -3696,6 +3830,9 @@ def regenerate_final_manuscript_artifacts(
         legacy_interaction_counts_by_module_pair=legacy_interaction_counts_by_module_pair,
         legacy_interaction_density_module_matrix=legacy_interaction_density_module_matrix,
         legacy_module_total_interactions=legacy_module_total_interactions,
+        feature_pruning_impact=feature_pruning_impact,
+        figure_feature_pruning_curve_data=figure_feature_pruning_curve_data,
+        feature_pruning_summary=feature_pruning_summary,
         figure_specs=figure_specs,
         svg_figures=svg_figures,
         ablation_table=ablation_table,
@@ -3778,6 +3915,14 @@ def write_final_manuscript_artifacts(
             table_root / "per_output_nrmse_summary.csv",
             result.per_output_nrmse_summary,
         ),
+        "feature_pruning_impact": (
+            final_model_root / "feature_pruning_impact.csv",
+            result.feature_pruning_impact,
+        ),
+        "feature_pruning_summary": (
+            table_root / "feature_pruning_summary.csv",
+            result.feature_pruning_summary,
+        ),
         "figure_model_performance_data": (
             figure_root / "figure_model_performance_data.csv",
             result.figure_model_performance_data,
@@ -3793,6 +3938,10 @@ def write_final_manuscript_artifacts(
         "figure_nrmse_summary_data": (
             figure_root / "figure_nrmse_summary_data.csv",
             result.figure_nrmse_summary_data,
+        ),
+        "figure_feature_pruning_curve_data": (
+            figure_root / "figure_feature_pruning_curve_data.csv",
+            result.figure_feature_pruning_curve_data,
         ),
         "feature_type_counts": (
             figure_root / "feature_type_counts.csv",
@@ -6554,6 +6703,22 @@ def _validate_final_manuscript_artifacts_spec(spec: FinalManuscriptArtifactsSpec
         raise ValueError("hc3_output_max_outputs must be positive when provided.")
     if spec.hc3_output_subset_metric not in {"variance"}:
         raise ValueError("Only variance-based HC3 output subsetting is supported.")
+    if not 0.0 < spec.pruning_error_scale_quantile <= 1.0:
+        raise ValueError("pruning_error_scale_quantile must be in the interval (0, 1].")
+    if (
+        spec.pruning_delta_threshold_override is not None
+        and spec.pruning_delta_threshold_override < 0.0
+    ):
+        raise ValueError("pruning_delta_threshold_override must be nonnegative when provided.")
+    if spec.pruning_remove_count_override is not None and spec.pruning_remove_count_override < 0:
+        raise ValueError("pruning_remove_count_override must be nonnegative when provided.")
+    if (
+        spec.pruning_delta_threshold_override is not None
+        and spec.pruning_remove_count_override is not None
+    ):
+        raise ValueError(
+            "Provide at most one pruning override: delta threshold or remove-count override."
+        )
 
 
 def _final_support_feature_names(final_stable_support: pd.DataFrame) -> list[str]:
@@ -6806,6 +6971,7 @@ def _build_final_ols_summary(
     n_training_rows: int,
     n_holdout_rows: int,
     n_prefilter_features: int,
+    n_hc3_features: int,
     n_features: int,
     n_outputs: int,
     final_metric: dict[str, Any],
@@ -6820,8 +6986,10 @@ def _build_final_ols_summary(
                 "n_training_rows": int(n_training_rows),
                 "n_holdout_rows": int(n_holdout_rows),
                 "n_prefilter_features": int(n_prefilter_features),
+                "n_hc3_features": int(n_hc3_features),
                 "n_final_features": int(n_features),
-                "n_hc3_removed_features": int(n_prefilter_features - n_features),
+                "n_hc3_removed_features": int(n_prefilter_features - n_hc3_features),
+                "n_pruning_removed_features": int(n_hc3_features - n_features),
                 "n_retained_outputs": int(n_outputs),
                 "final_ols_holdout_nrmse": float(final_metric["point_estimate"]),
                 "final_ols_holdout_nrmse_ci_lower": float(final_metric["ci_lower"]),
@@ -6985,6 +7153,17 @@ def _build_workflow_stage_summary(
                 "artifact_family": "final_manuscript_artifacts",
             },
             {
+                "stage": "feature_pruning",
+                "primary_quantity": "removed_terms_after_hc3",
+                "recomputed_value": int(
+                    final_ols_summary.loc[0, "n_pruning_removed_features"]
+                    if "n_pruning_removed_features" in final_ols_summary.columns
+                    else 0
+                ),
+                "manuscript_reference_value": np.nan,
+                "artifact_family": "final_manuscript_artifacts",
+            },
+            {
                 "stage": "final_ols",
                 "primary_quantity": "holdout_nrmse",
                 "recomputed_value": float(final_ols_summary.loc[0, "final_ols_holdout_nrmse"]),
@@ -7056,6 +7235,221 @@ def _build_nrmse_summary_figure_data(ablation_table: pd.DataFrame) -> pd.DataFra
     return figure_data.sort_values(["nrmse", "model_name"], ignore_index=True)
 
 
+def _build_feature_pruning_diagnostics(
+    *,
+    final_fit: Any,
+    x_holdout: pd.DataFrame,
+    y_holdout: pd.DataFrame,
+    y_train: pd.DataFrame,
+    final_support_features: pd.DataFrame,
+    spec: FinalManuscriptArtifactsSpec,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Build no-refit single-feature impact diagnostics and a tunable pruning cutoff."""
+    feature_names = [str(name) for name in final_fit.feature_names]
+    output_names = [str(name) for name in final_fit.output_names]
+    if not feature_names:
+        raise ValueError("Feature pruning diagnostics require at least one final feature.")
+    x_eval = x_holdout.loc[:, feature_names].apply(pd.to_numeric, errors="raise")
+    y_eval = y_holdout.loc[:, output_names].apply(pd.to_numeric, errors="raise")
+    y_ref = y_train.loc[:, output_names].apply(pd.to_numeric, errors="raise")
+
+    x_values = x_eval.to_numpy(dtype=np.float64)
+    y_values = y_eval.to_numpy(dtype=np.float64)
+    y_ref_values = y_ref.to_numpy(dtype=np.float64)
+    pred_values = (
+        x_values @ np.asarray(final_fit.coef_raw_scale, dtype=np.float64).T
+        + np.asarray(final_fit.intercept_raw_scale, dtype=np.float64)[np.newaxis, :]
+    )
+    baseline_nrmse, _, _ = macro_nrmse_with_ref(
+        y_values,
+        pred_values,
+        y_ref_values,
+        min_range=spec.nrmse_min_range,
+    )
+    if not math.isfinite(baseline_nrmse):
+        raise ValueError("Feature pruning diagnostics require a finite baseline macro nRMSE.")
+
+    residual = y_values - pred_values
+    n_rows = residual.shape[0]
+    if n_rows <= 0:
+        raise ValueError("Feature pruning diagnostics require non-empty holdout rows.")
+    coefficient_matrix = np.asarray(final_fit.coef_raw_scale, dtype=np.float64)
+    squared_error_baseline = np.sum(residual**2, axis=0)
+    residual_projection = residual.T @ x_values
+    x_squared_sum = np.sum(x_values**2, axis=0)
+    squared_error_without = (
+        squared_error_baseline[:, np.newaxis]
+        + 2.0 * coefficient_matrix * residual_projection
+        + (coefficient_matrix**2) * x_squared_sum[np.newaxis, :]
+    )
+    squared_error_without = np.maximum(squared_error_without, 0.0)
+    rmse_without = np.sqrt(squared_error_without / float(n_rows))
+
+    reference_range = np.nanmax(y_ref_values, axis=0) - np.nanmin(y_ref_values, axis=0)
+    included_outputs_mask = reference_range >= float(spec.nrmse_min_range)
+    if not bool(np.any(included_outputs_mask)):
+        raise ValueError(
+            "Feature pruning diagnostics require at least one output above nRMSE min-range."
+        )
+    usable_ranges = reference_range[included_outputs_mask]
+    nrmse_without = np.mean(
+        rmse_without[included_outputs_mask, :] / usable_ranges[:, np.newaxis],
+        axis=0,
+    )
+    delta_without = nrmse_without - float(baseline_nrmse)
+    delta_nonnegative = np.maximum(delta_without, 0.0)
+
+    pruning_impact = pd.DataFrame(
+        {
+            "feature_name": feature_names,
+            "baseline_macro_nrmse": float(baseline_nrmse),
+            "noref_drop_macro_nrmse": nrmse_without.astype(float),
+            "delta_nrmse_when_feature_removed": delta_without.astype(float),
+            "delta_nrmse_nonnegative": delta_nonnegative.astype(float),
+            "delta_nrmse_abs": np.abs(delta_without).astype(float),
+        }
+    )
+    if "feature_name" in final_support_features.columns:
+        metadata_columns = [
+            column
+            for column in ("feature_name", "feature_type", "origin")
+            if column in final_support_features.columns
+        ]
+        metadata = final_support_features.loc[:, metadata_columns].copy()
+        metadata["feature_name"] = metadata["feature_name"].astype(str)
+        pruning_impact = pruning_impact.merge(metadata, on="feature_name", how="left")
+    pruning_impact = pruning_impact.sort_values(
+        ["delta_nrmse_when_feature_removed", "feature_name"],
+        ascending=[True, True],
+        ignore_index=True,
+    )
+    n_features = int(len(pruning_impact))
+    pruning_impact["remove_rank"] = np.arange(1, n_features + 1, dtype=int)
+    pruning_impact["retained_features"] = n_features - pruning_impact["remove_rank"]
+    pruning_impact["removed_fraction"] = pruning_impact["remove_rank"] / float(n_features)
+    pruning_impact["cumulative_delta_upper_bound"] = np.cumsum(
+        pruning_impact["delta_nrmse_nonnegative"].to_numpy(dtype=np.float64)
+    )
+    pruning_impact["approx_macro_nrmse_upper_bound"] = (
+        float(baseline_nrmse) + pruning_impact["cumulative_delta_upper_bound"]
+    )
+
+    cumulative = pruning_impact["cumulative_delta_upper_bound"].to_numpy(dtype=np.float64)
+    error_scale = float(np.quantile(cumulative, float(spec.pruning_error_scale_quantile)))
+    if not math.isfinite(error_scale) or error_scale <= 0.0:
+        error_scale = max(float(cumulative[-1]), 1.0)
+    error_penalty = np.clip(cumulative / error_scale, 0.0, 1.0)
+    utility = pruning_impact["removed_fraction"].to_numpy(dtype=np.float64) - error_penalty
+    pruning_impact["utility_score"] = utility
+
+    max_utility = float(np.max(utility))
+    auto_candidates = np.flatnonzero(np.isclose(utility, max_utility, rtol=0.0, atol=1.0e-12))
+    auto_remove_count = int(auto_candidates[-1] + 1) if auto_candidates.size else 1
+    override_source = "auto_robust_utility"
+    effective_remove_count = auto_remove_count
+    if spec.pruning_remove_count_override is not None:
+        override_source = "remove_count_override"
+        effective_remove_count = int(spec.pruning_remove_count_override)
+    elif spec.pruning_delta_threshold_override is not None:
+        override_source = "delta_threshold_override"
+        threshold = float(spec.pruning_delta_threshold_override)
+        eligible = np.flatnonzero(
+            pruning_impact["delta_nrmse_when_feature_removed"].to_numpy(dtype=np.float64)
+            <= threshold
+        )
+        effective_remove_count = int(eligible[-1] + 1) if eligible.size else 0
+    max_remove = max(0, n_features - 1)
+    auto_remove_count = min(max(auto_remove_count, 0), max_remove)
+    effective_remove_count = min(max(effective_remove_count, 0), max_remove)
+    pruning_impact["selected_by_auto_cutoff"] = (
+        pruning_impact["remove_rank"] <= auto_remove_count
+    ).astype(bool)
+    pruning_impact["selected_by_effective_cutoff"] = (
+        pruning_impact["remove_rank"] <= effective_remove_count
+    ).astype(bool)
+
+    def _cutoff_snapshot(remove_count: int) -> tuple[float, float, float, int]:
+        if remove_count <= 0:
+            return float("nan"), 0.0, float(baseline_nrmse), n_features
+        row = pruning_impact.iloc[int(remove_count - 1)]
+        return (
+            float(row["delta_nrmse_when_feature_removed"]),
+            float(row["cumulative_delta_upper_bound"]),
+            float(row["approx_macro_nrmse_upper_bound"]),
+            int(row["retained_features"]),
+        )
+
+    (
+        auto_cutoff_delta,
+        auto_cumulative_delta,
+        auto_approx_nrmse,
+        auto_retained_features,
+    ) = _cutoff_snapshot(auto_remove_count)
+    (
+        effective_cutoff_delta,
+        effective_cumulative_delta,
+        effective_approx_nrmse,
+        effective_retained_features,
+    ) = _cutoff_snapshot(effective_remove_count)
+
+    pruning_summary = pd.DataFrame(
+        [
+            {
+                "stage": "feature_pruning_diagnostics",
+                "method": "no_refit_single_feature_delta",
+                "auto_cutoff_method": "robust_utility",
+                "n_features_total": int(n_features),
+                "n_outputs_total": int(len(output_names)),
+                "n_outputs_included_in_macro": int(np.sum(included_outputs_mask)),
+                "baseline_macro_nrmse": float(baseline_nrmse),
+                "error_scale_quantile": float(spec.pruning_error_scale_quantile),
+                "error_scale_value": float(error_scale),
+                "auto_remove_count": int(auto_remove_count),
+                "auto_retained_features": int(auto_retained_features),
+                "auto_cutoff_delta": float(auto_cutoff_delta),
+                "auto_cumulative_delta_upper_bound": float(auto_cumulative_delta),
+                "auto_approx_macro_nrmse_upper_bound": float(auto_approx_nrmse),
+                "override_source": override_source,
+                "override_delta_threshold": (
+                    float(spec.pruning_delta_threshold_override)
+                    if spec.pruning_delta_threshold_override is not None
+                    else np.nan
+                ),
+                "override_remove_count": (
+                    int(spec.pruning_remove_count_override)
+                    if spec.pruning_remove_count_override is not None
+                    else np.nan
+                ),
+                "effective_remove_count": int(effective_remove_count),
+                "effective_retained_features": int(effective_retained_features),
+                "effective_cutoff_delta": float(effective_cutoff_delta),
+                "effective_cumulative_delta_upper_bound": float(effective_cumulative_delta),
+                "effective_approx_macro_nrmse_upper_bound": float(effective_approx_nrmse),
+            }
+        ]
+    )
+    curve_columns = [
+        "remove_rank",
+        "retained_features",
+        "removed_fraction",
+        "feature_name",
+        "feature_type",
+        "origin",
+        "delta_nrmse_when_feature_removed",
+        "delta_nrmse_nonnegative",
+        "cumulative_delta_upper_bound",
+        "approx_macro_nrmse_upper_bound",
+        "utility_score",
+        "selected_by_auto_cutoff",
+        "selected_by_effective_cutoff",
+    ]
+    available_curve_columns = [
+        column for column in curve_columns if column in pruning_impact.columns
+    ]
+    figure_curve_data = pruning_impact.loc[:, available_curve_columns].copy()
+    return pruning_impact, figure_curve_data, pruning_summary
+
+
 def _legacy_normalize_factor_token(name: str) -> str:
     """Normalize legacy scenario-control shorthand tokens."""
     normalized = str(name).strip()
@@ -7085,7 +7479,7 @@ def _legacy_feature_type_label(feature_name: str) -> str:
     """Classify a feature into the legacy figure categories."""
     name = str(feature_name)
     lowered = name.lower()
-    if "*" in name:
+    if "*" in name or ":" in name:
         return "Second Order"
     nonlinear_tokens = (
         "_quadratic",
@@ -7132,10 +7526,11 @@ def _legacy_module_from_factor_name(name: str) -> str:
 def _legacy_partner_modules_from_feature_name(feature_name: str) -> list[str]:
     """Return module labels represented by one feature term."""
     term = str(feature_name)
-    if "*" in term:
+    if "*" in term or ":" in term:
+        partners = re.split(r"[:*]", term)
         modules = {
             _legacy_module_from_factor_name(part)
-            for part in [piece.strip() for piece in term.split("*") if piece.strip()]
+            for part in [piece.strip() for piece in partners if piece.strip()]
         }
         return sorted(module for module in modules if module)
     return [_legacy_module_from_factor_name(term)]
@@ -7180,12 +7575,14 @@ def _build_legacy_interaction_counts_by_module_pair(
         names = final_support_features["feature_name"].astype(str)
     else:
         names = pd.Series([], dtype=str)
-    interaction_names = names[names.str.contains(r"\*", regex=True)]
+    interaction_names = names[names.str.contains(r"[:*]", regex=True)]
 
     pair_counts: dict[tuple[str, str], int] = {}
     module_set: set[str] = set()
     for feature_name in interaction_names:
-        partners = [piece.strip() for piece in str(feature_name).split("*") if piece.strip()]
+        partners = [
+            piece.strip() for piece in re.split(r"[:*]", str(feature_name)) if piece.strip()
+        ]
         if len(partners) < 2:
             continue
         modules_a = set(_legacy_partner_modules_from_feature_name(partners[0]))
@@ -7297,6 +7694,7 @@ def _build_figure_specs(
     figure_support_composition_data: pd.DataFrame,
     figure_selected_by_module_data: pd.DataFrame,
     figure_nrmse_summary_data: pd.DataFrame,
+    figure_feature_pruning_curve_data: pd.DataFrame,
     legacy_feature_type_counts: pd.DataFrame,
     legacy_influential_counts_by_module: pd.DataFrame,
     legacy_interaction_counts_by_module_pair: pd.DataFrame,
@@ -7381,6 +7779,16 @@ def _build_figure_specs(
                 "description": "Legacy total interaction counts by module.",
                 "svg_bytes": len(svg_figures["fig_module_total_interactions"].encode("utf-8")),
             },
+            {
+                "figure_name": "figure_feature_pruning_curve",
+                "source_data": "figure_feature_pruning_curve_data.csv",
+                "asset": "figure_feature_pruning_curve.svg",
+                "n_source_rows": int(len(figure_feature_pruning_curve_data)),
+                "description": (
+                    "No-refit feature-pruning frontier with automatic and effective cutoffs."
+                ),
+                "svg_bytes": len(svg_figures["figure_feature_pruning_curve"].encode("utf-8")),
+            },
         ]
     )
 
@@ -7396,18 +7804,17 @@ def _build_final_artifact_summary(
     spec: FinalManuscriptArtifactsSpec,
 ) -> pd.DataFrame:
     """Build the one-row summary of regenerated final manuscript artifacts."""
+    n_hc3_retained = int(hc3_filter_summary["hc3_retained_after_filter"].sum())
+    n_final = int(len(final_support_features))
     return pd.DataFrame(
         [
             {
                 "stage": "final_manuscript_tables_and_figures",
                 "n_prefilter_support_features": int(len(prefilter_support_features)),
-                "n_final_support_features": int(len(final_support_features)),
-                "n_hc3_removed_features": int(
-                    len(prefilter_support_features) - len(final_support_features)
-                ),
-                "n_hc3_retained_features": int(
-                    hc3_filter_summary["hc3_retained_after_filter"].sum()
-                ),
+                "n_hc3_retained_features": n_hc3_retained,
+                "n_hc3_removed_features": int(len(prefilter_support_features) - n_hc3_retained),
+                "n_final_support_features": n_final,
+                "n_pruning_removed_features": int(n_hc3_retained - n_final),
                 "n_workflow_stage_rows": int(len(workflow_stage_summary)),
                 "n_figures": int(len(figure_specs)),
                 "final_ols_holdout_nrmse": float(
@@ -7428,6 +7835,172 @@ def _build_final_artifact_summary(
             }
         ]
     )
+
+
+def _render_feature_pruning_curve_svg(
+    data: pd.DataFrame,
+    *,
+    auto_remove_count: int,
+    effective_remove_count: int,
+) -> str:
+    """Render a no-refit pruning frontier SVG with auto/effective cutoff markers."""
+    rows = data.loc[
+        :,
+        ["remove_rank", "retained_features", "approx_macro_nrmse_upper_bound"],
+    ].copy()
+    rows["remove_rank"] = pd.to_numeric(rows["remove_rank"], errors="coerce")
+    rows["retained_features"] = pd.to_numeric(rows["retained_features"], errors="coerce")
+    rows["approx_macro_nrmse_upper_bound"] = pd.to_numeric(
+        rows["approx_macro_nrmse_upper_bound"],
+        errors="coerce",
+    )
+    rows = rows.loc[
+        np.isfinite(rows["remove_rank"])
+        & np.isfinite(rows["retained_features"])
+        & np.isfinite(rows["approx_macro_nrmse_upper_bound"])
+    ]
+    rows = rows.sort_values("remove_rank", ignore_index=True)
+    if rows.empty:
+        return (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="220" '
+            'viewBox="0 0 640 220">'
+            '<rect x="0" y="0" width="640" height="220" fill="white"/>'
+            '<text x="320" y="110" text-anchor="middle" font-family="sans-serif" font-size="14" '
+            'fill="#374151">No feature-pruning curve data available.</text></svg>'
+        )
+
+    width = 980
+    height = 560
+    left = 90.0
+    right = 40.0
+    top = 30.0
+    bottom = 70.0
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+
+    x_values = rows["retained_features"].to_numpy(dtype=np.float64)
+    y_values = rows["approx_macro_nrmse_upper_bound"].to_numpy(dtype=np.float64)
+    x_min = float(np.min(x_values))
+    x_max = float(np.max(x_values))
+    y_min = float(np.min(y_values))
+    y_max = float(np.max(y_values))
+    if math.isclose(x_min, x_max):
+        x_min -= 1.0
+        x_max += 1.0
+    if math.isclose(y_min, y_max):
+        pad = max(abs(y_min) * 0.1, 1.0e-6)
+        y_min -= pad
+        y_max += pad
+
+    def sx(value: float) -> float:
+        return left + (value - x_min) / (x_max - x_min) * plot_w
+
+    def sy(value: float) -> float:
+        return top + (1.0 - (value - y_min) / (y_max - y_min)) * plot_h
+
+    points = " ".join(
+        f"{sx(float(x)):.2f},{sy(float(y)):.2f}" for x, y in zip(x_values, y_values, strict=True)
+    )
+    baseline = float(rows["approx_macro_nrmse_upper_bound"].iloc[0])
+    n_features = int(rows["retained_features"].max()) + 1
+
+    auto_remove = int(max(auto_remove_count, 0))
+    auto_remove = min(auto_remove, max(0, n_features - 1))
+    effective_remove = int(max(effective_remove_count, 0))
+    effective_remove = min(effective_remove, max(0, n_features - 1))
+    auto_retained = n_features - auto_remove
+    effective_retained = n_features - effective_remove
+
+    x_ticks = np.linspace(x_min, x_max, num=6)
+    y_ticks = np.linspace(y_min, y_max, num=6)
+    elements = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}">',
+        f'<rect x="0" y="0" width="{width}" height="{height}" fill="white"/>',
+        f'<line x1="{left:.2f}" y1="{top:.2f}" x2="{left:.2f}" y2="{top + plot_h:.2f}" '
+        'stroke="#111827" stroke-width="2"/>',
+        f'<line x1="{left:.2f}" y1="{top + plot_h:.2f}" x2="{left + plot_w:.2f}" '
+        f'y2="{top + plot_h:.2f}" stroke="#111827" stroke-width="2"/>',
+    ]
+    for tick in x_ticks:
+        x = sx(float(tick))
+        elements.append(
+            f'<line x1="{x:.2f}" y1="{top + plot_h:.2f}" x2="{x:.2f}" y2="{top + plot_h + 6:.2f}" '
+            'stroke="#374151" stroke-width="1"/>'
+        )
+        elements.append(
+            f'<text x="{x:.2f}" y="{top + plot_h + 24:.2f}" text-anchor="middle" '
+            'font-family="sans-serif" font-size="11" fill="#374151">'
+            f"{int(round(tick))}</text>"
+        )
+    for tick in y_ticks:
+        y = sy(float(tick))
+        elements.append(
+            f'<line x1="{left - 6:.2f}" y1="{y:.2f}" x2="{left:.2f}" y2="{y:.2f}" '
+            'stroke="#374151" stroke-width="1"/>'
+        )
+        elements.append(
+            f'<line x1="{left:.2f}" y1="{y:.2f}" x2="{left + plot_w:.2f}" y2="{y:.2f}" '
+            'stroke="#e5e7eb" stroke-width="1"/>'
+        )
+        elements.append(
+            f'<text x="{left - 10:.2f}" y="{y + 4:.2f}" text-anchor="end" '
+            'font-family="sans-serif" font-size="11" fill="#374151">'
+            f"{tick:.3f}</text>"
+        )
+    elements.extend(
+        [
+            f'<polyline points="{points}" fill="none" stroke="#2563eb" stroke-width="2"/>',
+            f'<line x1="{left:.2f}" y1="{sy(baseline):.2f}" x2="{left + plot_w:.2f}" '
+            f'y2="{sy(baseline):.2f}" stroke="#10b981" stroke-width="1.5" stroke-dasharray="5 4"/>',
+        ]
+    )
+    if x_min <= auto_retained <= x_max:
+        auto_x = sx(float(auto_retained))
+        elements.append(
+            f'<line x1="{auto_x:.2f}" y1="{top:.2f}" x2="{auto_x:.2f}" y2="{top + plot_h:.2f}" '
+            'stroke="#dc2626" stroke-width="1.5" stroke-dasharray="6 4"/>'
+        )
+    if x_min <= effective_retained <= x_max:
+        eff_x = sx(float(effective_retained))
+        elements.append(
+            f'<line x1="{eff_x:.2f}" y1="{top:.2f}" x2="{eff_x:.2f}" y2="{top + plot_h:.2f}" '
+            'stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="3 3"/>'
+        )
+    legend_x = left + 12.0
+    legend_y = top + 12.0
+    legend_rows = [
+        ("#2563eb", "solid", "Approx. no-refit upper-bound nRMSE"),
+        ("#10b981", "dash", "Baseline macro nRMSE"),
+        ("#dc2626", "dash", "Auto cutoff"),
+        ("#7c3aed", "dash", "Effective cutoff"),
+    ]
+    for idx, (color, style, label) in enumerate(legend_rows):
+        y = legend_y + idx * 18.0
+        dash = ' stroke-dasharray="5 4"' if style == "dash" else ""
+        elements.append(
+            f'<line x1="{legend_x:.2f}" y1="{y:.2f}" x2="{legend_x + 20:.2f}" y2="{y:.2f}" '
+            f'stroke="{color}" stroke-width="2"{dash}/>'
+        )
+        elements.append(
+            f'<text x="{legend_x + 26:.2f}" y="{y + 4:.2f}" font-family="sans-serif" '
+            f'font-size="11" fill="#111827">{label}</text>'
+        )
+    elements.extend(
+        [
+            f'<text x="{left + plot_w / 2.0:.2f}" y="{height - 20:.2f}" text-anchor="middle" '
+            'font-family="sans-serif" font-size="13" fill="#111827">Retained feature count</text>',
+            f'<text x="{20:.2f}" y="{top + plot_h / 2.0:.2f}" text-anchor="middle" '
+            'font-family="sans-serif" font-size="13" fill="#111827" '
+            f'transform="rotate(-90 20 {top + plot_h / 2.0:.2f})">'
+            "Approx. macro nRMSE upper bound</text>",
+            f'<text x="{left:.2f}" y="{height - 44:.2f}" text-anchor="start" '
+            'font-family="sans-serif" font-size="11" fill="#4b5563">'
+            f"Auto remove={auto_remove}, effective remove={effective_remove}</text>",
+            "</svg>",
+        ]
+    )
+    return "".join(elements)
 
 
 def _render_nrmse_summary_svg(data: pd.DataFrame) -> str:

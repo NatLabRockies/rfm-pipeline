@@ -12,7 +12,12 @@ from bsm_rfm.manuscript_runtime import (
     load_manuscript_case_study_config,
 )
 from bsm_rfm.manuscript_stages import (
+    FinalManuscriptArtifactsSpec,
+    _ablation_main_effect_feature_names,
+    _build_feature_pruning_diagnostics,
     _build_hc3_inferential_filter_tables,
+    _build_legacy_feature_type_counts,
+    _build_legacy_interaction_counts_by_module_pair,
     final_manuscript_artifacts_spec_from_case_study_config,
     run_final_manuscript_artifacts_stage,
 )
@@ -72,6 +77,10 @@ def test_final_artifact_spec_accepts_optional_runtime_overrides() -> None:
                 "max_outputs": 4,
                 "random_seed": 321,
                 "subset_metric": "variance",
+                "feature_pruning": {
+                    "error_scale_quantile": 0.9,
+                    "delta_threshold_override": 0.002,
+                },
             },
         }
     }
@@ -87,6 +96,9 @@ def test_final_artifact_spec_accepts_optional_runtime_overrides() -> None:
     assert spec.hc3_output_max_outputs == 4
     assert spec.hc3_output_random_seed == 321
     assert spec.hc3_output_subset_metric == "variance"
+    assert spec.pruning_error_scale_quantile == pytest.approx(0.9)
+    assert spec.pruning_delta_threshold_override == pytest.approx(0.002)
+    assert spec.pruning_remove_count_override is None
     assert spec.random_seed == 456
 
 
@@ -179,6 +191,11 @@ def test_run_final_manuscript_artifacts_stage_executes_demo_context() -> None:
         final_artifacts.final_ols_summary.loc[0, "n_prefilter_features"]
         >= (final_artifacts.final_ols_summary.loc[0, "n_final_features"])
     )
+    assert (
+        final_artifacts.final_ols_summary.loc[0, "n_hc3_features"]
+        >= final_artifacts.final_ols_summary.loc[0, "n_final_features"]
+    )
+    assert final_artifacts.final_ols_summary.loc[0, "n_pruning_removed_features"] >= 0
     assert final_artifacts.final_ols_summary.loc[0, "n_final_features"] >= 1
     assert final_artifacts.hc3_wald_intervals["feature_name"].nunique() == len(
         final_artifacts.prefilter_support_features
@@ -205,6 +222,7 @@ def test_run_final_manuscript_artifacts_stage_executes_demo_context() -> None:
         "fig_influential_by_module",
         "fig_module_pair_heatmap",
         "fig_module_total_interactions",
+        "figure_feature_pruning_curve",
     ]
     assert result.artifact_paths["prefilter_support_features"].exists()
     assert result.artifact_paths["hc3_wald_intervals"].exists()
@@ -228,6 +246,84 @@ def test_run_final_manuscript_artifacts_stage_executes_demo_context() -> None:
     assert result.artifact_paths["ablation_table"].exists()
     assert result.artifact_paths["per_output_nrmse"].exists()
     assert result.artifact_paths["per_output_nrmse_summary"].exists()
+    assert result.artifact_paths["feature_pruning_impact"].exists()
+    assert result.artifact_paths["feature_pruning_summary"].exists()
+    assert result.artifact_paths["figure_feature_pruning_curve_data"].exists()
+    assert result.artifact_paths["figure_feature_pruning_curve_svg"].exists()
+    assert int(final_artifacts.feature_pruning_summary.loc[0, "final_refit_n_features"]) == int(
+        final_artifacts.final_ols_summary.loc[0, "n_final_features"]
+    )
+
+
+def test_feature_pruning_diagnostics_respect_remove_count_override() -> None:
+    import numpy as np
+    import pandas as pd
+
+    from bsm_rfm.final_ols import FinalOLSFitResult
+
+    x_holdout = pd.DataFrame(
+        {
+            "f1": [0.1, 0.2, 0.3, 0.4],
+            "f2": [1.0, 1.1, 0.9, 1.2],
+        }
+    )
+    y_holdout = pd.DataFrame(
+        {
+            "y1": [0.22, 0.41, 0.58, 0.79],
+            "y2": [0.08, 0.12, 0.19, 0.21],
+        }
+    )
+    y_train = pd.DataFrame(
+        {
+            "y1": [0.15, 0.28, 0.44, 0.61, 0.83],
+            "y2": [0.05, 0.10, 0.13, 0.18, 0.24],
+        }
+    )
+    fit = FinalOLSFitResult(
+        feature_names=("f1", "f2"),
+        output_names=("y1", "y2"),
+        coef_raw_scale=np.array([[2.0, 0.2], [0.4, 0.1]], dtype=float),
+        intercept_raw_scale=np.array([0.0, 0.0], dtype=float),
+        coef_standardized=np.zeros((2, 2), dtype=float),
+        intercept_standardized=np.zeros(2, dtype=float),
+        x_means=np.zeros(2, dtype=float),
+        x_scales=np.ones(2, dtype=float),
+        y_means=np.zeros(2, dtype=float),
+        y_scales=np.ones(2, dtype=float),
+        n_training_rows=5,
+    )
+    final_support_features = pd.DataFrame(
+        {
+            "feature_name": ["f1", "f2"],
+            "feature_type": ["numeric", "numeric"],
+            "origin": ["model_factors", "model_factors"],
+        }
+    )
+    spec = FinalManuscriptArtifactsSpec(
+        final_predictor_count_reference=2,
+        final_first_order_input_count_reference=2,
+        intermediate_penalized_holdout_nrmse_reference=0.1,
+        final_ols_holdout_nrmse_reference=0.1,
+        nrmse_denominator_definition="macro",
+        nrmse_min_range=1.0e-6,
+        nrmse_reference_matrix="Y_train",
+        pruning_remove_count_override=1,
+    )
+
+    impact, curve, summary = _build_feature_pruning_diagnostics(
+        final_fit=fit,
+        x_holdout=x_holdout,
+        y_holdout=y_holdout,
+        y_train=y_train,
+        final_support_features=final_support_features,
+        spec=spec,
+    )
+
+    assert len(impact) == 2
+    assert len(curve) == 2
+    assert int(summary.loc[0, "effective_remove_count"]) == 1
+    assert int(summary.loc[0, "effective_retained_features"]) == 1
+    assert curve["selected_by_effective_cutoff"].sum() == 1
 
 
 def test_ablation_table_contains_all_five_models() -> None:
@@ -306,3 +402,65 @@ def test_per_output_nrmse_summary_schema() -> None:
         assert col in summary.columns, f"Missing column: {col}"
     assert summary.loc[0, "n_included"] >= 1
     assert math.isfinite(float(summary.loc[0, "p50"]))
+
+
+def test_legacy_feature_type_counts_classifies_colon_interactions() -> None:
+    import pandas as pd
+
+    final_support_features = pd.DataFrame(
+        {
+            "feature_name": [
+                "AHC.foo:WW.bar",
+                "sqrt_OHC.baz",
+                "CHC.qux",
+            ]
+        }
+    )
+    counts = _build_legacy_feature_type_counts(final_support_features)
+    observed = {str(row["feature_type"]): int(row["count"]) for _, row in counts.iterrows()}
+
+    assert observed["Second Order"] == 1
+    assert observed["Non-Linear"] == 1
+    assert observed["First Order"] == 1
+
+
+def test_legacy_interaction_counts_detects_colon_delimited_pairs() -> None:
+    import pandas as pd
+
+    final_support_features = pd.DataFrame(
+        {
+            "feature_name": [
+                "AHC.foo:WW.bar",
+                "AHC.foo:WW.baz",
+                "CHC.qux",
+            ]
+        }
+    )
+
+    pair_counts_df, matrix = _build_legacy_interaction_counts_by_module_pair(final_support_features)
+
+    assert not pair_counts_df.empty
+    row = pair_counts_df.loc[
+        (pair_counts_df["module_a"] == "Algal Hydrocarbons")
+        & (pair_counts_df["module_b"] == "Wet Waste Hydrocarbons")
+    ]
+    assert not row.empty
+    assert int(row.iloc[0]["count"]) == 2
+    assert int(matrix.loc["Algal Hydrocarbons", "Wet Waste Hydrocarbons"]) == 2
+    assert int(matrix.loc["Wet Waste Hydrocarbons", "Algal Hydrocarbons"]) == 2
+
+
+def test_ablation_main_effect_feature_names_accepts_numeric_labels() -> None:
+    import pandas as pd
+
+    feature_catalog = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2", "x1:x2", "sqrt_x1"],
+            "feature_type": ["numeric", "numeric", "interaction", "transformation"],
+        }
+    )
+    input_matrix = pd.DataFrame({"sample_id": [1, 2], "x1": [0.1, 0.2], "x2": [0.3, 0.4]})
+
+    names = _ablation_main_effect_feature_names(feature_catalog, input_matrix)
+
+    assert names == ["x1", "x2"]

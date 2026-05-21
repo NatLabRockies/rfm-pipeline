@@ -274,7 +274,10 @@ def _build_fresh_manifest(args, artifact_dir: Path, n_shards: int, workflow) -> 
     expected_columns = _estimate_stage_work_items(args.stage, workflow, artifact_dir)
     if args.stage == "interaction_discovery":
         try:
-            resolved_inputs = resolve_interaction_discovery_shard_inputs(artifact_dir)
+            dataset_path = getattr(workflow.dataset, "path", None)
+            resolved_inputs = resolve_interaction_discovery_shard_inputs(
+                artifact_dir, dataset_path=dataset_path
+            )
             input_paths.extend(list(resolved_inputs.values()))
             logger.info(
                 "[hpc-submit] resolved %d interaction_discovery inputs: %s",

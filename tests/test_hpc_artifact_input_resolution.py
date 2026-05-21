@@ -124,6 +124,45 @@ class TestResolveInteractionDiscoveryShardinputs:
             p = Path(path_str)
             assert p.is_absolute(), f"{key} returned relative path: {path_str}"
 
+    def test_resolve_with_separate_dataset_path(self, tmp_path: Path) -> None:
+        """dataset_path causes X/holdout/catalog to load from dataset_path, not artifact_dir."""
+        artifact_dir = tmp_path / "study_artifacts"
+        dataset_dir = tmp_path / "dataset"
+
+        # stage artifacts in artifact_dir
+        (artifact_dir / "output_conditioning").mkdir(parents=True)
+        (artifact_dir / "empirical_null_screen").mkdir(parents=True)
+        (artifact_dir / "output_conditioning" / "pca_scores.csv").write_text("dim1\n0.1")
+        (artifact_dir / "empirical_null_screen" / "retained_terms.csv").write_text("feature\nf1")
+
+        # raw data files in dataset_dir (NOT in artifact_dir)
+        dataset_dir.mkdir(parents=True)
+        (dataset_dir / "X.parquet").write_bytes(b"fake_X")
+        (dataset_dir / "holdout_assignments.parquet").write_bytes(b"fake_holdout")
+        (dataset_dir / "actual_input_feature_catalog.parquet").write_bytes(b"fake_catalog")
+
+        result = resolve_interaction_discovery_shard_inputs(artifact_dir, dataset_path=dataset_dir)
+
+        assert Path(result["X"]).parent == dataset_dir.resolve()
+        assert Path(result["holdout_assignments"]).parent == dataset_dir.resolve()
+        assert Path(result["feature_catalog"]).parent == dataset_dir.resolve()
+        assert Path(result["pca_scores"]).parent == (artifact_dir / "output_conditioning").resolve()
+
+    def test_resolve_with_dataset_path_raises_if_raw_files_missing(self, tmp_path: Path) -> None:
+        """When dataset_path is provided, missing raw files raise FileNotFoundError."""
+        artifact_dir = tmp_path / "study_artifacts"
+        dataset_dir = tmp_path / "dataset"
+
+        (artifact_dir / "output_conditioning").mkdir(parents=True)
+        (artifact_dir / "empirical_null_screen").mkdir(parents=True)
+        (artifact_dir / "output_conditioning" / "pca_scores.csv").write_text("dim1\n0.1")
+        (artifact_dir / "empirical_null_screen" / "retained_terms.csv").write_text("feature\nf1")
+        dataset_dir.mkdir(parents=True)
+        # X.parquet intentionally absent
+
+        with pytest.raises(FileNotFoundError, match="X"):
+            resolve_interaction_discovery_shard_inputs(artifact_dir, dataset_path=dataset_dir)
+
 
 class TestManifestInputPathsPopulation:
     """Test that manifest builder uses resolved inputs."""

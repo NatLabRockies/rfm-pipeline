@@ -208,7 +208,7 @@ submit_stage() {
       pixi run bsm-hpc-submit \
         --config "${stage_config}" \
         --stage "${stage}" \
-        --n-shards "${n_shards}" \
+        $(if [[ "${stage}" == "output_conditioning" ]] || [[ "${stage}" == "empirical_null_screening" ]]; then echo "--n-shards ${n_shards}"; fi) \
         --output-dir "${stage_script_dir}" \
         --reduce-walltime "${reduce_walltime}" \
         --reduce-memory-gb "${reduce_memory_gb}"

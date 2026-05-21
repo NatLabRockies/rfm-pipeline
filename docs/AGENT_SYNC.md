@@ -11,6 +11,19 @@ slice_status: complete (small distributed orchestration now targets a dedicated 
 last_validation: `pixi run ruff check tests/test_hpc_workflow_orchestration.py` pass; `pixi run pytest -q tests/test_hpc_workflow_orchestration.py` pass; `bash scripts/kestrel/run_small_distributed_test_local.sh --dry-run --poll-count 1 --poll-seconds 1` pass
 next_slice: Execute unified orchestration config on Kestrel live queue and collect manifest/reporting bundle outputs
 
+## Distributed interaction timeout hotfix (2026-05-21)
+
+- Root cause confirmed for failed full-dataset distributed run
+  (`publication_full_dataset_distributed_20260519`):
+  `interaction_discovery` shards consistently failed at ~901s with
+  `Interaction discovery parallel batch failed; no serial fallback or retries are allowed for n_jobs>1.`,
+  matching the default 900-second parallel batch timeout.
+- Added typed config support for interaction timeout override:
+  `stages.interaction_discovery.parallel_batch_timeout_seconds`.
+- Wired workflow→legacy config mapping so timeout overrides are honored by stage execution.
+- Updated full-dataset distributed base config to disable interaction batch timeout for this
+  run profile (`parallel_batch_timeout_seconds: 0`) so long shard batches do not hard-fail.
+
 ## Final-stage feature-pruning diagnostics (2026-05-20)
 
 - User clarification persisted: pruning decisions must be tunable/inspectable, with automatic

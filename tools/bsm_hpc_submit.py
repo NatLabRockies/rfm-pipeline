@@ -162,7 +162,25 @@ def main() -> None:
     output_root = artifact_dir / "hpc_shards"
 
     # Build shard manifest
-    n_shards = args.n_shards or dist_cfg.slurm.max_concurrent_array_tasks
+    n_shards = args.n_shards
+    if not n_shards:
+        # For stages with data-driven cardinality, estimate from prior stage outputs
+        dynamic_stages = (
+            "interaction_discovery",
+            "nonlinear_discovery",
+            "sparse_selection",
+            "final_manuscript_artifacts",
+        )
+        if args.stage in dynamic_stages:
+            n_shards = _estimate_stage_work_items(args.stage, workflow, artifact_dir)
+            if n_shards:
+                logger.info(
+                    "[hpc-submit] auto-estimated n_shards for %s: %d (from prior outputs)",
+                    args.stage,
+                    n_shards,
+                )
+        if not n_shards:
+            n_shards = dist_cfg.slurm.max_concurrent_array_tasks
     logger.info(
         "[hpc-submit] stage=%s n_shards=%d run_id=%s",
         args.stage,

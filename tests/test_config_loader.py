@@ -74,6 +74,7 @@ class TestLoadConfig:
                             "p_threshold": 0.01,
                             "n_permutations": 120,
                             "n_tree_estimators": 200,
+                            "parallel_batch_timeout_seconds": 3600,
                         },
                         "sparse_selection": {
                             "n_stability_subsamples": 50,
@@ -107,6 +108,7 @@ class TestLoadConfig:
                 assert config.stages.empirical_null_screening.n_permutations == 500
                 assert config.stages.empirical_null_screening.max_retained_terms == 63
                 assert config.stages.interaction_discovery.n_permutations == 120
+                assert config.stages.interaction_discovery.parallel_batch_timeout_seconds == 3600
                 assert config.stages.sparse_selection.max_candidate_terms == 1000
                 assert config.stages.final_artifacts.hc3_output_subset_mode == "random_fraction"
                 assert config.stages.final_artifacts.hc3_output_fraction == pytest.approx(0.2)
@@ -245,6 +247,15 @@ class TestLegacyConfigMapping:
         legacy = config_to_legacy_case_study(config)
         section = legacy["case_study"]["interaction_discovery"]
         assert section["permutation_count_B"] == 20
+
+    def test_maps_interaction_parallel_timeout_override(self):
+        """Interaction timeout override should map to interaction_discovery timeout key."""
+        config = WorkflowConfig(dataset=DatasetConfig(type="synthetic_300_sample"))
+        config.stages.interaction_discovery.parallel_batch_timeout_seconds = 0
+
+        legacy = config_to_legacy_case_study(config)
+        section = legacy["case_study"]["interaction_discovery"]
+        assert section["parallel_batch_timeout_seconds"] == 0
 
     def test_maps_final_hc3_subset_overrides(self):
         """HC3 output subset options should map to final_inferential_filter."""

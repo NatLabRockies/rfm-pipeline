@@ -121,6 +121,8 @@ class InteractionStageConfig:
     """SHAP tree ensemble size."""
     max_tree_depth: int = 10
     """Max tree depth for ensemble."""
+    parallel_batch_timeout_seconds: int | None = None
+    """Per-batch parallel timeout; <=0 disables timeout (useful for long HPC shards)."""
 
 
 @dataclass

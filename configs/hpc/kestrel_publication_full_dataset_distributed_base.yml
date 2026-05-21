@@ -31,6 +31,7 @@ stages:
     n_tree_estimators: 250
     max_tree_depth: 5
     p_threshold: 0.05
+    parallel_batch_timeout_seconds: 0
 
   nonlinear_discovery:
     edf_threshold: 2.5

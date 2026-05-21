@@ -468,6 +468,10 @@ def config_to_legacy_case_study(workflow_config: WorkflowConfig) -> dict[str, An
         interaction_discovery["permutation_count_B"] = itr.n_permutations - 1
     interaction_discovery["n_tree_estimators"] = itr.n_tree_estimators
     interaction_discovery["max_tree_depth"] = itr.max_tree_depth
+    if itr.parallel_batch_timeout_seconds is not None:
+        interaction_discovery["parallel_batch_timeout_seconds"] = int(
+            itr.parallel_batch_timeout_seconds
+        )
     parallelism = workflow_config.runtime.parallelism
     if parallelism.enabled:
         backend_map = {

@@ -112,7 +112,15 @@ def run_shard(
     dry_run: bool = False,
     manifest_path: str | None = None,
 ) -> None:
-    """Run one shard with checkpointing, usable from SLURM array or MPI runner."""
+    """Run one shard with checkpointing, usable from SLURM array or MPI runner.
+
+    Status tracking is done exclusively via per-shard checkpoint marker files
+    (_RUNNING.json, _SUCCESS.json, _FAILED.json) written by CheckpointManager.
+    The shared JSONL manifest is treated as read-only after generation.
+    Writing back to the manifest caused Lustre/NFS-unsafe concurrent writes that
+    corrupted manifest entries when many array tasks ran simultaneously.
+    ``manifest_path`` is accepted but ignored to preserve call-site compatibility.
+    """
     from bsm_rfm.distributed.checkpoint import CheckpointManager
 
     cm = CheckpointManager(output_root, shard.shard_id)
@@ -123,11 +131,6 @@ def run_shard(
         logger.info("[dry-run] shard=%s validated — would run %s", shard.shard_id, shard.stage)
         return
 
-    if manifest_path:
-        from bsm_rfm.distributed.manifest import update_shard_status
-
-        update_shard_status(manifest_path, shard.shard_id, "running")
-
     cm.mark_running()
     start = time.monotonic()
     try:
@@ -135,17 +138,9 @@ def run_shard(
         _run_shard_stage(shard, cm, args)
         elapsed = time.monotonic() - start
         logger.info("shard=%s COMPLETE in %.1fs", shard.shard_id, elapsed)
-        if manifest_path:
-            from bsm_rfm.distributed.manifest import update_shard_status
-
-            update_shard_status(manifest_path, shard.shard_id, "completed")
     except Exception as exc:
         elapsed = time.monotonic() - start
         cm.mark_failed(str(exc))
-        if manifest_path:
-            from bsm_rfm.distributed.manifest import update_shard_status
-
-            update_shard_status(manifest_path, shard.shard_id, "failed", error_message=str(exc))
         logger.error("shard=%s FAILED after %.1fs: %s", shard.shard_id, elapsed, exc)
         raise
 

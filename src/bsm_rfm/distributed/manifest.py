@@ -265,20 +265,23 @@ def manifest_summary(shards: list[ShardManifest]) -> dict[str, int]:
 
 def resolve_interaction_discovery_shard_inputs(
     artifact_dir: str | Path,
+    dataset_path: str | Path | None = None,
 ) -> dict[str, str]:
     """Resolve required shard inputs for interaction_discovery stage.
 
     Locates prior-stage artifacts (pca_scores from output_conditioning,
-    retained_terms from empirical_null_screen, X/holdout/catalog from root)
-    and returns a dict mapping symbolic names to absolute file paths.
+    retained_terms from empirical_null_screen) and raw dataset files
+    (X.parquet, holdout_assignments.parquet, actual_input_feature_catalog.parquet).
 
     Parameters
     ----------
     artifact_dir
-        Artifact root directory (typically workflow output_root). Expected to
-        contain subdirectories output_conditioning/ and empirical_null_screen/,
-        and root files X.parquet, holdout_assignments.parquet,
-        actual_input_feature_catalog.parquet.
+        Artifact root directory (typically workflow output_root). Must contain
+        subdirectories output_conditioning/ and empirical_null_screen/.
+    dataset_path
+        Optional path to the raw dataset directory containing X.parquet,
+        holdout_assignments.parquet, and actual_input_feature_catalog.parquet.
+        If None, these files are looked for in artifact_dir (legacy behavior).
 
     Returns
     -------
@@ -296,14 +299,21 @@ def resolve_interaction_discovery_shard_inputs(
         If any required file is missing.
     """
     artifact_dir = Path(artifact_dir)
+    data_root = Path(dataset_path) if dataset_path else artifact_dir
 
     required_files = {
         "pca_scores": artifact_dir / "output_conditioning" / "pca_scores.csv",
         "retained_terms": artifact_dir / "empirical_null_screen" / "retained_terms.csv",
-        "X": artifact_dir / "X.parquet",
-        "holdout_assignments": artifact_dir / "holdout_assignments.parquet",
-        "feature_catalog": artifact_dir / "actual_input_feature_catalog.parquet",
+        "X": data_root / "X.parquet",
+        "holdout_assignments": data_root / "holdout_assignments.parquet",
+        "feature_catalog": data_root / "actual_input_feature_catalog.parquet",
     }
+
+    # feature_catalog may also be named manuscript_feature_catalog.parquet
+    if not required_files["feature_catalog"].exists():
+        alt = data_root / "manuscript_feature_catalog.parquet"
+        if alt.exists():
+            required_files["feature_catalog"] = alt
 
     result = {}
     for name, path in required_files.items():

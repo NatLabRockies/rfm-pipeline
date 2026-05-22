@@ -142,10 +142,17 @@ def test_hpc_shard_worker_writes_interaction_artifacts(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr(hpc_shard_worker, "_load_interaction_spec", _fake_spec)
+    discover_call: dict[str, object] = {}
+
+    def _fake_discover(*args, **kwargs):  # noqa: ANN002, ANN003
+        _ = args
+        discover_call.update(kwargs)
+        return _minimal_interaction_result()
+
     monkeypatch.setattr(
         hpc_shard_worker,
         "discover_manuscript_interactions",
-        lambda *args, **kwargs: _minimal_interaction_result(),
+        _fake_discover,
     )
 
     hpc_shard_worker._run_interaction_shard(shard, cm, config_path=None)
@@ -153,6 +160,8 @@ def test_hpc_shard_worker_writes_interaction_artifacts(tmp_path, monkeypatch):
     shard_result = json.loads((cm.staging_dir / "shard_result.json").read_text())
     assert shard_result["stage"] == "interaction_discovery"
     assert shard_result["n_retained_pairs"] == 1
+    assert discover_call["pair_start_idx"] == 0
+    assert discover_call["pair_end_idx"] == 2
     assert (cm.staging_dir / "retained_interaction_pairs.csv").exists()
     assert (cm.staging_dir / "interaction_pair_scores.csv").exists()
 

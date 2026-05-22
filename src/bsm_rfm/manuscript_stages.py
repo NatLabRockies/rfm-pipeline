@@ -1671,6 +1671,8 @@ def discover_manuscript_interactions(
     spec: InteractionDiscoverySpec,
     *,
     checkpoint_dir: Path | None = None,
+    pair_start_idx: int | None = None,
+    pair_end_idx: int | None = None,
 ) -> InteractionDiscoveryResult:
     """Discover candidate interaction pairs via specified method (GBT+SHAP or ElasticNet).
 
@@ -1695,6 +1697,11 @@ def discover_manuscript_interactions(
     checkpoint_dir
         Optional directory for per-permutation checkpoints. When provided, completed permutation
         scores are persisted and reused on subsequent reruns with the same discovery signature.
+    pair_start_idx
+        Optional zero-based start index (inclusive) for candidate-pair slicing.
+        When provided with ``pair_end_idx``, only that pair range is scored.
+    pair_end_idx
+        Optional zero-based end index (exclusive) for candidate-pair slicing.
 
     Returns
     -------
@@ -1790,6 +1797,19 @@ def discover_manuscript_interactions(
 
     if not candidates:
         raise ValueError("feature_catalog does not contain any two-factor interaction candidates.")
+    total_candidate_pairs = len(candidates)
+    if pair_start_idx is not None or pair_end_idx is not None:
+        start = int(pair_start_idx) if pair_start_idx is not None else 0
+        end = int(pair_end_idx) if pair_end_idx is not None else total_candidate_pairs
+        start = max(0, min(start, total_candidate_pairs))
+        end = max(start, min(end, total_candidate_pairs))
+        candidates = candidates[start:end]
+        if not candidates:
+            raise ValueError(
+                "interaction_discovery shard candidate range is empty: "
+                f"pair_start_idx={pair_start_idx}, pair_end_idx={pair_end_idx}, "
+                f"total_candidate_pairs={total_candidate_pairs}"
+            )
 
     # Build feature matrix from all unique features appearing in any pair.
     feature_names = sorted({name for _, left, right in candidates for name in [left, right]})

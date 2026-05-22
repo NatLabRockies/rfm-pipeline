@@ -44,9 +44,11 @@ class ShardManifest:
     expected_columns
         Expected number of feature columns in input (for validation).
     feature_start_idx
-        First feature column index covered by this shard (for pair sharding).
+        Work-item start index (inclusive). For interaction_discovery this is a
+        pair-index range; for other sharded stages this is the stage-specific
+        item index range.
     feature_end_idx
-        Last feature column index (exclusive) covered by this shard.
+        Work-item end index (exclusive).
     scenario_id
         Optional scenario/case identifier for multi-scenario runs.
     year
@@ -125,8 +127,7 @@ def build_manifest(
     expected_rows
         Expected row count in input data (for shard validation).
     expected_columns
-        Expected feature column count (used to compute pair ranges for
-        interaction_discovery sharding).
+        Work-item cardinality used to compute shard start/end ranges.
     scenario_id
         Optional scenario identifier embedded in each record.
 

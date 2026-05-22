@@ -501,9 +501,9 @@ def _write_interaction_shard_outputs(
 
 
 def _run_interaction_shard(shard, cm, config_path: str | None = None) -> None:
-    """Run interaction discovery scoring for the feature range assigned to this shard."""
+    """Run interaction discovery scoring for the pair-index range assigned to this shard."""
     logger.info(
-        "[interaction_shard] feature_range=[%s, %s) input_paths=%s",
+        "[interaction_shard] pair_range=[%s, %s) input_paths=%s",
         shard.feature_start_idx,
         shard.feature_end_idx,
         shard.input_paths[:2],
@@ -527,22 +527,13 @@ def _run_interaction_shard(shard, cm, config_path: str | None = None) -> None:
     retained_features = [f for f in retained_features if f in available_features]
     if len(retained_features) < 2:
         raise ValueError("interaction_discovery shard requires at least two retained features.")
+    total_pairs = len(retained_features) * (len(retained_features) - 1) // 2
 
     start = int(shard.feature_start_idx or 0)
-    end = int(shard.feature_end_idx or len(retained_features))
-    start = max(0, min(start, len(retained_features)))
-    end = max(start, min(end, len(retained_features)))
-    selected_features = retained_features[start:end]
-    if len(selected_features) < 2:
-        selected_features = retained_features
-
-    shard_retained_terms = retained_terms_df[
-        retained_terms_df["feature_name"].astype(str).isin(selected_features)
-    ].copy()
-    if len(shard_retained_terms) < 2:
-        raise ValueError(
-            "interaction_discovery shard retained term subset has fewer than two terms."
-        )
+    end = int(shard.feature_end_idx or total_pairs)
+    start = max(0, min(start, total_pairs))
+    end = max(start, min(end, total_pairs))
+    artifact_root = _artifact_root_from_output_root(cm.output_root)
 
     spec = _load_interaction_spec(config_path)
     interactions = discover_manuscript_interactions(
@@ -550,9 +541,21 @@ def _run_interaction_shard(shard, cm, config_path: str | None = None) -> None:
         feature_catalog=feature_catalog_df,
         holdout_assignments=holdout_df,
         pca_scores=pca_scores_df,
-        retained_terms=shard_retained_terms,
+        retained_terms=retained_terms_df,
         spec=spec,
+        checkpoint_dir=artifact_root / "interaction_discovery",
+        pair_start_idx=start,
+        pair_end_idx=end,
     )
+    if {"left_feature", "right_feature"}.issubset(interactions.pair_scores.columns):
+        selected_features = sorted(
+            {
+                *interactions.pair_scores["left_feature"].astype(str).tolist(),
+                *interactions.pair_scores["right_feature"].astype(str).tolist(),
+            }
+        )
+    else:
+        selected_features = retained_features
     _write_interaction_shard_outputs(
         shard=shard,
         cm=cm,

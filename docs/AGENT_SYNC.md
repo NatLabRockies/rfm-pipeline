@@ -11,6 +11,26 @@ slice_status: complete (small distributed orchestration now targets a dedicated 
 last_validation: `pixi run ruff check tests/test_hpc_workflow_orchestration.py` pass; `pixi run pytest -q tests/test_hpc_workflow_orchestration.py` pass; `bash scripts/kestrel/run_small_distributed_test_local.sh --dry-run --poll-count 1 --poll-seconds 1` pass
 next_slice: Execute unified orchestration config on Kestrel live queue and collect manifest/reporting bundle outputs
 
+## Interaction pair-sharding correction (2026-05-22)
+
+- Confirmed root-cause behavior in shard worker: one-feature shard ranges fell back to full
+  retained feature sets (`len(selected_features) < 2`), causing near-full interaction
+  recomputation per shard and severe runtime inflation.
+- Implemented pair-range sharding contract:
+  - `discover_manuscript_interactions(...)` now accepts `pair_start_idx` / `pair_end_idx`
+    and slices candidate pairs deterministically before scoring.
+  - `tools/hpc_shard_worker.py` now treats manifest start/end as pair-index ranges,
+    passes them directly to interaction discovery, and persists interaction-stage
+    checkpoint state under `artifact_root/interaction_discovery` for shard reruns.
+  - `tools/bsm_hpc_submit.py` now builds interaction manifests with pair-space span
+    (`n_features * (n_features - 1) / 2`) while keeping shard-count auto-estimation
+    tied to retained first-order feature count.
+- Added/updated tests:
+  - `tests/test_manuscript_interaction_discovery.py`:
+    pair-range slicing coverage + empty-range rejection.
+  - `tests/test_hpc_shard_reduce.py`:
+    verifies shard worker forwards pair-range bounds to discovery.
+
 ## Distributed interaction timeout hotfix (2026-05-21)
 
 - Root cause confirmed for failed full-dataset distributed run

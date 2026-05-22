@@ -183,6 +183,114 @@ def test_interaction_discovery_generates_all_pairs_from_retained_first_order_ter
     assert result.summary.loc[0, "n_candidate_pairs"] == 3
 
 
+def test_interaction_discovery_respects_candidate_pair_range(monkeypatch) -> None:
+    sample_ids = list(range(1, 21))
+    x1 = [-1.0, -1.0, 1.0, 1.0] * 5
+    x2 = [-1.0, 1.0, -1.0, 1.0] * 5
+    x3 = [1.0 if value % 2 == 0 else -1.0 for value in sample_ids]
+    pca_signal = [left * right for left, right in zip(x1, x2, strict=True)]
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2, "x3": x3})
+    catalog = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2", "x3"],
+            "feature_type": ["first_order", "first_order", "first_order"],
+        }
+    )
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 16 + ["holdout"] * 4})
+    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
+    retained_terms = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2", "x3"],
+            "feature_type": ["first_order", "first_order", "first_order"],
+        }
+    )
+    spec = InteractionDiscoverySpec(
+        method="tree_shap_interaction_values",
+        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
+        null_threshold_quantile=0.9,
+        retained_pairs_reference=1,
+        permutation_count_B=2,
+        random_seed=123,
+        n_jobs=1,
+    )
+
+    def _fake_score_interaction_permutation(
+        y_base: np.ndarray,
+        permute_response: bool,
+        *,
+        n_pairs: int,
+        n_comp: int,
+        **_: object,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        _ = (y_base, permute_response)
+        scores = np.ones(n_pairs, dtype=float)
+        component_scores = np.ones((n_pairs, n_comp), dtype=float)
+        return scores, component_scores
+
+    monkeypatch.setattr(
+        manuscript_stages,
+        "_score_interaction_permutation",
+        _fake_score_interaction_permutation,
+    )
+
+    # Candidate ordering for x1,x2,x3 is: [x1:x2, x1:x3, x2:x3].
+    result = discover_manuscript_interactions(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        spec,
+        pair_start_idx=1,
+        pair_end_idx=2,
+    )
+    assert result.summary.loc[0, "n_candidate_pairs"] == 1
+    assert set(result.pair_scores["pair_name"]) == {"x1:x3"}
+
+
+def test_interaction_discovery_rejects_empty_candidate_pair_range() -> None:
+    sample_ids = list(range(1, 21))
+    x1 = [-1.0, -1.0, 1.0, 1.0] * 5
+    x2 = [-1.0, 1.0, -1.0, 1.0] * 5
+    pca_signal = [left * right for left, right in zip(x1, x2, strict=True)]
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2})
+    catalog = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2"],
+            "feature_type": ["first_order", "first_order"],
+        }
+    )
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 16 + ["holdout"] * 4})
+    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
+    retained_terms = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2"],
+            "feature_type": ["first_order", "first_order"],
+        }
+    )
+    spec = InteractionDiscoverySpec(
+        method="tree_shap_interaction_values",
+        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
+        null_threshold_quantile=0.9,
+        retained_pairs_reference=1,
+        permutation_count_B=2,
+        random_seed=123,
+        n_jobs=1,
+    )
+
+    with pytest.raises(ValueError, match="candidate range is empty"):
+        discover_manuscript_interactions(
+            inputs,
+            catalog,
+            holdout,
+            pca_scores,
+            retained_terms,
+            spec,
+            pair_start_idx=5,
+            pair_end_idx=6,
+        )
+
+
 def test_run_interaction_discovery_stage_executes_demo_context() -> None:
     context = build_manuscript_notebook_context(
         Path.cwd(),

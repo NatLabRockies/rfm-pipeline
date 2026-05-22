@@ -289,7 +289,7 @@ def _build_fresh_manifest(args, artifact_dir: Path, n_shards: int, workflow) -> 
     )
 
     input_paths: list[str] = [str(Path(args.config).resolve())]
-    expected_columns = _estimate_stage_work_items(args.stage, workflow, artifact_dir)
+    expected_columns = _estimate_stage_partition_span(args.stage, workflow, artifact_dir)
     if args.stage == "interaction_discovery":
         try:
             dataset_path = getattr(workflow.dataset, "path", None)
@@ -315,6 +315,16 @@ def _build_fresh_manifest(args, artifact_dir: Path, n_shards: int, workflow) -> 
     )
 
 
+def _estimate_stage_partition_span(stage: str, workflow, artifact_dir: Path) -> int:
+    """Estimate range span used by manifest start/end indices."""
+    if stage != "interaction_discovery":
+        return _estimate_stage_work_items(stage, workflow, artifact_dir)
+    feature_count = _estimate_stage_work_items(stage, workflow, artifact_dir)
+    if feature_count < 2:
+        return feature_count
+    return int(feature_count * (feature_count - 1) // 2)
+
+
 def _estimate_stage_work_items(stage: str, workflow, artifact_dir: Path) -> int:
     """Estimate stage work-item cardinality for shard-range partitioning."""
     if stage == "output_conditioning":
@@ -331,7 +341,15 @@ def _estimate_stage_work_items(stage: str, workflow, artifact_dir: Path) -> int:
             retained_terms = pd.read_csv(retained_terms_path)
             if "feature_name" not in retained_terms.columns:
                 return 0
-            return int(retained_terms["feature_name"].astype(str).nunique())
+            feature_names = retained_terms["feature_name"].astype(str)
+            if "feature_type" in retained_terms.columns:
+                feature_types = retained_terms["feature_type"].astype(str).str.lower()
+                mask = feature_types.isin({"first_order", "numeric"})
+            else:
+                mask = pd.Series([True] * len(feature_names))
+            first_order = feature_names[mask]
+            first_order = first_order[~first_order.str.contains(":", regex=False)]
+            return int(first_order.nunique())
         except Exception:
             return 0
     if stage == "nonlinear_discovery":

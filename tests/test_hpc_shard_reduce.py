@@ -217,6 +217,34 @@ def test_hpc_reduce_merges_interaction_pair_outputs(tmp_path):
     assert set(merged_scores["pair_name"]) == {"x1:x2", "x1:x3"}
 
 
+def test_load_interaction_result_falls_back_to_merged_distributed_outputs(tmp_path):
+    from tools.run_manuscript_pipeline import _load_interaction_discovery_result
+
+    merged_root = tmp_path / "hpc_shards_interaction_discovery" / "_merged"
+    merged_root.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {"pair_name": "x1:x2", "interaction_score": 0.8, "retained": True},
+            {"pair_name": "x1:x3", "interaction_score": 0.7, "retained": False},
+        ]
+    ).to_csv(merged_root / "interaction_pair_scores_merged.csv", index=False)
+    pd.DataFrame(
+        [
+            {"pair_name": "x1:x2", "interaction_score": 0.8, "retained": True},
+        ]
+    ).to_csv(merged_root / "retained_interaction_pairs_merged.csv", index=False)
+    (merged_root / "interaction_discovery_merged.json").write_text(
+        json.dumps({"n_shards": 2, "n_merged_pair_scores": 2, "n_merged_retained_pairs": 1})
+    )
+
+    loaded = _load_interaction_discovery_result(tmp_path)
+
+    assert set(loaded.pair_scores["pair_name"]) == {"x1:x2", "x1:x3"}
+    assert set(loaded.retained_pairs["pair_name"]) == {"x1:x2"}
+    assert loaded.summary.loc[0, "artifact_source"] == "distributed_merged_fallback"
+    assert int(loaded.summary.loc[0, "n_shards"]) == 2
+
+
 def test_hpc_shard_worker_dispatches_noninteraction_stage(tmp_path, monkeypatch):
     from tools import hpc_shard_worker
 

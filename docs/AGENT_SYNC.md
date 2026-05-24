@@ -11,6 +11,20 @@ slice_status: complete (small distributed orchestration now targets a dedicated 
 last_validation: `pixi run ruff check tests/test_hpc_workflow_orchestration.py` pass; `pixi run pytest -q tests/test_hpc_workflow_orchestration.py` pass; `bash scripts/kestrel/run_small_distributed_test_local.sh --dry-run --poll-count 1 --poll-seconds 1` pass
 next_slice: Execute unified orchestration config on Kestrel live queue and collect manifest/reporting bundle outputs
 
+## Sparse-selection distributed artifact-path hotfix (2026-05-24)
+
+- Failure observed in live full-dataset distributed run at `sparse_selection`:
+  shard workers failed with missing canonical interaction artifact
+  `artifacts/interaction_discovery/interaction_pair_scores.csv`.
+- Root cause: distributed interaction reduce writes merged outputs under
+  `artifacts/hpc_shards_interaction_discovery/_merged/` while sparse stage loader
+  only accepted canonical stage-artifact paths.
+- Implemented loader fallback in `tools/run_manuscript_pipeline.py`:
+  `_load_interaction_discovery_result(...)` now loads distributed merged interaction
+  outputs when canonical files are absent, with explicit fallback provenance/summary.
+- Added regression coverage in `tests/test_hpc_shard_reduce.py` ensuring merged-only
+  distributed interaction artifacts can be loaded for downstream sparse/final stages.
+
 ## Interaction pair-sharding correction (2026-05-22)
 
 - Confirmed root-cause behavior in shard worker: one-feature shard ranges fell back to full

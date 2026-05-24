@@ -372,13 +372,72 @@ def _load_empirical_null_screening_result(output_root: Path) -> EmpiricalNullScr
 
 def _load_interaction_discovery_result(output_root: Path) -> InteractionDiscoveryResult:
     stage_root = output_root / "interaction_discovery"
+    canonical_pair_scores = stage_root / "interaction_pair_scores.csv"
+    if canonical_pair_scores.exists():
+        return InteractionDiscoveryResult(
+            pair_scores=_read_csv(canonical_pair_scores),
+            component_interaction_scores=_read_csv(stage_root / "component_interaction_scores.csv"),
+            interaction_null_summary=_read_csv(stage_root / "interaction_null_summary.csv"),
+            retained_pairs=_read_csv(stage_root / "retained_interaction_pairs.csv"),
+            provenance=_read_csv(stage_root / "interaction_discovery_provenance.csv"),
+            summary=_read_csv(stage_root / "interaction_discovery_summary.csv"),
+        )
+
+    # Distributed fallback: interaction reduce currently writes merged pair tables under
+    # hpc_shards_interaction_discovery/_merged rather than canonical stage artifacts.
+    merged_root = output_root / "hpc_shards_interaction_discovery" / "_merged"
+    merged_pair_scores_path = merged_root / "interaction_pair_scores_merged.csv"
+    merged_retained_pairs_path = merged_root / "retained_interaction_pairs_merged.csv"
+    if not merged_pair_scores_path.exists() or not merged_retained_pairs_path.exists():
+        raise FileNotFoundError(f"Missing required artifact: {canonical_pair_scores}")
+
+    import pandas as pd
+
+    pair_scores = _read_csv(merged_pair_scores_path)
+    retained_pairs = _read_csv(merged_retained_pairs_path)
+    merged_summary = _read_json(merged_root / "interaction_discovery_merged.json") or {}
+    summary_row: dict[str, Any] = {
+        "stage": "interaction_discovery",
+        "n_candidate_pairs": int(len(pair_scores)),
+        "n_retained_pairs": int(len(retained_pairs)),
+        "artifact_source": "distributed_merged_fallback",
+    }
+    if isinstance(merged_summary, dict):
+        if "n_shards" in merged_summary:
+            summary_row["n_shards"] = int(merged_summary["n_shards"])
+        if "n_merged_pair_scores" in merged_summary:
+            summary_row["n_merged_pair_scores"] = int(merged_summary["n_merged_pair_scores"])
+        if "n_merged_retained_pairs" in merged_summary:
+            summary_row["n_merged_retained_pairs"] = int(merged_summary["n_merged_retained_pairs"])
+
     return InteractionDiscoveryResult(
-        pair_scores=_read_csv(stage_root / "interaction_pair_scores.csv"),
-        component_interaction_scores=_read_csv(stage_root / "component_interaction_scores.csv"),
-        interaction_null_summary=_read_csv(stage_root / "interaction_null_summary.csv"),
-        retained_pairs=_read_csv(stage_root / "retained_interaction_pairs.csv"),
-        provenance=_read_csv(stage_root / "interaction_discovery_provenance.csv"),
-        summary=_read_csv(stage_root / "interaction_discovery_summary.csv"),
+        pair_scores=pair_scores,
+        component_interaction_scores=pd.DataFrame(
+            columns=[
+                "pair_name",
+                "component",
+                "standardized_residual_interaction_coefficient",
+            ]
+        ),
+        interaction_null_summary=pd.DataFrame(
+            columns=[
+                "pair_name",
+                "null_mean_score",
+                "null_quantile_95",
+                "null_quantile_99",
+                "null_max_score",
+            ]
+        ),
+        retained_pairs=retained_pairs,
+        provenance=pd.DataFrame(
+            [
+                {
+                    "stage": "interaction_discovery",
+                    "public_implementation_status": "distributed_merged_fallback",
+                }
+            ]
+        ),
+        summary=pd.DataFrame([summary_row]),
     )
 
 

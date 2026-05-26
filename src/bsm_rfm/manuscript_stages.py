@@ -3802,6 +3802,9 @@ def regenerate_final_manuscript_artifacts(
             auto_remove_count=auto_remove_count,
             effective_remove_count=effective_remove_count,
         ),
+        "figure_per_output_nrmse_distribution": _render_per_output_nrmse_distribution_svg(
+            per_output_nrmse
+        ),
     }
     figure_specs = _build_figure_specs(
         figure_model_performance_data=figure_model_performance_data,
@@ -8089,6 +8092,172 @@ def _render_nrmse_summary_svg(data: pd.DataFrame) -> str:
         )
     elements.append("</svg>")
     return "".join(elements)
+
+
+def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) -> str:
+    """Render a dependency-free SVG CDF of per-output holdout nRMSE values.
+
+    Shows the empirical CDF with key quantile markers and labels the three
+    worst-performing outputs, giving readers a compact view of model accuracy
+    heterogeneity across all modelled scalar outputs.
+    """
+    from html import escape
+
+    nrmse_vals = pd.to_numeric(
+        per_output_nrmse["nrmse"]
+        if "nrmse" in per_output_nrmse.columns
+        else pd.Series(dtype=float),
+        errors="coerce",
+    ).dropna()
+    if nrmse_vals.empty:
+        return (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="700" height="120">'
+            '<rect width="100%" height="100%" fill="white"/>'
+            '<text x="24" y="60" font-family="sans-serif" font-size="14">no data</text>'
+            "</svg>"
+        )
+
+    nrmse_sorted = nrmse_vals.sort_values().reset_index(drop=True)
+    n = len(nrmse_sorted)
+    quantile_marks = {
+        "p10": float(np.quantile(nrmse_sorted, 0.10)),
+        "p25": float(np.quantile(nrmse_sorted, 0.25)),
+        "p50": float(np.quantile(nrmse_sorted, 0.50)),
+        "p75": float(np.quantile(nrmse_sorted, 0.75)),
+        "p90": float(np.quantile(nrmse_sorted, 0.90)),
+    }
+
+    # Worst-3 outputs by nRMSE
+    worst_df = per_output_nrmse.copy()
+    worst_df["_nrmse_num"] = pd.to_numeric(
+        worst_df.get("nrmse", pd.Series(dtype=float)), errors="coerce"
+    )
+    worst_df = worst_df.dropna(subset=["_nrmse_num"]).nlargest(3, "_nrmse_num")
+    worst_labels: list[tuple[float, str]] = [
+        (float(r["_nrmse_num"]), str(r.get("output_name", ""))) for _, r in worst_df.iterrows()
+    ]
+
+    width = 860
+    height = 360
+    left_margin = 60
+    right_margin = 30
+    top_margin = 50
+    bottom_margin = 80
+    plot_w = width - left_margin - right_margin
+    plot_h = height - top_margin - bottom_margin
+
+    x_min = 0.0
+    x_max = max(float(nrmse_sorted.max()) * 1.05, 0.01)
+
+    def sx(v: float) -> float:
+        return left_margin + plot_w * (v - x_min) / (x_max - x_min)
+
+    def sy(frac: float) -> float:
+        return top_margin + plot_h * (1.0 - frac)
+
+    # CDF polyline points
+    fracs = [(i + 1) / n for i in range(n)]
+    pts = " ".join(
+        f"{sx(float(v)):.1f},{sy(f):.1f}" for v, f in zip(nrmse_sorted, fracs, strict=True)
+    )
+
+    # Y-axis tick marks
+    y_ticks = [0.0, 0.25, 0.50, 0.75, 1.0]
+    axis_x1 = left_margin
+    axis_y_top = top_margin
+    axis_y_bot = top_margin + plot_h
+
+    elements = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="white"/>',
+        f'<text x="{left_margin}" y="32" font-family="sans-serif" '
+        f'font-size="18" font-weight="bold">'
+        f"Per-output holdout nRMSE distribution (n={n:,})</text>",
+        # Axes
+        f'<line x1="{axis_x1}" y1="{axis_y_top}" x2="{axis_x1}" y2="{axis_y_bot}" '
+        'stroke="#374151" stroke-width="1.5"/>',
+        f'<line x1="{axis_x1}" y1="{axis_y_bot}" x2="{axis_x1 + plot_w}" y2="{axis_y_bot}" '
+        'stroke="#374151" stroke-width="1.5"/>',
+        # X-axis label
+        f'<text x="{left_margin + plot_w / 2:.0f}" y="{height - 10}" '
+        'font-family="sans-serif" font-size="13" text-anchor="middle">Holdout nRMSE</text>',
+        # Y-axis label
+        f'<text x="14" y="{top_margin + plot_h / 2:.0f}" font-family="sans-serif" font-size="12" '
+        'text-anchor="middle" transform="'
+        f'rotate(-90 14 {top_margin + plot_h / 2:.0f})">Cumulative fraction</text>',
+    ]
+
+    # Y-axis ticks
+    for frac in y_ticks:
+        yp = sy(frac)
+        elements.extend(
+            [
+                f'<line x1="{axis_x1 - 5}" y1="{yp:.1f}" x2="{axis_x1}" y2="{yp:.1f}" '
+                'stroke="#374151" stroke-width="1"/>',
+                f'<text x="{axis_x1 - 8}" y="{yp + 4:.1f}" font-family="sans-serif" font-size="11" '
+                f'text-anchor="end">{frac:.2f}</text>',
+                f'<line x1="{axis_x1}" y1="{yp:.1f}" x2="{axis_x1 + plot_w}" y2="{yp:.1f}" '
+                'stroke="#e5e7eb" stroke-width="0.7" stroke-dasharray="4,4"/>',
+            ]
+        )
+
+    # X-axis ticks (5 evenly spaced)
+    n_xticks = 6
+    for i in range(n_xticks):
+        v = x_min + (x_max - x_min) * i / (n_xticks - 1)
+        xp = sx(v)
+        elements.extend(
+            [
+                f'<line x1="{xp:.1f}" y1="{axis_y_bot}" x2="{xp:.1f}" y2="{axis_y_bot + 5}" '
+                'stroke="#374151" stroke-width="1"/>',
+                f'<text x="{xp:.1f}" y="{axis_y_bot + 18}" font-family="sans-serif" font-size="11" '
+                f'text-anchor="middle">{v:.3f}</text>',
+            ]
+        )
+
+    # CDF line
+    (elements.append(f'<polyline points="{pts}" fill="none" stroke="#1d4ed8" stroke-width="2"/>'),)
+
+    # Quantile vertical markers
+    q_colors = {
+        "p10": "#10b981",
+        "p25": "#f59e0b",
+        "p50": "#ef4444",
+        "p75": "#f59e0b",
+        "p90": "#10b981",
+    }
+    for label, qval in quantile_marks.items():
+        xp = sx(qval)
+        yp_cdf = sy({"p10": 0.10, "p25": 0.25, "p50": 0.50, "p75": 0.75, "p90": 0.90}[label])
+        color = q_colors[label]
+        elements.extend(
+            [
+                f'<line x1="{xp:.1f}" y1="{axis_y_bot}" x2="{xp:.1f}" y2="{yp_cdf:.1f}" '
+                f'stroke="{color}" stroke-width="1.2" stroke-dasharray="5,3"/>',
+                f'<circle cx="{xp:.1f}" cy="{yp_cdf:.1f}" r="3.5" fill="{color}"/>',
+                f'<text x="{xp:.1f}" y="{axis_y_bot + 32}" font-family="sans-serif" font-size="10" '
+                f'text-anchor="middle" fill="{color}">{label}={qval:.3f}</text>',
+            ]
+        )
+
+    # Worst-3 annotations (small triangles + labels above the top axis line)
+    for rank, (wval, wname) in enumerate(worst_labels):
+        xp = sx(wval)
+        short = wname[:35] + "…" if len(wname) > 35 else wname
+        short = escape(short)
+        yann = axis_y_top - 4 - rank * 13
+        elements.extend(
+            [
+                f'<line x1="{xp:.1f}" y1="{axis_y_top}" x2="{xp:.1f}" y2="{axis_y_bot}" '
+                'stroke="#dc2626" stroke-width="1" stroke-dasharray="3,3"/>',
+                f'<text x="{xp:.1f}" y="{yann}" font-family="sans-serif" font-size="9" '
+                f'text-anchor="middle" fill="#dc2626">{short} ({wval:.3f})</text>',
+            ]
+        )
+
+    elements.append("</svg>")
+    return "\n".join(elements) + "\n"
 
 
 def _render_horizontal_bar_svg(

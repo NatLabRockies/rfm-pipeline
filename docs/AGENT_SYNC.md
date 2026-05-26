@@ -5,11 +5,42 @@ branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: Phase 8 — Scalable Execution (HPC + Out-of-Core)
-current_slice: Phase 8g — fast 2-node smoke calibration
-slice_status: complete (small distributed orchestration now targets a dedicated lightweight 2-node smoke config with 30-minute walltime budget)
-last_validation: `pixi run ruff check tests/test_hpc_workflow_orchestration.py` pass; `pixi run pytest -q tests/test_hpc_workflow_orchestration.py` pass; `bash scripts/kestrel/run_small_distributed_test_local.sh --dry-run --poll-count 1 --poll-seconds 1` pass
-next_slice: Execute unified orchestration config on Kestrel live queue and collect manifest/reporting bundle outputs
+current_milestone: Phase 9 — Publication-ready full-dataset results
+current_slice: Phase 9a — analyze ablation results, pull artifacts, update manuscript docs
+slice_status: complete — full pipeline run complete, artifacts pulled locally, manuscript revision notes written
+last_validation: full-dataset distributed run `publication_full_dataset_distributed_20260519` completed all 6 stages on Kestrel; `RUN_COMPLETE` marker present; local artifacts synced to `artifacts/publication_full_dataset_20260519/`
+next_slice: Phase 9b — tighten feature pruning threshold and re-run final_manuscript_artifacts stage to close 0.077→0.106 performance gap
+
+## Open improvement items (from ablation analysis, 2026-05-25)
+
+Priority order:
+
+1. **P0 — Feature pruning threshold** (config-only change, re-run `final_manuscript_artifacts`):
+
+   - Current `auto_robust_utility` auto-cutoff removes 89/118 features, collapsing penalized NRMSE 0.077→0.106.
+   - Fix: tighten per-feature delta threshold from ~0.029 to 0.001–0.005.
+   - Expected outcome: retain 60–90 features, recover performance to 0.077–0.085 range.
+
+1. **P1 — Interaction discovery retention threshold** (medium effort):
+
+   - Only 8/2,346 candidate pairs retained; manuscript had 248.
+   - Inspect `artifacts/hpc_shards_interaction_discovery/_merged/interaction_pair_scores_merged.csv` to check threshold calibration.
+   - May require re-running interaction + downstream stages.
+
+1. **P2 — HC3-informed final model selection** (alternative to delta-nRMSE pruning):
+
+   - Replace greedy delta pruning with HC3 Wald-based selection: retain any feature where |t| > threshold for at least one output.
+   - Statistically principled, aligns with de-biased LASSO narrative.
+
+1. **P3 — Per-output NRMSE figure** (low effort, high publication value):
+
+   - Add figure or table showing per-output NRMSE distribution (median 0.095, p10 0.046, p90 0.172).
+   - Identify and discuss worst-3 outputs (TransEster diesel outputs, nRMSE ≈ 0.47–0.49).
+
+1. **P4 — nRMSE normalization audit** (verification):
+
+   - Confirm Y_ref normalization is identical between this run and manuscript reference.
+   - See `docs/manuscripts/full_dataset_run_revision_notes.md` for details.
 
 ## Sparse-selection distributed artifact-path hotfix (2026-05-24)
 

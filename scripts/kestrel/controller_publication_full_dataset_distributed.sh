@@ -48,14 +48,15 @@ STAGES=(
   final_manuscript_artifacts
 )
 
-N_SHARDS=(1 200 320 160 50 100)
-N_JOBS=(16 8 8 8 8 8)
-CPUS_PER_TASK=(16 8 8 8 8 8)
+N_SHARDS=(8 800 4000 1600 1200 1600)
+N_JOBS=(32 16 16 16 16 16)
+CPUS_PER_TASK=(32 16 16 16 16 16)
 MEMORY_GB=(64 96 128 128 128 128)
-WALLTIME=("02:00:00" "08:00:00" "24:00:00" "12:00:00" "12:00:00" "12:00:00")
-MAX_CONCURRENT=(1 192 160 128 64 96)
-REDUCE_WALLTIME=("01:00:00" "02:00:00" "03:00:00" "02:00:00" "02:00:00" "03:00:00")
+WALLTIME=("01:00:00" "03:00:00" "03:50:00" "03:50:00" "03:50:00" "03:50:00")
+MAX_CONCURRENT=(8 1024 4000 1600 1200 1600)
+REDUCE_WALLTIME=("00:45:00" "01:30:00" "03:30:00" "02:00:00" "02:30:00" "03:30:00")
 REDUCE_MEMORY_GB=(32 64 64 64 64 64)
+PARTITIONS=(short short short short short short)
 RUN_ID_SUFFIX=(s01_output s02_empirical s03_interaction s04_nonlinear s05_sparse s06_final)
 
 echo -e "stage\tarray_job_id\treduce_job_id\tstatus" > "${STAGE_JOBS_FILE}"
@@ -101,23 +102,25 @@ generate_stage_config() {
   local memory_gb="$4"
   local walltime="$5"
   local max_concurrent="$6"
-  local stage_log_dir="$7"
-  local dataset_path="$8"
-  local output_path="$9"
-  local config_out="${10}"
+  local partition="$7"
+  local stage_log_dir="$8"
+  local dataset_path="$9"
+  local output_path="${10}"
+  local config_out="${11}"
 
   pixi run python - \
     "${BASE_CONFIG_PATH}" \
     "${config_out}" \
     "${run_id}" \
     "${n_jobs}" \
-    "${cpus_per_task}" \
-    "${memory_gb}" \
-    "${walltime}" \
-    "${max_concurrent}" \
-    "${stage_log_dir}" \
-    "${dataset_path}" \
-    "${output_path}" <<'PY'
+      "${cpus_per_task}" \
+      "${memory_gb}" \
+      "${walltime}" \
+      "${max_concurrent}" \
+      "${partition}" \
+      "${stage_log_dir}" \
+      "${dataset_path}" \
+      "${output_path}" <<'PY'
 from __future__ import annotations
 
 import sys
@@ -134,9 +137,10 @@ cpus_per_task = int(sys.argv[5])
 memory_gb = int(sys.argv[6])
 walltime = sys.argv[7]
 max_concurrent = int(sys.argv[8])
-stage_log_dir = sys.argv[9]
-dataset_path = sys.argv[10]
-output_path = sys.argv[11]
+partition = sys.argv[9]
+stage_log_dir = sys.argv[10]
+dataset_path = sys.argv[11]
+output_path = sys.argv[12]
 
 raw = yaml.safe_load(base_path.read_text(encoding="utf-8")) or {}
 if not isinstance(raw, dict):
@@ -157,6 +161,7 @@ slurm["cpus_per_task"] = cpus_per_task
 slurm["memory_gb"] = memory_gb
 slurm["walltime"] = walltime
 slurm["max_concurrent_array_tasks"] = max_concurrent
+slurm["partition"] = partition
 slurm["log_dir"] = stage_log_dir
 
 out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -177,9 +182,10 @@ submit_stage() {
   local max_concurrent="${MAX_CONCURRENT[idx]}"
   local reduce_walltime="${REDUCE_WALLTIME[idx]}"
   local reduce_memory_gb="${REDUCE_MEMORY_GB[idx]}"
+  local partition="${PARTITIONS[idx]}"
   local run_suffix="${RUN_ID_SUFFIX[idx]}"
 
-  local run_id="bsm_pub_full_dist_20260519_${run_suffix}"
+  local run_id="bsm_${STUDY_ID}_${run_suffix}"
   local stage_log_dir="/scratch/${USER}/bsm/${run_id}/logs"
   local stage_config="${GENERATED_CONFIG_ROOT}/${stage}.yml"
   local stage_script_dir="${SCRIPT_ROOT}/${stage}"
@@ -197,10 +203,16 @@ submit_stage() {
     "${memory_gb}" \
     "${walltime}" \
     "${max_concurrent}" \
+    "${partition}" \
     "${stage_log_dir}" \
     "${DATASET_PATH}" \
     "${ARTIFACT_ROOT}" \
     "${stage_config}"
+
+  local shard_args=()
+  if [[ "${n_shards}" -gt 0 ]]; then
+    shard_args=(--n-shards "${n_shards}")
+  fi
 
   echo "[controller] generating scripts: stage=${stage} shards=${n_shards}"
   (
@@ -208,7 +220,7 @@ submit_stage() {
       pixi run bsm-hpc-submit \
         --config "${stage_config}" \
         --stage "${stage}" \
-        $(if [[ "${stage}" == "output_conditioning" ]] || [[ "${stage}" == "empirical_null_screening" ]]; then echo "--n-shards ${n_shards}"; fi) \
+        "${shard_args[@]}" \
         --output-dir "${stage_script_dir}" \
         --reduce-walltime "${reduce_walltime}" \
         --reduce-memory-gb "${reduce_memory_gb}"

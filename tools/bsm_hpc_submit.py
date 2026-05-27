@@ -202,7 +202,7 @@ def main() -> None:
                         "[hpc-submit] reconciled %d stale shard(s) from _SUCCESS.json markers",
                         n_reconciled,
                     )
-                logger.info("[hpc-submit] loaded existing manifest (%d shards)", n_shards)
+                logger.info("[hpc-submit] loaded existing manifest (%d shards)", len(shards))
             else:
                 logger.warning(
                     "[hpc-submit] manifest has %d shards but config requests %d — rebuilding",
@@ -211,19 +211,26 @@ def main() -> None:
                 )
                 shards = _build_fresh_manifest(args, artifact_dir, n_shards, workflow)
                 save_manifest(shards, manifest_path)
-                logger.info("[hpc-submit] wrote fresh manifest (%d shards)", n_shards)
+                logger.info("[hpc-submit] wrote fresh manifest (%d shards)", len(shards))
         else:
             shards = _build_fresh_manifest(args, artifact_dir, n_shards, workflow)
             save_manifest(shards, manifest_path)
-            logger.info("[hpc-submit] wrote manifest with %d shards to %s", n_shards, manifest_path)
+            logger.info(
+                "[hpc-submit] wrote manifest with %d shards to %s", len(shards), manifest_path
+            )
 
-        # Determine which task IDs still need to run
-        incomplete_ids = _find_incomplete_task_ids(output_root, n_shards)
-        n_complete = n_shards - len(incomplete_ids)
+        # Determine which task IDs still need to run.
+        # Use len(shards) — the effective shard count after capping at expected_columns —
+        # not the requested n_shards. Requesting more shards than there are work items
+        # (e.g. n_shards=800 when only 200 features exist) would otherwise submit
+        # task IDs beyond the manifest bounds, producing spurious "out of range" failures.
+        effective_n_shards = len(shards)
+        incomplete_ids = _find_incomplete_task_ids(output_root, effective_n_shards)
+        n_complete = effective_n_shards - len(incomplete_ids)
         logger.info(
             "[hpc-submit] %d / %d shards already complete, %d still needed",
             n_complete,
-            n_shards,
+            effective_n_shards,
             len(incomplete_ids),
         )
         if not incomplete_ids:

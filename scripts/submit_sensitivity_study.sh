@@ -6,9 +6,16 @@
 #SBATCH --time=01:00:00
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=8
-#SBATCH --array=0-57499%200
+#SBATCH --array=0-10999%200
 #SBATCH --output=logs/sensitivity_%A_%a.out
 #SBATCH --error=logs/sensitivity_%A_%a.err
+
+# To submit all 57,500 jobs in batches (Kestrel MaxArraySize=11000):
+#   bash scripts/submit_sensitivity_study.sh --submit-all
+# Or submit a single batch manually:
+#   sbatch --array=0-10999%200 --export=ALL,BATCH_OFFSET=0 scripts/submit_sensitivity_study.sh
+#   sbatch --array=0-10999%200 --export=ALL,BATCH_OFFSET=11000 scripts/submit_sensitivity_study.sh
+#   ... etc.
 
 set -euo pipefail
 
@@ -16,7 +23,25 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 mkdir -p logs
 
-SPEC_PATH="${1:-$ROOT_DIR/configs/sensitivity_study/study_spec.yml}"
+# Handle --submit-all mode: submit 6 batches and exit
+if [[ "${1:-}" == "--submit-all" ]]; then
+  TOTAL_JOBS=57500
+  BATCH_SIZE=11000
+  OFFSET=0
+  while [ "$OFFSET" -lt "$TOTAL_JOBS" ]; do
+    END=$((OFFSET + BATCH_SIZE - 1))
+    if [ "$END" -ge "$TOTAL_JOBS" ]; then END=$((TOTAL_JOBS - 1)); fi
+    N_TASKS=$((END - OFFSET + 1))
+    sbatch --array="0-$((N_TASKS - 1))%200" \
+           --export="ALL,BATCH_OFFSET=$OFFSET" \
+           "${BASH_SOURCE[0]}"
+    echo "Submitted batch offset=${OFFSET} tasks=0-$((N_TASKS - 1))"
+    OFFSET=$((OFFSET + BATCH_SIZE))
+  done
+  exit 0
+fi
+
+SPEC_PATH="${ROOT_DIR}/configs/sensitivity_study/study_spec.yml"
 STUDY_DIR="$(pixi run python - "$SPEC_PATH" <<'PY'
 from pathlib import Path
 import sys
@@ -28,7 +53,9 @@ print(payload['output']['study_dir'])
 PY
 )"
 ARRAY_FILE="$STUDY_DIR/slurm_array.txt"
-LINE_NUMBER=$((SLURM_ARRAY_TASK_ID + 1))
+# BATCH_OFFSET shifts task IDs for multi-batch submissions (default 0)
+ACTUAL_INDEX=$(( SLURM_ARRAY_TASK_ID + ${BATCH_OFFSET:-0} ))
+LINE_NUMBER=$((ACTUAL_INDEX + 1))
 LINE="$(sed -n "${LINE_NUMBER}p" "$ARRAY_FILE")"
 if [[ -z "$LINE" ]]; then
   echo "No array entry for index ${SLURM_ARRAY_TASK_ID} in ${ARRAY_FILE}" >&2

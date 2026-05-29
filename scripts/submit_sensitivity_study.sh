@@ -26,7 +26,7 @@ mkdir -p logs
 # Handle --submit-all mode: submit 6 batches and exit
 if [[ "${1:-}" == "--submit-all" ]]; then
   TOTAL_JOBS=57500
-  BATCH_SIZE=11000
+  BATCH_SIZE=10000
   OFFSET=0
   while [ "$OFFSET" -lt "$TOTAL_JOBS" ]; do
     END=$((OFFSET + BATCH_SIZE - 1))

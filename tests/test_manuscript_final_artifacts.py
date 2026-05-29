@@ -208,8 +208,6 @@ def test_run_final_manuscript_artifacts_stage_executes_demo_context() -> None:
     assert final_artifacts.final_support_features["hc3_retained_after_filter"].all()
     assert set(final_artifacts.model_performance["model_name"]) == {
         "final_ols_demo",
-        "final_ols_reference",
-        "intermediate_penalized_reference",
         "null_mean_baseline_demo",
     }
     assert final_artifacts.figure_specs["figure_name"].tolist() == [
@@ -223,6 +221,7 @@ def test_run_final_manuscript_artifacts_stage_executes_demo_context() -> None:
         "fig_module_pair_heatmap",
         "fig_module_total_interactions",
         "figure_feature_pruning_curve",
+        "figure_per_output_nrmse_distribution",
     ]
     assert result.artifact_paths["prefilter_support_features"].exists()
     assert result.artifact_paths["hc3_wald_intervals"].exists()
@@ -238,6 +237,7 @@ def test_run_final_manuscript_artifacts_stage_executes_demo_context() -> None:
     assert result.artifact_paths["fig_influential_by_module_svg"].exists()
     assert result.artifact_paths["fig_module_pair_heatmap_svg"].exists()
     assert result.artifact_paths["fig_module_total_interactions_svg"].exists()
+    assert result.artifact_paths["figure_per_output_nrmse_distribution_svg"].exists()
     assert result.artifact_paths["feature_type_counts"].exists()
     assert result.artifact_paths["influential_counts_by_module"].exists()
     assert result.artifact_paths["interaction_counts_by_module_pair"].exists()

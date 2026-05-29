@@ -5,11 +5,173 @@ branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: Phase 9 — Publication-ready full-dataset results
-current_slice: Phase 9a — analyze ablation results, pull artifacts, update manuscript docs
-slice_status: complete — full pipeline run complete, artifacts pulled locally, manuscript revision notes written
-last_validation: full-dataset distributed run `publication_full_dataset_distributed_20260519` completed all 6 stages on Kestrel; `RUN_COMPLETE` marker present; local artifacts synced to `artifacts/publication_full_dataset_20260519/`
-next_slice: Phase 9b — tighten feature pruning threshold and re-run final_manuscript_artifacts stage to close 0.077→0.106 performance gap
+current_milestone: Sensitivity study scaffolding
+current_slice: Phase 1-2 synthetic DGP and study job generation
+slice_status: complete — standalone synthetic DGP generation, sensitivity-study job/config utilities, configs/scripts, and focused tests added under `src/bsm_rfm/`, `tests/`, `configs/sensitivity_study/`, and `scripts/`
+last_validation: `pixi run python -m py_compile src/bsm_rfm/synthetic_dgp.py src/bsm_rfm/sensitivity_study.py scripts/generate_sensitivity_study.py scripts/collect_sensitivity_results.py scripts/fit_meta_regression.py scripts/plot_sensitivity_results.py` and `pixi run pytest tests/test_synthetic_dgp.py tests/test_sensitivity_study.py -x -v` both passed
+next_slice: if Phase 3 is requested, wire generated job configs/results into an execution runner and downstream analysis workflow
+
+## Operator persistence preference (2026-05-27)
+
+- User requirement: after every interaction, persist latest run/study/config/job state in `docs/AGENT_SYNC.md` and memory docs.
+- Before starting any new work, first update `docs/AGENT_SYNC.md` with the intended next action/scope (pre-flight intent), then update again with outcomes after execution.
+- Required persisted fields each update: active study IDs, stage progress, array/reduce job IDs, controller pid/job, pending reasons, failure/resubmit state, and config-to-study mapping.
+- Do not rely on script defaults when reporting status; always scope to explicit `--study-id`/`--study-root`.
+- For status requests, report only the latest reconfigured full-data workflow (`publication_full_dataset_distributed_20260526_short_hp1`) unless user explicitly asks for others.
+
+### Pre-flight/outcome log (latest)
+
+- Outcome (2026-05-29): completed sensitivity-study Phase 1-2 scaffolding. Added standalone synthetic DGP generators (`src/bsm_rfm/synthetic_dgp.py`), LHS-driven study/job utilities plus result collection (`src/bsm_rfm/sensitivity_study.py`), focused tests (`tests/test_synthetic_dgp.py`, `tests/test_sensitivity_study.py`), study configs (`configs/sensitivity_study/study_spec.yml`, `configs/sensitivity_study/base_synthetic.yml`), and helper scripts (`scripts/generate_sensitivity_study.py`, `scripts/submit_sensitivity_study.sh`, `scripts/collect_sensitivity_results.py`, `scripts/fit_meta_regression.py`, `scripts/plot_sensitivity_results.py`). Validation passed: `pixi run python -m py_compile ...` for all new Python files, script `--help` smoke checks, and `pixi run pytest tests/test_synthetic_dgp.py tests/test_sensitivity_study.py -x -v` (12 passed).
+
+- Pre-flight intent (2026-05-29): implement sensitivity-study Phase 1-2 scaffolding — add `src/bsm_rfm/synthetic_dgp.py`, `src/bsm_rfm/sensitivity_study.py`, new configs/scripts/tests, then run `pixi run pytest tests/test_synthetic_dgp.py tests/test_sensitivity_study.py -x -v` and record results.
+
+- Pre-flight intent (2026-05-29): update `docs/manuscripts/jds_bsm.tex` with verified short_hp1 counts, revised screening/pruning workflow text, and SVG figure references.
+
+- Outcome (2026-05-29): manuscript reconciled to verified short_hp1 values. `jds_bsm.tex` now reports 30,000 runs, 28,500/1,500 train/holdout split, 9,954 PCA-retained outputs, 20 PCA components, 69 screened inputs, 62 retained interactions, 41 retained nonlinear terms, 172 HC3-retained enriched features, 40 pruned features, 132 final OLS predictors, and final holdout macro nRMSE 0.0721. Section 4.4 now describes the LASSO-row-L2 empirical-null screen with 201 permutations and BH FDR $q=0.05$; section 4.5/case-study text now reflects 40th-percentile LASSO alpha selection and the no-refit delta-pruning stage; main-text figure refs now use SVG assets and add pruning, ablation, per-output, and module-support figures. Validation: `git diff --check` clean and all referenced SVGs present.
+
+- Pre-flight intent (2026-05-29T12:50Z): pull short_hp1 artifacts locally, verify, and analyze results vs previous run and manuscript.
+
+- Outcome (2026-05-29T12:50Z): artifacts pulled successfully to `artifacts/publication_full_dataset_distributed_results/publication_full_dataset_distributed_20260526_short_hp1`. RUN_COMPLETE confirmed. RUN_FAILED_STAGE.txt says `interaction_discovery` — stale artifact from earlier mid-run failure, not a current issue; run completed all 6 stages. Key results: interaction pairs 8→62 (7.75× improvement, fix worked), final OLS nRMSE 0.1063→0.0721 (32% better), sparse stable terms 118→172, features after pruning 29→132. Persistent gaps: empirical null 69 vs 349 manuscript (bottleneck), interaction pairs 62 vs 248 manuscript. SVG figures used pre-Okabe-Ito color scheme (HPC ran commit f5cbaf1 predating local color-blind update). New `scripts/regenerate_manuscript_figures.py` added for future re-rendering without a full pipeline rerun, but figures already exist in pulled artifacts and should not be regenerated locally unless needed.
+
+- Outcome (2026-05-29): live status at 2026-05-29T12:26Z shows the short_hp1 distributed run is fully complete: `output_conditioning` 1/1, `empirical_null_screening` 200/200, `interaction_discovery` 2346/2346, `nonlinear_discovery` 69/69, `sparse_selection` 50/50, `final_manuscript_artifacts` 100/100, all merged outputs present, stage job registry completed through reduce `14018088`, and `RUN_COMPLETE` marker found.
+
+- Outcome (2026-05-29): generated the remote `interaction_discovery` stage config on `/home/dhetting/src/bsm-public-rf` and resubmitted the interaction recovery reduce job `14013662` (`PENDING`). The current manifest reconciled to 69/69 shard completions, so there was no shard-level rerun to queue before restarting reduce.
+
+- Outcome (2026-05-29): live Kestrel status at 2026-05-29T01:33Z shows `controller_login_pid=333185` still `RUNNING`; `output_conditioning` and `empirical_null_screening` remain complete; all interaction shard dirs `task-0000` through `task-2345` have `_SUCCESS.json`; reduce job `14013662` is pending for `Reason=Priority` with no dependency, and downstream stages remain unstarted until it runs.
+
+- Outcome (2026-05-29): job `14012760` is `bsm_reduce_empirical_null_screening_bsm_publication_full_dataset_distributed_20260526_short_hp1_s02_empirical`, i.e. the empirical-null screening reduce step; it is `PENDING` for `Reason=Priority` and corresponds to the stage-2 reduce script at `/scratch/dhetting/bsm/studies/publication_full_dataset_distributed_20260526_short_hp1/hpc_scripts/empirical_null_screening/submit_empirical_null_screening_reduce.sh`.
+
+- Outcome (2026-05-28): recovery controller relaunched for `publication_full_dataset_distributed_20260526_short_hp1` (controller pid `333185` running). Current live state was `output_conditioning` and `empirical_null_screening` complete, `interaction_discovery` still at 2345/2346 complete with 1 shard missing, and downstream stages not yet restarted; the controller would continue stage-by-stage once the pending empirical-null reduce cleared.
+
+- Outcome (2026-05-28): latest run `publication_full_dataset_distributed_20260526_short_hp1` had stopped progressing; interaction stage reached 2345/2346 complete with 1 shard still missing, queue was empty, and reduce job `14001501` failed with `Reason=Dependency` / `ExitCode=1:0`.
+
+- Pre-flight intent (2026-05-27): provide live run status update with progress, remaining work, and ETA from current scheduler + shard telemetry.
+
+- Outcome (2026-05-27): latest-run-only status refreshed at ~2026-05-28T03:03Z for `publication_full_dataset_distributed_20260526_short_hp1`: interaction stage 2023/2346 complete (323 remaining, failures=0), queue 58 running + 2 pending (dependency/resource constraints), interaction ETA window ~2.1h (fast/global cadence) to ~5.5h (conservative 60-min cadence).
+
+- Outcome (2026-05-27): live status at ~2026-05-28T02:59Z — active run `publication_full_dataset_distributed_20260526_short_hp1` at interaction stage 2006/2346 complete (340 remaining, failures=0, queue: 76 running + 2 pending); interaction ETA from shard completion cadence spans ~2.3h (fast/global window) to ~6.9h (conservative 60-min window). `publication_full_dataset_distributed_20260526_r1` remains inactive/cancelled, and `publication_full_dataset_distributed_20260519` remains complete (`RUN_COMPLETE`).
+
+- Pre-flight intent (2026-05-27): run preliminary interaction-retention investigation from completed partial shards in active run `publication_full_dataset_distributed_20260526_short_hp1`.
+
+- Outcome (2026-05-27): computed live partial interaction diagnostics from completed shards: 1303/2346 shards complete (55.5%), 48 retained pairs so far (3.68% among completed), projected ~86 retained pairs if rate holds, with 27 near-threshold pairs (|interaction_score-null_threshold| \<= 0.001); prior completed run `20260519` had 8 retained pairs.
+
+- Pre-flight intent (2026-05-27): execute item (4) by pinning a deterministic pull + verification checklist for `publication_full_dataset_distributed_20260526_short_hp1`, then clarify item (3) rerun rationale.
+
+- Outcome (2026-05-27): pinned explicit status/pull/verify commands for `20260526_short_hp1` with fixed study-root/out-dir, required table/figure checks, and `figure_specs` asset completeness checks; clarified rerun is conditional follow-on tuning, not required for current run completion.
+
+- Pre-flight intent (2026-05-27): provide concrete parallel work items that can be completed before the active run reaches `final_manuscript_artifacts`.
+
+- Outcome (2026-05-27): identified immediate parallel tasks: (1) finalize final-stage rerun command/config for style-regenerated figures, (2) pre-write manuscript note deltas for expected new figure/table rows, (3) run interaction-threshold sensitivity analysis on existing `20260519` merged interaction scores, and (4) stage a deterministic post-completion pull/verification checklist for `20260526_short_hp1`.
+
+- Pre-flight intent (2026-05-27): complete and validate readability/color-blind figure style updates requested by user, then report exactly what changed in renderer outputs.
+
+- Outcome (2026-05-27): updated `src/bsm_rfm/manuscript_stages.py` SVG styling to manuscript-friendly, color-blind-safe defaults (Okabe-Ito palette, white background, higher-contrast text/axes, distinct quantile/cutoff styles, heatmap adaptive text contrast); targeted lint/tests passed (`ruff check`, `tests/test_manuscript_final_artifacts.py`).
+
+- Pre-flight intent (2026-05-27): update manuscript figure rendering styles for readability and color-blind accessibility across all generated SVGs, then validate with targeted final-artifact tests.
+
+- Pre-flight intent (2026-05-27): verify whether `artifacts/publication_full_dataset_20260519/final_manuscript_artifacts/` contains newly regenerated tables/figures or only older outputs, then report exact reason.
+
+- Outcome (2026-05-27): confirmed local publication artifacts are unchanged since May 25 (`tables/*` and `figures/*` mtimes all 2026-05-25 16:22:02); `figure_per_output_nrmse_distribution.svg` is absent and `figure_specs.csv` does not include that row, indicating code/docs updates were not yet followed by a final-stage artifact regeneration in this directory.
+
+- Pre-flight intent (2026-05-27): enumerate and order manuscript-relevant tables/figures by framework stage execution order (including nRMSE and ablation outputs).
+
+- Outcome (2026-05-27): extracted execution-ordered artifact map from `manuscript_stages.py` and current publication artifacts; key tables (`workflow_stage_summary`, `model_performance`, `ablation_table`, `per_output_nrmse`, `per_output_nrmse_summary`, `feature_pruning_summary`) and figure sequence (`figure_model_performance`, support/module charts, `figure_nrmse_bootstrap_summary`, legacy interaction charts, `figure_feature_pruning_curve`, plus framework-registered `figure_per_output_nrmse_distribution`) documented for immediate figure/table work.
+
+- Pre-flight intent (2026-05-27): locate figure-generating notebooks and current final-figure output directories so figure work can proceed while active HPC runs finish.
+
+- Outcome (2026-05-27): located figure work surfaces — legacy notebooks under `docs/final_scripts_from_hpc/*.ipynb`, manuscript notebooks under `notebooks/manuscript/*.ipynb`, primary local final figures under `artifacts/publication_full_dataset_20260519/final_manuscript_artifacts/figures/` (`figure_specs.csv` present), and active-run target output on HPC at `/scratch/dhetting/bsm/studies/publication_full_dataset_distributed_20260526_short_hp1/artifacts/final_manuscript_artifacts/figures`.
+
+- Pre-flight intent (2026-05-27): persist user directive about mandatory pre-action sync updates and continuity logging.
+
+- Outcome (2026-05-27): updated `docs/AGENT_SYNC.md`, `docs/MEMORY.md`, and `MEMORY.md` with explicit pre-flight + post-action persistence requirements.
+
+- Pre-flight intent (2026-05-28): submit the missing `interaction_discovery` shard for `publication_full_dataset_distributed_20260526_short_hp1` now, then let the live controller resume downstream stages.
+
+## Confirmed short_hp1 result values (pulled 2026-05-29T12:50Z)
+
+Local path: `artifacts/publication_full_dataset_distributed_results/publication_full_dataset_distributed_20260526_short_hp1`
+
+| Metric                     | short_hp1 (new)              | 20260519 (old) | Manuscript ref | Notes                             |
+| -------------------------- | ---------------------------- | -------------- | -------------- | --------------------------------- |
+| Empirical null retained    | 69                           | 69             | 349            | **Bottleneck — unchanged**        |
+| Interaction pairs retained | **62**                       | 8              | 248            | Fix worked; 7.75× improvement     |
+| Nonlinear transformations  | 41                           | 41             | 37             | Stable                            |
+| Sparse stable terms        | 172                          | 118            | 340            | Improved                          |
+| Features after pruning     | 132                          | 29             | ~340           | delta override 0.002              |
+| Final OLS holdout nRMSE    | **0.0721**                   | 0.1063         | 0.0445         | 32% better; normalization differs |
+| Per-output nRMSE median    | 0.0611                       | —              | —              | p10=0.018, p90=0.141              |
+| Worst 3 outputs            | TransEster diesel 2023/24/25 | —              | —              | nRMSE 0.47–0.49                   |
+
+Ablation: null_mean=0.165, main_effects_ols=0.081, screened_ols=0.081, penalized_ols=0.071, final_ols=0.072.
+
+Open issues before publication:
+
+1. **Empirical null retention** (69 vs 349) — root cause unknown; bottleneck for all downstream stages
+1. **nRMSE normalization** — fixed Y_ref range vs Y_train; must reconcile before performance comparison
+1. **Interaction count** (62 vs 248) — partially explained by empirical null bottleneck
+1. **Stale RUN_FAILED_STAGE.txt** says `interaction_discovery` — should be cleaned up on cluster
+1. **Figure color scheme** — HPC used pre-Okabe-Ito commit; local Okabe-Ito update not yet committed or reflected in pulled SVGs
+
+| Study ID                                                  | State                          | Controller                          | Stage progress and job IDs                                                                                                                                                                                                                                                       | Failures/resubmit                          |
+| --------------------------------------------------------- | ------------------------------ | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `publication_full_dataset_distributed_20260526_short_hp1` | **Complete**                   | login pid `333185` (`NOT_RUNNING`)  | all 6 stages complete (`output_conditioning` 1/1, `empirical_null_screening` 200/200, `interaction_discovery` 2346/2346, `nonlinear_discovery` 69/69, `sparse_selection` 50/50, `final_manuscript_artifacts` 100/100); merged outputs present; final reduce `14018088` completed | no active failures; `RUN_COMPLETE` present |
+| `publication_full_dataset_distributed_20260526_r1`        | **Inactive/abandoned attempt** | login pid `2733528` (`NOT_RUNNING`) | `output_conditioning` and `empirical_null_screening` complete; `interaction_discovery` remained 0/69 complete; array `13993830` cancelled; reduce `13993831` cancelled                                                                                                           | cancelled attempt; superseded by short_hp1 |
+| `publication_full_dataset_distributed_20260519`           | **Complete**                   | login pid `2698043` (`NOT_RUNNING`) | all 6 stages complete; `RUN_COMPLETE` present                                                                                                                                                                                                                                    | none                                       |
+
+## Publication script/config mapping reminders
+
+- Scripts `kickoff_publication_full_dataset_distributed.sh`, `submit_publication_full_dataset_distributed.sh`, `status_publication_full_dataset_distributed.sh`, and `collect_publication_full_dataset_distributed.sh` default to `STUDY_ID=publication_full_dataset_distributed_20260519` unless overridden.
+- Active runs must be queried with explicit `--study-id` or `--study-root` to avoid stale/default status.
+- Controller generates per-stage configs from `configs/hpc/kestrel_publication_full_dataset_distributed_base.yml` (includes interaction timeout override `parallel_batch_timeout_seconds: 0`).
+
+## Deterministic post-completion pull + verification checklist (short_hp1)
+
+Target run:
+
+- `STUDY_ID=publication_full_dataset_distributed_20260526_short_hp1`
+- `STUDY_ROOT=/scratch/${USER}/bsm/studies/publication_full_dataset_distributed_20260526_short_hp1`
+- `LOCAL_OUT_DIR=artifacts/publication_full_dataset_distributed_results`
+- local pulled root: `artifacts/publication_full_dataset_distributed_results/publication_full_dataset_distributed_20260526_short_hp1`
+
+1. Verify remote run completion and failure marker state:
+
+   ```bash
+   bash scripts/kestrel/status_publication_full_dataset_distributed.sh \
+     --study-root /scratch/${USER}/bsm/studies/publication_full_dataset_distributed_20260526_short_hp1
+   ```
+
+1. Pull reporting bundle (explicit run scope):
+
+   ```bash
+   bash scripts/kestrel/collect_publication_full_dataset_distributed.sh \
+     --study-id publication_full_dataset_distributed_20260526_short_hp1 \
+     --study-root /scratch/${USER}/bsm/studies/publication_full_dataset_distributed_20260526_short_hp1 \
+     --local-out-dir artifacts/publication_full_dataset_distributed_results \
+     --mode reporting
+   ```
+
+1. Verify required completion markers/files locally:
+
+   ```bash
+   root="artifacts/publication_full_dataset_distributed_results/publication_full_dataset_distributed_20260526_short_hp1"
+   test -f "$root/metadata/RUN_COMPLETE"
+   test ! -f "$root/metadata/RUN_FAILED_STAGE.txt"
+   for f in \
+     workflow_stage_summary.csv model_performance.csv ablation_table.csv \
+     per_output_nrmse.csv per_output_nrmse_summary.csv feature_pruning_summary.csv; do
+     test -f "$root/artifacts/final_manuscript_artifacts/tables/$f"
+   done
+   test -f "$root/artifacts/final_manuscript_artifacts/figures/figure_specs.csv"
+   ```
+
+1. Verify every figure listed in `figure_specs.csv` exists:
+
+   ```bash
+   root="artifacts/publication_full_dataset_distributed_results/publication_full_dataset_distributed_20260526_short_hp1"
+   figdir="$root/artifacts/final_manuscript_artifacts/figures"
+   awk -F, 'NR>1{print $3}' "$figdir/figure_specs.csv" \
+     | while read -r asset; do test -f "$figdir/$asset" || echo "missing:$asset"; done
+   ```
 
 ## Open improvement items (from ablation analysis, 2026-05-25)
 

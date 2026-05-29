@@ -49,6 +49,26 @@ from .parallel import get_executor
 
 _PROGRESS_TELEMETRY_PATH: Path | None = None
 
+_SVG_FONT_FAMILY = "Helvetica, Arial, sans-serif"
+_SVG_COLOR_BACKGROUND = "#ffffff"
+_SVG_COLOR_TITLE = "#111827"
+_SVG_COLOR_TEXT = "#111827"
+_SVG_COLOR_TEXT_MUTED = "#4b5563"
+_SVG_COLOR_EDGE = "#374151"
+_SVG_COLOR_LIGHT = "#d1d5db"
+_SVG_COLOR_PRIMARY = "#0072B2"  # Okabe-Ito blue
+_SVG_COLOR_DANGER = "#D55E00"  # Okabe-Ito vermillion
+_SVG_COLOR_ACCENT_ORANGE = "#E69F00"  # Okabe-Ito orange
+_SVG_COLOR_ACCENT_GREEN = "#009E73"  # Okabe-Ito bluish green
+_SVG_COLOR_ACCENT_SKY = "#56B4E9"  # Okabe-Ito sky blue
+_SVG_COLOR_ACCENT_PURPLE = "#CC79A7"  # Okabe-Ito reddish purple
+
+# Label layout constants — shared across all chart types so the gap between the
+# longest label's right edge and the plot content (bars, cells) is uniform.
+_LABEL_CHAR_WIDTH_PX = 7.5  # estimated px per character at 13 px Helvetica
+_HEATMAP_CHAR_WIDTH_PX = 6.0  # estimated px per character at 11 px Helvetica (heatmap)
+_LABEL_CONTENT_GAP_PX = 20  # fixed gap from longest label right-edge to content
+
 
 def configure_progress_telemetry(path: Path | None) -> None:
     """Configure optional JSON progress telemetry output path."""
@@ -3732,7 +3752,7 @@ def regenerate_final_manuscript_artifacts(
         final_ols_summary=final_ols_summary,
         spec=spec,
     )
-    figure_model_performance_data = _build_model_performance_figure_data(model_performance)
+    figure_model_performance_data = _build_model_performance_figure_data(ablation_table)
     figure_support_composition_data = _build_support_composition_figure_data(final_support_features)
     figure_selected_by_module_data = _build_selected_by_module_figure_data(final_support_features)
     figure_nrmse_summary_data = _build_nrmse_summary_figure_data(ablation_table)
@@ -3756,6 +3776,8 @@ def regenerate_final_manuscript_artifacts(
             label_column="display_name",
             value_column="nrmse",
             title="Holdout macro nRMSE",
+            ci_lower_column="ci_lower",
+            ci_upper_column="ci_upper",
         ),
         "figure_support_composition": _render_horizontal_bar_svg(
             figure_support_composition_data,
@@ -3811,6 +3833,7 @@ def regenerate_final_manuscript_artifacts(
         figure_support_composition_data=figure_support_composition_data,
         figure_selected_by_module_data=figure_selected_by_module_data,
         figure_nrmse_summary_data=figure_nrmse_summary_data,
+        figure_per_output_nrmse_distribution_data=per_output_nrmse,
         figure_feature_pruning_curve_data=figure_feature_pruning_curve_data,
         legacy_feature_type_counts=legacy_feature_type_counts,
         legacy_influential_counts_by_module=legacy_influential_counts_by_module,
@@ -7056,28 +7079,6 @@ def _build_model_performance_table(
             source="demo_recomputed",
             metric=final_metric,
         ),
-        {
-            "model_name": "intermediate_penalized_reference",
-            "display_name": "Intermediate penalized model",
-            "source": "manuscript_reference",
-            "nrmse": float(spec.intermediate_penalized_holdout_nrmse_reference),
-            "ci_lower": np.nan,
-            "ci_upper": np.nan,
-            "n_boot": 0,
-            "bootstrap_sample_size": 0,
-            "normalization_reference": spec.nrmse_reference_matrix,
-        },
-        {
-            "model_name": "final_ols_reference",
-            "display_name": "Final OLS manuscript reference",
-            "source": "manuscript_reference",
-            "nrmse": float(spec.final_ols_holdout_nrmse_reference),
-            "ci_lower": np.nan,
-            "ci_upper": np.nan,
-            "n_boot": 0,
-            "bootstrap_sample_size": 0,
-            "normalization_reference": spec.nrmse_reference_matrix,
-        },
     ]
     return pd.DataFrame(rows)
 
@@ -7121,58 +7122,42 @@ def _build_workflow_stage_summary(
                 "stage": "output_conditioning",
                 "primary_quantity": "retained_scalar_outputs",
                 "recomputed_value": int(len(conditioning.retained_output_names)),
-                "manuscript_reference_value": np.nan,
                 "artifact_family": "output_conditioning",
             },
             {
                 "stage": "output_conditioning",
                 "primary_quantity": "retained_pca_components",
                 "recomputed_value": int(len(_component_columns(conditioning.pca_scores))),
-                "manuscript_reference_value": np.nan,
                 "artifact_family": "output_conditioning",
             },
             {
                 "stage": "empirical_null_screening",
                 "primary_quantity": "retained_terms",
                 "recomputed_value": int(len(screening.retained_terms)),
-                "manuscript_reference_value": _summary_reference(
-                    screening.summary,
-                    "manuscript_retained_terms_reference",
-                ),
                 "artifact_family": "empirical_null_screen",
             },
             {
                 "stage": "interaction_discovery",
                 "primary_quantity": "retained_pairs",
                 "recomputed_value": int(len(interactions.retained_pairs)),
-                "manuscript_reference_value": _summary_reference(
-                    interactions.summary,
-                    "manuscript_retained_pairs_reference",
-                ),
                 "artifact_family": "interaction_discovery",
             },
             {
                 "stage": "nonlinear_discovery",
                 "primary_quantity": "retained_transformations",
                 "recomputed_value": int(len(nonlinear.retained_transformations)),
-                "manuscript_reference_value": _summary_reference(
-                    nonlinear.summary,
-                    "manuscript_final_support_transformations_reference",
-                ),
                 "artifact_family": "nonlinear_discovery",
             },
             {
                 "stage": "sparse_selection_and_stability",
                 "primary_quantity": "final_stable_support_terms",
                 "recomputed_value": int(len(sparse_selection.final_stable_support)),
-                "manuscript_reference_value": int(spec.final_predictor_count_reference),
                 "artifact_family": "sparse_selection",
             },
             {
                 "stage": "final_inferential_filter",
                 "primary_quantity": "hc3_retained_terms",
                 "recomputed_value": int(hc3_filter_summary["hc3_retained_after_filter"].sum()),
-                "manuscript_reference_value": int(spec.final_predictor_count_reference),
                 "artifact_family": "final_manuscript_artifacts",
             },
             {
@@ -7183,14 +7168,12 @@ def _build_workflow_stage_summary(
                     if "n_pruning_removed_features" in final_ols_summary.columns
                     else 0
                 ),
-                "manuscript_reference_value": np.nan,
                 "artifact_family": "final_manuscript_artifacts",
             },
             {
                 "stage": "final_ols",
                 "primary_quantity": "holdout_nrmse",
                 "recomputed_value": float(final_ols_summary.loc[0, "final_ols_holdout_nrmse"]),
-                "manuscript_reference_value": float(spec.final_ols_holdout_nrmse_reference),
                 "artifact_family": "final_manuscript_artifacts",
             },
         ]
@@ -7204,13 +7187,26 @@ def _summary_reference(summary: pd.DataFrame, column: str) -> float:
     return float(summary.loc[0, column])
 
 
-def _build_model_performance_figure_data(model_performance: pd.DataFrame) -> pd.DataFrame:
-    """Return finite model-performance rows used for the SVG bar chart."""
-    figure_data = model_performance.loc[
-        np.isfinite(pd.to_numeric(model_performance["nrmse"], errors="coerce"))
-    ].copy()
-    figure_data = figure_data.sort_values(["source", "nrmse", "model_name"], ignore_index=True)
-    return figure_data
+def _build_model_performance_figure_data(ablation_table: pd.DataFrame) -> pd.DataFrame:
+    """Return ablation-stage nRMSE rows with display names for the SVG bar chart."""
+    _display_names = {
+        "null_mean": "Null mean",
+        "main_effects_ols": "Main effects OLS",
+        "screened_ols": "Screened OLS",
+        "penalized_ols": "Penalized OLS",
+        "final_ols": "Final OLS",
+    }
+    _workflow_order = list(_display_names.keys())
+    figure_data = ablation_table.copy()
+    figure_data["nrmse"] = pd.to_numeric(figure_data["nrmse"], errors="coerce")
+    figure_data = figure_data.loc[np.isfinite(figure_data["nrmse"])].copy()
+    figure_data["display_name"] = figure_data["model_name"].map(
+        lambda n: _display_names.get(str(n), str(n))
+    )
+    figure_data["_order"] = figure_data["model_name"].map(
+        lambda n: _workflow_order.index(n) if n in _workflow_order else len(_workflow_order)
+    )
+    return figure_data.sort_values("_order", ignore_index=True).drop(columns=["_order"])
 
 
 def _build_support_composition_figure_data(
@@ -7659,39 +7655,51 @@ def _render_module_pair_heatmap_svg(module_matrix: pd.DataFrame) -> str:
 
     n = len(modules)
     cell = 48
-    left_margin = 260
-    top_margin = 140
+    # Compute left_margin using 11 px Helvetica char-width so labels left-align to x=24.
+    max_label_chars = max((len(m) for m in modules), default=10)
+    left_margin = 24 + int(max_label_chars * _HEATMAP_CHAR_WIDTH_PX) + _LABEL_CONTENT_GAP_PX
+    # top_margin must clear the title (bottom ~56 px) plus column-label height.
+    # Longest label at 11 px rotated 35° rises ~max_chars*6*sin(35°) ≈ max_chars*3.4 px.
+    col_label_height = int(max_label_chars * _HEATMAP_CHAR_WIDTH_PX * 0.574) + 8
+    top_margin = max(180, 56 + col_label_height + _LABEL_CONTENT_GAP_PX)
+    label_y = top_margin - _LABEL_CONTENT_GAP_PX
     width = left_margin + cell * n + 40
     height = top_margin + cell * n + 60
 
     def color_for(value: float) -> str:
         ratio = max(0.0, min(1.0, float(value) / max_value))
-        # white (#ffffff) -> slate blue (#334155)
-        r = int(round(255 - (255 - 51) * ratio))
-        g = int(round(255 - (255 - 65) * ratio))
-        b = int(round(255 - (255 - 85) * ratio))
+        # High-luminance sequential ramp (white -> blue) for grayscale/CVD readability.
+        r = int(round(245 - (245 - 0) * ratio))
+        g = int(round(248 - (248 - 114) * ratio))
+        b = int(round(252 - (252 - 178) * ratio))
         return f"#{r:02x}{g:02x}{b:02x}"
+
+    def text_color_for(value: float) -> str:
+        ratio = max(0.0, min(1.0, float(value) / max_value))
+        return "#ffffff" if ratio >= 0.58 else _SVG_COLOR_TEXT
 
     elements = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}">',
-        '<rect width="100%" height="100%" fill="white"/>',
-        '<text x="24" y="36" font-family="sans-serif" font-size="20">'
+        f'<rect width="100%" height="100%" fill="{_SVG_COLOR_BACKGROUND}"/>',
+        f'<text x="24" y="36" font-family="{_SVG_FONT_FAMILY}" font-size="20" '
+        f'fill="{_SVG_COLOR_TITLE}" font-weight="bold">'
         "Interaction Density by Module Pair</text>",
     ]
 
     for j, module in enumerate(modules):
         x = left_margin + j * cell + (cell / 2.0)
         elements.append(
-            f'<text x="{x:.2f}" y="{top_margin - 18}" font-family="sans-serif" '
-            'font-size="11" text-anchor="middle" '
-            f'transform="rotate(-35 {x:.2f},{top_margin - 18})">'
+            f'<text x="{x:.2f}" y="{label_y:.2f}" font-family="{_SVG_FONT_FAMILY}" '
+            f'font-size="11" text-anchor="end" fill="{_SVG_COLOR_TEXT}" '
+            f'transform="rotate(35 {x:.2f},{label_y:.2f})">'
             f"{escape(module)}</text>"
         )
     for i, module in enumerate(modules):
         y = top_margin + i * cell + (cell / 2.0)
         elements.append(
-            f'<text x="24" y="{y + 4:.2f}" font-family="sans-serif" font-size="11">'
+            f'<text x="{left_margin - _LABEL_CONTENT_GAP_PX:.2f}" y="{y + 4:.2f}" font-family="{_SVG_FONT_FAMILY}" '  # noqa: E501
+            f'font-size="11" text-anchor="end" fill="{_SVG_COLOR_TEXT}">'
             f"{escape(module)}</text>"
         )
         for j, _ in enumerate(modules):
@@ -7700,11 +7708,12 @@ def _render_module_pair_heatmap_svg(module_matrix: pd.DataFrame) -> str:
             y0 = top_margin + i * cell
             elements.append(
                 f'<rect x="{x0:.2f}" y="{y0:.2f}" width="{cell}" height="{cell}" '
-                f'fill="{color_for(value)}" stroke="#d1d5db" stroke-width="1"/>'
+                f'fill="{color_for(value)}" stroke="{_SVG_COLOR_LIGHT}" stroke-width="1"/>'
             )
             elements.append(
                 f'<text x="{x0 + cell / 2.0:.2f}" y="{y0 + cell / 2.0 + 4:.2f}" '
-                'font-family="sans-serif" font-size="11" text-anchor="middle" fill="#111827">'
+                f'font-family="{_SVG_FONT_FAMILY}" font-size="11" text-anchor="middle" '
+                f'fill="{text_color_for(value)}">'
                 f"{int(round(value))}</text>"
             )
     elements.append("</svg>")
@@ -7717,6 +7726,7 @@ def _build_figure_specs(
     figure_support_composition_data: pd.DataFrame,
     figure_selected_by_module_data: pd.DataFrame,
     figure_nrmse_summary_data: pd.DataFrame,
+    figure_per_output_nrmse_distribution_data: pd.DataFrame,
     figure_feature_pruning_curve_data: pd.DataFrame,
     legacy_feature_type_counts: pd.DataFrame,
     legacy_influential_counts_by_module: pd.DataFrame,
@@ -7812,6 +7822,18 @@ def _build_figure_specs(
                 ),
                 "svg_bytes": len(svg_figures["figure_feature_pruning_curve"].encode("utf-8")),
             },
+            {
+                "figure_name": "figure_per_output_nrmse_distribution",
+                "source_data": "per_output_nrmse.csv",
+                "asset": "figure_per_output_nrmse_distribution.svg",
+                "n_source_rows": int(len(figure_per_output_nrmse_distribution_data)),
+                "description": (
+                    "Empirical CDF of per-output holdout nRMSE with quantiles and worst outputs."
+                ),
+                "svg_bytes": len(
+                    svg_figures["figure_per_output_nrmse_distribution"].encode("utf-8")
+                ),
+            },
         ]
     )
 
@@ -7887,9 +7909,10 @@ def _render_feature_pruning_curve_svg(
         return (
             '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="220" '
             'viewBox="0 0 640 220">'
-            '<rect x="0" y="0" width="640" height="220" fill="white"/>'
-            '<text x="320" y="110" text-anchor="middle" font-family="sans-serif" font-size="14" '
-            'fill="#374151">No feature-pruning curve data available.</text></svg>'
+            f'<rect x="0" y="0" width="640" height="220" fill="{_SVG_COLOR_BACKGROUND}"/>'
+            f'<text x="320" y="110" text-anchor="middle" font-family="{_SVG_FONT_FAMILY}" '
+            f'font-size="14" fill="{_SVG_COLOR_TEXT_MUTED}">'
+            "No feature-pruning curve data available.</text></svg>"
         )
 
     width = 980
@@ -7939,64 +7962,66 @@ def _render_feature_pruning_curve_svg(
     elements = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}">',
-        f'<rect x="0" y="0" width="{width}" height="{height}" fill="white"/>',
+        f'<rect x="0" y="0" width="{width}" height="{height}" fill="{_SVG_COLOR_BACKGROUND}"/>',
         f'<line x1="{left:.2f}" y1="{top:.2f}" x2="{left:.2f}" y2="{top + plot_h:.2f}" '
-        'stroke="#111827" stroke-width="2"/>',
+        f'stroke="{_SVG_COLOR_EDGE}" stroke-width="2"/>',
         f'<line x1="{left:.2f}" y1="{top + plot_h:.2f}" x2="{left + plot_w:.2f}" '
-        f'y2="{top + plot_h:.2f}" stroke="#111827" stroke-width="2"/>',
+        f'y2="{top + plot_h:.2f}" stroke="{_SVG_COLOR_EDGE}" stroke-width="2"/>',
     ]
     for tick in x_ticks:
         x = sx(float(tick))
         elements.append(
             f'<line x1="{x:.2f}" y1="{top + plot_h:.2f}" x2="{x:.2f}" y2="{top + plot_h + 6:.2f}" '
-            'stroke="#374151" stroke-width="1"/>'
+            f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>'
         )
         elements.append(
             f'<text x="{x:.2f}" y="{top + plot_h + 24:.2f}" text-anchor="middle" '
-            'font-family="sans-serif" font-size="11" fill="#374151">'
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="11" fill="{_SVG_COLOR_TEXT_MUTED}">'
             f"{int(round(tick))}</text>"
         )
     for tick in y_ticks:
         y = sy(float(tick))
         elements.append(
             f'<line x1="{left - 6:.2f}" y1="{y:.2f}" x2="{left:.2f}" y2="{y:.2f}" '
-            'stroke="#374151" stroke-width="1"/>'
+            f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>'
         )
         elements.append(
             f'<line x1="{left:.2f}" y1="{y:.2f}" x2="{left + plot_w:.2f}" y2="{y:.2f}" '
-            'stroke="#e5e7eb" stroke-width="1"/>'
+            f'stroke="{_SVG_COLOR_LIGHT}" stroke-width="1"/>'
         )
         elements.append(
             f'<text x="{left - 10:.2f}" y="{y + 4:.2f}" text-anchor="end" '
-            'font-family="sans-serif" font-size="11" fill="#374151">'
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="11" fill="{_SVG_COLOR_TEXT_MUTED}">'
             f"{tick:.3f}</text>"
         )
     elements.extend(
         [
-            f'<polyline points="{points}" fill="none" stroke="#2563eb" stroke-width="2"/>',
+            f'<polyline points="{points}" fill="none" '
+            f'stroke="{_SVG_COLOR_PRIMARY}" stroke-width="2.5"/>',
             f'<line x1="{left:.2f}" y1="{sy(baseline):.2f}" x2="{left + plot_w:.2f}" '
-            f'y2="{sy(baseline):.2f}" stroke="#10b981" stroke-width="1.5" stroke-dasharray="5 4"/>',
+            f'y2="{sy(baseline):.2f}" stroke="{_SVG_COLOR_ACCENT_GREEN}" '
+            'stroke-width="1.8" stroke-dasharray="9 4"/>',
         ]
     )
     if x_min <= auto_retained <= x_max:
         auto_x = sx(float(auto_retained))
         elements.append(
             f'<line x1="{auto_x:.2f}" y1="{top:.2f}" x2="{auto_x:.2f}" y2="{top + plot_h:.2f}" '
-            'stroke="#dc2626" stroke-width="1.5" stroke-dasharray="6 4"/>'
+            f'stroke="{_SVG_COLOR_DANGER}" stroke-width="1.5" stroke-dasharray="6 4"/>'
         )
     if x_min <= effective_retained <= x_max:
         eff_x = sx(float(effective_retained))
         elements.append(
             f'<line x1="{eff_x:.2f}" y1="{top:.2f}" x2="{eff_x:.2f}" y2="{top + plot_h:.2f}" '
-            'stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="3 3"/>'
+            f'stroke="{_SVG_COLOR_ACCENT_PURPLE}" stroke-width="1.8" stroke-dasharray="2 4"/>'
         )
     legend_x = left + 12.0
     legend_y = top + 12.0
     legend_rows = [
-        ("#2563eb", "solid", "Approx. no-refit upper-bound nRMSE"),
-        ("#10b981", "dash", "Baseline macro nRMSE"),
-        ("#dc2626", "dash", "Auto cutoff"),
-        ("#7c3aed", "dash", "Effective cutoff"),
+        (_SVG_COLOR_PRIMARY, "solid", "Approx. no-refit upper-bound nRMSE"),
+        (_SVG_COLOR_ACCENT_GREEN, "dash", "Baseline macro nRMSE"),
+        (_SVG_COLOR_DANGER, "dash", "Auto cutoff"),
+        (_SVG_COLOR_ACCENT_PURPLE, "dash", "Effective cutoff"),
     ]
     for idx, (color, style, label) in enumerate(legend_rows):
         y = legend_y + idx * 18.0
@@ -8006,19 +8031,20 @@ def _render_feature_pruning_curve_svg(
             f'stroke="{color}" stroke-width="2"{dash}/>'
         )
         elements.append(
-            f'<text x="{legend_x + 26:.2f}" y="{y + 4:.2f}" font-family="sans-serif" '
-            f'font-size="11" fill="#111827">{label}</text>'
+            f'<text x="{legend_x + 26:.2f}" y="{y + 4:.2f}" font-family="{_SVG_FONT_FAMILY}" '
+            f'font-size="11" fill="{_SVG_COLOR_TEXT}">{label}</text>'
         )
     elements.extend(
         [
             f'<text x="{left + plot_w / 2.0:.2f}" y="{height - 20:.2f}" text-anchor="middle" '
-            'font-family="sans-serif" font-size="13" fill="#111827">Retained feature count</text>',
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="13" fill="{_SVG_COLOR_TEXT}">'
+            "Retained feature count</text>",
             f'<text x="{20:.2f}" y="{top + plot_h / 2.0:.2f}" text-anchor="middle" '
-            'font-family="sans-serif" font-size="13" fill="#111827" '
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="13" fill="{_SVG_COLOR_TEXT}" '
             f'transform="rotate(-90 20 {top + plot_h / 2.0:.2f})">'
             "Approx. macro nRMSE upper bound</text>",
             f'<text x="{left:.2f}" y="{height - 44:.2f}" text-anchor="start" '
-            'font-family="sans-serif" font-size="11" fill="#4b5563">'
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="11" fill="{_SVG_COLOR_TEXT_MUTED}">'
             f"Auto remove={auto_remove}, effective remove={effective_remove}</text>",
             "</svg>",
         ]
@@ -8054,7 +8080,7 @@ def _render_nrmse_summary_svg(data: pd.DataFrame) -> str:
     width = 860
     row_height = 34
     top_margin = 58
-    left_margin = 320
+    left_margin = _bar_chart_left_margin(rows["model_name"])
     right_margin = 110
     axis_width = width - left_margin - right_margin
     height = top_margin + row_height * len(rows) + 40
@@ -8065,11 +8091,12 @@ def _render_nrmse_summary_svg(data: pd.DataFrame) -> str:
     elements = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}">',
-        '<rect width="100%" height="100%" fill="white"/>',
-        '<text x="24" y="32" font-family="sans-serif" font-size="20">'
+        f'<rect width="100%" height="100%" fill="{_SVG_COLOR_BACKGROUND}"/>',
+        f'<text x="24" y="32" font-family="{_SVG_FONT_FAMILY}" font-size="20" '
+        f'fill="{_SVG_COLOR_TITLE}" font-weight="bold">'
         "Macro nRMSE with bootstrap confidence intervals</text>",
         f'<line x1="{left_margin}" y1="{top_margin - 14}" x2="{left_margin + axis_width}" '
-        f'y2="{top_margin - 14}" stroke="#9ca3af" stroke-width="1"/>',
+        f'y2="{top_margin - 14}" stroke="{_SVG_COLOR_LIGHT}" stroke-width="1"/>',
     ]
     for row_index, (_, row) in enumerate(rows.iterrows()):
         y = top_margin + row_index * row_height
@@ -8082,11 +8109,14 @@ def _render_nrmse_summary_svg(data: pd.DataFrame) -> str:
         x_point = scale(point)
         elements.extend(
             [
-                f'<text x="24" y="{y + 18}" font-family="sans-serif" font-size="13">{label}</text>',
+                f'<text x="24" y="{y + 18}" font-family="{_SVG_FONT_FAMILY}" '
+                f'font-size="13" fill="{_SVG_COLOR_TEXT}">{label}</text>',
                 f'<line x1="{x_lower:.2f}" y1="{y + 12}" x2="{x_upper:.2f}" y2="{y + 12}" '
-                'stroke="#4b5563" stroke-width="2"/>',
-                f'<circle cx="{x_point:.2f}" cy="{y + 12}" r="4.2" fill="#111827"/>',
-                f'<text x="{x_upper + 8:.2f}" y="{y + 16}" font-family="sans-serif" font-size="12">'
+                f'stroke="{_SVG_COLOR_EDGE}" stroke-width="2"/>',
+                f'<circle cx="{x_point:.2f}" cy="{y + 12}" r="4.2" fill="{_SVG_COLOR_PRIMARY}" '
+                'stroke="#ffffff" stroke-width="1"/>',
+                f'<text x="{x_upper + 8:.2f}" y="{y + 16}" font-family="{_SVG_FONT_FAMILY}" '
+                f'font-size="12" fill="{_SVG_COLOR_TEXT_MUTED}">'
                 f"{point:.4g}</text>",
             ]
         )
@@ -8112,8 +8142,9 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
     if nrmse_vals.empty:
         return (
             '<svg xmlns="http://www.w3.org/2000/svg" width="700" height="120">'
-            '<rect width="100%" height="100%" fill="white"/>'
-            '<text x="24" y="60" font-family="sans-serif" font-size="14">no data</text>'
+            f'<rect width="100%" height="100%" fill="{_SVG_COLOR_BACKGROUND}"/>'
+            f'<text x="24" y="60" font-family="{_SVG_FONT_FAMILY}" font-size="14" '
+            f'fill="{_SVG_COLOR_TEXT_MUTED}">no data</text>'
             "</svg>"
         )
 
@@ -8170,20 +8201,22 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
     elements = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}">',
-        '<rect width="100%" height="100%" fill="white"/>',
-        f'<text x="{left_margin}" y="32" font-family="sans-serif" '
-        f'font-size="18" font-weight="bold">'
+        f'<rect width="100%" height="100%" fill="{_SVG_COLOR_BACKGROUND}"/>',
+        f'<text x="{left_margin}" y="32" font-family="{_SVG_FONT_FAMILY}" '
+        f'font-size="18" font-weight="bold" fill="{_SVG_COLOR_TITLE}">'
         f"Per-output holdout nRMSE distribution (n={n:,})</text>",
         # Axes
         f'<line x1="{axis_x1}" y1="{axis_y_top}" x2="{axis_x1}" y2="{axis_y_bot}" '
-        'stroke="#374151" stroke-width="1.5"/>',
+        f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1.5"/>',
         f'<line x1="{axis_x1}" y1="{axis_y_bot}" x2="{axis_x1 + plot_w}" y2="{axis_y_bot}" '
-        'stroke="#374151" stroke-width="1.5"/>',
+        f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1.5"/>',
         # X-axis label
         f'<text x="{left_margin + plot_w / 2:.0f}" y="{height - 10}" '
-        'font-family="sans-serif" font-size="13" text-anchor="middle">Holdout nRMSE</text>',
+        f'font-family="{_SVG_FONT_FAMILY}" font-size="13" text-anchor="middle" '
+        f'fill="{_SVG_COLOR_TEXT}">Holdout nRMSE</text>',
         # Y-axis label
-        f'<text x="14" y="{top_margin + plot_h / 2:.0f}" font-family="sans-serif" font-size="12" '
+        f'<text x="14" y="{top_margin + plot_h / 2:.0f}" font-family="{_SVG_FONT_FAMILY}" '
+        f'font-size="12" fill="{_SVG_COLOR_TEXT}" '
         'text-anchor="middle" transform="'
         f'rotate(-90 14 {top_margin + plot_h / 2:.0f})">Cumulative fraction</text>',
     ]
@@ -8194,11 +8227,12 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
         elements.extend(
             [
                 f'<line x1="{axis_x1 - 5}" y1="{yp:.1f}" x2="{axis_x1}" y2="{yp:.1f}" '
-                'stroke="#374151" stroke-width="1"/>',
-                f'<text x="{axis_x1 - 8}" y="{yp + 4:.1f}" font-family="sans-serif" font-size="11" '
-                f'text-anchor="end">{frac:.2f}</text>',
+                f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>',
+                f'<text x="{axis_x1 - 8}" y="{yp + 4:.1f}" font-family="{_SVG_FONT_FAMILY}" '
+                f'font-size="11" text-anchor="end" fill="{_SVG_COLOR_TEXT_MUTED}">'
+                f"{frac:.2f}</text>",
                 f'<line x1="{axis_x1}" y1="{yp:.1f}" x2="{axis_x1 + plot_w}" y2="{yp:.1f}" '
-                'stroke="#e5e7eb" stroke-width="0.7" stroke-dasharray="4,4"/>',
+                f'stroke="{_SVG_COLOR_LIGHT}" stroke-width="0.7" stroke-dasharray="4,4"/>',
             ]
         )
 
@@ -8210,22 +8244,35 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
         elements.extend(
             [
                 f'<line x1="{xp:.1f}" y1="{axis_y_bot}" x2="{xp:.1f}" y2="{axis_y_bot + 5}" '
-                'stroke="#374151" stroke-width="1"/>',
-                f'<text x="{xp:.1f}" y="{axis_y_bot + 18}" font-family="sans-serif" font-size="11" '
-                f'text-anchor="middle">{v:.3f}</text>',
+                f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>',
+                f'<text x="{xp:.1f}" y="{axis_y_bot + 18}" font-family="{_SVG_FONT_FAMILY}" '
+                f'font-size="11" text-anchor="middle" fill="{_SVG_COLOR_TEXT_MUTED}">'
+                f"{v:.3f}</text>",
             ]
         )
 
     # CDF line
-    (elements.append(f'<polyline points="{pts}" fill="none" stroke="#1d4ed8" stroke-width="2"/>'),)
+    (
+        elements.append(
+            f'<polyline points="{pts}" fill="none" stroke="{_SVG_COLOR_PRIMARY}" '
+            'stroke-width="2.5"/>'
+        ),
+    )
 
     # Quantile vertical markers
     q_colors = {
-        "p10": "#10b981",
-        "p25": "#f59e0b",
-        "p50": "#ef4444",
-        "p75": "#f59e0b",
-        "p90": "#10b981",
+        "p10": _SVG_COLOR_ACCENT_SKY,
+        "p25": _SVG_COLOR_PRIMARY,
+        "p50": _SVG_COLOR_DANGER,
+        "p75": _SVG_COLOR_ACCENT_PURPLE,
+        "p90": _SVG_COLOR_ACCENT_ORANGE,
+    }
+    q_dash = {
+        "p10": "9,4",
+        "p25": "6,3",
+        "p50": "2,2",
+        "p75": "6,3",
+        "p90": "9,4",
     }
     for label, qval in quantile_marks.items():
         xp = sx(qval)
@@ -8234,10 +8281,12 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
         elements.extend(
             [
                 f'<line x1="{xp:.1f}" y1="{axis_y_bot}" x2="{xp:.1f}" y2="{yp_cdf:.1f}" '
-                f'stroke="{color}" stroke-width="1.2" stroke-dasharray="5,3"/>',
-                f'<circle cx="{xp:.1f}" cy="{yp_cdf:.1f}" r="3.5" fill="{color}"/>',
-                f'<text x="{xp:.1f}" y="{axis_y_bot + 32}" font-family="sans-serif" font-size="10" '
-                f'text-anchor="middle" fill="{color}">{label}={qval:.3f}</text>',
+                f'stroke="{color}" stroke-width="1.6" stroke-dasharray="{q_dash[label]}"/>',
+                f'<circle cx="{xp:.1f}" cy="{yp_cdf:.1f}" r="3.5" fill="{color}" '
+                'stroke="#ffffff" stroke-width="0.9"/>',
+                f'<text x="{xp:.1f}" y="{axis_y_bot + 32}" '
+                f'font-family="{_SVG_FONT_FAMILY}" font-size="10" '
+                f'text-anchor="middle" fill="{_SVG_COLOR_TEXT}">{label}={qval:.3f}</text>',
             ]
         )
 
@@ -8250,14 +8299,25 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
         elements.extend(
             [
                 f'<line x1="{xp:.1f}" y1="{axis_y_top}" x2="{xp:.1f}" y2="{axis_y_bot}" '
-                'stroke="#dc2626" stroke-width="1" stroke-dasharray="3,3"/>',
-                f'<text x="{xp:.1f}" y="{yann}" font-family="sans-serif" font-size="9" '
-                f'text-anchor="middle" fill="#dc2626">{short} ({wval:.3f})</text>',
+                f'stroke="{_SVG_COLOR_DANGER}" stroke-width="1.2" stroke-dasharray="3,3"/>',
+                f'<text x="{xp:.1f}" y="{yann}" font-family="{_SVG_FONT_FAMILY}" font-size="9" '
+                f'text-anchor="middle" fill="{_SVG_COLOR_TEXT}">{short} ({wval:.3f})</text>',
             ]
         )
 
     elements.append("</svg>")
     return "\n".join(elements) + "\n"
+
+
+def _bar_chart_left_margin(labels: pd.Series) -> int:
+    """Return left_margin (px) for consistent label-to-bar gap (_LABEL_CONTENT_GAP_PX).
+
+    Labels are rendered starting at x=24.  The longest label occupies roughly
+    ``max_chars * _LABEL_CHAR_WIDTH_PX`` pixels, so bars/cells begin at
+    ``24 + max_chars * _LABEL_CHAR_WIDTH_PX + _LABEL_CONTENT_GAP_PX``.
+    """
+    max_chars = int(labels.astype(str).str.len().max()) if len(labels) else 10
+    return max(80, 24 + int(max_chars * _LABEL_CHAR_WIDTH_PX) + _LABEL_CONTENT_GAP_PX)
 
 
 def _render_horizontal_bar_svg(
@@ -8266,44 +8326,108 @@ def _render_horizontal_bar_svg(
     label_column: str,
     value_column: str,
     title: str,
+    ci_lower_column: str | None = None,
+    ci_upper_column: str | None = None,
 ) -> str:
-    """Render a small dependency-free horizontal bar chart as SVG text."""
+    """Render a small dependency-free horizontal bar chart as SVG text.
+
+    When *ci_lower_column* and *ci_upper_column* are provided the function draws
+    a thin error-bar line and end-cap ticks over each bar to show bootstrap CIs.
+    """
     from html import escape
 
-    rows = data.loc[:, [label_column, value_column]].copy()
+    keep_cols = [label_column, value_column]
+    if ci_lower_column and ci_lower_column in data.columns:
+        keep_cols.append(ci_lower_column)
+    if ci_upper_column and ci_upper_column in data.columns:
+        keep_cols.append(ci_upper_column)
+    rows = data.loc[:, keep_cols].copy()
     rows[value_column] = pd.to_numeric(rows[value_column], errors="coerce")
     rows = rows.loc[np.isfinite(rows[value_column])]
     if rows.empty:
         rows = pd.DataFrame({label_column: ["no finite data"], value_column: [0.0]})
-    width = 760
-    row_height = 32
-    top_margin = 54
-    left_margin = 260
+    width = 860
+    row_height = 34
+    top_margin = 62
+    left_margin = _bar_chart_left_margin(rows[label_column])
     right_margin = 120
-    height = top_margin + row_height * len(rows) + 34
+    height = top_margin + row_height * len(rows) + 42
     max_value = float(rows[value_column].max())
+    if ci_upper_column and ci_upper_column in rows.columns:
+        ci_max = pd.to_numeric(rows[ci_upper_column], errors="coerce").max()
+        if math.isfinite(ci_max):
+            max_value = max(max_value, ci_max)
     if max_value <= 0.0 or not math.isfinite(max_value):
         max_value = 1.0
     bar_max_width = width - left_margin - right_margin
     elements = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}">',
-        '<rect width="100%" height="100%" fill="white"/>',
-        f'<text x="24" y="32" font-family="sans-serif" font-size="20">{escape(title)}</text>',
+        f'<rect width="100%" height="100%" fill="{_SVG_COLOR_BACKGROUND}"/>',
+        f'<text x="24" y="36" font-family="{_SVG_FONT_FAMILY}" font-size="20" '
+        f'fill="{_SVG_COLOR_TITLE}" font-weight="bold">{escape(title)}</text>',
+        f'<line x1="{left_margin}" y1="{top_margin - 14}" x2="{left_margin + bar_max_width}" '
+        f'y2="{top_margin - 14}" stroke="{_SVG_COLOR_LIGHT}" stroke-width="1"/>',
     ]
+    has_ci = (
+        ci_lower_column in rows.columns and ci_upper_column in rows.columns
+        if (ci_lower_column and ci_upper_column)
+        else False
+    )
     for row_index, (_, row) in enumerate(rows.iterrows()):
         y = top_margin + row_index * row_height
+        bar_mid_y = y + 10  # vertical centre of the 21-px bar
         label = escape(str(row[label_column]))
         value = float(row[value_column])
         bar_width = max(1.0, bar_max_width * value / max_value)
         elements.extend(
             [
-                f'<text x="24" y="{y + 18}" font-family="sans-serif" font-size="13">{label}</text>',
+                f'<text x="24" y="{y + 19}" font-family="{_SVG_FONT_FAMILY}" font-size="13" '
+                f'fill="{_SVG_COLOR_TEXT}">{label}</text>',
                 f'<rect x="{left_margin}" y="{y}" width="{bar_width:.2f}" '
-                'height="20" fill="#4b5563"/>',
-                f'<text x="{left_margin + bar_width + 8:.2f}" y="{y + 16}" '
-                f'font-family="sans-serif" font-size="12">{value:.4g}</text>',
+                f'height="21" fill="{_SVG_COLOR_PRIMARY}" stroke="{_SVG_COLOR_EDGE}" '
+                'stroke-width="0.8"/>',
             ]
+        )
+        if has_ci:
+            ci_lo = pd.to_numeric(row[ci_lower_column], errors="coerce")
+            ci_hi = pd.to_numeric(row[ci_upper_column], errors="coerce")
+            if math.isfinite(ci_lo) and math.isfinite(ci_hi):
+                x_lo = left_margin + max(0.0, bar_max_width * ci_lo / max_value)
+                x_hi = left_margin + bar_max_width * ci_hi / max_value
+                cap = 5  # half-height of end-cap ticks in px
+                elements.extend(
+                    [
+                        # horizontal CI spine
+                        f'<line x1="{x_lo:.2f}" y1="{bar_mid_y}" x2="{x_hi:.2f}" '
+                        f'y2="{bar_mid_y}" stroke="{_SVG_COLOR_EDGE}" stroke-width="1.8"/>',
+                        # lower cap
+                        f'<line x1="{x_lo:.2f}" y1="{bar_mid_y - cap}" '
+                        f'x2="{x_lo:.2f}" y2="{bar_mid_y + cap}" '
+                        f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1.8"/>',
+                        # upper cap
+                        f'<line x1="{x_hi:.2f}" y1="{bar_mid_y - cap}" '
+                        f'x2="{x_hi:.2f}" y2="{bar_mid_y + cap}" '
+                        f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1.8"/>',
+                    ]
+                )
+        # value label: place after CI upper if present, else after bar
+        label_x = (
+            left_margin
+            + bar_max_width
+            * float(pd.to_numeric(row[ci_upper_column], errors="coerce"))
+            / max_value
+            + 8  # noqa: E501
+            if has_ci
+            and math.isfinite(
+                pd.to_numeric(row.get(ci_upper_column, float("nan")), errors="coerce")
+            )  # noqa: E501
+            else left_margin + bar_width + 8
+        )
+        elements.append(
+            f'<text x="{label_x:.2f}" y="{y + 16}" '
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="12" '
+            f'fill="{_SVG_COLOR_TEXT_MUTED}">{value:.4g}</text>'
         )
     elements.append("</svg>")
     return "\n".join(elements) + "\n"

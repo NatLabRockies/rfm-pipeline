@@ -240,7 +240,7 @@ def bootstrap_macro_nrmse_ci(
         "bootstrap_sample_size": int(draw_size),
         "alpha": float(alpha),
         "ci_type": "percentile",
-        "normalization_reference": "fixed Y_ref range",
+        "normalization_reference": "Y_train range",
         "k_used": int(info["k_used"]),
         "k_total": int(info["k_total"]),
         "rmse_macro": float(np.nanmean(rmse)) if rmse.size else float("nan"),

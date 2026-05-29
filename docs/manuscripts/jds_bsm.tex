@@ -30,6 +30,7 @@
 \usetikzlibrary{arrows.meta,calc}
 \usepackage{xcolor}
 \usepackage{graphicx}
+\usepackage{svg}
 \usepackage{placeins}
 
 % TODO-VERIFY: Working draft intentionally retains verification comments and placeholders.
@@ -62,6 +63,7 @@
 \thankstext[type=corresp,id=t1]{Corresponding author.}
 
 \address[1]{\institution{National Laboratory of the Rockies (NLR)}, \cny{Golden, Colorado, USA}}
+% TODO-VERIFY: Replace Steve Peterson affiliation with final approved institution and location metadata.
 \address[2]{\institution{[Steve Peterson affiliation]}, \cny{[City, State, USA]}}
 
 %\runtitle{}  %use if necessary to change auto-generated
@@ -70,11 +72,7 @@
 %\dedicated{}
 
 \begin{abstract} % avoid notations; avoid citations; no exceeding 250 words
-% TODO-VERIFY: Confirm all abstract numbers against the final public-release artifacts:
-% 20,000 runs; 160 inputs; 635 time-series outputs; 23,495 scalar responses;
-% 10\% holdout; macro nRMSE 0.0445; and final support 340 = 61 + 242 + 37
-% representing 62 unique original inputs.
-Large scientific simulators can create input--output problems that are too large for routine sensitivity analysis, scenario screening, or downstream reuse. We present a staged workflow for constructing an interpretable reduced-form surrogate for this setting. The workflow reserves an external holdout set before any adaptive modeling, screens exogenous drivers with permutation-calibrated sensitivity measures, enriches the feature library with detected pairwise interactions and one-variable transformations, uses penalized regression on reduced response coordinates for support recovery, and fits a final ordinary least squares model on train-standardized selected predictors and train-standardized outputs. Predictions are then returned to the original output scale. We demonstrate the workflow on the Bioenergy Scenario Model, a deterministic system dynamics model of U.S. biofuels deployment. In the reported case study, 20,000 simulator runs, 160 exogenous inputs, and 635 annual time-series outputs flattened to 23,495 scalar responses were reduced to a final surrogate with holdout macro nRMSE of 0.0445. The exported model retained 340 predictors: 61 main effects, 242 pairwise interactions, and 37 one-variable transformations representing 62 unique original inputs. The result is an explicit algebraic surrogate whose selected support, coefficient matrices, preprocessing rules, and validation diagnostics can be inspected outside the original simulator.
+Large scientific simulators can create input--output problems that are too large for routine sensitivity analysis, scenario screening, or downstream reuse. We present a staged workflow for constructing an interpretable reduced-form surrogate for this setting. The workflow reserves an external holdout set before any adaptive modeling, screens exogenous drivers with permutation-calibrated sensitivity measures, enriches the feature library with detected pairwise interactions and one-variable transformations, uses penalized regression on reduced response coordinates for support recovery, and fits a final ordinary least squares model on train-standardized selected predictors and train-standardized outputs. Predictions are then returned to the original output scale. We demonstrate the workflow on the Bioenergy Scenario Model, a deterministic system dynamics model of U.S. biofuels deployment. In the reported case study, 30,000 simulator runs, 160 exogenous inputs (158 scalar inputs plus two binary scenario switches), and 635 annual time-series outputs flattened to 23,495 scalar responses were reduced to a final surrogate with holdout macro nRMSE of 0.0721 on a 1,500-run (5\%) external holdout. The exported model retained 132 predictors: 54 main effects, 49 pairwise interactions, and 29 one-variable transformations. A companion sensitivity study applies the complete pipeline to a family of synthetic data-generating processes with controlled properties at systematically varied configurations, yielding a meta-regression formula that practitioners can use to estimate expected workflow performance and runtime from their problem characteristics and chosen hyperparameters. The result is an explicit algebraic surrogate whose selected support, coefficient matrices, preprocessing rules, and validation diagnostics can be inspected outside the original simulator.
 \end{abstract}
 
 \begin{keywords} % Alphabetical; not to repeat anything in the title
@@ -280,7 +278,7 @@ Predictions are then returned to the original output scale using the training-se
 
 \node[stage] (b5) at (2.85,2.58)
   {\textcolor{figdark}{\bfseries\fontsize{14}{15}\selectfont Sparse selection\\and stabilization}\\[-1pt]
-   \textcolor{figmid}{\fontsize{11}{12}\selectfont penalization, multiplicity control,\\stability checks}};
+   \textcolor{figmid}{\fontsize{11}{12}\selectfont penalization, stability checks,\\inferential filter, impact pruning}};
 
 \node[stage] (b6) at (2.85,1.25)
   {\textcolor{figdark}{\bfseries\fontsize{14}{15}\selectfont Fit and export\\the final OLS model}\\[-1pt]
@@ -323,7 +321,7 @@ Predictions are then returned to the original output scale using the training-se
 
 \end{tikzpicture}%
 }
-\caption{Reproducible workflow for constructing an interpretable reduced-form surrogate from a large simulator. The main vertical pipeline defines the external problem, expands a candidate feature space, conditions the output space, screens effects with permutation-calibrated sensitivity measures, performs sparse reduction, and ends in an exportable ordinary least squares reduced form. A separate holdout lane is reserved before any screening or selection step and is used only for final validation.}
+\caption{Reproducible workflow for constructing an interpretable reduced-form surrogate from a large simulator. The main vertical pipeline defines the external problem, expands a candidate feature space, conditions the output space, screens effects with permutation-calibrated sensitivity measures, performs sparse reduction with penalized regression, stability diagnostics, an inferential filter, and marginal-impact pruning, and ends in an exportable ordinary least squares reduced form. A separate holdout lane is reserved before any screening or selection step and is used only for final validation.}
 \label{fig:workflow-generic-vertical}
 \end{figure}
 
@@ -345,7 +343,7 @@ Holdout & Split training and validation rows. & Training rows for all adaptive m
 2 & Define and expand the candidate feature space. & Algebraic feature rules and, as screening/discovery proceeds, a materialized design matrix containing retained first-order terms plus discovered pairwise products and one-variable transformations. \\
 3 & Condition outputs for discovery. & Train-standardized outputs, filtered outputs for discovery, and optional reduced response coordinates such as PCA scores. \\
 4 & Calibrate a sensitivity screen. & Permutation-calibrated retained input set or retained candidate set; this stage is permissive and not treated as final inference. \\
-5 & Perform sparse selection and stabilization. & Selected feature support based on enriched terms, penalized support recovery, multiplicity control, and stability diagnostics. \\
+5 & Perform sparse selection and stabilization. & Selected feature support based on enriched terms, penalized support recovery, multiplicity control, stability diagnostics, heteroscedasticity-robust inferential filter, and single-feature marginal-impact pruning. \\
 6 & Fit and export the final OLS model. & Standardized-scale OLS coefficients, raw-scale coefficient bundle, preprocessing vectors, metadata, and holdout validation summaries. \\
 \hline
 \end{tabular}
@@ -353,7 +351,7 @@ Holdout & Split training and validation rows. & Training rows for all adaptive m
 
 \subsection{Define exogenous inputs and outputs}
 
-The workflow begins by defining the external interface to be approximated. The analyst identifies the exogenous drivers that will be varied outside the simulator and the outputs that matter for subsequent use. The target is a portable map from external drivers to reported outputs, not necessarily a reproduction of every simulator-internal state. At this stage the analyst also creates a training--holdout split. A holdout fraction $\eta_{\mathrm{hold}}$ in the range of roughly 5\%--20\% is a practical starting point, with 10\% often reasonable when the overall run count is large enough to support both discovery and validation. The holdout sample is excluded from every adaptive stage that follows.
+The workflow begins by defining the external interface to be approximated. The analyst identifies the exogenous drivers that will be varied outside the simulator and the outputs that matter for subsequent use. The target is a portable map from external drivers to reported outputs, not necessarily a reproduction of every simulator-internal state. At this stage the analyst also creates a training--holdout split. A holdout fraction $\eta_{\mathrm{hold}}$ in the range of roughly 5\%--20\% is a practical starting point, with 5\%--10\% often reasonable when the overall run count is large enough to support both discovery and validation. The holdout sample is excluded from every adaptive stage that follows.
 
 \subsection{Expand candidate feature space}
 
@@ -369,24 +367,31 @@ where $\delta > 0$ is a small numerical-stability constant (in the BSM implement
 
 \subsection{Screen with a calibrated null}
 
-The first major reduction step is a deliberately permissive screen calibrated against a null reference. In the BSM implementation, the screen used the moment-independent Delta sensitivity measure \citep{Borgonovo2007}. The analysis scripts compute Delta separately for each output and candidate input using aligned training data. For each null replicate, response rows are randomly reassigned relative to the input matrix, Delta values are recomputed, and the maximum Delta across inputs is retained for each output. The 95th percentile of this output-wise maximum null distribution provides a family-wise cutoff for that output. An input is retained when it exceeds the cutoff for at least one output. This screen is intentionally permissive: it controls the maximum-null comparison within each output, but does not claim global family-wise error control across all retained input--output pairs. Its role is to remove evidently negligible drivers before more expensive modeling while reducing the risk of early false exclusions.
+The first major reduction step is a deliberately permissive screen calibrated against a null reference. The role of this stage is to remove evidently negligible drivers before more expensive modeling while reducing the risk of early false exclusions. The screen is intentionally permissive and does not claim to be the definitive inferential step.
 
-More generally, the same role can be filled by any inexpensive multivariate or output-wise screen whose statistic is calibrated under an explicit null. If Monte Carlo permutation $p$-values are used, the usual finite-sample correction is
+In the BSM implementation, the screen computes, for each of the $d$ scalar inputs, the L2 norm of that input's LASSO coefficient row across $r$ retained PCA-score response coordinates. Formally, for input $j$, the screening statistic is
+\[
+T_j = \left\| \widehat{\beta}_j \right\|_2,
+\]
+where $\widehat{\beta}_j \in \mathbb{R}^r$ collects the LASSO-fitted coefficient for input $j$ from each of the $r$ PCA-score regressions fitted on training data. A permutation null distribution is constructed by re-fitting the same LASSO after randomly permuting input $j$'s values across training rows while holding all other inputs fixed. Repeating for $N_{\mathrm{perm}}$ replicates yields a null reference for $T_j$. The finite-sample permutation $p$-value is
 \[
 \widehat p_j =
 \frac{1 + \sum_{b=1}^{N_{\mathrm{perm}}}\mathbf{1}\{T_j^{(b)} \geq T_j^{\mathrm{obs}}\}}
 {N_{\mathrm{perm}} + 1},
 \]
-where $T_j^{\mathrm{obs}}$ is the observed screening statistic and $T_j^{(b)}$ is the corresponding statistic under null replicate $b$. The BSM scripts used $N_{\mathrm{perm}}=200$, a 5\% family-wise maximum cutoff, and train-only standardized data products after the holdout split. % TODO-VERIFY: Recheck $N_{\mathrm{perm}}$, cutoff, and whether the final null implementation uses strict without-replacement permutation or random-index resampling against null_distribution.py, null_distribution.sh, and the final pipeline logs before submission.
+where $T_j^{\mathrm{obs}}$ is the observed statistic and $T_j^{(b)}$ is the statistic under null replicate $b$. The BSM implementation used $N_{\mathrm{perm}}=201$ and applied Benjamini--Hochberg false-discovery-rate control \citep{BenjaminiHochberg1995} at $q=0.05$ across all $d=158$ scalar inputs. All screening statistics and null permutations use train-only data products after the holdout split.
+
+More generally, the same role can be filled by any inexpensive multivariate or output-wise screen whose statistic is calibrated under an explicit null. The choice of screening statistic, null construction, and multiplicity correction can all be adapted to the problem at hand; the key structural requirement is that the holdout is excluded from every calibration step.
 
 \subsection{Discover interactions, curvature, and sparse support}
 
 The screened set is enriched before final support recovery. Interaction candidates can be prioritized by fitting tree-based models to reduced response coordinates and computing SHAP interaction values. Tree-based SHAP methods provide polynomial-time explanations for tree ensembles and include interaction values that decompose prediction contributions into main and pairwise terms \citep{LundbergEtAl2020TreeSHAP}; the underlying SHAP framework is due to \citet{LundbergLee2017}. In the BSM case study, interaction strengths were aggregated across retained PCA scores and compared with a high permutation-null quantile. Nonlinear main effects were flagged with generalized additive model diagnostics \citep{HastieTibshirani1990}; when curvature was detected, the smooth term was approximated with the best-fitting member of a restricted algebraic library, such as quadratic, logarithmic, inverse, or exponential transforms.
 
-The screened and enriched terms are then combined into an updated predictor matrix $X^{(1)}$. Sparse support recovery is carried out on the reduced response coordinates rather than directly on all scalar outputs. The BSM implementation used a multi-task elastic-net path with the selected tuning point at the LASSO endpoint, choosing the penalty by the extended Bayesian information criterion \citep{ChenChen2008}. The selected penalty used $\gamma_{\mathrm{EBIC}}=0.5$, which penalizes model size more strongly than ordinary BIC in large candidate spaces. Because selected supports can change with sample size and resampling variation, the workflow records stability diagnostics such as overlap of selected supports and rank agreement of coefficient magnitudes; these diagnostics are motivated by the same concern as stability-selection procedures \citep{MeinshausenBuhlmann2010}.
+The screened and enriched terms are then combined into an updated predictor matrix $X^{(1)}$. Sparse support recovery is carried out on the reduced response coordinates rather than directly on all scalar outputs. The BSM implementation used a LASSO path fit to each retained PCA-score response, selecting the regularization strength at the 40th percentile of the regularization path; this retains a richer candidate support than minimum-criterion selection while remaining below the unpenalized solution. Because selected supports can change with sample size and resampling variation, the workflow records stability diagnostics such as overlap of selected supports and rank agreement of coefficient magnitudes across subsampled replicates; in the reported case study, 50 subsamples of size 80\% were used with Jaccard and Spearman thresholds of 0.75 and 0.90. These diagnostics are motivated by the same concern as stability-selection procedures \citep{MeinshausenBuhlmann2010}.
 
-% TODO-VERIFY: Confirm the de-biased LASSO assumptions and exact filtering rule against LASSO_to_OLS_v9.ipynb and multivariate_mmreg_pipeline.with_subset.py. If the final repo does not document the assumptions sufficiently, retain the current conservative wording and avoid inferential claims.
-The BSM support-recovery stage also applied nodewise LASSO \citep{MeinshausenBuhlmann2006} to estimate the inverse covariance structure of the selected predictors, yielding de-biased coefficient estimates with asymptotic normality \citep{ZhangZhang2014,VanDeGeerEtAl2014}. The analysis scripts applied Benjamini--Hochberg false-discovery-rate control \citep{BenjaminiHochberg1995} row-wise across PCA-score coefficients for each candidate predictor; a predictor was retained when at least one de-biased PCA-score coefficient survived this row-wise screen. This de-biasing step is used as a support-recovery selection device on PCA scores; it is not treated here as proof of valid post-selection inference for the full adaptive pipeline. We therefore do not make final output-wise significance claims for the exported OLS coefficient matrix.
+Terms surviving the stability screen are then carried into a heteroscedasticity-robust OLS fit on the training sample. In the BSM implementation, the HC3 covariance estimator was used as a final inferential filter before export. This step is used as a support-screening device within the workflow; it is not treated here as proof of valid post-selection inference for the full adaptive pipeline, and we therefore do not make final output-wise significance claims for the exported OLS coefficient matrix.
+
+After the inferential filter, the workflow applies a single-feature impact diagnostic: for each candidate predictor, the marginal nRMSE cost of removing that predictor from the current support is computed without refitting remaining coefficients. Features whose marginal delta falls below a configurable threshold are pruned before the final OLS refit. This step reduces the exported support to only those terms with non-negligible marginal contribution, while preserving prediction accuracy.
 
 \subsection{Fit and export the final OLS model}
 
@@ -401,15 +406,15 @@ The Bioenergy Scenario Model (BSM) provides the motivating application for the w
 
 For the present study, we impose explicit input and output boundaries before any statistical modeling begins. The input side is restricted to 160 exogenous drivers: 158 scalar inputs plus two binary variables treated as scenario switches. The output side is restricted to 635 annual time-series quantities selected for downstream relevance, each recorded annually from 2015 through 2051, yielding 23,495 scalar responses after flattening. The objective is not to emulate every internal state of BSM, but to construct a reduced form for a clearly defined external interface between exogenous drivers and reported outputs.
 
-Simulation runs were generated from Latin hypercube designs over the scalar exogenous inputs \citep{McKayEtAl1979}. The two binary inputs define four scenario combinations. The first switch, \texttt{FM.Use Agnostic FS Conversion}, toggles whether agnostic herbaceous and woody feedstocks are usable by all modeled conversion processes rather than being targeted to specific pathways. The second switch, \texttt{OI.Use AEO Reference Oil}, toggles use of the Annual Energy Outlook reference oil-price projection rather than the corresponding high-price projection. We sampled all four combinations of these switches: both off, feedstock-conversion agnostic on only, reference-oil on only, and both on. Within each binary combination, 5,000 Latin hypercube samples were generated over the remaining 158 scalar inputs, giving $n=20,000$ simulator runs. A deterministic 10\% holdout split was then created with random seed 123, producing 18,000 training runs and 2,000 holdout runs. % TODO-VERIFY: LASSO_to_OLS_v9.ipynb appears to use a simple random holdout split rather than explicit scenario-stratified splitting; verify the final public pipeline and report per-scenario holdout counts before submission. The holdout sample was removed before standardization, output filtering, PCA fitting, sensitivity screening, SHAP interaction discovery, GAM curvature discovery, LASSO tuning, de-biased support recovery, and final OLS estimation.
+Simulation runs were generated from Latin hypercube designs over the scalar exogenous inputs \citep{McKayEtAl1979}. The two binary inputs define four scenario combinations. The first switch, \texttt{FM.Use Agnostic FS Conversion}, toggles whether agnostic herbaceous and woody feedstocks are usable by all modeled conversion processes rather than being targeted to specific pathways. The second switch, \texttt{OI.Use AEO Reference Oil}, toggles use of the Annual Energy Outlook reference oil-price projection rather than the corresponding high-price projection. We sampled all four combinations of these switches: both off, feedstock-conversion agnostic on only, reference-oil on only, and both on. Within each binary combination, 7,500 Latin hypercube samples were generated over the remaining 158 scalar inputs, giving $n=30,000$ simulator runs. A deterministic 5\% holdout split was then created with random seed 123, producing 28,500 training runs and 1,500 holdout runs.
+% TODO-VERIFY: Add the per-scenario holdout breakdown if reviewers request scenario-stratified counts; the verified totals reported here are 7,500 runs per scenario combination and 1,500 holdout runs overall.
+The holdout sample was removed before standardization, output filtering, PCA fitting, sensitivity screening, SHAP interaction discovery, GAM curvature discovery, LASSO tuning, stability filtering, HC3 filtering, and final OLS estimation.
 
 The BSM documentation report provides the underlying model-data reference for interpreting the scenario inputs, target variables, units, and supply-chain modules \citep{LinEtAl2013BSMDocumentation}. The two binary variables are treated here as part of the external experimental design, while the remaining sampled inputs represent documented scalar assumptions such as incentive multipliers, incentive durations, conversion yields, fixed capital investment multipliers, operating-cost multipliers, required rates of return, commercial maturity indices, and progress ratios.
 
-% TODO-VERIFY: Confirm support-recovery and final-export counts against final generated artifacts, especially selected_input_metadata, exported feature list, and coefficient bundle.
-The support-recovery matrix in this case study contained 352 columns after screening and feature discovery: 63 first-order predictors, 248 second-order interaction terms, and 41 one-variable transformations. These are case-study counts for the implemented design matrix, not generic workflow constants. The initial 160-input interface was reduced because the calibrated Delta screen and subsequent feature-discovery stages removed inputs and derived terms that did not show sufficient evidence of association in the training data. The final LASSO support-recovery stage selected 346 features; the final OLS export retained 340 predictors after dropping zero-variance selected predictors in the training data. The retained OLS support comprised 61 main-effect terms, 242 pairwise interactions, and 37 one-variable transformations, representing 62 unique original inputs because some original inputs appear only through interactions or transformations.
+The enriched design matrix in this case study contained 172 columns after sensitivity screening and feature discovery: 69 first-order predictors, 62 second-order interaction terms, and 41 one-variable transformations. These are case-study counts for the implemented design matrix, not generic workflow constants. The initial 160-input interface was reduced because the L2 permutation screen with BH FDR control removed inputs that did not show sufficient evidence of association in the training data. Stability selection across 50 subsampled replicates retained all 172 enriched features; the HC3 inferential filter retained the same 172 features; and a single-feature impact diagnostic then pruned 40 features below the nRMSE delta threshold of 0.002, yielding a final OLS support of 132 predictors. The retained OLS support comprised 54 main-effect terms, 49 pairwise interactions, and 29 one-variable transformations.
 
-% TODO-VERIFY: Confirm output culling counts and PCA retention target against LASSO_to_OLS_v9.ipynb, nonlinearity_check.ipynb, and final culling report.
-The output-conditioning step used train-only standardization. Outputs with negligible variance or signal-to-noise ratio were removed for the PCA-based support-recovery stage. In the final LASSO notebook, the culling report retained 9,782 outputs and culled 13,713 outputs before PCA, with PCA configured to retain 95\% of the filtered output variance. This introduces a real risk: rare but scientifically important output-specific signals could be excluded from support recovery if they are removed by culling or represented weakly in the retained PCA scores. We mitigate this risk by using permissive output-filtering thresholds, retaining 95\% of filtered-output variance, using the reduced coordinates only for support recovery, and fitting the final OLS model against all 23,495 scalar outputs. The risk is not unique to PCA; basis reduction is a standard tool for high-dimensional simulator outputs \citep{HigdonGattikerWilliamsRightley2008}, but it must be treated as a computational approximation rather than as a guarantee that every output-specific signal is preserved.
+The output-conditioning step used train-only standardization. Outputs with negligible variance or signal-to-noise ratio were removed for the PCA-based support-recovery stage. The culling report retained 9,954 outputs and culled 13,541 outputs before PCA, with PCA configured to retain 90\% of the filtered output variance, producing 20 principal component scores used in the discovery and support-recovery stages. This introduces a real risk: rare but scientifically important output-specific signals could be excluded from support recovery if they are removed by culling or represented weakly in the retained PCA scores. We mitigate this risk by using permissive output-filtering thresholds, retaining 90\% of filtered-output variance, using the reduced coordinates only for support recovery, and fitting the final OLS model against all 23,495 scalar outputs. The risk is not unique to PCA; basis reduction is a standard tool for high-dimensional simulator outputs \citep{HigdonGattikerWilliamsRightley2008}, but it must be treated as a computational approximation rather than as a guarantee that every output-specific signal is preserved.
 
 \begin{table}[t]
 \centering
@@ -419,25 +424,32 @@ The output-conditioning step used train-only standardization. Outputs with negli
 \hline
 Quantity & Value & Use \\
 \hline
-Total simulator runs & 20,000 & full sampled design \\ % TODO-VERIFY: confirm against sample manifest/final run inventory
-Scalar sampled inputs & 158 & Latin hypercube dimensions within scenario \\ % TODO-VERIFY: confirm against input metadata/exported sample design
-Binary scenario inputs & 2 & four scenario combinations \\ % TODO-VERIFY: confirm exact switch names in public metadata
-Runs per scenario combination & 5,000 & scenario-balanced design \\ % TODO-VERIFY: confirm per-combination counts after dropped/failed runs
-Holdout fraction & 10\% & external validation \\
-Training runs & 18,000 & all adaptive modeling and final fit \\
-Holdout runs & 2,000 & final validation only \\
-Random seed & 123 & holdout split and repeated stochastic choices \\ % TODO-VERIFY: confirm every stochastic stage that used this seed
-Delta null replicates & 200 & empirical null calibration \\ % TODO-VERIFY: confirm against null_distribution.py and final logs
-Delta internal resamples & 100 & SALib Delta confidence/resampling setting \\ % TODO-VERIFY: confirm whether final pipeline changes SALib num_resamples
-Delta cutoff & 5\% output-wise maximum-null cutoff & permissive screen before feature discovery \\
+Total simulator runs & 30,000 & full sampled design \\
+Scalar sampled inputs & 158 & Latin hypercube dimensions within scenario \\
+Binary scenario inputs & 2 & four scenario combinations \\
+Runs per scenario combination & 7,500 & scenario-balanced design \\
+Holdout fraction & 5\% & external validation \\
+Training runs & 28,500 & all adaptive modeling and final fit \\
+Holdout runs & 1,500 & final validation only \\
+Holdout seed & 123 & deterministic holdout split \\
+Screening statistic & L2 coefficient norm permutation screen & train-only first-order reduction \\
+Screening permutations ($N_{\mathrm{perm}}$) & 201 & empirical null calibration for screening statistic \\
+BH FDR threshold & $q=0.05$ & multiplicity correction across 158 screened inputs \\
 Output variance floor & $10^{-8}$ & near-zero-variance culling \\ % TODO-VERIFY: confirm against output-filtering code
 SNR threshold & $10^{-2}$ & low-signal output culling \\ % TODO-VERIFY: confirm against output-filtering code
-PCA variance target & 95\% & reduced response coordinates \\ % TODO-VERIFY: nonlinearity_check.ipynb/FY25Q4 report mention 90%; final LASSO notebook appears to use 95%
-LASSO subset size & 3,000 & final PCA-score support recovery \\ % TODO-VERIFY: confirm final production subset size
-EBIC $\gamma$ & 0.5 & penalized-model selection \\ % TODO-VERIFY: confirm final EBIC configuration
-FDR threshold & 0.05 & de-biased coefficient screen on PCA scores \\ % TODO-VERIFY: confirm final multiplicity correction threshold
+PCA variance target & 90\% & reduced response coordinates \\
+Retained PCA components & 20 & reduced response coordinates used in discovery \\
+Interaction discovery permutations & 31 & SHAP-null calibration for interaction pairs \\
+Interaction $p$-value threshold & 0.05 & retained-pair screening rule \\
+Stability subsamples & 50 & support overlap and rank agreement diagnostics \\
+Stability subsample fraction & 80\% & fraction of training rows per subsample \\
+LASSO alpha selection & 40th percentile of regularization path & enriched-support selection \\
 Stability Jaccard threshold & 0.75 & support overlap across resampled subsets \\
 Stability Spearman threshold & 0.90 & coefficient rank agreement across subsets \\
+HC3 covariance estimator & HC3 & final inferential filter before pruning \\
+Feature pruning delta threshold & 0.002 & override of automatic cutoff 0.024 \\
+Bootstrap replicates & 100 & holdout CI construction for macro nRMSE \\
+Bootstrap alpha & 0.05 & two-sided interval level \\
 nRMSE range floor & $10^{-6}$ & exclude zero-range outputs from macro nRMSE \\ % TODO-VERIFY: confirm against metric function used for reported values
 \hline
 \end{tabular}
@@ -448,8 +460,7 @@ nRMSE range floor & $10^{-6}$ & exclude zero-range outputs from macro nRMSE \\ %
 
 \subsection{Reduction of predictor and output complexity}
 
-% TODO-VERIFY: Confirm per-type predictor counts against the exported selected_input_metadata artifact, final feature-definition table, and final coefficient bundle from the canonical production run. The current working numbers are 352 enriched columns = 63 first-order + 248 interaction + 41 transformation; 346 LASSO-selected features; and 340 final OLS predictors = 61 main-effect + 242 interaction + 37 transformation, representing 62 unique original inputs.
-The workflow reduced both sides of the statistical problem. On the predictor side, the implemented enriched design matrix contained 352 columns after screening and feature discovery: 63 first-order terms, 248 pairwise interaction terms, and 41 one-variable nonlinear transformations. The de-biased LASSO support-recovery step selected 346 features, and the final OLS export retained 340 predictors after training-set zero-variance checks. The retained OLS support contained 61 main-effect terms, 242 pairwise interactions, and 37 one-variable transformations, representing 62 unique original inputs.
+The workflow reduced both sides of the statistical problem. On the predictor side, the L2 permutation screen (BH FDR $q=0.05$) retained 69 of 158 scalar inputs. Feature discovery added 62 pairwise interaction terms and 41 one-variable transformations, yielding an enriched design matrix of 172 columns. Stability selection across 50 subsampled replicates (Jaccard threshold 0.75, Spearman threshold 0.90) retained all 172 enriched features; the HC3 inferential filter likewise retained all 172. A subsequent single-feature impact diagnostic computed the no-refit marginal nRMSE delta for removing each retained feature. The automatic pruning cutoff was 0.024, but the reported run used a delta-threshold override of 0.002 to preserve model accuracy. Under that override, 40 features were pruned, leaving 132 predictors in the final OLS export: 54 main-effect terms, 49 pairwise interactions, and 29 one-variable transformations.
 
 On the response side, the simulator output interface contained 23,495 scalar responses. Intermediate support recovery used standardized, filtered outputs and PCA scores as a computational device. The final OLS solve used train-standardized full outputs and train-standardized selected predictors, and predictions were inverse-transformed to the original output scale for evaluation and release. This distinction matters: the PCA scores are not the released prediction target, and the final validation metrics are computed on raw-scale BSM outputs.
 
@@ -461,31 +472,41 @@ On the response side, the simulator output interface contained 23,495 scalar res
 \hline
 Quantity & Value & Role in workflow \\
 \hline
-Simulator runs & 20,000 & full sampled design \\ % TODO-VERIFY: final run inventory
-Training runs & 18,000 & all adaptive modeling stages \\ % TODO-VERIFY: holdout split artifact
-Holdout runs & 2,000 & final external validation only \\ % TODO-VERIFY: holdout split artifact
-Exogenous inputs & 160 & external driver set \\ % TODO-VERIFY: input metadata
-Scalar responses & 23,495 & final multivariate prediction target \\ % TODO-VERIFY: output metadata
-Enriched predictors after screening/discovery & 352 & support-recovery design matrix \\ % TODO-VERIFY: final enriched design matrix columns
-First-order terms in enriched matrix & 63 & main-effect terms before final support recovery \\ % TODO-VERIFY: enriched metadata
-Second-order terms in enriched matrix & 248 & pairwise interaction terms before final support recovery \\ % TODO-VERIFY: enriched metadata
-One-variable transformations in enriched matrix & 41 & transformed terms before final support recovery \\ % TODO-VERIFY: enriched metadata
-Filtered outputs for PCA support recovery & 9,782 & retained by train-only culling \\ % TODO-VERIFY: output culling report
-Culled outputs for PCA support recovery & 13,713 & removed from PCA stage only \\ % TODO-VERIFY: output culling report
-PCA retention target & 95\% & filtered-output variance target \\ % TODO-VERIFY: reconcile with 90% references in earlier artifacts
-LASSO-selected features & 346 & support-recovery output \\ % TODO-VERIFY: LASSO output artifact
-Final retained OLS predictors & 340 & exported algebraic support \\ % TODO-VERIFY: final OLS export
-Final retained main-effect terms & 61 & direct main-effect terms in exported support \\ % TODO-VERIFY: final OLS metadata
-Final retained interaction terms & 242 & pairwise products in exported support \\ % TODO-VERIFY: final OLS metadata
-Final retained transformation terms & 37 & one-variable transformations in exported support \\ % TODO-VERIFY: final OLS metadata
-Unique original inputs represented & 62 & original inputs appearing as main effects, interactions, or transformations \\ % TODO-VERIFY: derived from final support metadata
+Simulator runs & 30,000 & full sampled design \\
+Training runs & 28,500 & all adaptive modeling stages \\
+Holdout runs & 1,500 & final external validation only \\
+Exogenous inputs & 160 & external driver set \\
+Scalar responses & 23,495 & final multivariate prediction target \\
+Filtered outputs for PCA support recovery & 9,954 & retained by train-only culling \\
+Culled outputs for PCA support recovery & 13,541 & removed from PCA stage only \\
+PCA retention target & 90\% & filtered-output variance target \\
+PCA components retained & 20 & reduced response coordinates \\
+Screened inputs (first-order) & 69 & retained by L2 permutation screen (BH FDR $q=0.05$) \\
+Interaction pairs discovered & 62 & SHAP-null permutation discovery \\
+One-variable transformations discovered & 41 & GAM curvature detection \\
+Enriched predictors after discovery & 172 & support-recovery design matrix \\
+Stable features after subsampling & 172 & survived stability selection across 50 subsamples \\
+HC3 retained features & 172 & survived the HC3 inferential filter \\
+Features pruned by delta threshold & 40 & override threshold 0.002 applied after automatic cutoff 0.024 \\
+Final retained OLS predictors & 132 & exported algebraic support \\
+Final retained main-effect terms & 54 & direct main-effect terms in exported support \\
+Final retained interaction terms & 49 & pairwise products in exported support \\
+Final retained transformation terms & 29 & one-variable transformations in exported support \\
+Final holdout macro nRMSE & 0.0721 & external validation on 1,500 holdout runs \\
 \hline
 \end{tabular}
 \end{table}
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.82\linewidth]{figure_feature_pruning_curve.svg}
+\caption{No-refit feature-pruning diagnostic ranked by marginal holdout nRMSE delta. The automatic cutoff of 0.024 was overridden by a fixed threshold of 0.002 to preserve model accuracy, pruning 40 of 172 HC3-retained features and leaving 132 predictors in the final OLS export.}
+\label{fig:results-pruning-curve}
+\end{figure}
+
 \subsection{Predictive fidelity on unseen simulator runs}
 
-Predictive performance was assessed only on the fixed 2,000-run holdout sample reserved before screening, discovery, selection, and estimation. The normalized root mean squared error reported here is the macro-average of output-wise RMSE values normalized by the corresponding training-set output ranges. Let $H$ denote holdout rows, $T$ denote training rows, and let
+Predictive performance was assessed only on the fixed 1,500-run holdout sample reserved before screening, discovery, selection, and estimation. The normalized root mean squared error reported here is the macro-average of output-wise RMSE values normalized by the corresponding training-set output ranges. Let $H$ denote holdout rows, $T$ denote training rows, and let
 \[
 \mathcal{M}=\left\{m: \max_{i\in T}Y_{im} - \min_{i\in T}Y_{im} \geq 10^{-6}\right\}
 \]
@@ -500,36 +521,55 @@ be the set of outputs with non-negligible training range. The reported metric is
 \max_{i\in T}Y_{im}-\min_{i\in T}Y_{im}
 }.
 \]
-% TODO-VERIFY: Confirm nRMSE implementation and row-bootstrap procedure against LASSO_to_OLS_v9.ipynb and final metrics code.
-A row-bootstrap confidence interval for this macro nRMSE can be constructed by resampling holdout rows while holding the trained model and training-set normalization ranges fixed; the resulting interval values will be reported once confirmed from the final pipeline.
+A row-bootstrap confidence interval for this macro nRMSE was constructed from 100 holdout-row bootstrap resamples at $\alpha=0.05$ while holding the trained model and training-set normalization ranges fixed.
 
-Using this definition, the intermediate penalized model achieved holdout macro nRMSE 0.0859, and the final OLS refit achieved holdout macro nRMSE 0.0445.
-% TODO-VERIFY: Confirm both metrics against final validation summary; do not submit until generated from the public-release pipeline.
-The improvement is consistent with the intended role of the final refit: the penalized model is used for support recovery on reduced response coordinates, whereas the exported model is an unpenalized fit on the full output matrix.
+Figure~\ref{fig:results-model-performance} and Table~\ref{tab:ablation} summarize the ablation study. The null mean baseline yielded holdout macro nRMSE 0.1653 with bootstrap interval [0.1635, 0.1663]. A main-effects OLS model using all 158 scalar inputs reduced this to 0.0812 [0.0796, 0.0821], and the screened first-order OLS model using the 69 retained inputs achieved the same value, 0.0812 [0.0796, 0.0821]. The enriched penalized OLS model achieved 0.0709 [0.0694, 0.0719], while the final pruned OLS export achieved 0.0721 [0.0706, 0.0730]. The penalized and final OLS intervals overlap, supporting the smaller 132-term export despite its slightly higher point estimate.
 
-The current validation evidence is intentionally narrower than a full model-card-style audit. The manuscript reports the external holdout macro nRMSE, the reduction in predictor and output complexity, and the structure of the retained support. Those results support the narrower workflow claim advanced here: the staged reduction pipeline can produce an explicit algebraic surrogate with low average holdout macro nRMSE. More detailed ablation studies and output-wise error diagnostics are marked as final verification targets and should be added once their generated tables are part of the public-release evidence bundle.
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\linewidth]{figure_model_performance.svg}
+\caption{Holdout macro nRMSE across ablation models in workflow order: Null mean, Main effects OLS, Screened OLS, Penalized OLS, and Final OLS. Error bars show bootstrap intervals from 100 resamples of the 1,500-run holdout sample at $\alpha=0.05$.}
+\label{fig:results-model-performance}
+\end{figure}
+
+Across the 9,954 outputs retained in the macro summary, the per-output nRMSE distribution had p10 0.018, p25 0.036, p50 0.061, p75 0.093, and p90 0.141 (Figure~\ref{fig:results-per-output-nrmse}). The worst outputs were OI.OHC output by product[TransEster, P, diesel] for 2023, 2024, and 2025, with nRMSE 0.495, 0.487, and 0.476, respectively.
+% TODO-VERIFY: Investigate whether the OI.OHC output by product[TransEster, P, diesel] tail errors for 2023--2025 reflect a systematic output-specific misspecification before publication.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.82\linewidth]{figure_per_output_nrmse_distribution.svg}
+\caption{Distribution of per-output holdout nRMSE across the 9,954 outputs retained in the macro summary. The median is 0.061 and the 90th percentile is 0.141; the worst outputs are the OI.OHC output by product[TransEster, P, diesel] series for 2023--2025.}
+\label{fig:results-per-output-nrmse}
+\end{figure}
+
+The current validation evidence is intentionally narrower than a full model-card-style audit. The manuscript reports the external holdout macro nRMSE, bootstrap ablation summaries, the per-output error distribution, and structural summaries of the retained support. Those results support the narrower workflow claim advanced here: the staged reduction pipeline can produce an explicit algebraic surrogate with low average holdout macro nRMSE while preserving a tractable exported representation.
 
 \subsection{Structure of retained effects}
 
-The retained support is best interpreted as an explicit algebraic index set rather than as a hand-readable coefficient table. The final coefficient matrix contains one coefficient per retained predictor and scalar response, plus output-specific intercepts. With 340 retained predictors and 23,495 scalar responses, this is still a large matrix. The interpretability claim is therefore structural: the feature support is finite, named, algebraic, and auditable; the full coefficient matrix is exportable and queryable.
+The retained support is best interpreted as an explicit algebraic index set rather than as a hand-readable coefficient table. The final coefficient matrix contains one coefficient per retained predictor and scalar response, plus output-specific intercepts. With 132 retained predictors and 23,495 scalar responses, this is still a large matrix. The interpretability claim is therefore structural: the feature support is finite, named, algebraic, and auditable; the full coefficient matrix is exportable and queryable.
 
-The retained feature composition indicates that the reduced form depends on more than isolated main effects. Pairwise interaction terms account for most retained predictors, while main-effect and one-variable nonlinear terms remain present. Figure~\ref{fig:results-feature-composition} shows the breakdown of the retained support by term type. This supports the design choice to discover and carry forward interactions and curvature before final OLS refitting. It also shows why a purely main-effects reduced form would be a weak default for this simulator.
+The retained feature composition indicates that the reduced form depends on more than isolated main effects. Main-effect terms are the largest single group, but 49 pairwise interactions and 29 one-variable nonlinear terms account for 78 of the 132 retained predictors. Figure~\ref{fig:results-feature-composition} shows the breakdown of the retained support by term type. This supports the design choice to discover and carry forward interactions and curvature before final OLS refitting. It also shows why a purely main-effects reduced form would be a weak default for this simulator.
 
-Figure~\ref{fig:results-interaction-density} shows the distribution of retained interaction pairs by BSM module pair. Note that this figure shows raw retained counts, not opportunity-normalized interaction rates; modules with more candidate inputs accumulate higher counts for structural reasons. The full retained pair list is in the supplementary bundle.
+Module-level counts remain concentrated in the hydrocarbon pathways. Figure~\ref{fig:results-module-support} shows that the selected support is distributed across Cellulosic Hydrocarbons (44 features; 33\%), Wet Waste Hydrocarbons (36; 27\%), Oil Hydrocarbons (28; 21\%), Starch Ethanol Hydrocarbons (13; 10\%), and Algal Hydrocarbons (11; 8\%). Figure~\ref{fig:results-interaction-density} shows the distribution of retained interaction pairs by BSM module pair. Note that this figure shows raw retained counts, not opportunity-normalized interaction rates; modules with more candidate inputs accumulate higher counts for structural reasons. The full retained pair list is in the supplementary bundle.
 
-% TODO-VERIFY: Confirm feature-composition counts in this figure against final exported support metadata and Table~\ref{tab:results-summary}.
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.72\linewidth]{results_feature_type_composition.png}
-\caption{Composition of the retained predictor support by term type in the final reduced form. The final OLS export retained 340 predictors after training-set zero-variance checks: 61 main-effect terms, 242 pairwise interaction terms, and 37 one-variable nonlinear transformations. The de-biased LASSO support-recovery stage selected 346 features before that final export check. Interaction terms dominate the retained support, with main-effect and transformation terms still present.}
+\includegraphics[width=0.72\linewidth]{figure_support_composition.svg}
+\caption{Composition of the retained predictor support by term type in the final reduced form. The final OLS export retained 132 predictors: 54 main-effect terms, 49 pairwise interaction terms, and 29 one-variable nonlinear transformations.}
 \label{fig:results-feature-composition}
 \end{figure}
 
-% TODO-VERIFY: Confirm interaction-module counts and whether the plotted values are raw counts or opportunity-normalized densities.
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.82\linewidth]{results_interaction_density_heatmap.png}
-\caption{Count matrix of retained second-order interaction terms by BSM module pair. Values are raw counts of retained interaction terms symmetrized across module pairs, not normalized by the number of candidate pairs available within each module pair. Modules with larger input sets can accumulate higher counts for structural reasons unrelated to interaction density. The full list of retained interaction pairs is provided in the supplementary artifact bundle.}
+\includegraphics[width=0.78\linewidth]{figure_selected_by_module_count.svg}
+\caption{Selected-feature counts by BSM module in the final exported support. The retained predictors are distributed across Cellulosic Hydrocarbons (44; 33\%), Wet Waste Hydrocarbons (36; 27\%), Oil Hydrocarbons (28; 21\%), Starch Ethanol Hydrocarbons (13; 10\%), and Algal Hydrocarbons (11; 8\%).}
+\label{fig:results-module-support}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.82\linewidth]{fig_module_pair_heatmap.svg}
+\caption{Count matrix of the 49 retained second-order interaction terms by BSM module pair. Values are raw counts of retained interaction terms symmetrized across module pairs, not normalized by the number of candidate pairs available within each module pair. Modules with larger input sets can accumulate higher counts for structural reasons unrelated to interaction density. The full list of retained interaction pairs is provided in the supplementary artifact bundle.}
 \label{fig:results-interaction-density}
 \end{figure}
 
@@ -541,21 +581,240 @@ Relative to a software-bound or otherwise opaque surrogate object, the reduced f
 
 \FloatBarrier
 
+\section{Sensitivity of Workflow Performance to Configuration}
+\label{sec:sensitivity}
+
+The BSM case study demonstrates the workflow on one large problem with a fixed configuration chosen to preserve accuracy at scale.
+Practitioners applying the workflow to different problems face three related questions: how many simulator runs are sufficient, which configuration parameters most influence the accuracy--cost trade-off, and how those answers depend on problem characteristics such as dimensionality, sparsity, and noise.
+This section addresses those questions through a controlled simulation study in which the complete pipeline is applied to a family of synthetic data-generating processes (DGPs) with known properties, at systematically varied configurations.
+
+\subsection{Experimental design}
+
+Two DGP families are used.
+The \emph{pure synthetic} family varies the number of scalar inputs $d$, total run count $n$, number of scalar outputs $p$, input sparsity $s$, interaction density $\rho$, nonlinearity strength $\kappa$, and signal-to-noise ratio $\sigma$ over a Latin hypercube design in seven dimensions (Table~\ref{tab:sensitivity-dgp-params}).
+Inputs are drawn from $\mathrm{Uniform}[0,1]^d$, a sparse active subset of size $\lceil sd \rceil$ is selected, and each output is constructed as a sum of linear, pairwise-interaction, and one-variable nonlinear terms plus Gaussian noise calibrated to the target SNR.
+The true support is known exactly, enabling evaluation of feature-recovery precision and recall alongside holdout nRMSE.
+
+The \emph{BSM-structure} synthetic family matches the approximate scale and correlation properties of the BSM interface.
+Inputs are drawn from a correlated distribution with AR(1)-like covariance parameterized by correlation strength $\rho_X$, and outputs share a low-rank factor structure with rank $r_Y$, chosen to mimic the cross-output dependence visible in the BSM data.
+This family tests whether conclusions from the pure synthetic family transfer to the more realistic high-dimensional correlated setting.
+
+\begin{table}[h]
+\centering
+\caption{DGP parameter ranges for the sensitivity study. Each of the 200 pure-synthetic and 50 BSM-structure DGPs is a Latin hypercube draw over these ranges.}
+\label{tab:sensitivity-dgp-params}
+\begin{tabular}{lllll}
+\hline
+Parameter & Symbol & Pure synthetic & BSM-structure & Scale \\
+\hline
+Number of inputs          & $d$       & 20--200          & 100--200        & linear \\
+Simulator run count       & $n$       & 5{,}000--30{,}000 & 5{,}000--30{,}000 & linear \\
+Number of outputs         & $p$       & 100--5{,}000     & 5{,}000--20{,}000 & log    \\
+Input sparsity            & $s$       & 0.05--0.70       & 0.10--0.50      & linear \\
+Interaction density       & $\rho$    & 0.0--0.5         & 0.1--0.3        & linear \\
+Nonlinearity strength     & $\kappa$  & 0.0--1.0         & 0.1--0.5        & linear \\
+Signal-to-noise ratio     & $\sigma$  & 5--100           & 5--50           & log    \\
+Factor model rank         & $r_Y$     & ---              & 10--40          & linear \\
+Input correlation         & $\rho_X$  & ---              & 0.1--0.5        & linear \\
+\hline
+\end{tabular}
+\end{table}
+
+For each DGP, nine pipeline configuration parameters are independently varied over a 50-point Latin hypercube design (Table~\ref{tab:sensitivity-config-params}).
+To keep the study tractable, each DGP is paired with a random draw from this shared configuration design, with five replicates per DGP--configuration combination to estimate within-combination variance.
+This yields approximately 57{,}500 total jobs (200 pure-synthetic DGPs $\times$ 50 configurations $\times$ 5 replicates, plus 50 BSM-structure DGPs $\times$ 30 configurations $\times$ 5 replicates).
+Each job runs on a single compute node with 8 CPU cores.
+
+Learning curves are generated by subsampling each DGP at eight logarithmically spaced run-count levels from $\max(1{,}000,\,n/8)$ to $n$.
+Subsampling holds the DGP fixed and isolates the effect of data volume, enabling clean power-law fitting.
+
+\begin{table}[h]
+\centering
+\caption{Configuration hyperparameter sweep ranges for the sensitivity study. Baseline values match the BSM publication run.}
+\label{tab:sensitivity-config-params}
+\begin{tabular}{lll}
+\hline
+Parameter & Baseline & Swept values \\
+\hline
+Holdout fraction                                     & 0.05 & 0.05, 0.10, 0.15, 0.20 \\
+PCA variance threshold                               & 0.90 & 0.80, 0.85, 0.90, 0.95 \\
+Screening permutations $N_\mathrm{perm}^{(s)}$       & 201  & 51, 101, 201, 401 \\
+BH FDR threshold $q$                                 & 0.05 & 0.01, 0.05, 0.10, 0.20 \\
+Interaction permutations $N_\mathrm{perm}^{(i)}$     & 31   & 11, 21, 31, 51, 101 \\
+Interaction $p$-threshold                            & 0.05 & 0.01, 0.05, 0.10, 0.20 \\
+Stability subsamples                                 & 50   & 10, 25, 50, 100 \\
+LASSO $\alpha$ percentile                            & 40   & 10, 20, 40, 60, 80 \\
+Impact pruning $\delta$-threshold                    & 0.002 & 0.001, 0.002, 0.005, 0.010 \\
+\hline
+\end{tabular}
+\end{table}
+
+The primary response variable is holdout macro nRMSE relative to the null baseline:
+\begin{equation}
+r = \frac{\mathrm{nRMSE}_\mathrm{final} - \mathrm{nRMSE}_\mathrm{null}}{\mathrm{nRMSE}_\mathrm{null}},
+\label{eq:nrmse-relative}
+\end{equation}
+where $\mathrm{nRMSE}_\mathrm{null}$ is the macro nRMSE of the null-mean predictor.
+This centering removes between-DGP variation in absolute error and focuses on the fraction of reducible error captured by the workflow.
+A secondary response is per-stage wall-clock runtime, modeled separately for each stage.
+Precision and recall of true feature support recovery are tracked as diagnostics.
+
+A polynomial degree-2 response surface is fitted to $r$ by ordinary least squares:
+\begin{equation}
+\hat{r}(\mathbf{x}) = \beta_0 + \boldsymbol{\beta}_1^\top \mathbf{x} + \mathbf{x}^\top \mathbf{B}_2 \mathbf{x},
+\label{eq:meta-regression}
+\end{equation}
+where $\mathbf{x}$ contains the log-transformed run count, log-transformed output count, sparsity, and the nine configuration parameters after standardization.
+Variance inflation factors and leave-one-DGP-out cross-validation RMSE are reported alongside the coefficient estimates.
+The BSM case study result serves as a held-out validation point: the predicted $\hat{r}$ at the BSM operating point ($n=28{,}500$, $d=158$, $p=9{,}954$, baseline configuration) is compared against the observed $r_\mathrm{BSM}$.
+
+\subsection{Effect of simulator run count}
+\label{sec:sensitivity-n}
+
+% TODO-RESULTS: Replace placeholder figure and text with observed fit once HPC jobs complete.
+
+Figure~\ref{fig:sensitivity-sample-size} will show mean holdout macro nRMSE relative improvement as a function of $n$, pooled across DGPs and stratified by problem sparsity.
+Learning curves are fitted by a power-law model:
+\begin{equation}
+\mathrm{nRMSE}(n) \approx a \cdot n^{-\hat{\alpha}} + c,
+\label{eq:power-law}
+\end{equation}
+where $\hat{\alpha}$ is the estimated decay exponent, $a$ is a problem-scale coefficient, and $c$ is the residual irreducible error floor.
+The interaction between $n$ and sparsity $s$ is expected to be the dominant modulator of the decay rate: sparse problems reach their asymptote at lower $n$, while dense interaction structure requires more runs to resolve.
+
+\begin{figure}[h]
+\centering
+% TODO-RESULTS: Replace with \includesvg{fig_sensitivity_sample_size_curve} after HPC completion.
+\fbox{\parbox{0.88\linewidth}{\centering\vspace{2.2cm}\textit{[Pending: sample-size learning curve from HPC run]}\vspace{2.2cm}}}
+\caption{Holdout macro nRMSE relative improvement versus simulator run count, pooled across synthetic DGPs. Solid line: power-law fit (Equation~\ref{eq:power-law}). Shaded band: 95\% bootstrap CI across DGPs. Stratified by problem sparsity quartile.}
+\label{fig:sensitivity-sample-size}
+\end{figure}
+
+\subsection{Effect of screening parameters}
+\label{sec:sensitivity-screen}
+
+% TODO-RESULTS: Replace with observed BH-q and n_perm effect estimates after HPC completion.
+
+The screening stage is governed by the BH FDR threshold $q$ and the permutation count $N_\mathrm{perm}^{(s)}$.
+The threshold $q$ trades false-positive rate at the screen against the risk of dropping truly active inputs; smaller $q$ produces a sparser forwarded set with higher screen specificity.
+Permutation count primarily controls calibration of the null distribution: returns are expected to diminish beyond a few hundred permutations when the signal is clearly separated from the null.
+Figure~\ref{fig:sensitivity-main-effects} will report the main-effect coefficients for all nine configuration parameters; the relative magnitudes will indicate which parameters most reward careful tuning.
+
+\begin{figure}[h]
+\centering
+% TODO-RESULTS: Replace with \includesvg{fig_sensitivity_main_effects} after HPC completion.
+\fbox{\parbox{0.88\linewidth}{\centering\vspace{2.2cm}\textit{[Pending: main-effects bar chart from HPC run]}\vspace{2.2cm}}}
+\caption{Main effects of configuration hyperparameters on holdout macro nRMSE relative improvement $r$ (Equation~\ref{eq:nrmse-relative}). Each bar is the estimated main-effect coefficient from the degree-2 response surface (Equation~\ref{eq:meta-regression}) with 95\% confidence interval. Parameters ordered by absolute effect size.}
+\label{fig:sensitivity-main-effects}
+\end{figure}
+
+\subsection{Effect of support recovery parameters}
+\label{sec:sensitivity-support}
+
+% TODO-RESULTS: Replace with LASSO alpha percentile, stability subsamples, and delta-threshold effect estimates after HPC completion.
+
+Support recovery is controlled by the LASSO $\alpha$ percentile, the number of stability subsamples, and the impact pruning $\delta$-threshold.
+The $\alpha$ percentile determines the degree of penalization: lower values retain more features before the stability vote, at the cost of more aggressive shrinkage; higher values are more parsimonious but risk omitting weakly active terms.
+Stability subsample count governs the variance of the Jaccard stability estimate; 50 subsamples is expected to be sufficient for problems with clear support, while noisier problems may benefit from more.
+The $\delta$-threshold has a direct practitioner interpretation: setting $\delta = \delta_0$ removes any feature whose marginal nRMSE contribution is less than $\delta_0$, making the accuracy--parsimony trade-off explicit.
+The meta-regression coefficient for $\delta$ will quantify, in average terms, how much nRMSE increases per unit increase in the pruning cutoff.
+
+\subsection{Computational cost model}
+\label{sec:sensitivity-cost}
+
+% TODO-RESULTS: Replace with fitted per-stage runtime scaling formulas after HPC completion.
+
+Figure~\ref{fig:sensitivity-runtime} will show the per-stage wall-clock time decomposition as a function of the primary cost drivers.
+The dominant cost stages are the permutation-calibrated screen and the interaction discovery stage.
+Screen runtime scales approximately as $O(N_\mathrm{perm}^{(s)} \times n_\mathrm{train} \times d)$; interaction discovery scales as $O(N_\mathrm{perm}^{(i)} \times n_\mathrm{pairs} \times p)$ where $n_\mathrm{pairs}$ is the number of screened input pairs.
+The sensitivity study will provide fitted power-law coefficients for each stage to enable pre-run cost estimation.
+
+\begin{figure}[h]
+\centering
+% TODO-RESULTS: Replace with \includesvg{fig_sensitivity_runtime_breakdown} after HPC completion.
+\fbox{\parbox{0.88\linewidth}{\centering\vspace{2.2cm}\textit{[Pending: per-stage runtime decomposition from HPC run]}\vspace{2.2cm}}}
+\caption{Per-stage wall-clock runtime (8 CPU cores) as a function of the primary cost driver for each stage. Points are individual sensitivity study jobs; lines are fitted scaling models.}
+\label{fig:sensitivity-runtime}
+\end{figure}
+
+\subsection{Validation against the BSM case study}
+\label{sec:sensitivity-validation}
+
+The BSM case study serves as a held-out validation point for the meta-regression formula.
+At the BSM operating point, the observed relative improvement is
+$r_\mathrm{BSM} = (0.0721 - 0.1653) / 0.1653 \approx -0.564$.
+A reliable formula should recover this value within the cross-validation error bound of the fitted response surface.
+% TODO-RESULTS: Replace with predicted r_hat_BSM and residual after HPC completion.
+
+\subsection{Practitioner guidance}
+\label{sec:sensitivity-guidance}
+
+% TODO-RESULTS: Update recommended-settings table with formula-derived values after HPC completion.
+
+Table~\ref{tab:practitioner-guidance} will summarize recommended baseline settings at three problem scales.
+The entries will represent the configuration that minimizes expected $r$ under a fixed compute budget, as implied by the sensitivity meta-regression formula.
+
+\begin{table}[h]
+\centering
+\caption{Recommended configuration by problem scale (simulator run count). Entries to be derived from the sensitivity meta-regression formula after HPC completion.}
+\label{tab:practitioner-guidance}
+\begin{tabular}{lrrr}
+\hline
+Parameter & Small ($n \le 2{,}000$) & Medium ($2{,}000 < n \le 10{,}000$) & Large ($n > 10{,}000$) \\
+\hline
+$N_\mathrm{perm}^{(s)}$ (screening)     & \textit{[TBD]} & \textit{[TBD]} & 201 \\
+BH threshold $q$                          & \textit{[TBD]} & \textit{[TBD]} & 0.05 \\
+$N_\mathrm{perm}^{(i)}$ (interaction)    & \textit{[TBD]} & \textit{[TBD]} & 31 \\
+Stability subsamples                      & \textit{[TBD]} & \textit{[TBD]} & 50 \\
+LASSO $\alpha$ percentile                 & \textit{[TBD]} & \textit{[TBD]} & 40 \\
+Expected runtime (8 CPU cores)            & \textit{[TBD]} & \textit{[TBD]} & \textit{[TBD]} \\
+\hline
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:meta-regression-formula} will report the fitted meta-regression coefficients with standard errors and $p$-values.
+\begin{table}[h]
+\centering
+\caption{Meta-regression formula for workflow nRMSE relative improvement (Equation~\ref{eq:meta-regression}). Estimated by OLS on the sensitivity study results. $p$-values use heteroskedasticity-consistent standard errors. \textit{[Full table pending HPC results.]}}
+\label{tab:meta-regression-formula}
+\begin{tabular}{lrrrr}
+\hline
+Term & Coefficient & Std.\ error & $t$-stat & $p$-value \\
+\hline
+Intercept                     & \textit{[TBD]} & \textit{[TBD]} & \textit{[TBD]} & \textit{[TBD]} \\
+$\log n$                      & \textit{[TBD]} & \textit{[TBD]} & \textit{[TBD]} & \textit{[TBD]} \\
+$\log p$                      & \textit{[TBD]} & \textit{[TBD]} & \textit{[TBD]} & \textit{[TBD]} \\
+Sparsity $s$                  & \textit{[TBD]} & \textit{[TBD]} & \textit{[TBD]} & \textit{[TBD]} \\
+$\log N_\mathrm{perm}^{(s)}$  & \textit{[TBD]} & \textit{[TBD]} & \textit{[TBD]} & \textit{[TBD]} \\
+BH threshold $q$               & \textit{[TBD]} & \textit{[TBD]} & \textit{[TBD]} & \textit{[TBD]} \\
+\multicolumn{5}{l}{\textit{(remaining terms pending HPC results)}} \\
+\hline
+\multicolumn{5}{l}{$R^2 = \textit{[TBD]}$, $\mathrm{RMSE}_\mathrm{CV} = \textit{[TBD]}$, $n_\mathrm{obs} = \textit{[TBD]}$} \\
+\hline
+\end{tabular}
+\end{table}
+
+\FloatBarrier
+
 \section{Discussion}
 \label{sec:discussion}
 
-The BSM case study shows that a high-dimensional simulator interface can be reduced through a documented statistical workflow rather than by ad hoc manual term selection. In the reported run, the workflow converted 20,000 simulator evaluations with 160 exogenous inputs and 23,495 scalar responses into an exported OLS reduced form with 340 retained predictors derived from 62 unique original inputs. The central contribution is the combination of three properties: the final model remains accurate on an untouched holdout set under the reported macro nRMSE metric, the retained support is explicit and algebraic, and the exported object is portable outside the original simulator.
+The BSM case study shows that a high-dimensional simulator interface can be reduced through a documented statistical workflow rather than by ad hoc manual term selection. In the reported run, the workflow converted 30,000 simulator evaluations with 160 exogenous inputs and 23,495 scalar responses into an exported OLS reduced form with 132 retained predictors: 54 main effects, 49 pairwise interactions, and 29 one-variable transformations. The central contribution is the combination of three properties: the final model remains accurate on an untouched 1,500-run holdout set with macro nRMSE 0.0721, the retained support is explicit and algebraic, and the exported object is portable outside the original simulator.
 
 The workflow perspective matters because the underlying statistical tasks are heterogeneous. Interface definition, calibrated screening, structured feature discovery, sparse support recovery, final estimation, and external validation solve different problems and should not be collapsed into a single model-fitting step. The calibrated screen is deliberately permissive because its role is to remove evidently negligible drivers without making early irreversible exclusions. The reduced-response discovery stages are computational devices for exposing structure across a very large output collection. The final OLS refit serves a different purpose again: it removes shrinkage from support recovery and produces the coefficient bundle required for export.
 
-The results should nevertheless be interpreted cautiously. First, the final surrogate is linear in the selected algebraic feature library, so higher-order nonlinearities, discontinuities, and regime changes can still be missed. Second, the screening and discovery stages can be computationally demanding, especially the permutation-calibrated Delta screen and SHAP interaction discovery. Third, the reduced form is validated on held-out runs drawn from the same experimental design, so the reported performance is best interpreted as within-design generalization rather than unrestricted extrapolative validity. Fourth, the evidence reported here is concentrated on macro holdout error and structural summaries of the retained support; richer output-wise diagnostics are still needed to show where the reduced form succeeds and fails across individual outputs, modules, and years. Fifth, this article does not present a head-to-head benchmark against alternative surrogate classes, so its claim is about the viability of the workflow, not about dominance over other modeling strategies.
+Section~\ref{sec:sensitivity} extends the empirical evidence beyond the single BSM problem. Running the complete pipeline on a family of synthetic DGPs with controlled properties at systematically varied configurations will produce a degree-2 meta-regression formula (Equation~\ref{eq:meta-regression}) that relates problem characteristics and configuration choices to expected nRMSE relative improvement. This formula provides practitioners with a principled basis for configuration selection and pre-run cost estimation, and the BSM result serves as held-out validation for that formula.
+
+The results should nevertheless be interpreted cautiously. First, the final surrogate is linear in the selected algebraic feature library, so higher-order nonlinearities, discontinuities, and regime changes can still be missed. Second, the screening and discovery stages can be computationally demanding, especially the permutation-calibrated L2 coefficient-norm screen and SHAP interaction discovery. Third, the reduced form is validated on held-out runs drawn from the same experimental design, so the reported performance is best interpreted as within-design generalization rather than unrestricted extrapolative validity. Fourth, the evidence reported here includes macro holdout error, bootstrap ablation summaries, the per-output error distribution, and structural summaries of the retained support, but it still stops short of a full module-by-module or scenario-by-scenario audit. Fifth, this article does not present a head-to-head benchmark against alternative surrogate classes, so its claim is about the viability of the workflow, not about dominance over other modeling strategies. The sensitivity study in Section~\ref{sec:sensitivity} characterizes relative performance within the workflow's own configuration space rather than against external alternatives.
 
 Within those limits, the broader implication is practical. Interpretable reduced forms do not need to be restricted to hand-selected predictors if the reduction problem is staged carefully. Large simulator studies can be compressed into auditable surrogate models that support later prediction, scenario exploration, targeted sensitivity analysis, and downstream model integration without repeated direct simulator execution.
 
 \section{Conclusion}
 \label{sec:conclusion}
 
-Staged statistical reduction provides a practical route from a high-dimensional simulator interface to an exportable reduced form. In the reported BSM case study, permutation-calibrated sensitivity screening, structured interaction and curvature discovery, sparse support recovery, and final OLS refitting produced an algebraic surrogate with holdout macro nRMSE 0.0445 under the reported metric while preserving an auditable input--output representation.
+Staged statistical reduction provides a practical route from a high-dimensional simulator interface to an exportable reduced form. In the reported BSM case study, permutation-calibrated sensitivity screening, structured interaction and curvature discovery, sparse support recovery, feature pruning, and final OLS refitting produced an algebraic surrogate with holdout macro nRMSE 0.0721 (95\% bootstrap CI: [0.0706, 0.0730]) while preserving an auditable input--output representation with 132 explicit predictors.
+
+The sensitivity study in Section~\ref{sec:sensitivity} will generalize these findings across synthetic DGPs with controlled properties and provide a meta-regression formula that maps problem characteristics and configuration choices to expected nRMSE improvement and runtime. The formula will enable practitioners to select configurations calibrated to their own problem scale and compute budget before committing to a full production run.
 
 The main point is not that OLS is always sufficient for large simulators. It is that an explicit algebraic feature map, selected through a documented workflow and validated on an untouched holdout set, can turn a simulator-specific analysis into a reusable statistical object. That separation between simulator execution and statistical reduction is what makes the resulting approximation portable, inspectable, and testable outside the original modeling environment.
 
@@ -564,6 +823,7 @@ The main point is not that OLS is always sufficient for large simulators. It is 
 
 Reproducibility in this article is defined at the workflow-and-model level. The aim is to make the reduced-form construction auditable and reusable from the documented external interface, without requiring repeated execution of simulator internals that may not be portable outside the original modeling environment.
 
+% TODO-VERIFY: Insert final repository DOI and archived supplement DOI once the public release is minted.
 At the time of this revision, the public release identifiers for the repository and archived bundle were still pending. The planned release materials include the analysis scripts, notebooks, environment specification, exported reduced-form bundle, feature definitions, input metadata, output metadata, coefficient matrices, intercept vectors, validation summaries, and figure-generation code. The released bundle should include both standardized-scale and raw-scale coefficient products so that users can evaluate the surrogate directly from documented input values.
 
 The reproducibility entry point should be documented in the repository README and cited here with the final release URL and DOI once available. The release workflow is expected to include installation of the locked computational environment, execution of the validation gate, regeneration of the reduced-form bundle from the released intermediate data products, and rebuilding of manuscript figures and summary tables. Large simulator raw-output files that cannot be redistributed should be replaced by documented derived artifacts sufficient to audit the statistical workflow and evaluate the exported reduced form.
@@ -571,6 +831,7 @@ The reproducibility entry point should be documented in the repository README an
 \begin{esm}
 \esmtitle{Supplementary Material}
 \esmdescription{Supplementary material for this article is planned for the public repository and archived release. The supplement is expected to include the reduced-form bundle, input and output metadata, selected feature definitions, raw-scale and standardized coefficient matrices, validation summaries, figure-generation scripts, and reproducibility instructions.}
+% TODO-VERIFY: Replace supplement filename and cite the archived supplement DOI once assigned.
 \esmfilename{bsm-public-rf-supplement.zip}
 \end{esm}
 
@@ -601,7 +862,24 @@ Known limitations & Linear in the selected algebraic feature library; may miss h
 \section{Additional validation tables}
 \label{app:validation-tables}
 
-Detailed ablation results, output-wise error summaries, and module-level diagnostics are not included in this revision. They should be added once the corresponding validation runs are part of the final evidence bundle.
+Table~\ref{tab:ablation} reports holdout macro nRMSE with bootstrap confidence intervals for each stage of the ablation study, evaluated on the 1,500-run holdout using 100 bootstrap replicates of holdout rows at $\alpha=0.05$.
+
+\begin{table}[h]
+\centering
+\caption{Ablation study: holdout macro nRMSE (Y-train-range normalized) with bootstrap confidence intervals, in workflow order. All models were evaluated on the same 1,500-run holdout sample.}
+\label{tab:ablation}
+\begin{tabular}{lrrrr}
+\hline
+Model stage & Features & nRMSE & CI lower & CI upper \\
+\hline
+Null mean        & 0   & 0.1653 & 0.1635 & 0.1663 \\
+Main effects OLS & 158 & 0.0812 & 0.0796 & 0.0821 \\
+Screened OLS     & 69  & 0.0812 & 0.0796 & 0.0821 \\
+Penalized OLS    & 172 & 0.0709 & 0.0694 & 0.0719 \\
+Final OLS        & 132 & 0.0721 & 0.0706 & 0.0730 \\
+\hline
+\end{tabular}
+\end{table}
 \end{appendix}
 
 \begin{acknowledgement}%[title={Acknowledgments}]

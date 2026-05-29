@@ -6,6 +6,37 @@ This repository, `bsm-public-rf`, is the public, reproducible reduced-form model
 
 The repository is not merely a utility package. It is a scientific workflow artifact. Code, tests, notebooks, documentation, configuration, provenance records, and generated manuscript-facing artifacts must remain internally consistent.
 
+## Operator continuity requirement (2026-05-27)
+
+User preference is explicit and mandatory:
+
+1. Before starting any new task/action, update `docs/AGENT_SYNC.md` with a short pre-flight note describing what is about to be done.
+1. After the action, update `docs/AGENT_SYNC.md` and memory docs with final outcomes.
+1. Persist run telemetry so recovery does not require rediscovery of active study IDs, controller/array/reduce job IDs, config mapping, and stage state.
+
+Publication-run status guardrails:
+
+- Do not trust script default `STUDY_ID` values.
+- Always query/report live status with explicit `--study-id` or `--study-root`.
+- Keep active study/job mapping current in `docs/AGENT_SYNC.md`.
+
+Manuscript-figure accessibility guardrails:
+
+- Keep generated SVG figures publication-readable and color-blind friendly.
+- Use high-contrast text/axes on white backgrounds.
+- Use color-blind-safe palettes (Okabe-Ito family) and avoid red/green-only encodings.
+- Distinguish key markers with line styles/shape cues, not color alone.
+
+Current run continuity note:
+
+- For `publication_full_dataset_distributed_20260526_short_hp1`, the deterministic post-completion pull + artifact verification checklist is maintained in `docs/AGENT_SYNC.md`.
+- Preliminary interaction-retention telemetry for that run is also maintained in `docs/AGENT_SYNC.md` (rolling shard-level updates; do not duplicate transient counts here).
+- Latest run state: `publication_full_dataset_distributed_20260526_short_hp1` is complete (`RUN_COMPLETE` present) with all six stages fully completed and merged outputs present.
+- Job `14012760` is the empirical-null screening reduce job for `publication_full_dataset_distributed_20260526_short_hp1` (`bsm_reduce_empirical_null_screening_bsm_publication_full_dataset_distributed_20260526_short_hp1_s02_empirical`).
+- Recovery controller can be relaunched from `scripts/kestrel/submit_publication_full_dataset_distributed.sh` on the same study root; it will walk stages sequentially and recover downstream phases once the interaction reduce clears.
+- 2026-05-29: `docs/manuscripts/jds_bsm.tex` was reconciled to the verified short_hp1 manuscript values: 30,000 runs, 5% holdout, 9,954 PCA-retained outputs, 69 screened inputs, 62 retained interactions, 41 retained nonlinear terms, 132 final predictors, and holdout macro nRMSE 0.0721. The manuscript now describes the L2/BH screening method, 40th-percentile LASSO alpha choice, HC3-plus-pruning stage, and SVG figure set; unresolved TODOs remain for DOIs, Steve Peterson affiliation, acknowledgements/disclaimer, per-scenario holdout breakdown, and worst-output investigation.
+- 2026-05-29: sensitivity-study Phase 1-2 scaffolding landed. New standalone modules are `src/bsm_rfm/synthetic_dgp.py` (pure/BSM synthetic DGPs, true support, manuscript-table schemas) and `src/bsm_rfm/sensitivity_study.py` (LHS sampling, DGP/config/job generation, serialization, result collection). Supporting configs/scripts/tests were added under `configs/sensitivity_study/`, `scripts/`, and `tests/`, with validation passing via targeted pytest (12 tests), `py_compile`, and CLI-help smoke checks.
+
 ## Current scientific workflow goals
 
 The target workflow is:

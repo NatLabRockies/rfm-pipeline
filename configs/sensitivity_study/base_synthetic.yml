@@ -1,0 +1,52 @@
+# Copyright (c) 2026 Dylan Hettinger
+# Baseline synthetic-study pipeline configuration.
+
+dataset:
+  type: "synthetic_controlled_dgp"
+  path: null
+
+algorithm:
+  variance_threshold: 0.90
+
+runtime:
+  n_jobs: 8
+  output_batch_size: null
+  use_chunked_io: true
+  chunked_io_config:
+    chunk_size_mb: 512
+    max_memory_budget_mb: 200000
+    enable_spill_to_disk: true
+
+stages:
+  empirical_null_screening:
+    n_permutations: 201
+    bh_q_threshold: 0.05
+
+  interaction_discovery:
+    n_permutations: 31
+    n_tree_estimators: 250
+    max_tree_depth: 5
+    p_threshold: 0.05
+    parallel_batch_timeout_seconds: 0
+
+  nonlinear_discovery:
+    edf_threshold: 2.5
+    transform_families: ["spline", "poly", "log", "sqrt", "exp"]
+
+  sparse_selection:
+    n_stability_subsamples: 50
+    subsample_fraction: 0.8
+    lasso_alpha_percentile: 40
+
+  final_artifacts:
+    bootstrap_count: 100
+    bootstrap_alpha: 0.05
+
+validation:
+  fast_mode: false
+  fast_mode_overrides: {}
+
+output:
+  artifact_dir: "PLACEHOLDER_OVERRIDE_PER_JOB"
+  seed: 0
+  verbose: true

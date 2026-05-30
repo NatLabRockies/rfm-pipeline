@@ -3584,8 +3584,7 @@ def regenerate_final_manuscript_artifacts(
     feature_pruning_impact, figure_feature_pruning_curve_data, feature_pruning_summary = (
         _build_feature_pruning_diagnostics(
             final_fit=hc3_fit,
-            x_holdout=x_hc3_holdout,
-            y_holdout=y_holdout,
+            x_train=x_hc3_train,
             y_train=y_train,
             final_support_features=hc3_support_features,
             spec=spec,
@@ -7286,19 +7285,22 @@ def _build_nrmse_summary_figure_data(ablation_table: pd.DataFrame) -> pd.DataFra
 def _build_feature_pruning_diagnostics(
     *,
     final_fit: Any,
-    x_holdout: pd.DataFrame,
-    y_holdout: pd.DataFrame,
+    x_train: pd.DataFrame,
     y_train: pd.DataFrame,
     final_support_features: pd.DataFrame,
     spec: FinalManuscriptArtifactsSpec,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Build no-refit single-feature impact diagnostics and a tunable pruning cutoff."""
+    """Build no-refit single-feature impact diagnostics and a tunable pruning cutoff.
+
+    Both the marginal-impact evaluation and the nRMSE normalization reference use
+    training-set data so that the holdout remains untouched until final validation.
+    """
     feature_names = [str(name) for name in final_fit.feature_names]
     output_names = [str(name) for name in final_fit.output_names]
     if not feature_names:
         raise ValueError("Feature pruning diagnostics require at least one final feature.")
-    x_eval = x_holdout.loc[:, feature_names].apply(pd.to_numeric, errors="raise")
-    y_eval = y_holdout.loc[:, output_names].apply(pd.to_numeric, errors="raise")
+    x_eval = x_train.loc[:, feature_names].apply(pd.to_numeric, errors="raise")
+    y_eval = y_train.loc[:, output_names].apply(pd.to_numeric, errors="raise")
     y_ref = y_train.loc[:, output_names].apply(pd.to_numeric, errors="raise")
 
     x_values = x_eval.to_numpy(dtype=np.float64)
@@ -7320,7 +7322,7 @@ def _build_feature_pruning_diagnostics(
     residual = y_values - pred_values
     n_rows = residual.shape[0]
     if n_rows <= 0:
-        raise ValueError("Feature pruning diagnostics require non-empty holdout rows.")
+        raise ValueError("Feature pruning diagnostics require non-empty training rows.")
     coefficient_matrix = np.asarray(final_fit.coef_raw_scale, dtype=np.float64)
     squared_error_baseline = np.sum(residual**2, axis=0)
     residual_projection = residual.T @ x_values

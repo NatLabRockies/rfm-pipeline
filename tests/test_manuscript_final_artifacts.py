@@ -261,16 +261,10 @@ def test_feature_pruning_diagnostics_respect_remove_count_override() -> None:
 
     from bsm_rfm.final_ols import FinalOLSFitResult
 
-    x_holdout = pd.DataFrame(
+    x_train = pd.DataFrame(
         {
-            "f1": [0.1, 0.2, 0.3, 0.4],
-            "f2": [1.0, 1.1, 0.9, 1.2],
-        }
-    )
-    y_holdout = pd.DataFrame(
-        {
-            "y1": [0.22, 0.41, 0.58, 0.79],
-            "y2": [0.08, 0.12, 0.19, 0.21],
+            "f1": [0.1, 0.2, 0.3, 0.4, 0.5],
+            "f2": [1.0, 1.1, 0.9, 1.2, 1.0],
         }
     )
     y_train = pd.DataFrame(
@@ -312,8 +306,7 @@ def test_feature_pruning_diagnostics_respect_remove_count_override() -> None:
 
     impact, curve, summary = _build_feature_pruning_diagnostics(
         final_fit=fit,
-        x_holdout=x_holdout,
-        y_holdout=y_holdout,
+        x_train=x_train,
         y_train=y_train,
         final_support_features=final_support_features,
         spec=spec,

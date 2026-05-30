@@ -536,6 +536,8 @@ def config_to_legacy_case_study(workflow_config: WorkflowConfig) -> dict[str, An
     interaction_discovery["max_tree_depth"] = itr.max_tree_depth
     interaction_discovery["max_shap_samples"] = itr.max_shap_samples
     interaction_discovery["min_component_variance_fraction"] = itr.min_component_variance_fraction
+    if itr.max_active_components is not None:
+        interaction_discovery["max_active_components"] = int(itr.max_active_components)
     if itr.parallel_batch_timeout_seconds is not None:
         interaction_discovery["parallel_batch_timeout_seconds"] = int(
             itr.parallel_batch_timeout_seconds

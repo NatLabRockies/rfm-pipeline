@@ -19,7 +19,9 @@
 
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# SLURM sets SLURM_SUBMIT_DIR to the directory sbatch was invoked from.
+# Fall back to relative path resolution for local testing.
+ROOT_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$ROOT_DIR"
 mkdir -p logs
 

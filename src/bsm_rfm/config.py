@@ -123,6 +123,10 @@ class InteractionStageConfig:
     """Max tree depth for ensemble."""
     parallel_batch_timeout_seconds: int | None = None
     """Per-batch parallel timeout; <=0 disables timeout (useful for long HPC shards)."""
+    max_shap_samples: int = 500
+    """Max samples for SHAP interaction matrix computation (further capped adaptively)."""
+    min_component_variance_fraction: float = 0.01
+    """Skip PCA components below this fraction of maximum component variance."""
 
 
 @dataclass

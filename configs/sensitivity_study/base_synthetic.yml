@@ -25,9 +25,11 @@ stages:
   interaction_discovery:
     n_permutations: 31
     n_tree_estimators: 50
-    max_tree_depth: 5
+    max_tree_depth: 3
     p_threshold: 0.05
     parallel_batch_timeout_seconds: 0
+    max_shap_samples: 50
+    min_component_variance_fraction: 0.05
 
   nonlinear_discovery:
     edf_threshold: 2.5

@@ -66,4 +66,7 @@ fi
 IFS=, read -r JOB_ID CONFIG_PATH ARTIFACT_DIR <<<"$LINE"
 mkdir -p "$ARTIFACT_DIR"
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] running ${JOB_ID}"
-pixi run python tools/run_manuscript_pipeline.py "$CONFIG_PATH" --output-dir "$ARTIFACT_DIR"
+pixi run python scripts/run_sensitivity_job.py \
+    --config "$CONFIG_PATH" \
+    --artifact-dir "$ARTIFACT_DIR" \
+    --job-id "$JOB_ID"

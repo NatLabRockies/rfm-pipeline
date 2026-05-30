@@ -77,9 +77,47 @@ def _build_pipeline_config(
 
     _set_dot(pipeline_cfg, "output.artifact_dir", str(artifact_dir))
     _set_dot(pipeline_cfg, "output.seed", job_config.get("output", {}).get("seed", 0))
-    _set_dot(pipeline_cfg, "runtime.n_jobs", 1)
+    # Honour n_jobs from the per-job config (set by generate_sensitivity_study.py
+    # from output.n_jobs in the study spec).  Default to 1 if absent.
+    n_jobs = int(job_config.get("runtime", {}).get("n_jobs", 1))
+    _set_dot(pipeline_cfg, "runtime.n_jobs", n_jobs)
 
     return pipeline_cfg
+
+
+def _null_nrmse_from_dataset(dataset: Any) -> float:
+    """Compute holdout macro nRMSE for the null mean predictor.
+
+    Used when the pipeline exits early because empirical null screening removed
+    all (or all-but-one) first-order terms, leaving the model null-equivalent.
+    """
+    import numpy as np
+
+    ha = dataset.holdout_assignments
+    Y = dataset.output_matrix
+
+    train_ids = set(ha.loc[ha["split"] == "train", "sample_id"].astype(str))
+    holdout_ids = set(ha.loc[ha["split"] != "train", "sample_id"].astype(str))
+
+    Y_train = Y.loc[Y["sample_id"].astype(str).isin(train_ids)].drop(columns=["sample_id"])
+    Y_holdout = Y.loc[Y["sample_id"].astype(str).isin(holdout_ids)].drop(columns=["sample_id"])
+
+    if Y_train.empty or Y_holdout.empty:
+        return float("nan")
+
+    Y_train_np = Y_train.to_numpy(dtype=float)
+    Y_holdout_np = Y_holdout.to_numpy(dtype=float)
+
+    y_mean = Y_train_np.mean(axis=0, keepdims=True)
+    residual = Y_holdout_np - y_mean
+    rmse_per_output = np.sqrt(np.mean(residual**2, axis=0))
+
+    train_range = Y_train_np.max(axis=0) - Y_train_np.min(axis=0)
+    valid = train_range >= 1.0e-6
+    if not valid.any():
+        return float("nan")
+
+    return float(np.mean(rmse_per_output[valid] / train_range[valid]))
 
 
 def _extract_metrics(artifact_dir: Path, job_id: str) -> dict[str, Any]:
@@ -234,9 +272,31 @@ def main() -> int:
         result["total_wall_seconds"] = gen_elapsed + pipeline_elapsed
 
         if proc.returncode != 0:
-            # Capture last 3 KB of stderr for diagnosis.
-            result["error_message"] = proc.stderr[-3000:] if proc.stderr else "no stderr"
-            result["stdout_tail"] = proc.stdout[-500:] if proc.stdout else ""
+            stderr = proc.stderr or ""
+            # Screens that remove all (or all-but-one) first-order terms are
+            # expected for highly sparse or noisy DGPs.  Record as null-equivalent
+            # rather than a pipeline failure so SLURM task exits 0.
+            _NULL_SCREEN_MSGS = (
+                "at least two retained first-order terms",
+                "Interaction discovery requires at least two",
+            )
+            if any(msg in stderr for msg in _NULL_SCREEN_MSGS):
+                try:
+                    null_nrmse = _null_nrmse_from_dataset(dataset)
+                except Exception:
+                    null_nrmse = float("nan")
+                result["null_screened"] = True
+                result["nrmse_null"] = null_nrmse
+                result["nrmse_final"] = null_nrmse
+                result["nrmse_relative"] = 0.0
+                result["null_mean_nrmse"] = null_nrmse
+                result["final_ols_nrmse"] = null_nrmse
+                result["n_features_retained"] = 0
+                result["error_message"] = None
+            else:
+                # Capture last 3 KB of stderr for diagnosis.
+                result["error_message"] = stderr[-3000:] if stderr else "no stderr"
+                result["stdout_tail"] = proc.stdout[-500:] if proc.stdout else ""
         else:
             metrics = _extract_metrics(artifact_dir, job_id)
             result.update(metrics)

@@ -93,21 +93,36 @@ def _extract_metrics(artifact_dir: Path, job_id: str) -> dict[str, Any]:
 
         ablation = pd.read_csv(ablation_path)
         metrics: dict[str, Any] = {"job_id": job_id}
-        # Extract null baseline and final OLS nRMSE.
-        for col in ablation.columns:
-            lower = col.lower()
-            if "nrmse" in lower or "stage" in lower or "n_selected" in lower:
-                for _, row in ablation.iterrows():
-                    stage = str(row.get("stage", "")).replace(" ", "_").lower()
-                    if stage and col in row.index:
-                        metrics[f"{stage}_{col}"] = row[col]
+
+        # Column names vary: pipeline uses 'model_name'; older versions used 'stage'.
+        name_col = "model_name" if "model_name" in ablation.columns else "stage"
+        nrmse_col = "nrmse" if "nrmse" in ablation.columns else "nRMSE"
+
+        # Store per-model metrics keyed by model name.
+        for _, row in ablation.iterrows():
+            model = str(row.get(name_col, "")).replace(" ", "_").lower()
+            if not model:
+                continue
+            if nrmse_col in row.index:
+                metrics[f"{model}_nrmse"] = float(row[nrmse_col])
+            for ci_col in ("ci_lower", "ci_upper"):
+                if ci_col in row.index:
+                    metrics[f"{model}_{ci_col}"] = float(row[ci_col])
+            feat_col = "n_features" if "n_features" in row.index else "n_selected"
+            if feat_col in row.index:
+                metrics[f"{model}_n_features"] = row[feat_col]
+
         # Convenient top-level keys.
-        final_row = ablation[ablation["stage"].str.lower().str.contains("ols|final", na=False)]
+        final_row = ablation[ablation[name_col].str.lower().str.contains("ols|final", na=False)]
         if not final_row.empty:
-            metrics["nrmse_final"] = float(final_row.iloc[-1].get("nRMSE", float("nan")))
-        null_row = ablation[ablation["stage"].str.lower().str.contains("null", na=False)]
+            last = final_row.iloc[-1]
+            metrics["nrmse_final"] = float(last.get(nrmse_col, float("nan")))
+            for ci_col in ("ci_lower", "ci_upper"):
+                if ci_col in last.index:
+                    metrics[f"nrmse_final_{ci_col}"] = float(last[ci_col])
+        null_row = ablation[ablation[name_col].str.lower().str.contains("null", na=False)]
         if not null_row.empty:
-            metrics["nrmse_null"] = float(null_row.iloc[-1].get("nRMSE", float("nan")))
+            metrics["nrmse_null"] = float(null_row.iloc[-1].get(nrmse_col, float("nan")))
         if "nrmse_final" in metrics and "nrmse_null" in metrics:
             null = metrics["nrmse_null"]
             final = metrics["nrmse_final"]

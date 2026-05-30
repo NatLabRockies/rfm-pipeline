@@ -225,9 +225,16 @@ def _resolve_data_root(config: WorkflowConfig) -> Path:
     dataset_roots = {
         "synthetic_300_sample": REPO_ROOT / "artifacts" / "test_dataset_300",
         "synthetic_full": REPO_ROOT / "artifacts" / "test_dataset_3k",
+        # Sensitivity study: caller must provide dataset.path
+        "synthetic_controlled_dgp": None,
     }
     try:
-        return dataset_roots[config.dataset.type]
+        root = dataset_roots[config.dataset.type]
+        if root is None:
+            raise ValueError(
+                f"dataset.type={config.dataset.type!r} requires dataset.path to be set explicitly."
+            )
+        return root
     except KeyError as exc:
         raise ValueError(
             "Unsupported dataset.type for unified runner. "

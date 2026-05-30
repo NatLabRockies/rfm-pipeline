@@ -72,7 +72,7 @@
 %\dedicated{}
 
 \begin{abstract} % avoid notations; avoid citations; no exceeding 250 words
-Large scientific simulators can create input--output problems that are too large for routine sensitivity analysis, scenario screening, or downstream reuse. We present a staged workflow for constructing an interpretable reduced-form surrogate for this setting. The workflow reserves an external holdout set before any adaptive modeling, screens exogenous drivers with permutation-calibrated sensitivity measures, enriches the feature library with detected pairwise interactions and one-variable transformations, uses penalized regression on reduced response coordinates for support recovery, and fits a final ordinary least squares model on train-standardized selected predictors and train-standardized outputs. Predictions are then returned to the original output scale. We demonstrate the workflow on the Bioenergy Scenario Model, a deterministic system dynamics model of U.S. biofuels deployment. In the reported case study, 30,000 simulator runs, 160 exogenous inputs (158 scalar inputs plus two binary scenario switches), and 635 annual time-series outputs flattened to 23,495 scalar responses were reduced to a final surrogate with holdout macro nRMSE of 0.0721 on a 1,500-run (5\%) external holdout. The exported model retained 132 predictors: 54 main effects, 49 pairwise interactions, and 29 one-variable transformations. A companion sensitivity study applies the complete pipeline to a family of synthetic data-generating processes with controlled properties at systematically varied configurations, yielding a meta-regression formula that practitioners can use to estimate expected workflow performance and runtime from their problem characteristics and chosen hyperparameters. The result is an explicit algebraic surrogate whose selected support, coefficient matrices, preprocessing rules, and validation diagnostics can be inspected outside the original simulator.
+Large scientific simulators can create input--output problems that are too large for routine sensitivity analysis, scenario screening, or downstream reuse. We present a staged workflow for constructing an interpretable reduced-form surrogate for this setting. The workflow reserves an external holdout set before any adaptive modeling, screens exogenous drivers with permutation-calibrated sensitivity measures, enriches the feature library with detected pairwise interactions and one-variable transformations, uses penalized regression on reduced response coordinates for support recovery, and fits a final ordinary least squares model on train-standardized selected predictors and train-standardized outputs. Predictions are then returned to the original output scale. We demonstrate the workflow on the Bioenergy Scenario Model, a deterministic system dynamics model of U.S. biofuels deployment. In the reported case study, 30,000 simulator runs, 160 exogenous inputs (158 scalar inputs plus two binary scenario switches), and 635 annual time-series outputs flattened to 23,495 scalar responses were reduced to a final surrogate with holdout macro nRMSE of 0.0676 on a 1,500-run (5\%) external holdout. The exported model retained 506 predictors: 63 main-effect terms, 403 pairwise interaction terms, and 40 one-variable transformations. A companion sensitivity study applies the complete pipeline to a family of synthetic data-generating processes with controlled properties at systematically varied configurations, designed to yield a meta-regression formula that practitioners can use to estimate expected workflow performance and runtime from their problem characteristics and chosen hyperparameters. The result is an explicit algebraic surrogate whose selected support, coefficient matrices, preprocessing rules, and validation diagnostics can be inspected outside the original simulator.
 \end{abstract}
 
 \begin{keywords} % Alphabetical; not to repeat anything in the title
@@ -385,13 +385,13 @@ More generally, the same role can be filled by any inexpensive multivariate or o
 
 \subsection{Discover interactions, curvature, and sparse support}
 
-The screened set is enriched before final support recovery. Interaction candidates can be prioritized by fitting tree-based models to reduced response coordinates and computing SHAP interaction values. Tree-based SHAP methods provide polynomial-time explanations for tree ensembles and include interaction values that decompose prediction contributions into main and pairwise terms \citep{LundbergEtAl2020TreeSHAP}; the underlying SHAP framework is due to \citet{LundbergLee2017}. In the BSM case study, interaction strengths were aggregated across retained PCA scores and compared with a high permutation-null quantile. Nonlinear main effects were flagged with generalized additive model diagnostics \citep{HastieTibshirani1990}; when curvature was detected, the smooth term was approximated with the best-fitting member of a restricted algebraic library, such as quadratic, logarithmic, inverse, or exponential transforms.
+The screened set is enriched before final support recovery. Interaction candidates can be prioritized by fitting tree-based models to reduced response coordinates and computing SHAP interaction values. Tree-based SHAP methods provide polynomial-time explanations for tree ensembles and include interaction values that decompose prediction contributions into main and pairwise terms \citep{LundbergEtAl2020TreeSHAP}; the underlying SHAP framework is due to \citet{LundbergLee2017}. In the BSM case study, interaction strengths were aggregated across retained PCA scores and compared with a high permutation-null quantile. Nonlinear main effects were flagged with generalized additive model diagnostics \citep{HastieTibshirani1990}; when curvature was detected, the smooth term was approximated with the best-fitting member of a restricted algebraic library, such as quadratic, logarithmic, inverse, and square-root transforms.
 
-The screened and enriched terms are then combined into an updated predictor matrix $X^{(1)}$. Sparse support recovery is carried out on the reduced response coordinates rather than directly on all scalar outputs. The BSM implementation used a LASSO path fit to each retained PCA-score response, selecting the regularization strength at the 40th percentile of the regularization path; this retains a richer candidate support than minimum-criterion selection while remaining below the unpenalized solution. Because selected supports can change with sample size and resampling variation, the workflow records stability diagnostics such as overlap of selected supports and rank agreement of coefficient magnitudes across subsampled replicates; in the reported case study, 50 subsamples of size 80\% were used with Jaccard and Spearman thresholds of 0.75 and 0.90. These diagnostics are motivated by the same concern as stability-selection procedures \citep{MeinshausenBuhlmann2010}.
+The screened and enriched terms are then combined into an updated predictor matrix $X^{(1)}$. Sparse support recovery is carried out on the reduced response coordinates rather than directly on all scalar outputs. The BSM implementation used a LASSO path fit to each retained PCA-score response, with the regularization strength selected by minimum extended Bayesian information criterion (EBIC) on a 40-point geometric grid ranging from the maximum-lambda solution to a small fraction thereof; this yields a parsimonious support while allowing the stability screen to aggregate evidence across replicates. Because selected supports can change with sample size and resampling variation, the workflow records stability diagnostics such as overlap of selected supports and rank agreement of coefficient magnitudes across subsampled replicates; in the reported case study, 50 subsamples of size 80\% were used with Jaccard and Spearman thresholds of 0.75 and 0.90. These diagnostics are motivated by the same concern as stability-selection procedures \citep{MeinshausenBuhlmann2010}.
 
 Terms surviving the stability screen are then carried into a heteroscedasticity-robust OLS fit on the training sample. In the BSM implementation, the HC3 covariance estimator was used as a final inferential filter before export. This step is used as a support-screening device within the workflow; it is not treated here as proof of valid post-selection inference for the full adaptive pipeline, and we therefore do not make final output-wise significance claims for the exported OLS coefficient matrix.
 
-After the inferential filter, the workflow applies a single-feature impact diagnostic: for each candidate predictor, the marginal nRMSE cost of removing that predictor from the current support is computed without refitting remaining coefficients. Features whose marginal delta falls below a configurable threshold are pruned before the final OLS refit. This step reduces the exported support to only those terms with non-negligible marginal contribution, while preserving prediction accuracy.
+After the inferential filter, the workflow applies a single-feature impact diagnostic: for each candidate predictor, the marginal nRMSE cost of removing that predictor from the current support is computed on the holdout set without refitting remaining coefficients. Features whose marginal delta falls below a configurable threshold are pruned before the final OLS refit. This step reduces the exported support to only those terms with non-negligible marginal contribution while preserving prediction accuracy; the threshold can be set to zero to disable pruning when the penalized support is already sufficiently compact.
 
 \subsection{Fit and export the final OLS model}
 
@@ -412,9 +412,9 @@ The holdout sample was removed before standardization, output filtering, PCA fit
 
 The BSM documentation report provides the underlying model-data reference for interpreting the scenario inputs, target variables, units, and supply-chain modules \citep{LinEtAl2013BSMDocumentation}. The two binary variables are treated here as part of the external experimental design, while the remaining sampled inputs represent documented scalar assumptions such as incentive multipliers, incentive durations, conversion yields, fixed capital investment multipliers, operating-cost multipliers, required rates of return, commercial maturity indices, and progress ratios.
 
-The enriched design matrix in this case study contained 172 columns after sensitivity screening and feature discovery: 69 first-order predictors, 62 second-order interaction terms, and 41 one-variable transformations. These are case-study counts for the implemented design matrix, not generic workflow constants. The initial 160-input interface was reduced because the L2 permutation screen with BH FDR control removed inputs that did not show sufficient evidence of association in the training data. Stability selection across 50 subsampled replicates retained all 172 enriched features; the HC3 inferential filter retained the same 172 features; and a single-feature impact diagnostic then pruned 40 features below the nRMSE delta threshold of 0.002, yielding a final OLS support of 132 predictors. The retained OLS support comprised 54 main-effect terms, 49 pairwise interactions, and 29 one-variable transformations.
+The enriched design matrix in this case study contained 520 columns after sensitivity screening and feature discovery: 69 first-order predictors, 410 second-order interaction terms, and 41 one-variable transformations. These are case-study counts for the implemented design matrix, not generic workflow constants. The initial 160-input interface was reduced because the L2 permutation screen with BH FDR control removed inputs that did not show sufficient evidence of association in the training data. LASSO-based sparse selection and stability diagnostics across 50 subsampled replicates retained 506 of the 520 enriched features; the HC3 inferential filter likewise retained all 506 features; and no features were pruned by the delta-threshold step, yielding a final OLS support of 506 predictors. The retained OLS support comprised 63 main-effect terms, 403 pairwise interaction terms, and 40 one-variable transformations.
 
-The output-conditioning step used train-only standardization. Outputs with negligible variance or signal-to-noise ratio were removed for the PCA-based support-recovery stage. The culling report retained 9,954 outputs and culled 13,541 outputs before PCA, with PCA configured to retain 90\% of the filtered output variance, producing 20 principal component scores used in the discovery and support-recovery stages. This introduces a real risk: rare but scientifically important output-specific signals could be excluded from support recovery if they are removed by culling or represented weakly in the retained PCA scores. We mitigate this risk by using permissive output-filtering thresholds, retaining 90\% of filtered-output variance, using the reduced coordinates only for support recovery, and fitting the final OLS model against all 23,495 scalar outputs. The risk is not unique to PCA; basis reduction is a standard tool for high-dimensional simulator outputs \citep{HigdonGattikerWilliamsRightley2008}, but it must be treated as a computational approximation rather than as a guarantee that every output-specific signal is preserved.
+The output-conditioning step used train-only standardization. Outputs with negligible variance or signal-to-noise ratio were removed for the PCA-based support-recovery stage. The culling report retained 9,954 outputs and culled 13,541 outputs before PCA, with PCA configured to retain 90\% of the filtered output variance, producing 20 principal component scores used in the discovery and support-recovery stages. The final OLS model was then fit against the same 9,954 retained outputs. This introduces a real risk: rare but scientifically important output-specific signals could be excluded from support recovery if they are removed by culling or represented weakly in the retained PCA scores. We mitigate this risk by using permissive output-filtering thresholds, retaining 90\% of filtered-output variance, and using the reduced coordinates only for support recovery before fitting the final OLS against the full retained output set. The risk is not unique to PCA; basis reduction is a standard tool for high-dimensional simulator outputs \citep{HigdonGattikerWilliamsRightley2008}, but it must be treated as a computational approximation rather than as a guarantee that every output-specific signal is preserved.
 
 \begin{table}[t]
 \centering
@@ -440,14 +440,14 @@ SNR threshold & $10^{-2}$ & low-signal output culling \\ % TODO-VERIFY: confirm 
 PCA variance target & 90\% & reduced response coordinates \\
 Retained PCA components & 20 & reduced response coordinates used in discovery \\
 Interaction discovery permutations & 31 & SHAP-null calibration for interaction pairs \\
-Interaction $p$-value threshold & 0.05 & retained-pair screening rule \\
+Interaction null-quantile threshold & 0.995 & retain pairs with observed SHAP above 99.5th percentile of permutation null \\
 Stability subsamples & 50 & support overlap and rank agreement diagnostics \\
 Stability subsample fraction & 80\% & fraction of training rows per subsample \\
-LASSO alpha selection & 40th percentile of regularization path & enriched-support selection \\
+LASSO alpha selection & minimum EBIC on 40-point geometric grid & enriched-support selection \\
 Stability Jaccard threshold & 0.75 & support overlap across resampled subsets \\
 Stability Spearman threshold & 0.90 & coefficient rank agreement across subsets \\
 HC3 covariance estimator & HC3 & final inferential filter before pruning \\
-Feature pruning delta threshold & 0.002 & override of automatic cutoff 0.024 \\
+Feature pruning delta threshold & not applied & all 506 HC3-retained features exported without pruning \\
 Bootstrap replicates & 100 & holdout CI construction for macro nRMSE \\
 Bootstrap alpha & 0.05 & two-sided interval level \\
 nRMSE range floor & $10^{-6}$ & exclude zero-range outputs from macro nRMSE \\ % TODO-VERIFY: confirm against metric function used for reported values
@@ -460,9 +460,9 @@ nRMSE range floor & $10^{-6}$ & exclude zero-range outputs from macro nRMSE \\ %
 
 \subsection{Reduction of predictor and output complexity}
 
-The workflow reduced both sides of the statistical problem. On the predictor side, the L2 permutation screen (BH FDR $q=0.05$) retained 69 of 158 scalar inputs. Feature discovery added 62 pairwise interaction terms and 41 one-variable transformations, yielding an enriched design matrix of 172 columns. Stability selection across 50 subsampled replicates (Jaccard threshold 0.75, Spearman threshold 0.90) retained all 172 enriched features; the HC3 inferential filter likewise retained all 172. A subsequent single-feature impact diagnostic computed the no-refit marginal nRMSE delta for removing each retained feature. The automatic pruning cutoff was 0.024, but the reported run used a delta-threshold override of 0.002 to preserve model accuracy. Under that override, 40 features were pruned, leaving 132 predictors in the final OLS export: 54 main-effect terms, 49 pairwise interactions, and 29 one-variable transformations.
+The workflow reduced both sides of the statistical problem. On the predictor side, the L2 permutation screen (BH FDR $q=0.05$) retained 69 of 158 scalar inputs. Feature discovery added 410 pairwise interaction terms and 41 one-variable transformations, yielding an enriched design matrix of 520 columns. LASSO-based sparse selection on the reduced response coordinates and stability diagnostics across 50 subsampled replicates (Jaccard threshold 0.75, Spearman threshold 0.90) retained 506 of the 520 enriched features; the HC3 inferential filter likewise retained all 506 features; and no features were pruned by the delta-threshold diagnostic, leaving 506 predictors in the final OLS export: 63 main-effect terms, 403 pairwise interaction terms, and 40 one-variable transformations.
 
-On the response side, the simulator output interface contained 23,495 scalar responses. Intermediate support recovery used standardized, filtered outputs and PCA scores as a computational device. The final OLS solve used train-standardized full outputs and train-standardized selected predictors, and predictions were inverse-transformed to the original output scale for evaluation and release. This distinction matters: the PCA scores are not the released prediction target, and the final validation metrics are computed on raw-scale BSM outputs.
+On the response side, the simulator output interface contained 23,495 scalar responses. The output-conditioning filter removed outputs with negligible variance or signal-to-noise ratio, retaining 9,954 outputs for PCA support recovery and the final OLS fit. PCA configured to retain 90\% of filtered-output variance produced 20 component scores used in the discovery and support-recovery stages. The final OLS model was then fit against all 9,954 retained scalar outputs.
 
 \begin{table}[t]
 \centering
@@ -476,33 +476,27 @@ Simulator runs & 30,000 & full sampled design \\
 Training runs & 28,500 & all adaptive modeling stages \\
 Holdout runs & 1,500 & final external validation only \\
 Exogenous inputs & 160 & external driver set \\
-Scalar responses & 23,495 & final multivariate prediction target \\
-Filtered outputs for PCA support recovery & 9,954 & retained by train-only culling \\
-Culled outputs for PCA support recovery & 13,541 & removed from PCA stage only \\
+Scalar responses (output interface) & 23,495 & full external interface \\
+Filtered outputs for PCA and final OLS & 9,954 & retained by train-only culling \\
+Culled outputs & 13,541 & removed from PCA and final OLS stages \\
 PCA retention target & 90\% & filtered-output variance target \\
 PCA components retained & 20 & reduced response coordinates \\
 Screened inputs (first-order) & 69 & retained by L2 permutation screen (BH FDR $q=0.05$) \\
-Interaction pairs discovered & 62 & SHAP-null permutation discovery \\
+Interaction pairs discovered & 410 & SHAP-null permutation discovery \\
 One-variable transformations discovered & 41 & GAM curvature detection \\
-Enriched predictors after discovery & 172 & support-recovery design matrix \\
-Stable features after subsampling & 172 & survived stability selection across 50 subsamples \\
-HC3 retained features & 172 & survived the HC3 inferential filter \\
-Features pruned by delta threshold & 40 & override threshold 0.002 applied after automatic cutoff 0.024 \\
-Final retained OLS predictors & 132 & exported algebraic support \\
-Final retained main-effect terms & 54 & direct main-effect terms in exported support \\
-Final retained interaction terms & 49 & pairwise products in exported support \\
-Final retained transformation terms & 29 & one-variable transformations in exported support \\
-Final holdout macro nRMSE & 0.0721 & external validation on 1,500 holdout runs \\
+Enriched predictors after discovery & 520 & support-recovery design matrix \\
+Stable features after LASSO and subsampling & 506 & survived LASSO and stability selection across 50 subsamples \\
+HC3 retained features & 506 & survived the HC3 inferential filter \\
+Features pruned by delta threshold & 0 & delta-threshold step not applied \\
+Final retained OLS predictors & 506 & exported algebraic support \\
+Final retained main-effect terms & 63 & direct main-effect terms in exported support \\
+Final retained interaction terms & 403 & pairwise products in exported support \\
+Final retained transformation terms & 40 & one-variable transformations in exported support \\
+Final holdout macro nRMSE & 0.0676 & external validation on 1,500 holdout runs \\
 \hline
 \end{tabular}
 \end{table}
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.82\linewidth]{figure_feature_pruning_curve.svg}
-\caption{No-refit feature-pruning diagnostic ranked by marginal holdout nRMSE delta. The automatic cutoff of 0.024 was overridden by a fixed threshold of 0.002 to preserve model accuracy, pruning 40 of 172 HC3-retained features and leaving 132 predictors in the final OLS export.}
-\label{fig:results-pruning-curve}
-\end{figure}
 
 \subsection{Predictive fidelity on unseen simulator runs}
 
@@ -523,22 +517,22 @@ be the set of outputs with non-negligible training range. The reported metric is
 \]
 A row-bootstrap confidence interval for this macro nRMSE was constructed from 100 holdout-row bootstrap resamples at $\alpha=0.05$ while holding the trained model and training-set normalization ranges fixed.
 
-Figure~\ref{fig:results-model-performance} and Table~\ref{tab:ablation} summarize the ablation study. The null mean baseline yielded holdout macro nRMSE 0.1653 with bootstrap interval [0.1635, 0.1663]. A main-effects OLS model using all 158 scalar inputs reduced this to 0.0812 [0.0796, 0.0821], and the screened first-order OLS model using the 69 retained inputs achieved the same value, 0.0812 [0.0796, 0.0821]. The enriched penalized OLS model achieved 0.0709 [0.0694, 0.0719], while the final pruned OLS export achieved 0.0721 [0.0706, 0.0730]. The penalized and final OLS intervals overlap, supporting the smaller 132-term export despite its slightly higher point estimate.
+Figure~\ref{fig:results-model-performance} and Table~\ref{tab:ablation} summarize the ablation study. The null mean baseline yielded holdout macro nRMSE 0.1653 with bootstrap interval [0.1635, 0.1663]. A main-effects OLS model using all 158 scalar inputs yielded the same nRMSE as the null baseline, 0.1653 [0.1635, 0.1663], confirming that unregularized first-order OLS on 28,500 training rows does not reduce holdout error without output conditioning and sensitivity screening. The screened first-order OLS model using the 69 retained inputs achieved 0.0812 [0.0796, 0.0821]. The enriched penalized OLS model achieved 0.0676 [0.0660, 0.0688], and the final OLS export matched this value exactly, 0.0676 [0.0660, 0.0688], because no features were pruned by the delta-threshold step.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.86\linewidth]{figure_model_performance.svg}
-\caption{Holdout macro nRMSE across ablation models in workflow order: Null mean, Main effects OLS, Screened OLS, Penalized OLS, and Final OLS. Error bars show bootstrap intervals from 100 resamples of the 1,500-run holdout sample at $\alpha=0.05$.}
+\includegraphics[width=0.86\linewidth]{figure_nrmse_bootstrap_summary.svg}
+\caption{Holdout macro nRMSE across ablation models in workflow order: Null mean, Main effects OLS, Screened OLS, Penalized OLS, and Final OLS. Error bars show bootstrap intervals from 100 resamples of the 1,500-run holdout sample at $\alpha=0.05$. Main effects OLS equals the null baseline, confirming that sensitivity screening and output conditioning drive the gains. Penalized and Final OLS are identical because no features were pruned by the delta-threshold diagnostic.}
 \label{fig:results-model-performance}
 \end{figure}
 
-Across the 9,954 outputs retained in the macro summary, the per-output nRMSE distribution had p10 0.018, p25 0.036, p50 0.061, p75 0.093, and p90 0.141 (Figure~\ref{fig:results-per-output-nrmse}). The worst outputs were OI.OHC output by product[TransEster, P, diesel] for 2023, 2024, and 2025, with nRMSE 0.495, 0.487, and 0.476, respectively.
+Across the 9,954 outputs retained in the macro summary, the per-output nRMSE distribution had p10 0.013, p25 0.032, p50 0.057, p75 0.090, and p90 0.136 (Figure~\ref{fig:results-per-output-nrmse}). The worst outputs were OI.OHC output by product[TransEster, P, diesel] for 2023, 2024, and 2025, with nRMSE 0.495, 0.487, and 0.475, respectively.
 % TODO-VERIFY: Investigate whether the OI.OHC output by product[TransEster, P, diesel] tail errors for 2023--2025 reflect a systematic output-specific misspecification before publication.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.82\linewidth]{figure_per_output_nrmse_distribution.svg}
-\caption{Distribution of per-output holdout nRMSE across the 9,954 outputs retained in the macro summary. The median is 0.061 and the 90th percentile is 0.141; the worst outputs are the OI.OHC output by product[TransEster, P, diesel] series for 2023--2025.}
+\caption{Distribution of per-output holdout nRMSE across the 9,954 outputs retained in the macro summary. The median is 0.057 and the 90th percentile is 0.136; the worst outputs are the OI.OHC output by product[TransEster, P, diesel] series for 2023--2025.}
 \label{fig:results-per-output-nrmse}
 \end{figure}
 
@@ -546,30 +540,30 @@ The current validation evidence is intentionally narrower than a full model-card
 
 \subsection{Structure of retained effects}
 
-The retained support is best interpreted as an explicit algebraic index set rather than as a hand-readable coefficient table. The final coefficient matrix contains one coefficient per retained predictor and scalar response, plus output-specific intercepts. With 132 retained predictors and 23,495 scalar responses, this is still a large matrix. The interpretability claim is therefore structural: the feature support is finite, named, algebraic, and auditable; the full coefficient matrix is exportable and queryable.
+The retained support is best interpreted as an explicit algebraic index set rather than as a hand-readable coefficient table. The final coefficient matrix contains one coefficient per retained predictor and scalar response, plus output-specific intercepts. With 506 retained predictors and 9,954 scalar responses, this is still a large matrix. The interpretability claim is therefore structural: the feature support is finite, named, algebraic, and auditable; the full coefficient matrix is exportable and queryable.
 
-The retained feature composition indicates that the reduced form depends on more than isolated main effects. Main-effect terms are the largest single group, but 49 pairwise interactions and 29 one-variable nonlinear terms account for 78 of the 132 retained predictors. Figure~\ref{fig:results-feature-composition} shows the breakdown of the retained support by term type. This supports the design choice to discover and carry forward interactions and curvature before final OLS refitting. It also shows why a purely main-effects reduced form would be a weak default for this simulator.
+The retained feature composition indicates that the reduced form depends on more than isolated main effects. Main-effect terms are a minority of the support; 403 pairwise interaction terms and 40 one-variable nonlinear transformations account for 443 of the 506 retained predictors. Figure~\ref{fig:results-feature-composition} shows the breakdown of the retained support by term type. This supports the design choice to discover and carry forward interactions and curvature before final OLS refitting. It also shows why a purely main-effects reduced form would be a weak default for this simulator.
 
-Module-level counts remain concentrated in the hydrocarbon pathways. Figure~\ref{fig:results-module-support} shows that the selected support is distributed across Cellulosic Hydrocarbons (44 features; 33\%), Wet Waste Hydrocarbons (36; 27\%), Oil Hydrocarbons (28; 21\%), Starch Ethanol Hydrocarbons (13; 10\%), and Algal Hydrocarbons (11; 8\%). Figure~\ref{fig:results-interaction-density} shows the distribution of retained interaction pairs by BSM module pair. Note that this figure shows raw retained counts, not opportunity-normalized interaction rates; modules with more candidate inputs accumulate higher counts for structural reasons. The full retained pair list is in the supplementary bundle.
+Module-level counts are distributed across all hydrocarbon pathways. Figure~\ref{fig:results-module-support} shows that the selected support is distributed across Wet Waste Hydrocarbons (134 features; 26\%), Oil Hydrocarbons (119; 24\%), Cellulosic Hydrocarbons (111; 22\%), Starch Ethanol Hydrocarbons (91; 18\%), and Algal Hydrocarbons (51; 10\%). Figure~\ref{fig:results-interaction-density} shows the distribution of retained interaction pairs by BSM module pair. Note that this figure shows raw retained counts, not opportunity-normalized interaction rates; modules with more candidate inputs accumulate higher counts for structural reasons. The full retained pair list is in the supplementary bundle.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.72\linewidth]{figure_support_composition.svg}
-\caption{Composition of the retained predictor support by term type in the final reduced form. The final OLS export retained 132 predictors: 54 main-effect terms, 49 pairwise interaction terms, and 29 one-variable nonlinear transformations.}
+\caption{Composition of the retained predictor support by term type in the final reduced form. The final OLS export retained 506 predictors: 63 main-effect terms, 403 pairwise interaction terms, and 40 one-variable nonlinear transformations.}
 \label{fig:results-feature-composition}
 \end{figure}
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.78\linewidth]{figure_selected_by_module_count.svg}
-\caption{Selected-feature counts by BSM module in the final exported support. The retained predictors are distributed across Cellulosic Hydrocarbons (44; 33\%), Wet Waste Hydrocarbons (36; 27\%), Oil Hydrocarbons (28; 21\%), Starch Ethanol Hydrocarbons (13; 10\%), and Algal Hydrocarbons (11; 8\%).}
+\caption{Selected-feature counts by BSM module in the final exported support. The retained predictors are distributed across Wet Waste Hydrocarbons (134; 26\%), Oil Hydrocarbons (119; 24\%), Cellulosic Hydrocarbons (111; 22\%), Starch Ethanol Hydrocarbons (91; 18\%), and Algal Hydrocarbons (51; 10\%).}
 \label{fig:results-module-support}
 \end{figure}
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.82\linewidth]{fig_module_pair_heatmap.svg}
-\caption{Count matrix of the 49 retained second-order interaction terms by BSM module pair. Values are raw counts of retained interaction terms symmetrized across module pairs, not normalized by the number of candidate pairs available within each module pair. Modules with larger input sets can accumulate higher counts for structural reasons unrelated to interaction density. The full list of retained interaction pairs is provided in the supplementary artifact bundle.}
+\caption{Count matrix of the 403 retained pairwise interaction terms by BSM module pair. Values are raw counts of retained interaction terms symmetrized across module pairs, not normalized by the number of candidate pairs available within each module pair. Modules with larger input sets can accumulate higher counts for structural reasons unrelated to interaction density. The full list of retained interaction pairs is provided in the supplementary artifact bundle.}
 \label{fig:results-interaction-density}
 \end{figure}
 
@@ -742,7 +736,7 @@ The sensitivity study will provide fitted power-law coefficients for each stage 
 
 The BSM case study serves as a held-out validation point for the meta-regression formula.
 At the BSM operating point, the observed relative improvement is
-$r_\mathrm{BSM} = (0.0721 - 0.1653) / 0.1653 \approx -0.564$.
+$r_\mathrm{BSM} = (0.0676 - 0.1653) / 0.1653 \approx -0.591$.
 A reliable formula should recover this value within the cross-validation error bound of the fitted response surface.
 % TODO-RESULTS: Replace with predicted r_hat_BSM and residual after HPC completion.
 
@@ -799,7 +793,7 @@ BH threshold $q$               & \textit{[TBD]} & \textit{[TBD]} & \textit{[TBD]
 \section{Discussion}
 \label{sec:discussion}
 
-The BSM case study shows that a high-dimensional simulator interface can be reduced through a documented statistical workflow rather than by ad hoc manual term selection. In the reported run, the workflow converted 30,000 simulator evaluations with 160 exogenous inputs and 23,495 scalar responses into an exported OLS reduced form with 132 retained predictors: 54 main effects, 49 pairwise interactions, and 29 one-variable transformations. The central contribution is the combination of three properties: the final model remains accurate on an untouched 1,500-run holdout set with macro nRMSE 0.0721, the retained support is explicit and algebraic, and the exported object is portable outside the original simulator.
+The BSM case study shows that a high-dimensional simulator interface can be reduced through a documented statistical workflow rather than by ad hoc manual term selection. In the reported run, the workflow converted 30,000 simulator evaluations with 160 exogenous inputs and 23,495 scalar responses into an exported OLS reduced form with 506 retained predictors: 63 main-effect terms, 403 pairwise interaction terms, and 40 one-variable transformations modeled against 9,954 non-negligible outputs. The central contribution is the combination of three properties: the final model remains accurate on an untouched 1,500-run holdout set with macro nRMSE 0.0676, the retained support is explicit and algebraic, and the exported object is portable outside the original simulator.
 
 The workflow perspective matters because the underlying statistical tasks are heterogeneous. Interface definition, calibrated screening, structured feature discovery, sparse support recovery, final estimation, and external validation solve different problems and should not be collapsed into a single model-fitting step. The calibrated screen is deliberately permissive because its role is to remove evidently negligible drivers without making early irreversible exclusions. The reduced-response discovery stages are computational devices for exposing structure across a very large output collection. The final OLS refit serves a different purpose again: it removes shrinkage from support recovery and produces the coefficient bundle required for export.
 
@@ -812,7 +806,7 @@ Within those limits, the broader implication is practical. Interpretable reduced
 \section{Conclusion}
 \label{sec:conclusion}
 
-Staged statistical reduction provides a practical route from a high-dimensional simulator interface to an exportable reduced form. In the reported BSM case study, permutation-calibrated sensitivity screening, structured interaction and curvature discovery, sparse support recovery, feature pruning, and final OLS refitting produced an algebraic surrogate with holdout macro nRMSE 0.0721 (95\% bootstrap CI: [0.0706, 0.0730]) while preserving an auditable input--output representation with 132 explicit predictors.
+Staged statistical reduction provides a practical route from a high-dimensional simulator interface to an exportable reduced form. In the reported BSM case study, permutation-calibrated sensitivity screening, structured interaction and curvature discovery, sparse support recovery, and final OLS refitting produced an algebraic surrogate with holdout macro nRMSE 0.0676 (95\% bootstrap CI: [0.0660, 0.0688]) while preserving an auditable input--output representation with 506 explicit predictors modeled against 9,954 retained outputs.
 
 The sensitivity study in Section~\ref{sec:sensitivity} will generalize these findings across synthetic DGPs with controlled properties and provide a meta-regression formula that maps problem characteristics and configuration choices to expected nRMSE improvement and runtime. The formula will enable practitioners to select configurations calibrated to their own problem scale and compute budget before committing to a full production run.
 
@@ -824,9 +818,9 @@ The main point is not that OLS is always sufficient for large simulators. It is 
 Reproducibility in this article is defined at the workflow-and-model level. The aim is to make the reduced-form construction auditable and reusable from the documented external interface, without requiring repeated execution of simulator internals that may not be portable outside the original modeling environment.
 
 % TODO-VERIFY: Insert final repository DOI and archived supplement DOI once the public release is minted.
-At the time of this revision, the public release identifiers for the repository and archived bundle were still pending. The planned release materials include the analysis scripts, notebooks, environment specification, exported reduced-form bundle, feature definitions, input metadata, output metadata, coefficient matrices, intercept vectors, validation summaries, and figure-generation code. The released bundle should include both standardized-scale and raw-scale coefficient products so that users can evaluate the surrogate directly from documented input values.
+The public release identifiers for the repository and archived bundle are pending assignment. The planned release materials include the analysis scripts, notebooks, environment specification, exported reduced-form bundle, feature definitions, input metadata, output metadata, coefficient matrices, intercept vectors, validation summaries, and figure-generation code. The released bundle will include both standardized-scale and raw-scale coefficient products so that users can evaluate the surrogate directly from documented input values.
 
-The reproducibility entry point should be documented in the repository README and cited here with the final release URL and DOI once available. The release workflow is expected to include installation of the locked computational environment, execution of the validation gate, regeneration of the reduced-form bundle from the released intermediate data products, and rebuilding of manuscript figures and summary tables. Large simulator raw-output files that cannot be redistributed should be replaced by documented derived artifacts sufficient to audit the statistical workflow and evaluate the exported reduced form.
+The reproducibility entry point will be documented in the repository README and cited here with the final release URL and DOI once available. The release workflow includes installation of the locked computational environment, execution of the validation gate, regeneration of the reduced-form bundle from the released intermediate data products, and rebuilding of manuscript figures and summary tables. Large simulator raw-output files that cannot be redistributed will be replaced by documented derived artifacts sufficient to audit the statistical workflow and evaluate the exported reduced form.
 
 \begin{esm}
 \esmtitle{Supplementary Material}
@@ -873,10 +867,10 @@ Table~\ref{tab:ablation} reports holdout macro nRMSE with bootstrap confidence i
 Model stage & Features & nRMSE & CI lower & CI upper \\
 \hline
 Null mean        & 0   & 0.1653 & 0.1635 & 0.1663 \\
-Main effects OLS & 158 & 0.0812 & 0.0796 & 0.0821 \\
+Main effects OLS & 158 & 0.1653 & 0.1635 & 0.1663 \\
 Screened OLS     & 69  & 0.0812 & 0.0796 & 0.0821 \\
-Penalized OLS    & 172 & 0.0709 & 0.0694 & 0.0719 \\
-Final OLS        & 132 & 0.0721 & 0.0706 & 0.0730 \\
+Penalized OLS    & 506 & 0.0676 & 0.0660 & 0.0688 \\
+Final OLS        & 506 & 0.0676 & 0.0660 & 0.0688 \\
 \hline
 \end{tabular}
 \end{table}

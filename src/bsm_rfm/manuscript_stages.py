@@ -3640,10 +3640,21 @@ def regenerate_final_manuscript_artifacts(
     else:
         final_fit = fit_final_ols(x_train, y_train)
         final_predictions = predict_final_ols(final_fit, x_holdout)
+
+    # Fit OLS on ALL scalar outputs (retained + culled) so the exported coefficient
+    # matrix covers every model output.  Near-constant culled outputs receive
+    # near-zero coefficients with a training-mean intercept.
+    all_output_names = [str(c) for c in output_matrix.columns if str(c) != "sample_id"]
+    y_train_all = _indexed_by_sample_id(
+        _align_output_matrix(output_matrix, train_ids, all_output_names),
+        train_ids,
+    )
+    final_fit_full = fit_final_ols(x_train, y_train_all)
     final_step = 4
     _final_progress(
         "final OLS fit + predictions complete; "
-        f"pruned_features={len(hc3_feature_names) - len(final_feature_names)}"
+        f"pruned_features={len(hc3_feature_names) - len(final_feature_names)}, "
+        f"n_all_outputs={len(all_output_names)}"
     )
     final_metric = bootstrap_macro_nrmse_ci(
         y_holdout.to_numpy(dtype=float),
@@ -3719,14 +3730,14 @@ def regenerate_final_manuscript_artifacts(
     )
 
     coefficient_matrix_raw_scale = make_coefficient_matrix_frame(
-        final_fit.coef_raw_scale,
-        output_names=list(final_fit.output_names),
-        feature_names=list(final_fit.feature_names),
+        final_fit_full.coef_raw_scale,
+        output_names=list(final_fit_full.output_names),
+        feature_names=list(final_fit_full.feature_names),
     )
     coefficient_matrix_standardized = make_coefficient_matrix_frame(
-        final_fit.coef_standardized,
-        output_names=list(final_fit.output_names),
-        feature_names=list(final_fit.feature_names),
+        final_fit_full.coef_standardized,
+        output_names=list(final_fit_full.output_names),
+        feature_names=list(final_fit_full.feature_names),
     )
     x_standardization = make_standardization_frame(
         list(final_fit.feature_names),
@@ -3735,9 +3746,9 @@ def regenerate_final_manuscript_artifacts(
         name_column="feature_name",
     )
     y_standardization = make_standardization_frame(
-        list(final_fit.output_names),
-        final_fit.y_means,
-        final_fit.y_scales,
+        list(final_fit_full.output_names),
+        final_fit_full.y_means,
+        final_fit_full.y_scales,
         name_column="output_name",
     )
 
@@ -3747,7 +3758,8 @@ def regenerate_final_manuscript_artifacts(
         n_prefilter_features=len(prefilter_feature_names),
         n_hc3_features=len(hc3_feature_names),
         n_features=len(final_feature_names),
-        n_outputs=len(retained_outputs),
+        n_outputs=len(all_output_names),
+        n_variance_filtered_outputs=len(retained_outputs),
         final_metric=final_metric,
         null_metric=null_metric,
         spec=spec,
@@ -7035,6 +7047,7 @@ def _build_final_ols_summary(
     n_hc3_features: int,
     n_features: int,
     n_outputs: int,
+    n_variance_filtered_outputs: int,
     final_metric: dict[str, Any],
     null_metric: dict[str, Any],
     spec: FinalManuscriptArtifactsSpec,
@@ -7052,6 +7065,7 @@ def _build_final_ols_summary(
                 "n_hc3_removed_features": int(n_prefilter_features - n_hc3_features),
                 "n_pruning_removed_features": int(n_hc3_features - n_features),
                 "n_retained_outputs": int(n_outputs),
+                "n_variance_filtered_outputs": int(n_variance_filtered_outputs),
                 "final_ols_holdout_nrmse": float(final_metric["point_estimate"]),
                 "final_ols_holdout_nrmse_ci_lower": float(final_metric["ci_lower"]),
                 "final_ols_holdout_nrmse_ci_upper": float(final_metric["ci_upper"]),

@@ -317,8 +317,12 @@ def fit_final_ols(
         coef_raw = np.vstack(coef_batches)
         intercept_raw = np.concatenate(intercept_batches)
 
-    coef_standardized = coef_raw * (x_scales[np.newaxis, :] / y_scales[:, np.newaxis])
-    intercept_standardized = (intercept_raw + coef_raw @ x_means - y_means) / y_scales
+    # Guard against zero y-scales (constant or near-zero-variance outputs).  For such
+    # outputs the raw-scale coefficient vector is already near-zero, so setting the
+    # denominator to 1 yields a meaningful (near-zero) standardised representation.
+    y_scales_safe = np.where(y_scales > 0, y_scales, 1.0)
+    coef_standardized = coef_raw * (x_scales[np.newaxis, :] / y_scales_safe[:, np.newaxis])
+    intercept_standardized = (intercept_raw + coef_raw @ x_means - y_means) / y_scales_safe
 
     return FinalOLSFitResult(
         feature_names=tuple(str(column) for column in X_numeric.columns),

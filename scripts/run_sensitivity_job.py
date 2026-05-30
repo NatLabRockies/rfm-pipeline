@@ -61,8 +61,8 @@ def _build_pipeline_config(
     study_meta = job_config.get("sensitivity_study", {})
     overrides: dict[str, Any] = study_meta.get("config_overrides", {})
 
-    # Keys not present in WorkflowConfig — handled separately or not applicable.
-    _SKIP_OVERRIDE_KEYS = {"holdout_fraction", "stages.final_artifacts.delta_threshold_override"}
+    # holdout_fraction is applied at DGP generation time; not a pipeline config key.
+    _SKIP_OVERRIDE_KEYS = {"holdout_fraction"}
 
     for key, value in overrides.items():
         if key in _SKIP_OVERRIDE_KEYS:

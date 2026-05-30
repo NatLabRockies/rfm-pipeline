@@ -77,7 +77,7 @@ def _build_pipeline_config(
 
     _set_dot(pipeline_cfg, "output.artifact_dir", str(artifact_dir))
     _set_dot(pipeline_cfg, "output.seed", job_config.get("output", {}).get("seed", 0))
-    _set_dot(pipeline_cfg, "runtime.n_jobs", job_config.get("runtime", {}).get("n_jobs", 8))
+    _set_dot(pipeline_cfg, "runtime.n_jobs", 1)
 
     return pipeline_cfg
 

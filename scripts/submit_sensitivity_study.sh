@@ -3,9 +3,9 @@
 #SBATCH --job-name=bsm_sensitivity
 #SBATCH --account=bsm
 #SBATCH --partition=shared
-#SBATCH --time=01:00:00
-#SBATCH --mem=32G
-#SBATCH --cpus-per-task=8
+#SBATCH --time=02:00:00
+#SBATCH --mem=16G
+#SBATCH --cpus-per-task=4
 #SBATCH --array=0-10999%200
 #SBATCH --output=logs/sensitivity_%A_%a.out
 #SBATCH --error=logs/sensitivity_%A_%a.err
@@ -44,6 +44,12 @@ if [[ "${1:-}" == "--submit-all" ]]; then
 fi
 
 SPEC_PATH="${ROOT_DIR}/configs/sensitivity_study/study_spec.yml"
+
+# Prevent sklearn/numpy internal thread oversubscription (n_jobs=1 in base config).
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+
 STUDY_DIR="$(pixi run python - "$SPEC_PATH" <<'PY'
 from pathlib import Path
 import sys

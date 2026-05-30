@@ -204,7 +204,7 @@ def main() -> int:
             runner = REPO_ROOT / "tools" / "run_manuscript_pipeline.py"
             t1 = time.perf_counter()
             proc = subprocess.run(
-                [sys.executable, str(runner), "--config", str(tmp_cfg_path)],
+                [sys.executable, str(runner), str(tmp_cfg_path)],
                 capture_output=True,
                 text=True,
                 cwd=str(REPO_ROOT),

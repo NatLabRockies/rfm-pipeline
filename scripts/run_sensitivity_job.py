@@ -84,7 +84,7 @@ def _build_pipeline_config(
 
 def _extract_metrics(artifact_dir: Path, job_id: str) -> dict[str, Any]:
     """Read nRMSE metrics from the pipeline output artifacts."""
-    tables_dir = artifact_dir / "artifacts" / "final_manuscript_artifacts" / "tables"
+    tables_dir = artifact_dir / "final_manuscript_artifacts" / "tables"
 
     # Primary: ablation_table.csv has per-stage nRMSE.
     ablation_path = tables_dir / "ablation_table.csv"

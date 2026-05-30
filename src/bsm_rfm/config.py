@@ -169,6 +169,8 @@ class FinalArtifactsStageConfig:
     """Deterministic seed for random output subsetting."""
     hc3_output_subset_metric: str = "variance"
     """Ranking metric for principled downselection modes."""
+    delta_threshold_override: float | None = None
+    """Optional delta threshold override for feature pruning in final artifacts."""
 
 
 @dataclass

@@ -127,6 +127,8 @@ class InteractionStageConfig:
     """Max samples for SHAP interaction matrix computation (further capped adaptively)."""
     min_component_variance_fraction: float = 0.01
     """Skip PCA components below this fraction of maximum component variance."""
+    max_active_components: int | None = None
+    """Hard cap on active PCA components for SHAP; keeps highest-variance components."""
 
 
 @dataclass

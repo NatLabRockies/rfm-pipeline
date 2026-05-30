@@ -439,6 +439,7 @@ class InteractionDiscoverySpec:
     elasticnet_l1_ratio: float = 0.5
     elasticnet_cv_folds: int = 5
     min_component_variance_fraction: float = 0.01  # Skip components below 1% variance
+    max_active_components: int | None = None  # Hard cap on active component count
     parallel_batch_timeout_seconds: int = 900
     parallel_backend: str = "threading"
     dask_workers: int | None = None
@@ -1459,6 +1460,11 @@ def interaction_discovery_spec_from_case_study_config(
         min_component_variance_fraction=float(
             interaction.get("min_component_variance_fraction", 0.01)
         ),
+        max_active_components=(
+            int(interaction["max_active_components"])
+            if interaction.get("max_active_components") is not None
+            else None
+        ),
         parallel_batch_timeout_seconds=int(interaction.get("parallel_batch_timeout_seconds", 900)),
         parallel_backend=str(interaction.get("parallel_backend", "threading")),
         dask_workers=(int(dask_workers_raw) if dask_workers_raw is not None else None),
@@ -1865,6 +1871,15 @@ def discover_manuscript_interactions(
             ]
             if pruned_indices:  # Only prune if we keep at least one component
                 active_comp_indices = pruned_indices
+
+    # Hard cap on active component count: keep highest-variance components only.
+    cap = spec.max_active_components
+    if cap is not None and len(active_comp_indices) > cap:
+        component_variances = y_train.var(axis=0).values
+        active_comp_indices = sorted(
+            active_comp_indices,
+            key=lambda i: -component_variances[i],
+        )[:cap]
 
     n_pairs = len(candidates)
     n_comp = len(component_names)

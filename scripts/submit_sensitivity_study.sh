@@ -66,7 +66,7 @@ payload = yaml.safe_load(Path(sys.argv[1]).read_text(encoding="utf-8")) or {}
 print(payload["output"]["study_dir"])
 PY
 )"
-ARRAY_FILE="$STUDY_DIR/slurm_array.txt"
+ARRAY_FILE="$STUDY_DIR/${ARRAY_FILENAME:-slurm_array.txt}"
 
 # BATCH_OFFSET shifts task IDs for multi-batch submissions (default 0)
 ACTUAL_INDEX=$(( SLURM_ARRAY_TASK_ID + ${BATCH_OFFSET:-0} ))

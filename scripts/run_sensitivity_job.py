@@ -293,6 +293,25 @@ def main() -> int:
                 result["final_ols_nrmse"] = null_nrmse
                 result["n_features_retained"] = 0
                 result["error_message"] = None
+                # Pipeline never ran to completion so it didn't write
+                # run_complete.json; write it here so the collector sees
+                # this task as finished.
+                import datetime
+
+                (artifact_dir / "run_complete.json").write_text(
+                    json.dumps(
+                        {
+                            "status": "complete",
+                            "null_screened": True,
+                            "completed_at_utc": datetime.datetime.now(
+                                datetime.timezone.utc
+                            ).isoformat(),
+                            "elapsed_seconds": pipeline_elapsed,
+                        },
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
             else:
                 # Capture last 3 KB of stderr for diagnosis.
                 result["error_message"] = stderr[-3000:] if stderr else "no stderr"

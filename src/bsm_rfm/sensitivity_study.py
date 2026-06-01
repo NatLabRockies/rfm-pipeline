@@ -235,10 +235,19 @@ def jobs_to_dataframe(jobs: list[SensitivityStudyJob]) -> pd.DataFrame:
 
 
 def collect_study_results(study_dir: Path) -> pd.DataFrame:
-    """Load per-job result JSON files into one tidy frame."""
+    """Load per-job result JSON files into one tidy frame.
+
+    Supports two directory layouts:
+    - Flat: ``study_dir/job_*/result.json``
+    - Artifacts subdirectory: ``study_dir/artifacts/job_*/result.json``
+      (produced by ``generate_sensitivity_study.py``)
+    """
     study_dir = Path(study_dir)
     rows: list[dict[str, Any]] = []
-    for result_path in sorted(study_dir.glob("job_*/result.json")):
+    result_paths = sorted(study_dir.glob("job_*/result.json"))
+    if not result_paths:
+        result_paths = sorted((study_dir / "artifacts").glob("job_*/result.json"))
+    for result_path in result_paths:
         payload = json.loads(result_path.read_text(encoding="utf-8"))
         rows.extend(_normalize_result_payload(payload=payload, result_path=result_path))
 

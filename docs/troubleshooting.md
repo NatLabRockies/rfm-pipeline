@@ -85,7 +85,7 @@ pixi install --locked
 **Error:**
 
 ```
-ModuleNotFoundError: No module named 'bsm_rfm'
+ModuleNotFoundError: No module named 'rfm_pipeline'
 ```
 
 **Cause:** Running Python without `PYTHONPATH=src`.
@@ -651,7 +651,7 @@ Quick lookup for specific error messages:
 | `FileNotFoundError`                 | [File not found](#data-file-not-found)                            |
 | `MemoryError`                       | [Out of memory](#out-of-memory)                                   |
 | `Killed` or `Segmentation fault`    | [Process killed](#process-killed--segmentation-fault)             |
-| `ModuleNotFoundError: bsm_rfm`      | [Python module not found](#python-module-not-found)               |
+| `ModuleNotFoundError: rfm_pipeline` | [Python module not found](#python-module-not-found)               |
 | `lock file is out of sync`          | [Lock file conflicts](#pixi-lock-file-conflicts)                  |
 
 ______________________________________________________________________

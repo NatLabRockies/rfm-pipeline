@@ -227,7 +227,7 @@ export PIXI_CACHE_DIR=/projects/bsm/.cache/pixi
 pixi install --locked
 
 # 3. Verify the environment
-pixi run python -c "import bsm_rfm; print('BSM OK')"
+pixi run python -c "import rfm_pipeline; print('BSM OK')"
 
 # 4. Submit the diagnostic smoke test
 pixi run bsm-hpc-submit \

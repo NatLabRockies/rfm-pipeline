@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from bsm_rfm.manuscript_stages import (
+from rfm_pipeline.manuscript_stages import (
     EmpiricalNullScreeningResult,
     EmpiricalNullScreeningSpec,
     empirical_null_screening_spec_from_case_study_config,

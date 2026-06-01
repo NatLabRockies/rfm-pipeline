@@ -45,7 +45,7 @@ Agents use this file to convert review findings into planned work instead of lea
 - Disposition: blocker
 - Source: targeted integration test runs during workflow-fix milestone
 - Evidence: runtime context now falls back to deterministic demo artifacts when real local overrides produce incompatible sample-id universes; manuscript runtime/stage integration tests pass after fix
-- Affected files: runtime context loading path (`configs/local/manuscript_paths.local.yml` interactions with `bsm_rfm.manuscript_runtime` / `bsm_rfm.manuscript_stages`)
+- Affected files: runtime context loading path (`configs/local/manuscript_paths.local.yml` interactions with `rfm_pipeline.manuscript_runtime` / `rfm_pipeline.manuscript_stages`)
 - Required action: completed in code; keep runtime-alignment fallback regression test active
 - Blocks merge: no
 - Destination: resolved in current Phase 3 integration slice

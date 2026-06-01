@@ -22,8 +22,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from bsm_rfm import run_manuscript_reproduction_audit_stage  # noqa: E402
-from bsm_rfm.manuscript_runtime import (  # noqa: E402
+from rfm_pipeline import run_manuscript_reproduction_audit_stage  # noqa: E402
+from rfm_pipeline.manuscript_runtime import (  # noqa: E402
     ManuscriptNotebookContext,
     ManuscriptRuntimeContext,
 )

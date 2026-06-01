@@ -213,7 +213,7 @@ paths:
 
 ```bash
 pixi run python -c "
-from bsm_rfm import resolve_manuscript_runtime
+from rfm_pipeline import resolve_manuscript_runtime
 from pathlib import Path
 
 rt = resolve_manuscript_runtime(Path.cwd())
@@ -283,7 +283,7 @@ assert X_train.index.equals(Y_train.index), "Train indices must align"
 ```python
 from pathlib import Path
 import pandas as pd
-from bsm_rfm import run_canonical_workflow, write_postfit_bundle
+from rfm_pipeline import run_canonical_workflow, write_postfit_bundle
 
 # Load your data
 X_train = pd.read_csv("X_train.csv", index_col=0)
@@ -329,7 +329,7 @@ pixi --version
 cd /path/to/bsm-public-rf
 ```
 
-### Issue: "ModuleNotFoundError: No module named 'bsm_rfm'"
+### Issue: "ModuleNotFoundError: No module named 'rfm_pipeline'"
 
 **Solution:** Ensure `PYTHONPATH` is set and Pixi environment is active:
 

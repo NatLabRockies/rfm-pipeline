@@ -21,7 +21,7 @@ Recommended alternatives on Kestrel:
 
 Usage (if BSM_ENABLE_RAY_EXPERIMENTAL=1)::
 
-    from bsm_rfm.distributed.ray_runner_experimental import RayRunner
+    from rfm_pipeline.distributed.ray_runner_experimental import RayRunner
 
     runner = RayRunner(config)
     results = runner.map(score_fn, shards)
@@ -42,7 +42,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from bsm_rfm.distributed.config_distributed import DistributedConfig
+    from rfm_pipeline.distributed.config_distributed import DistributedConfig
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ def _check_experimental() -> None:
     if not os.environ.get("BSM_ENABLE_RAY_EXPERIMENTAL"):
         raise RuntimeError(
             "Ray runner is experimental. Set BSM_ENABLE_RAY_EXPERIMENTAL=1 to enable. "
-            "See src/bsm_rfm/distributed/ray_runner_experimental.py for caveats."
+            "See src/rfm_pipeline/distributed/ray_runner_experimental.py for caveats."
         )
 
 

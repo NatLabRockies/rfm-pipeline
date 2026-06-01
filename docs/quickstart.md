@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from bsm_rfm import load_postfit_bundle, run_canonical_workflow, write_postfit_bundle
+from rfm_pipeline import load_postfit_bundle, run_canonical_workflow, write_postfit_bundle
 
 X_train = pd.read_parquet("X_train.parquet")
 Y_train = pd.read_parquet("Y_train.parquet")
@@ -67,11 +67,11 @@ post-fit tables.
 
 The package implements the screening/final-fit/evaluation/export path directly. The upstream
 Delta permutation-null screen is still represented through the recovered source adapter in
-`bsm_rfm.null_screening`, while the recovered notebook-specific feature-expansion specification
+`rfm_pipeline.null_screening`, while the recovered notebook-specific feature-expansion specification
 is still only partially promoted into a source-driven canonical default.
 
 For a machine-readable summary of those current limits, call
-`bsm_rfm.workflow_scope_boundary_table()`.
+`rfm_pipeline.workflow_scope_boundary_table()`.
 
 ## Reproducibility example
 

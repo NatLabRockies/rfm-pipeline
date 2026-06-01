@@ -7,7 +7,7 @@ Configuration via DistributedConfig.dask + DistributedConfig.slurm.
 
 Usage (standalone)::
 
-    from bsm_rfm.distributed.dask_runner import DaskRunner
+    from rfm_pipeline.distributed.dask_runner import DaskRunner
     runner = DaskRunner(config)
     with runner.client() as client:
         futures = [client.submit(score_fn, shard) for shard in shards]
@@ -32,7 +32,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from bsm_rfm.distributed.config_distributed import DistributedConfig
+    from rfm_pipeline.distributed.config_distributed import DistributedConfig
 
 logger = logging.getLogger(__name__)
 

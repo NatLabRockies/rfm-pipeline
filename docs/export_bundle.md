@@ -5,8 +5,8 @@ visualization.
 
 ## Writer entrypoint
 
-Use `bsm_rfm.write_postfit_bundle(...)` on the `artifacts` payload returned by
-`bsm_rfm.run_canonical_workflow(...)` or `bsm_rfm.final_ols.build_postfit_artifacts(...)`.
+Use `rfm_pipeline.write_postfit_bundle(...)` on the `artifacts` payload returned by
+`rfm_pipeline.run_canonical_workflow(...)` or `rfm_pipeline.final_ols.build_postfit_artifacts(...)`.
 
 ## Bundle layout
 
@@ -16,8 +16,8 @@ The bundle root contains:
 - `postfit_diagnostics/`
 
 The `postfit_diagnostics/` subtree contains these canonical tables.
-These logical table names are frozen by `bsm_rfm.canonical_postfit_artifact_names()` and
-`bsm_rfm.canonical_bundle_loader_keys()`.
+These logical table names are frozen by `rfm_pipeline.canonical_postfit_artifact_names()` and
+`rfm_pipeline.canonical_bundle_loader_keys()`.
 
 - `all_input_metadata`
 - `selected_input_metadata`
@@ -34,8 +34,8 @@ and records the actual written path in `manifest.json`.
 
 ## Manifest payload
 
-The manifest top-level keys are frozen by `bsm_rfm.canonical_manifest_top_level_keys()`.
-The position-map payload keys are frozen by `bsm_rfm.canonical_manifest_position_map_keys()`.
+The manifest top-level keys are frozen by `rfm_pipeline.canonical_manifest_top_level_keys()`.
+The position-map payload keys are frozen by `rfm_pipeline.canonical_manifest_position_map_keys()`.
 
 They are:
 
@@ -63,6 +63,6 @@ feature/output provenance without recomputing modeling steps.
 
 ## Reader entrypoint
 
-Use `bsm_rfm.load_postfit_bundle(...)` to reload the canonical tables used by downstream
-visualization code. `bsm_rfm.load_pipeline_outputs(...)` remains as a package-level alias for the
+Use `rfm_pipeline.load_postfit_bundle(...)` to reload the canonical tables used by downstream
+visualization code. `rfm_pipeline.load_pipeline_outputs(...)` remains as a package-level alias for the
 same canonical loader.

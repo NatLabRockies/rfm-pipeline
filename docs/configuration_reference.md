@@ -166,7 +166,7 @@ Does configs/local/manuscript_paths.local.yml exist?
 
 ```bash
 pixi run python -c "
-from bsm_rfm import resolve_manuscript_runtime
+from rfm_pipeline import resolve_manuscript_runtime
 from pathlib import Path
 
 rt = resolve_manuscript_runtime(Path.cwd())
@@ -266,7 +266,7 @@ sparse_selection:
 
 ```bash
 pixi run python -c "
-from bsm_rfm import run_manuscript_reproduction_audit_stage, resolve_manuscript_runtime
+from rfm_pipeline import run_manuscript_reproduction_audit_stage, resolve_manuscript_runtime
 from pathlib import Path
 
 rt = resolve_manuscript_runtime(Path.cwd())
@@ -283,7 +283,7 @@ ______________________________________________________________________
 
 ```bash
 pixi run python << 'EOF'
-from bsm_rfm import resolve_manuscript_runtime
+from rfm_pipeline import resolve_manuscript_runtime
 from pathlib import Path
 
 rt = resolve_manuscript_runtime(Path.cwd())
@@ -300,7 +300,7 @@ EOF
 
 ```bash
 pixi run python << 'EOF'
-from bsm_rfm import load_manuscript_case_study_config
+from rfm_pipeline import load_manuscript_case_study_config
 from pathlib import Path
 
 config = load_manuscript_case_study_config(Path.cwd())
@@ -370,7 +370,7 @@ pixi run jupyter notebook notebooks/manuscript/
 
 ```bash
 pixi run python -c "
-from bsm_rfm import load_manuscript_case_study_config
+from rfm_pipeline import load_manuscript_case_study_config
 from pathlib import Path
 cfg = load_manuscript_case_study_config(Path.cwd())
 # Print to verify it's your custom config
@@ -402,7 +402,7 @@ cp configs/manuscript_paths.template.yml configs/local/manuscript_paths.local.ym
 # Edit configs/local/manuscript_paths.local.yml with your paths
 
 # 2. Verify
-pixi run python -c "from bsm_rfm import resolve_manuscript_runtime; from pathlib import Path; rt = resolve_manuscript_runtime(Path.cwd()); print(f'Mode: {rt.mode}; X shape: {rt.x_train.shape}')"
+pixi run python -c "from rfm_pipeline import resolve_manuscript_runtime; from pathlib import Path; rt = resolve_manuscript_runtime(Path.cwd()); print(f'Mode: {rt.mode}; X shape: {rt.x_train.shape}')"
 
 # 3. Run
 PYTHONPATH=src python examples/end_to_end_reproducibility.py \
@@ -427,7 +427,7 @@ EOF
 
 # 3. Run
 PYTHONPATH=src python << 'EOF'
-from bsm_rfm import run_manuscript_reproduction_audit_stage, resolve_manuscript_runtime
+from rfm_pipeline import run_manuscript_reproduction_audit_stage, resolve_manuscript_runtime
 from pathlib import Path
 
 rt = resolve_manuscript_runtime(Path.cwd())

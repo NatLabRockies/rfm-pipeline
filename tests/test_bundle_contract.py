@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from bsm_rfm import (
+from rfm_pipeline import (
     canonical_bundle_loader_keys,
     canonical_manifest_position_map_keys,
     canonical_manifest_top_level_keys,
@@ -16,7 +16,7 @@ from bsm_rfm import (
     load_postfit_bundle,
     write_postfit_bundle,
 )
-from bsm_rfm.final_ols import build_postfit_artifacts
+from rfm_pipeline.final_ols import build_postfit_artifacts
 
 
 def _make_demo_fit_result():

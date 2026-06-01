@@ -203,7 +203,7 @@ The release-facing package metadata now records repository URLs, classifiers, an
 
 - The canonical 20k modeling subset is a balanced stratified sample: 5,000 rows drawn within each AFSC/UAEORO boolean combination.
 
-- The canonical upstream null-screening stage comes from the recovered `null_distribution.py` source script and is wrapped through `bsm_rfm.null_screening` rather than reimplemented ad hoc in notebooks.
+- The canonical upstream null-screening stage comes from the recovered `null_distribution.py` source script and is wrapped through `rfm_pipeline.null_screening` rather than reimplemented ad hoc in notebooks.
 
 - The manuscript empirical-null notebook now uses a deterministic source-backed screening
   implementation that materializes the tracked feature catalog, computes coefficient-row-norm
@@ -266,11 +266,11 @@ The repo now freezes the manuscript reconstruction contract in `docs/manuscript_
 tracked template.
 
 Phase 2 added tracked manuscript notebook entrypoints under `notebooks/manuscript/` and
-runtime/path-resolution helpers in `bsm_rfm.manuscript_runtime` so the notebooks execute on
+runtime/path-resolution helpers in `rfm_pipeline.manuscript_runtime` so the notebooks execute on
 deterministic demo data in CI and switch to real data once the local path override file is
 populated.
 
-Phase 3 has source-backed stages and an end-to-end reproduction chain in `bsm_rfm.manuscript_stages` for output conditioning,
+Phase 3 has source-backed stages and an end-to-end reproduction chain in `rfm_pipeline.manuscript_stages` for output conditioning,
 empirical-null screening, interaction discovery, nonlinear discovery, sparse selection with
 stability filtering, and final manuscript table/figure regeneration. The
 `02_output_conditioning.ipynb` through `08_manuscript_tables_and_figures.ipynb` notebooks now run

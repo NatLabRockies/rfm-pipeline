@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 from sklearn.linear_model import Lasso
 
-from bsm_rfm.debiased_lasso import (
+from rfm_pipeline.debiased_lasso import (
     debias_coeffs_batched,
     nodewise_precision,
     ztests_from_debias_scores,

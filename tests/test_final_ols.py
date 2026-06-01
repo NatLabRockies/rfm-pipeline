@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bsm_rfm.final_ols import (
+from rfm_pipeline.final_ols import (
     build_postfit_artifacts,
     canonical_postfit_artifact_names,
     fit_final_ols,

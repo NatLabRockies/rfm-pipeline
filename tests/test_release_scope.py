@@ -6,7 +6,7 @@ from pathlib import Path
 
 import tomllib
 
-from bsm_rfm.workflow import workflow_scope_boundary_table
+from rfm_pipeline.workflow import workflow_scope_boundary_table
 
 
 def test_workflow_scope_boundary_table_freezes_current_non_foundation_stages() -> None:
@@ -61,6 +61,6 @@ def test_repo_includes_changelog_and_citation_metadata() -> None:
     assert "# Changelog" in changelog_text
     assert f"## {version}" in changelog_text
     assert "cff-version: 1.2.0" in citation_text
-    assert 'title: "bsm-rfm: BSM reduced-form modeling workflow package"' in citation_text
+    assert 'title: "rfm-pipeline: Reduced-form modeling workflow package"' in citation_text
     assert f"version: {version}" in citation_text
-    assert 'repository-code: "https://github.com/NatLabRockies/bsm-public-rf"' in citation_text
+    assert 'repository-code: "https://github.com/NatLabRockies/rfm-pipeline"' in citation_text

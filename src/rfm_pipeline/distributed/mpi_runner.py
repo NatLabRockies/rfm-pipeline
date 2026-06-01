@@ -11,7 +11,7 @@ Requires: mpi4py (optional; import guard provided).
 
 Usage (inside a Kestrel MPI job)::
 
-    srun -n 128 --exclusive pixi run python -m bsm_rfm.distributed.mpi_runner \\
+    srun -n 128 --exclusive pixi run python -m rfm_pipeline.distributed.mpi_runner \\
         --manifest /scratch/$USER/bsm/manifest.jsonl \\
         --config configs/hpc/kestrel_30k.yml
 
@@ -30,7 +30,7 @@ SLURM job template::
     #SBATCH --account=bsm
 
     module load mpi4py  # or install via pixi
-    srun pixi run python -m bsm_rfm.distributed.mpi_runner \\
+    srun pixi run python -m rfm_pipeline.distributed.mpi_runner \\
         --manifest /scratch/$USER/bsm/manifest.jsonl \\
         --config configs/hpc/kestrel_30k.yml
 
@@ -145,7 +145,7 @@ def run_mpi_worker(
     """
     _require_mpi4py()
 
-    from bsm_rfm.distributed.manifest import load_manifest
+    from rfm_pipeline.distributed.manifest import load_manifest
 
     rank, size = get_rank_size()
     shards = load_manifest(manifest_path)
@@ -182,7 +182,7 @@ def run_mpi_worker(
 
 def _run_shard(shard, config_path: str, stage: str, dry_run: bool = False) -> None:
     """Execute a single shard via the hpc_shard_worker entry point."""
-    from bsm_rfm.distributed.config_distributed import load_config
+    from rfm_pipeline.distributed.config_distributed import load_config
 
     config = load_config(config_path)
     output_root = str(Path(config.output_dir) / config.run_id)
@@ -211,7 +211,7 @@ def _run_shard(shard, config_path: str, stage: str, dry_run: bool = False) -> No
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point: python -m bsm_rfm.distributed.mpi_runner."""
+    """CLI entry point: python -m rfm_pipeline.distributed.mpi_runner."""
     parser = argparse.ArgumentParser(description="BSM manuscript pipeline MPI shard worker")
     parser.add_argument("--manifest", required=True, help="Path to shard manifest JSONL")
     parser.add_argument("--config", required=True, help="Path to distributed config YAML")

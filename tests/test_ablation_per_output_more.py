@@ -14,8 +14,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from bsm_rfm.manuscript_runtime import build_manuscript_notebook_context
-from bsm_rfm.manuscript_stages import run_final_manuscript_artifacts_stage
+from rfm_pipeline.manuscript_runtime import build_manuscript_notebook_context
+from rfm_pipeline.manuscript_stages import run_final_manuscript_artifacts_stage
 
 
 def test_per_output_summary_quantiles_and_worst_outputs() -> None:

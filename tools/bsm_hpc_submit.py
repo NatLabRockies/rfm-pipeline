@@ -133,13 +133,13 @@ def main() -> None:
     args = _parse_args()
 
     # Load configs
-    from bsm_rfm.config import load_config
-    from bsm_rfm.distributed.config_distributed import load_distributed_config
-    from bsm_rfm.distributed.manifest import (
+    from rfm_pipeline.config import load_config
+    from rfm_pipeline.distributed.config_distributed import load_distributed_config
+    from rfm_pipeline.distributed.manifest import (
         load_manifest,
         save_manifest,
     )
-    from bsm_rfm.distributed.slurm_array_runner import SlurmArrayRunner
+    from rfm_pipeline.distributed.slurm_array_runner import SlurmArrayRunner
 
     # Load workflow config for artifact_dir
     workflow = load_config(args.config)
@@ -290,7 +290,7 @@ def main() -> None:
 
 def _build_fresh_manifest(args, artifact_dir: Path, n_shards: int, workflow) -> list:
     """Build a fresh shard manifest from pipeline inputs."""
-    from bsm_rfm.distributed.manifest import (
+    from rfm_pipeline.distributed.manifest import (
         build_manifest,
         resolve_interaction_discovery_shard_inputs,
     )

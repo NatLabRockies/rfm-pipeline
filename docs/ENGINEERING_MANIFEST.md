@@ -100,7 +100,7 @@ Run `SELECT * FROM todos` to see current task breakdown.
 
 **Deliverables** (ALL COMPLETE):
 
-- ✅ Config schema defined as typed dataclasses in `src/bsm_rfm/config.py` (256 lines)
+- ✅ Config schema defined as typed dataclasses in `src/rfm_pipeline/config.py` (256 lines)
 - ✅ `tools/run_manuscript_pipeline.py` — single entry point accepting config YAML (245 lines)
 - ✅ 3 example configs created: `validation_300_sample_smoke.yml`, `validation_300_sample_no_caps.yml`
 - ✅ `tools/run_tracked_workflow.py` — timestamped workflow runner with history tracking (200 lines)

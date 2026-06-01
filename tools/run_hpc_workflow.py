@@ -16,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from bsm_rfm.hpc_workflow_config import (  # noqa: E402
+from rfm_pipeline.hpc_workflow_config import (  # noqa: E402
     build_collect_command,
     build_remote_status_command,
     build_remote_submit_commands,

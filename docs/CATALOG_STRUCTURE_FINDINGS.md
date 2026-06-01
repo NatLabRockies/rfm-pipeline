@@ -76,7 +76,7 @@ The workflow generates ~100K PerformanceWarning messages about DataFrame fragmen
 
 ## Code Reference
 
-Interaction candidate extraction (src/bsm_rfm/manuscript_stages.py:4169):
+Interaction candidate extraction (src/rfm_pipeline/manuscript_stages.py:4169):
 
 ```python
 def _interaction_candidate_pairs(feature_catalog: pd.DataFrame):

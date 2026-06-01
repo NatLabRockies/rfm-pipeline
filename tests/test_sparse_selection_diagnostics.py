@@ -12,9 +12,9 @@ import numpy as np
 import pandas as pd
 from sklearn.exceptions import ConvergenceWarning
 
-from bsm_rfm import manuscript_stages
-from bsm_rfm.manuscript_runtime import build_manuscript_notebook_context
-from bsm_rfm.manuscript_stages import (
+from rfm_pipeline import manuscript_stages
+from rfm_pipeline.manuscript_runtime import build_manuscript_notebook_context
+from rfm_pipeline.manuscript_stages import (
     SparseSelectionStabilitySpec,
     _select_component_lasso_by_ebic,
     run_sparse_selection_stability_stage,

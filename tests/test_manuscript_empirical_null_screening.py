@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pandas as pd
 
-import bsm_rfm.manuscript_stages as manuscript_stages
-from bsm_rfm.manuscript_runtime import (
+import rfm_pipeline.manuscript_stages as manuscript_stages
+from rfm_pipeline.manuscript_runtime import (
     build_manuscript_notebook_context,
     load_manuscript_case_study_config,
 )
-from bsm_rfm.manuscript_stages import (
+from rfm_pipeline.manuscript_stages import (
     EmpiricalNullScreeningSpec,
     build_manuscript_feature_design,
     empirical_null_screening_spec_from_case_study_config,

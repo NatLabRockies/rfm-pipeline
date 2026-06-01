@@ -12,7 +12,7 @@
 
 ### Implementation Overview
 
-Current interaction discovery (`src/bsm_rfm/manuscript_stages.py:1256-1432`):
+Current interaction discovery (`src/rfm_pipeline/manuscript_stages.py:1256-1432`):
 
 1. **Generate interaction candidates:**
 

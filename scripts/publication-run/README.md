@@ -203,7 +203,7 @@ ______________________________________________________________________
 **Solution**: Check `configs/hpc/kestrel_publication_full_dataset.yml` syntax
 
 ```bash
-pixi run python -c "from bsm_rfm.config import load_config; load_config('configs/hpc/kestrel_publication_full_dataset.yml')"
+pixi run python -c "from rfm_pipeline.config import load_config; load_config('configs/hpc/kestrel_publication_full_dataset.yml')"
 ```
 
 ### Issue: Live submission hangs or fails

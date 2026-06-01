@@ -11474,7 +11474,7 @@ packages:
   size: 388453
   timestamp: 1764777142545
 - pypi: .
-  name: bsm-rfm
+  name: rfm-pipeline
   requires_dist:
   - numpy
   - pandas

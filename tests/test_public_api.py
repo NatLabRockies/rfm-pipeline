@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from bsm_rfm import (
+from rfm_pipeline import (
     DEFAULT_TRANSFORM_LIBRARY,
     EXPONENTIAL,
     INVERSE,
@@ -95,10 +95,10 @@ def test_package_exports_postfit_bundle_loaders() -> None:
 
 def test_api_reference_documents_feature_expansion_viz_io_and_runtime_modules() -> None:
     api = Path("docs/api.rst").read_text(encoding="utf-8")
-    assert ".. automodule:: bsm_rfm.feature_expansion" in api
-    assert ".. automodule:: bsm_rfm.viz_io" in api
-    assert ".. automodule:: bsm_rfm.manuscript_runtime" in api
-    assert ".. automodule:: bsm_rfm.manuscript_stages" in api
+    assert ".. automodule:: rfm_pipeline.feature_expansion" in api
+    assert ".. automodule:: rfm_pipeline.viz_io" in api
+    assert ".. automodule:: rfm_pipeline.manuscript_runtime" in api
+    assert ".. automodule:: rfm_pipeline.manuscript_stages" in api
 
 
 def test_docs_include_quickstart_export_bundle_and_runtime_guides() -> None:

@@ -14,7 +14,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from bsm_rfm.metrics import bootstrap_macro_nrmse_ci
+from rfm_pipeline.metrics import bootstrap_macro_nrmse_ci
 
 # ---------------------------------------------------------------------------
 # bootstrap_macro_nrmse_ci parallelism
@@ -78,7 +78,7 @@ def test_bootstrap_parallel_is_deterministic() -> None:
 def test_ablation_table_builds_design_matrix_once() -> None:
     """_compute_ablation_table must call build_manuscript_feature_design exactly once
     (superset), not once per ablation model."""
-    from bsm_rfm.manuscript_stages import FinalManuscriptArtifactsSpec, _compute_ablation_table
+    from rfm_pipeline.manuscript_stages import FinalManuscriptArtifactsSpec, _compute_ablation_table
 
     n_train, n_holdout, n_cols = 15, 5, 3
     rng = np.random.default_rng(0)
@@ -119,7 +119,7 @@ def test_ablation_table_builds_design_matrix_once() -> None:
         bootstrap_count=5,
     )
 
-    import bsm_rfm.manuscript_stages as _stages_mod
+    import rfm_pipeline.manuscript_stages as _stages_mod
 
     with patch.object(
         _stages_mod,

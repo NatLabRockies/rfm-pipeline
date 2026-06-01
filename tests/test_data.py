@@ -5,7 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from bsm_rfm.data import (
+from rfm_pipeline.data import (
     add_scenario_flags,
     align_xy,
     ensure_id_columns,

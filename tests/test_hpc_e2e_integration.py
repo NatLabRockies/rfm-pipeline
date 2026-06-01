@@ -18,8 +18,8 @@ from typing import Any
 
 import pytest
 
-from bsm_rfm.distributed.checkpoint import CheckpointManager
-from bsm_rfm.distributed.manifest import (
+from rfm_pipeline.distributed.checkpoint import CheckpointManager
+from rfm_pipeline.distributed.manifest import (
     build_manifest,
     load_manifest,
     resolve_interaction_discovery_shard_inputs,

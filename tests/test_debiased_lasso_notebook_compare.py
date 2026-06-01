@@ -2,7 +2,7 @@
 
 This test extracts the nodewise_precision and debias helpers from a small synthetic
 notebook created inside the test and runs them on small synthetic data, comparing shapes and
-basic numeric sanity to the public implementation in src/bsm_rfm/debiased_lasso.py.
+basic numeric sanity to the public implementation in src/rfm_pipeline/debiased_lasso.py.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from bsm_rfm import debiased_lasso as dl
+from rfm_pipeline import debiased_lasso as dl
 
 
 def _extract_funcs_from_notebook(nb_path: Path) -> dict:
@@ -75,7 +75,7 @@ def _extract_funcs_from_notebook(nb_path: Path) -> dict:
 def test_notebook_vs_public_nodewise_debias_basic(tmp_path):
     # build minimal notebook programmatically to avoid embedding long lines
     cell0_src = (
-        "import numpy as np\nimport pandas as pd\nfrom bsm_rfm import debiased_lasso as dl\n"
+        "import numpy as np\nimport pandas as pd\nfrom rfm_pipeline import debiased_lasso as dl\n"
     )
 
     cell1_src = (

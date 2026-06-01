@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from bsm_rfm.distributed.manifest import (
+from rfm_pipeline.distributed.manifest import (
     resolve_interaction_discovery_shard_inputs,
 )
 
@@ -171,7 +171,7 @@ class TestManifestInputPathsPopulation:
         self, temp_artifact_tree: dict[str, Any]
     ) -> None:
         """build_manifest should populate interaction_discovery input_paths."""
-        from bsm_rfm.distributed.manifest import build_manifest
+        from rfm_pipeline.distributed.manifest import build_manifest
 
         artifact_dir = temp_artifact_tree["artifact_dir"]
         inputs = resolve_interaction_discovery_shard_inputs(artifact_dir)
@@ -221,7 +221,7 @@ class TestHpcSubmitIntegration:
         self, temp_artifact_tree: dict[str, Any]
     ) -> None:
         """When input_paths are resolved and passed to build_manifest, shards inherit them."""
-        from bsm_rfm.distributed.manifest import build_manifest
+        from rfm_pipeline.distributed.manifest import build_manifest
 
         artifact_dir = temp_artifact_tree["artifact_dir"]
         inputs = resolve_interaction_discovery_shard_inputs(artifact_dir)

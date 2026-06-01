@@ -301,7 +301,7 @@ def build_remote_status_command(config: HpcWorkflowConfig) -> str:
         # Resolve actual shard output dir from the tier's workflow config so the
         # status script checks the right path (not just the ARTIFACTS_ROOT pattern).
         try:
-            from bsm_rfm.config import load_config as _load_wf
+            from rfm_pipeline.config import load_config as _load_wf
 
             wf = _load_wf(tier.config_path)
             artifact_dir: str = wf.output.artifact_dir

@@ -4,7 +4,7 @@ This page freezes the implementation contract for the manuscript sparse-selectio
 
 ## Current status
 
-- Implementation present: The repository now includes a deterministic, test-focused de-biased-LASSO implementation at src/bsm_rfm/debiased_lasso.py. This implementation is exercised by unit tests and golden fixtures that validate deterministic behavior on synthetic toy data (see tests/test_debiased_lasso_regression.py and tests/test_debiased_lasso_golden_compare.py).
+- Implementation present: The repository now includes a deterministic, test-focused de-biased-LASSO implementation at src/rfm_pipeline/debiased_lasso.py. This implementation is exercised by unit tests and golden fixtures that validate deterministic behavior on synthetic toy data (see tests/test_debiased_lasso_regression.py and tests/test_debiased_lasso_golden_compare.py).
 
 - Validation scope: The current tests exercise numeric shapes, stability of support selection on strong synthetic signal, and reproducibility against locally generated golden fixtures. However, the implementation has NOT yet been validated against the original manuscript notebook outputs; provenance and notebook recovery are still required before claiming manuscript-exact equivalence.
 

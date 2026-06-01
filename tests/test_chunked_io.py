@@ -6,7 +6,7 @@ import tempfile
 import pandas as pd
 import pytest
 
-from bsm_rfm.out_of_core import ChunkedCSVReader, ChunkedParquetReader
+from rfm_pipeline.out_of_core import ChunkedCSVReader, ChunkedParquetReader
 
 
 class TestChunkedParquetReader:

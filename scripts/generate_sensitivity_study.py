@@ -19,7 +19,7 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from bsm_rfm.sensitivity_study import (  # noqa: E402
+from rfm_pipeline.sensitivity_study import (  # noqa: E402
     generate_study_jobs,
     jobs_to_dataframe,
     sensitivity_study_spec_from_mapping,

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from bsm_rfm.synthetic_dgp import (
+from rfm_pipeline.synthetic_dgp import (
     SyntheticDGPSpec,
     generate_bsm_structure_synthetic,
     generate_pure_synthetic,

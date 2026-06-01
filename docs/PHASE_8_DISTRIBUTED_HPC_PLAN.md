@@ -69,14 +69,14 @@ ______________________________________________________________________
 
 ### 3.1 Deliverables
 
-- [ ] **New `src/bsm_rfm/distributed/` module**:
+- [ ] **New `src/rfm_pipeline/distributed/` module**:
 
   - `config_distributed.py` — typed config for SLURM account, queue, partition, walltime, memory, spill paths
   - `slurm_array_runner.py` — manifest-driven shard execution with `SLURM_ARRAY_TASK_ID` lookup
   - `spill.py` — intelligent `/scratch` vs `$TMPDIR` selection + free-space monitoring
   - `checkpoint.py` — idempotent output layout with `_SUCCESS.json` markers and attempt tracking
 
-- [ ] **Manifest schema (`src/bsm_rfm/distributed/manifest.py`)**:
+- [ ] **Manifest schema (`src/rfm_pipeline/distributed/manifest.py`)**:
 
   ```python
   @dataclass
@@ -104,7 +104,7 @@ ______________________________________________________________________
   - Smoke test: create small manifest, render SLURM script, verify task ID parsing
   - Integration test (requires Kestrel access or mock SLURM_ARRAY_TASK_ID): run 1-task array locally
 
-- [ ] **Config additions** (`src/bsm_rfm/config.py`):
+- [ ] **Config additions** (`src/rfm_pipeline/config.py`):
 
   ```python
   @dataclass
@@ -178,7 +178,7 @@ ______________________________________________________________________
 
 ### 4.1 Deliverables
 
-- [ ] **Chunked I/O layer** (`src/bsm_rfm/chunked_io.py`):
+- [ ] **Chunked I/O layer** (`src/rfm_pipeline/chunked_io.py`):
 
   ```python
   class ChunkedParquetReader:
@@ -193,7 +193,7 @@ ______________________________________________________________________
       def finalize(self) -> Any
   ```
 
-- [ ] **Spill-to-disk operations** (`src/bsm_rfm/spill_ops.py`):
+- [ ] **Spill-to-disk operations** (`src/rfm_pipeline/spill_ops.py`):
 
   - Temporary Parquet file accumulation when memory threshold hit
   - Atomic promotion to final location after validation
@@ -233,7 +233,7 @@ ______________________________________________________________________
 
 **Objective**: Support dynamic task scheduling when SLURM arrays become a bottleneck.
 
-- [ ] Create `src/bsm_rfm/distributed/dask_runner.py`:
+- [ ] Create `src/rfm_pipeline/distributed/dask_runner.py`:
 
   - Use Dask DataFrame for large tabular operations
   - `SLURMCluster` for on-Kestrel execution
@@ -259,7 +259,7 @@ ______________________________________________________________________
 
 **Objective**: Support low-level rank-based communication when collectives or all-reduce needed.
 
-- [ ] Create `src/bsm_rfm/distributed/mpi_runner.py`
+- [ ] Create `src/rfm_pipeline/distributed/mpi_runner.py`
 - [ ] Rank-based shard assignment + collective reductions
 - [ ] Documentation + environment setup (module load mpi, etc.)
 
@@ -267,7 +267,7 @@ ______________________________________________________________________
 
 **Objective**: Experimental support; disabled by default.
 
-- [ ] Create `src/bsm_rfm/distributed/ray_runner_experimental.py`
+- [ ] Create `src/rfm_pipeline/distributed/ray_runner_experimental.py`
 - [ ] Environment variable gate: `BSM_ENABLE_RAY_EXPERIMENTAL=1`
 - [ ] Documentation: known limitations, why disabled by default
 

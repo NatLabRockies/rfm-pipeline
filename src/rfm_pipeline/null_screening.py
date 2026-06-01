@@ -129,7 +129,7 @@ class NullScreeningResult:
 def load_source_module(
     path: str | Path,
     *,
-    module_name: str = "bsm_rfm_source_null_distribution",
+    module_name: str = "rfm_pipeline_source_null_distribution",
 ) -> ModuleType:
     """Load a Python module from disk for use as the canonical source workflow.
 

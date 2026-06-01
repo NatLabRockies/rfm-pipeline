@@ -248,7 +248,7 @@ ______________________________________________________________________
 ### Key Files to Review
 
 - `docs/manuscripts/jds_bsm_v5_editor_revised.tex` (lines 69, 397, 437, 560-562)
-- `src/bsm_rfm/manuscript_stages.py` (lines 914, 1140, 1379)
+- `src/rfm_pipeline/manuscript_stages.py` (lines 914, 1140, 1379)
 - `docs/final_scripts_from_hpc/*.py` (archived HPC scripts)
 
 ### Testing Strategy

@@ -21,15 +21,15 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from bsm_rfm.config import load_config
-from bsm_rfm.distributed.config_distributed import (
+from rfm_pipeline.config import load_config
+from rfm_pipeline.distributed.config_distributed import (
     DaskConfig,
     DistributedConfig,
     GpuConfig,
     load_distributed_config,
 )
-from bsm_rfm.distributed.manifest import ShardManifest, save_manifest
-from bsm_rfm.distributed.slurm_array_runner import SlurmArrayRunner
+from rfm_pipeline.distributed.manifest import ShardManifest, save_manifest
+from rfm_pipeline.distributed.slurm_array_runner import SlurmArrayRunner
 
 # ---------------------------------------------------------------------------
 # GpuConfig defaults and validation
@@ -297,41 +297,41 @@ def test_hpc_submit_falls_back_to_cpu_stage_script() -> None:
 
 
 def test_detect_device_cpu_explicit():
-    from bsm_rfm.distributed.gpu_scoring import detect_device
+    from rfm_pipeline.distributed.gpu_scoring import detect_device
 
     with patch.dict(os.environ, {"BSM_INTERACTION_DEVICE": "cpu"}):
         assert detect_device("auto") == "cpu"
 
 
 def test_detect_device_cuda_forced_raises_when_no_cuda():
-    from bsm_rfm.distributed.gpu_scoring import detect_device
+    from rfm_pipeline.distributed.gpu_scoring import detect_device
 
     # On a CPU-only machine (CI), requesting cuda should raise RuntimeError
     with patch.dict(os.environ, {"BSM_INTERACTION_DEVICE": "cuda"}):
-        with patch("bsm_rfm.distributed.gpu_scoring._cuda_available", return_value=False):
+        with patch("rfm_pipeline.distributed.gpu_scoring._cuda_available", return_value=False):
             with pytest.raises(RuntimeError, match="CUDA is not available"):
                 detect_device("auto")
 
 
 def test_detect_device_auto_falls_back_to_cpu():
-    from bsm_rfm.distributed.gpu_scoring import detect_device
+    from rfm_pipeline.distributed.gpu_scoring import detect_device
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("BSM_INTERACTION_DEVICE", None)
-        with patch("bsm_rfm.distributed.gpu_scoring._cuda_available", return_value=False):
+        with patch("rfm_pipeline.distributed.gpu_scoring._cuda_available", return_value=False):
             assert detect_device("auto") == "cpu"
 
 
 def test_detect_device_auto_uses_cuda_when_available():
-    from bsm_rfm.distributed.gpu_scoring import detect_device
+    from rfm_pipeline.distributed.gpu_scoring import detect_device
 
     os.environ.pop("BSM_INTERACTION_DEVICE", None)
-    with patch("bsm_rfm.distributed.gpu_scoring._cuda_available", return_value=True):
+    with patch("rfm_pipeline.distributed.gpu_scoring._cuda_available", return_value=True):
         assert detect_device("auto") == "cuda"
 
 
 def test_is_gpu_available_returns_bool():
-    from bsm_rfm.distributed.gpu_scoring import is_gpu_available
+    from rfm_pipeline.distributed.gpu_scoring import is_gpu_available
 
     # Should return a bool regardless of CUDA availability
     result = is_gpu_available()
@@ -340,7 +340,7 @@ def test_is_gpu_available_returns_bool():
 
 def test_gpu_score_interaction_pair_cpu_path():
     """Smoke test: CPU path produces a valid float."""
-    from bsm_rfm.distributed.gpu_scoring import gpu_score_interaction_pair
+    from rfm_pipeline.distributed.gpu_scoring import gpu_score_interaction_pair
 
     rng = np.random.default_rng(42)
     X = rng.standard_normal((50, 5))
@@ -355,7 +355,7 @@ def test_gpu_score_interaction_pair_cpu_path():
 
 def test_gpu_score_interaction_batch_cpu_path():
     """Smoke test: batch scoring returns significant pairs on structured data."""
-    from bsm_rfm.distributed.gpu_scoring import gpu_score_interaction_batch
+    from rfm_pipeline.distributed.gpu_scoring import gpu_score_interaction_batch
 
     rng = np.random.default_rng(0)
     X = rng.standard_normal((50, 4))
@@ -387,7 +387,7 @@ def test_gpu_score_interaction_batch_cpu_path():
 
 
 def test_get_rank_size_no_mpi():
-    from bsm_rfm.distributed.mpi_runner import get_rank_size
+    from rfm_pipeline.distributed.mpi_runner import get_rank_size
 
     rank, size = get_rank_size()
     # Without mpi4py, should return (0, 1)
@@ -396,7 +396,7 @@ def test_get_rank_size_no_mpi():
 
 
 def test_assign_shards_round_robin():
-    from bsm_rfm.distributed.mpi_runner import assign_shards
+    from rfm_pipeline.distributed.mpi_runner import assign_shards
 
     # 10 shards, 4 ranks
     assert assign_shards(10, rank=0, size=4) == [0, 4, 8]
@@ -406,13 +406,13 @@ def test_assign_shards_round_robin():
 
 
 def test_assign_shards_single_rank():
-    from bsm_rfm.distributed.mpi_runner import assign_shards
+    from rfm_pipeline.distributed.mpi_runner import assign_shards
 
     assert assign_shards(5, rank=0, size=1) == [0, 1, 2, 3, 4]
 
 
 def test_assign_shards_more_ranks_than_shards():
-    from bsm_rfm.distributed.mpi_runner import assign_shards
+    from rfm_pipeline.distributed.mpi_runner import assign_shards
 
     # 2 shards, 8 ranks: some ranks get nothing
     result = [assign_shards(2, rank=r, size=8) for r in range(8)]
@@ -424,7 +424,7 @@ def test_assign_shards_more_ranks_than_shards():
 
 
 def test_require_mpi4py_raises_without_mpi():
-    from bsm_rfm.distributed.mpi_runner import _MPI4PY_AVAILABLE, _require_mpi4py
+    from rfm_pipeline.distributed.mpi_runner import _MPI4PY_AVAILABLE, _require_mpi4py
 
     if not _MPI4PY_AVAILABLE:
         with pytest.raises(ImportError, match="mpi4py"):
@@ -435,8 +435,8 @@ def test_require_mpi4py_raises_without_mpi():
 
 
 def test_run_mpi_worker_handles_shard_manifest_dataclass(monkeypatch):
-    from bsm_rfm.distributed.manifest import ShardManifest
-    from bsm_rfm.distributed.mpi_runner import run_mpi_worker
+    from rfm_pipeline.distributed.manifest import ShardManifest
+    from rfm_pipeline.distributed.mpi_runner import run_mpi_worker
 
     shard = ShardManifest(
         shard_id="task-0000",
@@ -446,16 +446,18 @@ def test_run_mpi_worker_handles_shard_manifest_dataclass(monkeypatch):
     )
     calls: list[str] = []
 
-    monkeypatch.setattr("bsm_rfm.distributed.mpi_runner._require_mpi4py", lambda: None)
-    monkeypatch.setattr("bsm_rfm.distributed.mpi_runner.get_rank_size", lambda: (0, 1))
-    monkeypatch.setattr("bsm_rfm.distributed.mpi_runner.assign_shards", lambda n, rank, size: [0])
-    monkeypatch.setattr("bsm_rfm.distributed.mpi_runner.barrier", lambda timeout=None: None)
+    monkeypatch.setattr("rfm_pipeline.distributed.mpi_runner._require_mpi4py", lambda: None)
+    monkeypatch.setattr("rfm_pipeline.distributed.mpi_runner.get_rank_size", lambda: (0, 1))
     monkeypatch.setattr(
-        "bsm_rfm.distributed.manifest.load_manifest",
+        "rfm_pipeline.distributed.mpi_runner.assign_shards", lambda n, rank, size: [0]
+    )
+    monkeypatch.setattr("rfm_pipeline.distributed.mpi_runner.barrier", lambda timeout=None: None)
+    monkeypatch.setattr(
+        "rfm_pipeline.distributed.manifest.load_manifest",
         lambda path: [shard],
     )
     monkeypatch.setattr(
-        "bsm_rfm.distributed.mpi_runner._run_shard",
+        "rfm_pipeline.distributed.mpi_runner._run_shard",
         lambda shard, config_path, stage: calls.append(shard.shard_id),
     )
 
@@ -464,8 +466,8 @@ def test_run_mpi_worker_handles_shard_manifest_dataclass(monkeypatch):
 
 
 def test_mpi_run_shard_delegates_to_hpc_worker(monkeypatch):
-    from bsm_rfm.distributed.manifest import ShardManifest
-    from bsm_rfm.distributed.mpi_runner import _run_shard
+    from rfm_pipeline.distributed.manifest import ShardManifest
+    from rfm_pipeline.distributed.mpi_runner import _run_shard
 
     shard = ShardManifest(
         shard_id="task-0003",
@@ -475,7 +477,7 @@ def test_mpi_run_shard_delegates_to_hpc_worker(monkeypatch):
     )
 
     cfg = SimpleNamespace(output_dir="artifacts", run_id="mpi-run")
-    monkeypatch.setattr("bsm_rfm.distributed.config_distributed.load_config", lambda _: cfg)
+    monkeypatch.setattr("rfm_pipeline.distributed.config_distributed.load_config", lambda _: cfg)
 
     calls: list[dict] = []
     fake_worker = SimpleNamespace(
@@ -499,7 +501,7 @@ def test_mpi_run_shard_delegates_to_hpc_worker(monkeypatch):
 
 
 def test_ray_runner_raises_without_env_var():
-    from bsm_rfm.distributed.ray_runner_experimental import RayRunner
+    from rfm_pipeline.distributed.ray_runner_experimental import RayRunner
 
     cfg = DistributedConfig()
     os.environ.pop("BSM_ENABLE_RAY_EXPERIMENTAL", None)
@@ -508,21 +510,21 @@ def test_ray_runner_raises_without_env_var():
 
 
 def test_ray_runner_is_enabled_false_by_default():
-    from bsm_rfm.distributed.ray_runner_experimental import RayRunner
+    from rfm_pipeline.distributed.ray_runner_experimental import RayRunner
 
     os.environ.pop("BSM_ENABLE_RAY_EXPERIMENTAL", None)
     assert RayRunner.is_enabled() is False
 
 
 def test_ray_runner_is_enabled_true_with_env():
-    from bsm_rfm.distributed.ray_runner_experimental import RayRunner
+    from rfm_pipeline.distributed.ray_runner_experimental import RayRunner
 
     with patch.dict(os.environ, {"BSM_ENABLE_RAY_EXPERIMENTAL": "1"}):
         assert RayRunner.is_enabled() is True
 
 
 def test_ray_runner_is_available_returns_bool():
-    from bsm_rfm.distributed.ray_runner_experimental import RayRunner
+    from rfm_pipeline.distributed.ray_runner_experimental import RayRunner
 
     assert isinstance(RayRunner.is_available(), bool)
 
@@ -533,22 +535,22 @@ def test_ray_runner_is_available_returns_bool():
 
 
 def test_dask_runner_is_available():
-    from bsm_rfm.distributed.dask_runner import DaskRunner
+    from rfm_pipeline.distributed.dask_runner import DaskRunner
 
     assert isinstance(DaskRunner.is_available(), bool)
 
 
 def test_dask_runner_is_slurm_available():
-    from bsm_rfm.distributed.dask_runner import DaskRunner
+    from rfm_pipeline.distributed.dask_runner import DaskRunner
 
     assert isinstance(DaskRunner.is_slurm_available(), bool)
 
 
 def test_dask_runner_raises_without_dask():
-    from bsm_rfm.distributed.dask_runner import DaskRunner
+    from rfm_pipeline.distributed.dask_runner import DaskRunner
 
     cfg = DistributedConfig()
-    with patch("bsm_rfm.distributed.dask_runner._DASK_AVAILABLE", False):
+    with patch("rfm_pipeline.distributed.dask_runner._DASK_AVAILABLE", False):
         with pytest.raises(ImportError, match="Dask is required"):
             DaskRunner(cfg)
 
@@ -559,7 +561,7 @@ def test_dask_runner_raises_without_dask():
 )
 def test_dask_runner_threads_map():
     """Smoke test: local threads DaskRunner maps over a list."""
-    from bsm_rfm.distributed.dask_runner import DaskRunner
+    from rfm_pipeline.distributed.dask_runner import DaskRunner
 
     cfg = DistributedConfig()
     cfg.dask.scheduler = "threads"

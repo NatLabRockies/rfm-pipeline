@@ -13,10 +13,10 @@ def main() -> int:
     if str(src) not in sys.path:
         sys.path.insert(0, str(src))
 
-    import bsm_rfm  # noqa: PLC0415
+    import rfm_pipeline  # noqa: PLC0415
 
-    exported = len(getattr(bsm_rfm, "__all__", []))
-    print(f"Imported bsm_rfm from {src}; exported names: {exported}")
+    exported = len(getattr(rfm_pipeline, "__all__", []))
+    print(f"Imported rfm_pipeline from {src}; exported names: {exported}")
     return 0
 
 

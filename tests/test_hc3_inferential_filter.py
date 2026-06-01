@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from bsm_rfm.manuscript_stages import _build_hc3_inferential_filter_tables
+from rfm_pipeline.manuscript_stages import _build_hc3_inferential_filter_tables
 
 
 def test_hc3_retains_strong_predictor():

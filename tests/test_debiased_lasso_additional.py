@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from bsm_rfm import debiased_lasso as dl
+from rfm_pipeline import debiased_lasso as dl
 
 
 def _make_toy_data(n=200, p=50, q=3, seed=0):

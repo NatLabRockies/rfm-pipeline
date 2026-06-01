@@ -4,7 +4,7 @@ API reference
 artifacts
 ---------
 
-.. automodule:: bsm_rfm.artifacts
+.. automodule:: rfm_pipeline.artifacts
    :members:
    :undoc-members:
    :show-inheritance:
@@ -13,7 +13,7 @@ artifacts
 feature_expansion
 -----------------
 
-.. automodule:: bsm_rfm.feature_expansion
+.. automodule:: rfm_pipeline.feature_expansion
    :members:
    :undoc-members:
    :show-inheritance:
@@ -21,7 +21,7 @@ feature_expansion
 features
 --------
 
-.. automodule:: bsm_rfm.features
+.. automodule:: rfm_pipeline.features
    :members:
    :undoc-members:
    :show-inheritance:
@@ -29,7 +29,7 @@ features
 data
 ----
 
-.. automodule:: bsm_rfm.data
+.. automodule:: rfm_pipeline.data
    :members:
    :undoc-members:
    :show-inheritance:
@@ -37,7 +37,7 @@ data
 metrics
 -------
 
-.. automodule:: bsm_rfm.metrics
+.. automodule:: rfm_pipeline.metrics
    :members:
    :undoc-members:
    :show-inheritance:
@@ -45,7 +45,7 @@ metrics
 final_ols
 ---------
 
-.. automodule:: bsm_rfm.final_ols
+.. automodule:: rfm_pipeline.final_ols
    :members:
    :undoc-members:
    :show-inheritance:
@@ -53,7 +53,7 @@ final_ols
 viz_io
 ------
 
-.. automodule:: bsm_rfm.viz_io
+.. automodule:: rfm_pipeline.viz_io
    :members:
    :undoc-members:
    :show-inheritance:
@@ -61,7 +61,7 @@ viz_io
 regularized_screening
 ---------------------
 
-.. automodule:: bsm_rfm.regularized_screening
+.. automodule:: rfm_pipeline.regularized_screening
    :members:
    :undoc-members:
    :show-inheritance:
@@ -69,7 +69,7 @@ regularized_screening
 null_screening
 --------------
 
-.. automodule:: bsm_rfm.null_screening
+.. automodule:: rfm_pipeline.null_screening
    :members:
    :undoc-members:
    :show-inheritance:
@@ -77,7 +77,7 @@ null_screening
 workflow
 --------
 
-.. automodule:: bsm_rfm.workflow
+.. automodule:: rfm_pipeline.workflow
    :members:
    :undoc-members:
    :show-inheritance:
@@ -86,7 +86,7 @@ workflow
 manuscript_data_contract
 ------------------------
 
-.. automodule:: bsm_rfm.manuscript_data_contract
+.. automodule:: rfm_pipeline.manuscript_data_contract
    :members:
    :undoc-members:
    :show-inheritance:
@@ -95,7 +95,7 @@ manuscript_data_contract
 manuscript_runtime
 ------------------
 
-.. automodule:: bsm_rfm.manuscript_runtime
+.. automodule:: rfm_pipeline.manuscript_runtime
    :members:
    :undoc-members:
    :show-inheritance:
@@ -104,7 +104,7 @@ manuscript_runtime
 manuscript_stages
 -----------------
 
-.. automodule:: bsm_rfm.manuscript_stages
+.. automodule:: rfm_pipeline.manuscript_stages
    :members:
    :undoc-members:
    :show-inheritance:

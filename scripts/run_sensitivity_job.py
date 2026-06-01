@@ -206,7 +206,7 @@ def main() -> int:
         study_meta: dict[str, Any] = job_config.get("sensitivity_study", {})
         overrides: dict[str, Any] = study_meta.get("config_overrides", {})
 
-        from bsm_rfm.synthetic_dgp import (
+        from rfm_pipeline.synthetic_dgp import (
             SyntheticDGPSpec,
             generate_bsm_structure_synthetic,
             generate_pure_synthetic,

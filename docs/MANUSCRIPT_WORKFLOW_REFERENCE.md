@@ -67,7 +67,7 @@ pixi run workflow-run -- --config configs/validation_300_sample_no_caps.yml
 Four specs now have `n_jobs: int = 1` field:
 
 ```python
-# src/bsm_rfm/manuscript_stages.py
+# src/rfm_pipeline/manuscript_stages.py
 
 @dataclass
 class EmpiricalNullScreeningSpec:
@@ -113,7 +113,7 @@ ______________________________________________________________________
 
 ### Stage 1: Empirical Null Screening
 
-**File**: `src/bsm_rfm/manuscript_stages.py`, function `empirical_null_screening()` → calls `_permutation_row_norm_null()`
+**File**: `src/rfm_pipeline/manuscript_stages.py`, function `empirical_null_screening()` → calls `_permutation_row_norm_null()`
 
 **What it does**: Tests whether each screened output's row norm exceeds null distribution (generated via B+1 permutations of X).
 
@@ -156,7 +156,7 @@ ______________________________________________________________________
 
 ### Stage 2: Interaction Discovery
 
-**File**: `src/bsm_rfm/manuscript_stages.py`, function `discover_manuscript_interactions()`
+**File**: `src/rfm_pipeline/manuscript_stages.py`, function `discover_manuscript_interactions()`
 
 **What it does**: For each screened output Y_i, discover which first-order feature pairs (X_j, X_k) show significant interaction via F-test across B+1 permutation samples.
 
@@ -213,7 +213,7 @@ ______________________________________________________________________
 
 ### Stage 3: Nonlinear Feature Discovery
 
-**File**: `src/bsm_rfm/manuscript_stages.py`, function `discover_manuscript_nonlinear_transformations()`
+**File**: `src/rfm_pipeline/manuscript_stages.py`, function `discover_manuscript_nonlinear_transformations()`
 
 **What it does**: For each screened output Y_i, discover which nonlinear transform families (splines, polynomials, etc.) applied to each base feature show significant association via EDF test.
 
@@ -267,7 +267,7 @@ ______________________________________________________________________
 
 ### Stage 4: Sparse Stability Resampling
 
-**File**: `src/bsm_rfm/manuscript_stages.py`, function `_run_stability_resamples()`
+**File**: `src/rfm_pipeline/manuscript_stages.py`, function `_run_stability_resamples()`
 
 **What it does**: Resamples training data N times, fits LASSO on each resample, collects which features appear in stable subsets across resamples.
 
@@ -333,7 +333,7 @@ ______________________________________________________________________
 
 ### Stage 0: Output Conditioning (PCA Dimension Reduction)
 
-**File**: `src/bsm_rfm/manuscript_stages.py`, function `_fit_pca_reduction()`
+**File**: `src/rfm_pipeline/manuscript_stages.py`, function `_fit_pca_reduction()`
 
 **What changed**: Switched from full SVD to **randomized SVD**
 
@@ -376,7 +376,7 @@ ______________________________________________________________________
 
 ### Stage 5: Final OLS (Large-Y Memory Efficiency)
 
-**File**: `src/bsm_rfm/final_ols.py`, function `fit_final_ols()`
+**File**: `src/rfm_pipeline/final_ols.py`, function `fit_final_ols()`
 
 **What changed**: Added **chunked column-wise OLS** for large Y matrices
 
@@ -436,7 +436,7 @@ All parallelizable stages require **module-level worker functions** (not nested 
 
 ### Location & Pattern
 
-All 3 worker functions live in `src/bsm_rfm/manuscript_stages.py` at module scope:
+All 3 worker functions live in `src/rfm_pipeline/manuscript_stages.py` at module scope:
 
 ```python
 # Lines ~2800
@@ -586,10 +586,10 @@ ______________________________________________________________________
 **Fix**: Verify line ~3918 has intact function definition. Run:
 
 ```bash
-grep -n "def _apply_transform_family" src/bsm_rfm/manuscript_stages.py
+grep -n "def _apply_transform_family" src/rfm_pipeline/manuscript_stages.py
 ```
 
-Should return line number. If not, restore from git: `git checkout src/bsm_rfm/manuscript_stages.py`
+Should return line number. If not, restore from git: `git checkout src/rfm_pipeline/manuscript_stages.py`
 
 ### Issue: Parallel mode (n_jobs=-1) slower than serial (n_jobs=1)
 
@@ -727,15 +727,15 @@ ______________________________________________________________________
 
 ## Key Files: Quick Reference
 
-| File                                | Purpose                       | Modified in Optimization? | Key Lines                                                                                                    |
-| ----------------------------------- | ----------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `src/bsm_rfm/manuscript_stages.py`  | Core 6-stage pipeline         | **Yes**                   | 1-50 (imports), 200-250 (specs), 750 (randomized_svd), 1100-4200 (parallelized stages), 4500+ (spec parsers) |
-| `src/bsm_rfm/final_ols.py`          | Final OLS fitting             | **Yes**                   | 1-20 (imports), 40-100 (chunked OLS logic)                                                                   |
-| `tools/run_manuscript_pipeline.py`  | Unified config-driven runner  | **Yes**                   | config loading, stage-chain orchestration, run-state markers                                                 |
-| `configs/manuscript_case_study.yml` | Algorithm parameters (frozen) | **No**                    | All params read-only; n_jobs injected programmatically                                                       |
-| `docs/AGENT_SYNC.md`                | Repo state tracking           | **Yes**                   | Updated with completion status & next steps                                                                  |
-| `tests/test_manuscript*.py`         | Validation tests (all pass)   | **No**                    | All 19 tests verify correctness with parallel code                                                           |
-| `pixi.toml`                         | Dependencies                  | **No**                    | joblib 1.5.2, tqdm 4.65.0 already present                                                                    |
+| File                                    | Purpose                       | Modified in Optimization? | Key Lines                                                                                                    |
+| --------------------------------------- | ----------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `src/rfm_pipeline/manuscript_stages.py` | Core 6-stage pipeline         | **Yes**                   | 1-50 (imports), 200-250 (specs), 750 (randomized_svd), 1100-4200 (parallelized stages), 4500+ (spec parsers) |
+| `src/rfm_pipeline/final_ols.py`         | Final OLS fitting             | **Yes**                   | 1-20 (imports), 40-100 (chunked OLS logic)                                                                   |
+| `tools/run_manuscript_pipeline.py`      | Unified config-driven runner  | **Yes**                   | config loading, stage-chain orchestration, run-state markers                                                 |
+| `configs/manuscript_case_study.yml`     | Algorithm parameters (frozen) | **No**                    | All params read-only; n_jobs injected programmatically                                                       |
+| `docs/AGENT_SYNC.md`                    | Repo state tracking           | **Yes**                   | Updated with completion status & next steps                                                                  |
+| `tests/test_manuscript*.py`             | Validation tests (all pass)   | **No**                    | All 19 tests verify correctness with parallel code                                                           |
+| `pixi.toml`                             | Dependencies                  | **No**                    | joblib 1.5.2, tqdm 4.65.0 already present                                                                    |
 
 ______________________________________________________________________
 

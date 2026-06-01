@@ -35,7 +35,7 @@ Current run continuity note:
 - Job `14012760` is the empirical-null screening reduce job for `publication_full_dataset_distributed_20260526_short_hp1` (`bsm_reduce_empirical_null_screening_bsm_publication_full_dataset_distributed_20260526_short_hp1_s02_empirical`).
 - Recovery controller can be relaunched from `scripts/kestrel/submit_publication_full_dataset_distributed.sh` on the same study root; it will walk stages sequentially and recover downstream phases once the interaction reduce clears.
 - 2026-05-29: `docs/manuscripts/jds_bsm.tex` was reconciled to the verified short_hp1 manuscript values: 30,000 runs, 5% holdout, 9,954 PCA-retained outputs, 69 screened inputs, 62 retained interactions, 41 retained nonlinear terms, 132 final predictors, and holdout macro nRMSE 0.0721. The manuscript now describes the L2/BH screening method, 40th-percentile LASSO alpha choice, HC3-plus-pruning stage, and SVG figure set; unresolved TODOs remain for DOIs, Steve Peterson affiliation, acknowledgements/disclaimer, per-scenario holdout breakdown, and worst-output investigation.
-- 2026-05-29: sensitivity-study Phase 1-2 scaffolding landed. New standalone modules are `src/bsm_rfm/synthetic_dgp.py` (pure/BSM synthetic DGPs, true support, manuscript-table schemas) and `src/bsm_rfm/sensitivity_study.py` (LHS sampling, DGP/config/job generation, serialization, result collection). Supporting configs/scripts/tests were added under `configs/sensitivity_study/`, `scripts/`, and `tests/`, with validation passing via targeted pytest (12 tests), `py_compile`, and CLI-help smoke checks.
+- 2026-05-29: sensitivity-study Phase 1-2 scaffolding landed. New standalone modules are `src/rfm_pipeline/synthetic_dgp.py` (pure/BSM synthetic DGPs, true support, manuscript-table schemas) and `src/rfm_pipeline/sensitivity_study.py` (LHS sampling, DGP/config/job generation, serialization, result collection). Supporting configs/scripts/tests were added under `configs/sensitivity_study/`, `scripts/`, and `tests/`, with validation passing via targeted pytest (12 tests), `py_compile`, and CLI-help smoke checks.
 
 ## Current scientific workflow goals
 
@@ -60,7 +60,7 @@ A contract-only de-biased-LASSO slice has been added.
 
 Known recovered notebook facts are frozen in:
 
-- `src/bsm_rfm/debiased_lasso_contract.py`
+- `src/rfm_pipeline/debiased_lasso_contract.py`
 - `docs/debiased_lasso_contract.md`
 - `tests/test_debiased_lasso_contract.py`
 

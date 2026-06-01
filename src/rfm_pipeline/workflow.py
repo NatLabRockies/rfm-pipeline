@@ -511,7 +511,7 @@ def write_postfit_bundle(
     ----------
     artifacts
         Artifact bundle produced by :func:`run_canonical_workflow` or
-        :func:`bsm_rfm.final_ols.build_postfit_artifacts`.
+        :func:`rfm_pipeline.final_ols.build_postfit_artifacts`.
     root
         Destination bundle directory.
 

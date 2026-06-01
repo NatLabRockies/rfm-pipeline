@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bsm_rfm.out_of_core import (
+from rfm_pipeline.out_of_core import (
     ChunkedParquetReader,
     ChunkProgress,
     MemoryBudget,
@@ -42,7 +42,7 @@ class TestOutOfCoreIntegration:
 
     def test_chunked_aggregation_stability_scores(self, synthetic_stability_results):
         """Test streaming aggregation of stability scores."""
-        from bsm_rfm.out_of_core import StreamingAggregation
+        from rfm_pipeline.out_of_core import StreamingAggregation
 
         scores = synthetic_stability_results
         n_features = scores.shape[1]
@@ -159,7 +159,7 @@ class TestChunkedIOWorkflowIntegration:
 
     def test_config_loads_with_chunked_io(self):
         """Test that config with out-of-core settings loads correctly."""
-        from bsm_rfm.config import load_config
+        from rfm_pipeline.config import load_config
 
         config = load_config("configs/validation_100_sample_chunked_io.yml")
 

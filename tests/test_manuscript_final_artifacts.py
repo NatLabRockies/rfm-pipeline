@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from bsm_rfm.manuscript_runtime import (
+from rfm_pipeline.manuscript_runtime import (
     build_manuscript_notebook_context,
     load_manuscript_case_study_config,
 )
-from bsm_rfm.manuscript_stages import (
+from rfm_pipeline.manuscript_stages import (
     FinalManuscriptArtifactsSpec,
     _ablation_main_effect_feature_names,
     _build_feature_pruning_diagnostics,
@@ -259,7 +259,7 @@ def test_feature_pruning_diagnostics_respect_remove_count_override() -> None:
     import numpy as np
     import pandas as pd
 
-    from bsm_rfm.final_ols import FinalOLSFitResult
+    from rfm_pipeline.final_ols import FinalOLSFitResult
 
     x_train = pd.DataFrame(
         {

@@ -40,9 +40,9 @@ def test_module_plan_records_manuscript_runtime_and_stage_modules() -> None:
     """The live module map should stay synchronized with manuscript-stage implementation."""
     module_plan = Path("docs/module_plan.md").read_text(encoding="utf-8")
     required_snippets = [
-        "`bsm_rfm.manuscript_data_contract`",
-        "`bsm_rfm.manuscript_runtime`",
-        "`bsm_rfm.manuscript_stages`",
+        "`rfm_pipeline.manuscript_data_contract`",
+        "`rfm_pipeline.manuscript_runtime`",
+        "`rfm_pipeline.manuscript_stages`",
         "run_manuscript_reproduction_audit_stage",
         "docs/manuscript_alignment_audit.md",
         "source-backed executable scaffold",

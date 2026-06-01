@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from bsm_rfm.regularized_screening import (
+from rfm_pipeline.regularized_screening import (
     archived_multitask_enet_contract,
     canonical_screening_contracts,
     fit_multitask_elastic_net_screen,

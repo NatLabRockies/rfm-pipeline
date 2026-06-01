@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from bsm_rfm.transforms import DEFAULT_TRANSFORM_LIBRARY, TransformDef
+from rfm_pipeline.transforms import DEFAULT_TRANSFORM_LIBRARY, TransformDef
 
 
 @dataclass
@@ -142,7 +142,7 @@ class NonlinearStageConfig:
     transform_library: list[TransformDef] = field(
         default_factory=lambda: list(DEFAULT_TRANSFORM_LIBRARY)
     )
-    """Algebraic transform library; each entry is a :class:`~bsm_rfm.transforms.TransformDef`
+    """Algebraic transform library; each entry is a :class:`~rfm_pipeline.transforms.TransformDef`
     with ``expr`` (SymPy expression in ``x``), ``label`` (column suffix), and optional ``name``.
     When not specified in config, defaults to the five standard families: quadratic (sq),
     logarithmic (log1p), inverse (inv), square-root (sqrt), and exponential (exp).

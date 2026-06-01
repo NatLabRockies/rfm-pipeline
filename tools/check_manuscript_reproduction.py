@@ -69,7 +69,7 @@ def _ensure_local_package_importable(repo_root: Path) -> None:
 def _make_temp_context(repo_root: Path, output_root: Path):
     """Build a manuscript notebook context rooted in a temporary output directory."""
     _ensure_local_package_importable(repo_root)
-    from bsm_rfm import build_manuscript_notebook_context
+    from rfm_pipeline import build_manuscript_notebook_context
 
     context = build_manuscript_notebook_context(
         repo_root,
@@ -82,10 +82,10 @@ def _make_temp_context(repo_root: Path, output_root: Path):
 def check_manuscript_reproduction(repo_root: Path) -> list[str]:
     """Return audit failures for a temporary audited manuscript reproduction run."""
     _ensure_local_package_importable(repo_root)
-    from bsm_rfm import run_manuscript_reproduction_audit_stage
+    from rfm_pipeline import run_manuscript_reproduction_audit_stage
 
     failures: list[str] = []
-    with TemporaryDirectory(prefix="bsm-rfm-manuscript-reproduction-") as temp_dir:
+    with TemporaryDirectory(prefix="rfm-pipeline-manuscript-reproduction-") as temp_dir:
         context = _make_temp_context(repo_root, Path(temp_dir))
         result = run_manuscript_reproduction_audit_stage(context)
         summary = result.audit.summary.iloc[0]

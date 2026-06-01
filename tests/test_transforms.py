@@ -8,7 +8,7 @@ import warnings
 import numpy as np
 import pytest
 
-from bsm_rfm.transforms import (
+from rfm_pipeline.transforms import (
     DEFAULT_TRANSFORM_LIBRARY,
     EXPONENTIAL,
     INVERSE,

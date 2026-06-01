@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from bsm_rfm import (
+from rfm_pipeline import (
     build_manuscript_notebook_context,
     load_postfit_bundle,
     run_canonical_workflow,

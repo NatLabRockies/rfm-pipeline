@@ -21,14 +21,14 @@ REPO_ROOT = Path(__file__).parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.bsm_rfm.config import (  # noqa: E402
+from src.rfm_pipeline.config import (  # noqa: E402
     OutOfCoreConfig,
     WorkflowConfig,
     apply_fast_mode_overrides,
     load_config,
 )
-from src.bsm_rfm.manuscript_runtime import load_manuscript_case_study_config  # noqa: E402
-from src.bsm_rfm.manuscript_stages import (  # noqa: E402
+from src.rfm_pipeline.manuscript_runtime import load_manuscript_case_study_config  # noqa: E402
+from src.rfm_pipeline.manuscript_stages import (  # noqa: E402
     EmpiricalNullScreeningResult,
     InteractionDiscoveryResult,
     NonlinearDiscoveryResult,
@@ -54,7 +54,7 @@ from src.bsm_rfm.manuscript_stages import (  # noqa: E402
     write_output_conditioning_artifacts,
     write_sparse_selection_stability_artifacts,
 )
-from src.bsm_rfm.out_of_core import (  # noqa: E402
+from src.rfm_pipeline.out_of_core import (  # noqa: E402
     ChunkedParquetReader,
     SpillToDiskBuffer,
     choose_temp_dir,

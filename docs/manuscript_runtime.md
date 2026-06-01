@@ -5,7 +5,7 @@ real-data mode.
 
 ## Runtime resolution policy
 
-Use `bsm_rfm.resolve_manuscript_runtime(repo_root)` to determine notebook inputs.
+Use `rfm_pipeline.resolve_manuscript_runtime(repo_root)` to determine notebook inputs.
 
 - When `configs/local/manuscript_paths.local.yml` exists and every required artifact file is
   present, the runtime resolves to `mode = "real"`.
@@ -19,14 +19,14 @@ shipping the real BSM case-study files.
 
 The public helpers for the notebook layer are:
 
-- `bsm_rfm.load_manuscript_runtime_manifest(...)`
-- `bsm_rfm.load_manuscript_paths_template(...)`
-- `bsm_rfm.load_manuscript_local_override(...)`
-- `bsm_rfm.resolve_manuscript_runtime(...)`
-- `bsm_rfm.load_manuscript_artifact_tables(...)`
-- `bsm_rfm.validate_manuscript_artifact_tables(...)`
-- `bsm_rfm.build_manuscript_notebook_context(...)`
-- `bsm_rfm.manuscript_runtime_summary_table(...)`
+- `rfm_pipeline.load_manuscript_runtime_manifest(...)`
+- `rfm_pipeline.load_manuscript_paths_template(...)`
+- `rfm_pipeline.load_manuscript_local_override(...)`
+- `rfm_pipeline.resolve_manuscript_runtime(...)`
+- `rfm_pipeline.load_manuscript_artifact_tables(...)`
+- `rfm_pipeline.validate_manuscript_artifact_tables(...)`
+- `rfm_pipeline.build_manuscript_notebook_context(...)`
+- `rfm_pipeline.manuscript_runtime_summary_table(...)`
 
 ## Notebook entrypoints
 
@@ -46,7 +46,7 @@ The tracked manuscript notebooks now exist at the frozen Phase 1 paths under
 ## Phase 3 output-conditioning stage
 
 The first Phase 3 source-backed notebook stage is `02_output_conditioning.ipynb`. It calls
-`bsm_rfm.run_output_conditioning_stage(...)`, which reads the frozen output-conditioning settings
+`rfm_pipeline.run_output_conditioning_stage(...)`, which reads the frozen output-conditioning settings
 from `configs/manuscript_case_study.yml`, applies train-only output filters, computes the PCA
 reduced-response representation, and writes deterministic CSV handoff artifacts under
 `{output_root}/output_conditioning/`.
@@ -62,7 +62,7 @@ The stage currently writes:
 ## Phase 3 empirical-null screening stage
 
 The second Phase 3 source-backed notebook stage is `03_empirical_null_screen.ipynb`. It calls
-`bsm_rfm.run_empirical_null_screening_stage(...)`, which materializes the tracked feature
+`rfm_pipeline.run_empirical_null_screening_stage(...)`, which materializes the tracked feature
 catalog, uses the retained PCA component scores as the screening response, computes the
 frozen coefficient-row-norm statistic, estimates featurewise empirical-null p-values from
 deterministic response permutations, applies the frozen Benjamini--Hochberg threshold, and writes a provenance table that distinguishes the public surrogate from the private Delta-null screening script.
@@ -79,7 +79,7 @@ The stage currently writes:
 ## Phase 3 interaction-discovery stage
 
 The third Phase 3 source-backed notebook stage is `04_interaction_discovery.ipynb`. It calls
-`bsm_rfm.run_interaction_discovery_stage(...)`, which reads interaction-discovery metadata from
+`rfm_pipeline.run_interaction_discovery_stage(...)`, which reads interaction-discovery metadata from
 the frozen case-study contract, uses the released feature catalog as the authoritative candidate
 pair source, scores residualized two-factor product terms against retained PCA component scores,
 and estimates deterministic response-permutation null thresholds for CI/demo execution.
@@ -96,7 +96,7 @@ The stage currently writes:
 ## Phase 3 nonlinear-discovery stage
 
 The fourth Phase 3 source-backed notebook stage is `05_nonlinear_discovery.ipynb`. It calls
-`bsm_rfm.run_nonlinear_discovery_stage(...)`, which reads nonlinear-discovery metadata from the
+`rfm_pipeline.run_nonlinear_discovery_stage(...)`, which reads nonlinear-discovery metadata from the
 frozen case-study contract, uses the released feature catalog as the authoritative transformation
 candidate source, residualizes each supported transformation against its source first-order input,
 and scores the incremental nonlinear contribution against retained PCA component scores. This is
@@ -115,7 +115,7 @@ The stage currently writes:
 
 The fifth Phase 3 source-backed notebook stage is
 `06_sparse_selection_and_stability.ipynb`. It calls
-`bsm_rfm.run_sparse_selection_stability_stage(...)`, which reads sparse-selection and stability
+`rfm_pipeline.run_sparse_selection_stability_stage(...)`, which reads sparse-selection and stability
 metadata from the frozen case-study contract, builds the ordered union of retained empirical-null
 terms plus retained interaction and nonlinear candidates, fits EBIC-selected L1 models per retained
 PCA component, aggregates nonzero support across components, and evaluates deterministic
@@ -136,7 +136,7 @@ The stage currently writes:
 
 The final Phase 3 source-backed notebook stage is
 `08_manuscript_tables_and_figures.ipynb`. It calls
-`bsm_rfm.run_final_manuscript_artifacts_stage(...)`, which recomputes the upstream stage outputs
+`rfm_pipeline.run_final_manuscript_artifacts_stage(...)`, which recomputes the upstream stage outputs
 for the active runtime context, applies the frozen 95% HC3 Wald final inferential filter
 to the stable sparse-selection support, refits final OLS on retained terms, evaluates holdout
 macro nRMSE against the frozen `Y_train` normalization contract, and writes final model
@@ -181,14 +181,14 @@ counts and final coefficients still need verification against the private manusc
 ## End-to-end Phase 3 reproduction chain
 
 For local reproduction runs that should emit every Phase 3 artifact family from one context, use
-`bsm_rfm.run_manuscript_reproduction_stage_chain(...)`. The chain executes output conditioning,
+`rfm_pipeline.run_manuscript_reproduction_stage_chain(...)`. The chain executes output conditioning,
 empirical-null screening, interaction discovery, nonlinear discovery, sparse selection/stability,
 and final table/figure regeneration in dependency order and writes all stage handoff artifacts
 under the resolved manuscript output root.
 
 ## Manuscript reproduction audit
 
-For final local QA, use `bsm_rfm.run_manuscript_reproduction_audit_stage(...)`. This wraps the
+For final local QA, use `rfm_pipeline.run_manuscript_reproduction_audit_stage(...)`. This wraps the
 end-to-end Phase 3 chain, then writes `reproduction_audit/` with:
 
 - `artifact_manifest.csv`: one row per written manuscript artifact with portable path, suffix,

@@ -10,7 +10,7 @@ Replace dataset-specific hardcoded scripts with a unified, config-driven entry p
 
 ## What Was Built
 
-### 1. Typed Configuration Schema (`src/bsm_rfm/config.py`)
+### 1. Typed Configuration Schema (`src/rfm_pipeline/config.py`)
 
 Comprehensive typed configuration dataclasses:
 
@@ -99,7 +99,7 @@ pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_f
 
 **New files**:
 
-- src/bsm_rfm/config.py (340 lines)
+- src/rfm_pipeline/config.py (340 lines)
 - tools/run_manuscript_pipeline.py (65 lines)
 - tests/test_config_loader.py (115 lines)
 - configs/validation_300_sample_fast.yml
@@ -218,7 +218,7 @@ Once working, add configs:
 ```
 feat: unified config-driven manuscript pipeline entry point
 
-- Add typed config schema (src/bsm_rfm/config.py): DatasetConfig,
+- Add typed config schema (src/rfm_pipeline/config.py): DatasetConfig,
   AlgorithmConfig, RuntimeConfig, StagesConfig, WorkflowConfig
 - Add config loader with validation and fast-mode override support
 - Create unified entry point (tools/run_manuscript_pipeline.py) accepting YAML

@@ -2,7 +2,7 @@
 
 import pytest
 
-from bsm_rfm.parallel import DaskExecutor, JobLibExecutor, get_executor
+from rfm_pipeline.parallel import DaskExecutor, JobLibExecutor, get_executor
 
 
 def test_get_executor_joblib():

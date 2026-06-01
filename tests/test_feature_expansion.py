@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import pandas as pd
 import pytest
 
@@ -10,13 +12,13 @@ from bsm_rfm.feature_expansion import (
     default_feature_expansion_spec,
     ordered_expanded_feature_names,
 )
+from bsm_rfm.transforms import INVERSE, QUADRATIC
 
 
 def test_ordered_expanded_feature_names_follow_expected_catalog_order():
     spec = default_feature_expansion_spec(
         base_features=["x1", "x2"],
-        add_quadratic_for=("x1",),
-        add_inverse_for=("x2",),
+        add_transforms={"x1": [QUADRATIC], "x2": [INVERSE]},
         interaction_pairs=(("x1", "AFSC"), ("x1", "x2")),
     )
     assert ordered_expanded_feature_names(spec) == (
@@ -24,8 +26,8 @@ def test_ordered_expanded_feature_names_follow_expected_catalog_order():
         "x2",
         "AFSC",
         "UAEORO",
-        "x1_quadratic",
-        "x2_inverse",
+        "x1_sq",
+        "x2_inv",
         "x1*AFSC",
         "x1*x2",
     )
@@ -42,15 +44,14 @@ def test_apply_feature_expansion_materializes_expected_columns_and_values():
     )
     spec = default_feature_expansion_spec(
         base_features=["x1", "x2"],
-        add_quadratic_for=("x1",),
-        add_inverse_for=("x2",),
+        add_transforms={"x1": [QUADRATIC], "x2": [INVERSE]},
         interaction_pairs=(("x1", "AFSC"), ("x1", "x2")),
     )
     result = apply_feature_expansion(frame, spec)
     assert result.ordered_columns == ordered_expanded_feature_names(spec)
     assert result.expanded_frame.columns.tolist() == list(result.ordered_columns)
-    assert result.expanded_frame["x1_quadratic"].tolist() == [4.0, 9.0]
-    assert result.expanded_frame["x2_inverse"].round(4).tolist() == [0.25, 0.2]
+    assert result.expanded_frame["x1_sq"].tolist() == [4.0, 9.0]
+    assert result.expanded_frame["x2_inv"].round(4).tolist() == [0.25, 0.2]
     assert result.expanded_frame["x1*AFSC"].tolist() == [0.0, 3.0]
     assert result.expanded_frame["x1*x2"].tolist() == [8.0, 15.0]
 
@@ -65,11 +66,16 @@ def test_apply_feature_expansion_requires_all_referenced_columns():
         apply_feature_expansion(frame, spec)
 
 
-def test_apply_feature_expansion_rejects_inverse_of_zero():
+def test_apply_feature_expansion_inverse_of_zero_warns_and_returns_nan():
     frame = pd.DataFrame({"x1": [0.0], "AFSC": [0], "UAEORO": [1]})
     spec = default_feature_expansion_spec(
         base_features=["x1"],
-        add_inverse_for=("x1",),
+        add_transforms={"x1": [INVERSE]},
     )
-    with pytest.raises(ValueError, match="inverse-transformed"):
-        apply_feature_expansion(frame, spec)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = apply_feature_expansion(frame, spec)
+    import math
+
+    assert math.isnan(result.expanded_frame["x1_inv"].iloc[0])
+    assert any("x1" in str(w.message) for w in caught)

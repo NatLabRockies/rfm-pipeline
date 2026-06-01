@@ -7,19 +7,23 @@ from collections.abc import Iterable
 import pandas as pd
 
 KNOWN_TRANSFORMATIONS = {
+    # Legacy labels (used by pre-existing artifact parsing)
     "quadratic",
     "inverse",
     "log",
     "log1p",
-    "sqrt",
     "square",
     "cubic",
     "cube",
     "reciprocal",
-    "exp",
     "abs",
     "logarithmic",
     "exponential",
+    # Current labels from DEFAULT_TRANSFORM_LIBRARY (TransformDef.label values)
+    "sq",  # quadratic  x**2
+    "inv",  # inverse    1/x
+    "sqrt",  # square root
+    "exp",  # exponential
 }
 
 

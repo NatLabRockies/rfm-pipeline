@@ -18,6 +18,7 @@ from bsm_rfm.manuscript_stages import (
     run_nonlinear_discovery_stage,
     write_nonlinear_discovery_artifacts,
 )
+from bsm_rfm.transforms import QUADRATIC
 
 
 def test_nonlinear_discovery_spec_matches_frozen_case_study_contract() -> None:
@@ -65,6 +66,7 @@ def test_nonlinear_discovery_retains_residual_quadratic_signal_and_writes_artifa
         replacement_selection_rule="minimum_training_rmse_against_gam_smooth",
         identified_transformations_reference=112,
         final_support_transformations_reference=37,
+        transform_library=[QUADRATIC],
     )
 
     result = discover_manuscript_nonlinear_transformations(
@@ -84,7 +86,7 @@ def test_nonlinear_discovery_retains_residual_quadratic_signal_and_writes_artifa
     assert result.summary.loc[0, "n_candidate_transformations"] == 1
     assert result.summary.loc[0, "n_retained_transformations"] == 1
     assert result.provenance.loc[0, "public_implementation_status"] == ("manuscript_aligned")
-    assert result.transformation_scores.loc[0, "feature_name"] == "x1_squared"
+    assert result.transformation_scores.loc[0, "feature_name"] == "x1_sq"
     assert result.transformation_scores.loc[0, "transformation_family"] == "quadratic"
     assert result.transformation_scores.loc[0, "retained"]
     assert result.transformation_scores.loc[0, "empirical_null_retained"]
@@ -123,6 +125,7 @@ def test_nonlinear_discovery_generates_supported_transforms_from_retained_terms(
         replacement_selection_rule="minimum_training_rmse_against_gam_smooth",
         identified_transformations_reference=112,
         final_support_transformations_reference=37,
+        transform_library=[QUADRATIC],
     )
 
     result = discover_manuscript_nonlinear_transformations(
@@ -134,13 +137,8 @@ def test_nonlinear_discovery_generates_supported_transforms_from_retained_terms(
         spec,
     )
 
-    assert set(result.transformation_scores["feature_name"]) == {
-        "inverse_x1",
-        "log1p_x1",
-        "sqrt_x1",
-        "x1_squared",
-    }
-    assert result.summary.loc[0, "n_candidate_transformations"] == 4
+    assert set(result.transformation_scores["feature_name"]) == {"x1_sq"}
+    assert result.summary.loc[0, "n_candidate_transformations"] == 1
 
 
 def test_run_nonlinear_discovery_stage_executes_demo_context() -> None:
@@ -152,7 +150,8 @@ def test_run_nonlinear_discovery_stage_executes_demo_context() -> None:
     result = run_nonlinear_discovery_stage(context)
 
     assert result.nonlinear.summary.loc[0, "stage"] == "nonlinear_discovery"
-    assert result.nonlinear.summary.loc[0, "n_candidate_transformations"] == 6
+    # 2 retained features × 5 default transforms (all domain-valid) = 10 candidates
+    assert result.nonlinear.summary.loc[0, "n_candidate_transformations"] == 10
     assert result.artifact_paths["transformation_scores"].exists()
     assert result.artifact_paths["nonlinear_discovery_provenance"].exists()
 
@@ -181,6 +180,7 @@ def test_nonlinear_discovery_reuses_checkpointed_feature_scores(
         identified_transformations_reference=112,
         final_support_transformations_reference=37,
         n_jobs=1,
+        transform_library=[QUADRATIC],
     )
     checkpoint_root = tmp_path / "nonlinear_discovery"
 
@@ -188,7 +188,7 @@ def test_nonlinear_discovery_reuses_checkpointed_feature_scores(
 
     def _fake_score_one_nonlinear_feature(
         base_feat: str,
-        base_candidates: list[tuple[str, str, str]],
+        base_candidates: list[tuple[str, str, object]],
         x_vals,  # noqa: ANN001
         y_scaled,  # noqa: ANN001
         component_names: list[str],

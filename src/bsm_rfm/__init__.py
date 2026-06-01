@@ -135,6 +135,16 @@ from .regularized_screening import (
     fit_multitask_elastic_net_screen,
     screening_selection_table,
 )
+from .transforms import (
+    DEFAULT_TRANSFORM_LIBRARY,
+    EXPONENTIAL,
+    INVERSE,
+    LOGARITHMIC,
+    QUADRATIC,
+    SQRT,
+    TransformDef,
+    warn_nan_transforms,
+)
 from .viz_io import canonical_bundle_loader_keys, load_pipeline_outputs, load_postfit_bundle
 from .workflow import (
     CanonicalWorkflowRun,
@@ -149,6 +159,14 @@ from .workflow import (
 
 __all__ = [
     "KNOWN_TRANSFORMATIONS",
+    "DEFAULT_TRANSFORM_LIBRARY",
+    "EXPONENTIAL",
+    "INVERSE",
+    "LOGARITHMIC",
+    "QUADRATIC",
+    "SQRT",
+    "TransformDef",
+    "warn_nan_transforms",
     "ManuscriptNotebookContext",
     "ManuscriptRuntimeContext",
     "PipelineManifest",

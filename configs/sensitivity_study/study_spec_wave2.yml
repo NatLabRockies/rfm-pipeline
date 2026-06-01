@@ -1,0 +1,34 @@
+# Copyright (c) 2026 Dylan Hettinger
+# Sensitivity study — Wave 2 design.
+#
+# Independent LHS of the same design space as wave 1 using different seeds.
+# Pool result JSONs from wave1 and wave2 study_dirs for combined meta-regression.
+#
+# Seed convention: wave N uses config_lhs_seed=N*1000, dgp_lhs_seed=N*1000
+#   Wave 1: seeds 1000  (study_spec_wave1.yml)
+#   Wave 2: seeds 2000  (this file)
+#   Wave 3: seeds 3000  (if supplementary coverage needed)
+#
+# Partition: shared — avoids the short-partition 4h ceiling that caused
+# timeouts in wave 1.  Observed max runtime for hardest configs on shared
+# is ~210 min; 8h gives a 2.3x safety margin.
+study:
+  pure_synthetic_n_dgps: 50
+  bsm_structure_n_dgps: 10
+  n_configs_per_dgp_pure: 10
+  n_configs_per_dgp_bsm: 5
+  n_replicates: 5
+  config_lhs_seed: 2000
+  dgp_lhs_seed: 2000
+
+output:
+  study_dir: "/scratch/dhetting/bsm/sensitivity_study_wave2"
+  n_jobs: 100
+
+slurm:
+  account: bsm
+  partition: shared
+  walltime: "08:00:00"
+  memory_gb: 220
+  cpus_per_task: 104
+  max_concurrent: 100

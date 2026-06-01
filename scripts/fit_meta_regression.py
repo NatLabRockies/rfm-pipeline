@@ -14,6 +14,14 @@ from scipy import stats
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import PolynomialFeatures
 
+try:
+    from sklearn.metrics import root_mean_squared_error as _rmse_fn
+except ImportError:
+
+    def _rmse_fn(y_true: np.ndarray, y_pred: np.ndarray) -> float:  # type: ignore[misc]
+        return float(np.sqrt(mean_squared_error(y_true, y_pred)))
+
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -204,7 +212,7 @@ def main() -> int:
 
     print(f"rows={len(analysis)}")
     print(f"r2={r2_score(y, fitted):.6f}")
-    print(f"rmse={mean_squared_error(y, fitted, squared=False):.6f}")
+    print(f"rmse={_rmse_fn(y, fitted):.6f}")
     print("top_terms=")
     for _, row in top_terms.iterrows():
         print(f"  {row['term']}: coef={row['coefficient']:.6g}, t={row['t_stat']:.4f}")

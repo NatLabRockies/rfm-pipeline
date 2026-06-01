@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import bsm_rfm.metrics as metrics_module
-from bsm_rfm.metrics import (
+import rfm_pipeline.metrics as metrics_module
+from rfm_pipeline.metrics import (
     bootstrap_macro_nrmse_ci,
     macro_nrmse_with_ref,
     make_null_mean_prediction,

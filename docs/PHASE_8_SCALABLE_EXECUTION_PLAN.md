@@ -89,7 +89,7 @@ Create reusable out-of-core building blocks that work on ANY machine (laptop →
 
 ### 3.2 Deliverables
 
-#### Core Module: `src/bsm_rfm/out_of_core/`
+#### Core Module: `src/rfm_pipeline/out_of_core/`
 
 **3.2.1 `chunked_io.py`**
 
@@ -170,7 +170,7 @@ class ChunkProgress:
 #### Config Schema Additions
 
 ```python
-# In src/bsm_rfm/config.py
+# In src/rfm_pipeline/config.py
 
 @dataclass
 class OutOfCoreConfig:
@@ -363,7 +363,7 @@ Enable opt-in multi-node execution on HPC clusters (Kestrel primary, others seco
 #### 5.2.1 SLURM Array Baseline (Primary)
 
 ```python
-# src/bsm_rfm/distributed/slurm_array_runner.py
+# src/rfm_pipeline/distributed/slurm_array_runner.py
 class SlurmArrayRunner:
     """Manifest-driven shard execution"""
     def __init__(self, manifest_path: str, config: SlurmConfig, ...)
@@ -378,7 +378,7 @@ class SlurmArrayRunner:
 #### 5.2.2 Dask + dask-jobqueue (Secondary)
 
 ```python
-# src/bsm_rfm/distributed/dask_runner.py
+# src/rfm_pipeline/distributed/dask_runner.py
 class DaskSlurmRunner:
     """Distributed dataframe operations on Kestrel SLURM"""
     def __init__(self, n_workers: int, memory_per_worker: str,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bsm_rfm.features import parse_selected_input_structure
+from rfm_pipeline.features import parse_selected_input_structure
 
 
 def test_parse_selected_input_structure_classifies_recovered_name_patterns():

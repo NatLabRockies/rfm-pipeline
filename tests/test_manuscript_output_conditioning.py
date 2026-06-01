@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from bsm_rfm import (
+from rfm_pipeline import (
     OutputConditioningSpec,
     build_manuscript_notebook_context,
     condition_manuscript_outputs,

@@ -7,12 +7,12 @@ import warnings
 import pandas as pd
 import pytest
 
-from bsm_rfm.feature_expansion import (
+from rfm_pipeline.feature_expansion import (
     apply_feature_expansion,
     default_feature_expansion_spec,
     ordered_expanded_feature_names,
 )
-from bsm_rfm.transforms import INVERSE, QUADRATIC
+from rfm_pipeline.transforms import INVERSE, QUADRATIC
 
 
 def test_ordered_expanded_feature_names_follow_expected_catalog_order():

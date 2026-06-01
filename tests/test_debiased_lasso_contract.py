@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from bsm_rfm.debiased_lasso_contract import notebook_debiased_lasso_stage_contract
+from rfm_pipeline.debiased_lasso_contract import notebook_debiased_lasso_stage_contract
 
 
 def test_debiased_lasso_contract_freezes_recovered_notebook_facts() -> None:

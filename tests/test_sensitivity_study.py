@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 
-from bsm_rfm.sensitivity_study import (
+from rfm_pipeline.sensitivity_study import (
     SensitivityStudySpec,
     collect_study_results,
     generate_config_lhs,

@@ -83,7 +83,7 @@ output:
 
 ### Layer 2: Config Parser (Typed)
 
-**File**: `src/bsm_rfm/config_parser.py` (new)
+**File**: `src/rfm_pipeline/config_parser.py` (new)
 
 ```python
 from dataclasses import dataclass
@@ -151,8 +151,8 @@ import argparse
 import yaml
 from pathlib import Path
 
-from src.bsm_rfm.config_parser import load_config, apply_fast_mode_overrides
-from src.bsm_rfm.manuscript_stages import run_manuscript_pipeline
+from src.rfm_pipeline.config_parser import load_config, apply_fast_mode_overrides
+from src.rfm_pipeline.manuscript_stages import run_manuscript_pipeline
 
 def main():
     parser = argparse.ArgumentParser(

@@ -4,37 +4,37 @@ This page records the live package modules and what they currently cover.
 
 ## Current package modules
 
-- `bsm_rfm.data`
+- `rfm_pipeline.data`
   - row alignment
   - scenario-flag helpers
   - balanced boolean-stratum subset helpers
   - holdout splitting
   - train-only standardization
-- `bsm_rfm.null_screening`
+- `rfm_pipeline.null_screening`
   - stable adapter around the recovered `null_distribution.py` source workflow
-- `bsm_rfm.feature_expansion`
+- `rfm_pipeline.feature_expansion`
   - explicit feature-expansion specification and materialization helpers
-- `bsm_rfm.regularized_screening`
+- `rfm_pipeline.regularized_screening`
   - executable multitask elastic-net screening foundation
-- `bsm_rfm.final_ols`
+- `rfm_pipeline.final_ols`
   - final OLS fitting, prediction, evaluation summary, and canonical post-fit artifact assembly
-- `bsm_rfm.metrics`
+- `rfm_pipeline.metrics`
   - macro nRMSE and bootstrap confidence-interval helpers
   - per-output nRMSE frame and ablation helpers used by final manuscript artifacts
-- `bsm_rfm.features`
+- `rfm_pipeline.features`
   - selected-feature parser and transformation-name utilities
-- `bsm_rfm.artifacts`
+- `rfm_pipeline.artifacts`
   - manifest schema and metadata-table helpers
-- `bsm_rfm.viz_io`
+- `rfm_pipeline.viz_io`
   - canonical bundle reload helpers for downstream visualization
-- `bsm_rfm.workflow`
+- `rfm_pipeline.workflow`
   - end-to-end workflow orchestration, case-study provenance tables, and bundle writing
-- `bsm_rfm.manuscript_data_contract`
+- `rfm_pipeline.manuscript_data_contract`
   - frozen manuscript artifact-table, placeholder-path, and notebook-order contracts
-- `bsm_rfm.manuscript_runtime`
+- `rfm_pipeline.manuscript_runtime`
   - real/demo manuscript runtime resolution, artifact loading, notebook contexts, and deterministic
     demo artifact generation
-- `bsm_rfm.manuscript_stages`
+- `rfm_pipeline.manuscript_stages`
   - source-backed manuscript-stage functions for output conditioning, empirical-null screening,
     interaction discovery, nonlinear discovery, sparse-selection/stability filtering, final
     manuscript artifact generation, the complete reproduction chain, and the QA audit entrypoint

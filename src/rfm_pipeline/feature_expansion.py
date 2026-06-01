@@ -5,7 +5,7 @@ into a wider modeling matrix with scenario flags, nonlinear transforms, and seco
 order interactions. This module captures that boundary as an explicit, tested package
 contract without claiming that the notebook itself is canonical source code.
 
-Transforms are expressed as :class:`~bsm_rfm.transforms.TransformDef` objects
+Transforms are expressed as :class:`~rfm_pipeline.transforms.TransformDef` objects
 (SymPy expression strings) rather than hardcoded string labels.  Invalid values
 produced by a transform (e.g. log of a negative number) become ``NaN`` in the
 expanded matrix; a :class:`UserWarning` is issued listing the affected features.
@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from bsm_rfm.transforms import TransformDef, warn_nan_transforms
+from rfm_pipeline.transforms import TransformDef, warn_nan_transforms
 
 if TYPE_CHECKING:
     pass
@@ -37,7 +37,7 @@ class FeatureExpansionSpec:
         Ordered scenario-indicator feature names preserved as first-order terms.
     transforms
         Mapping from base feature name to an ordered tuple of
-        :class:`~bsm_rfm.transforms.TransformDef` objects.  Each transform is
+        :class:`~rfm_pipeline.transforms.TransformDef` objects.  Each transform is
         applied to its base feature; the resulting column name is
         ``TransformDef.column_name(base_feature)`` (i.e. ``"{base}_{label}"``).
     interactions
@@ -102,11 +102,11 @@ def default_feature_expansion_spec(
         Scenario-indicator features preserved in the expanded matrix.
     add_transforms
         Mapping from base feature name to a list of
-        :class:`~bsm_rfm.transforms.TransformDef` objects to apply.
+        :class:`~rfm_pipeline.transforms.TransformDef` objects to apply.
         Features not listed receive no transforms.
         Example::
 
-            from bsm_rfm.transforms import QUADRATIC, INVERSE
+            from rfm_pipeline.transforms import QUADRATIC, INVERSE
 
             add_transforms = {"x1": [QUADRATIC], "x2": [INVERSE]}
 

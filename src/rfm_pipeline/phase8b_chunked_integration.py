@@ -26,8 +26,8 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 import psutil
 
-from bsm_rfm.out_of_core import SpillToDiskBuffer, StreamingAggregation
-from bsm_rfm.out_of_core.memory import choose_temp_dir
+from rfm_pipeline.out_of_core import SpillToDiskBuffer, StreamingAggregation
+from rfm_pipeline.out_of_core.memory import choose_temp_dir
 
 if TYPE_CHECKING:
     pass

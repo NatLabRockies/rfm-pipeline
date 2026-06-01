@@ -35,7 +35,7 @@ From `docs/manuscripts/jds_bsm_v5_editor_revised.tex` lines 397, 437:
 
 ### Current Implementation (INCORRECT)
 
-**File**: `src/bsm_rfm/manuscript_stages.py`
+**File**: `src/rfm_pipeline/manuscript_stages.py`
 
 **Stage 2** (line 914: `screen_manuscript_empirical_null_terms`):
 
@@ -278,6 +278,6 @@ Not from a static catalog.
 ## References
 
 - Manuscript: `docs/manuscripts/jds_bsm_v5_editor_revised.tex` lines 69, 397, 437, 560-562
-- Current code: `src/bsm_rfm/manuscript_stages.py`
+- Current code: `src/rfm_pipeline/manuscript_stages.py`
 - Old scripts: `docs/final_scripts_from_hpc/` (need to review)
 - Workflow findings: `docs/3K_TEST_VALIDATION_REPORT.md` (documents the misunderstanding)

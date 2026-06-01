@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from bsm_rfm import (
+from rfm_pipeline import (
     build_manuscript_notebook_context,
     run_manuscript_reproduction_audit_stage,
 )

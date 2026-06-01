@@ -16,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.bsm_rfm.config import apply_fast_mode_overrides, load_config  # noqa: E402
+from src.rfm_pipeline.config import apply_fast_mode_overrides, load_config  # noqa: E402
 
 STAGE_DIRS = [
     "output_conditioning",

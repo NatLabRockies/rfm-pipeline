@@ -20,9 +20,9 @@ non-foundation stages. At the current release boundary, the canonical workflow s
 important limits:
 
 - `upstream_null_screening` is represented through the recovered source adapter in
-  `bsm_rfm.null_screening`; the package does not yet reimplement the upstream
+  `rfm_pipeline.null_screening`; the package does not yet reimplement the upstream
   permutation-null Delta workflow natively.
-- `feature_expansion` has an explicit tested contract in `bsm_rfm.feature_expansion`, but the
+- `feature_expansion` has an explicit tested contract in `rfm_pipeline.feature_expansion`, but the
   notebook-specific recovered default specification is still only partially promoted into the
   canonical package path.
 

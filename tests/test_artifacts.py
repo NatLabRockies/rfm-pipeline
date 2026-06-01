@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bsm_rfm.artifacts import PipelineManifest, build_position_map, make_metadata_frame
+from rfm_pipeline.artifacts import PipelineManifest, build_position_map, make_metadata_frame
 
 
 def test_build_position_map_preserves_original_order():

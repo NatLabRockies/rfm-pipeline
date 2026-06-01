@@ -19,7 +19,7 @@ This notebook sequence is the supported stage-by-stage debugging path for manusc
 All notebooks should construct context with:
 
 ```python
-from bsm_rfm import build_manuscript_notebook_context
+from rfm_pipeline import build_manuscript_notebook_context
 context = build_manuscript_notebook_context(REPO_ROOT, "<notebook_name>.ipynb")
 ```
 

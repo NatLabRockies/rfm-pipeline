@@ -7,8 +7,8 @@ autonomy_tier: 3
 profile: autonomous
 current_milestone: Sensitivity study scaffolding
 current_slice: Phase 1-2 synthetic DGP and study job generation
-slice_status: complete — standalone synthetic DGP generation, sensitivity-study job/config utilities, configs/scripts, and focused tests added under `src/bsm_rfm/`, `tests/`, `configs/sensitivity_study/`, and `scripts/`
-last_validation: `pixi run python -m py_compile src/bsm_rfm/synthetic_dgp.py src/bsm_rfm/sensitivity_study.py scripts/generate_sensitivity_study.py scripts/collect_sensitivity_results.py scripts/fit_meta_regression.py scripts/plot_sensitivity_results.py` and `pixi run pytest tests/test_synthetic_dgp.py tests/test_sensitivity_study.py -x -v` both passed
+slice_status: complete — standalone synthetic DGP generation, sensitivity-study job/config utilities, configs/scripts, and focused tests added under `src/rfm_pipeline/`, `tests/`, `configs/sensitivity_study/`, and `scripts/`
+last_validation: `pixi run python -m py_compile src/rfm_pipeline/synthetic_dgp.py src/rfm_pipeline/sensitivity_study.py scripts/generate_sensitivity_study.py scripts/collect_sensitivity_results.py scripts/fit_meta_regression.py scripts/plot_sensitivity_results.py` and `pixi run pytest tests/test_synthetic_dgp.py tests/test_sensitivity_study.py -x -v` both passed
 next_slice: if Phase 3 is requested, wire generated job configs/results into an execution runner and downstream analysis workflow
 
 ## Operator persistence preference (2026-05-27)
@@ -21,9 +21,9 @@ next_slice: if Phase 3 is requested, wire generated job configs/results into an 
 
 ### Pre-flight/outcome log (latest)
 
-- Outcome (2026-05-29): completed sensitivity-study Phase 1-2 scaffolding. Added standalone synthetic DGP generators (`src/bsm_rfm/synthetic_dgp.py`), LHS-driven study/job utilities plus result collection (`src/bsm_rfm/sensitivity_study.py`), focused tests (`tests/test_synthetic_dgp.py`, `tests/test_sensitivity_study.py`), study configs (`configs/sensitivity_study/study_spec.yml`, `configs/sensitivity_study/base_synthetic.yml`), and helper scripts (`scripts/generate_sensitivity_study.py`, `scripts/submit_sensitivity_study.sh`, `scripts/collect_sensitivity_results.py`, `scripts/fit_meta_regression.py`, `scripts/plot_sensitivity_results.py`). Validation passed: `pixi run python -m py_compile ...` for all new Python files, script `--help` smoke checks, and `pixi run pytest tests/test_synthetic_dgp.py tests/test_sensitivity_study.py -x -v` (12 passed).
+- Outcome (2026-05-29): completed sensitivity-study Phase 1-2 scaffolding. Added standalone synthetic DGP generators (`src/rfm_pipeline/synthetic_dgp.py`), LHS-driven study/job utilities plus result collection (`src/rfm_pipeline/sensitivity_study.py`), focused tests (`tests/test_synthetic_dgp.py`, `tests/test_sensitivity_study.py`), study configs (`configs/sensitivity_study/study_spec.yml`, `configs/sensitivity_study/base_synthetic.yml`), and helper scripts (`scripts/generate_sensitivity_study.py`, `scripts/submit_sensitivity_study.sh`, `scripts/collect_sensitivity_results.py`, `scripts/fit_meta_regression.py`, `scripts/plot_sensitivity_results.py`). Validation passed: `pixi run python -m py_compile ...` for all new Python files, script `--help` smoke checks, and `pixi run pytest tests/test_synthetic_dgp.py tests/test_sensitivity_study.py -x -v` (12 passed).
 
-- Pre-flight intent (2026-05-29): implement sensitivity-study Phase 1-2 scaffolding — add `src/bsm_rfm/synthetic_dgp.py`, `src/bsm_rfm/sensitivity_study.py`, new configs/scripts/tests, then run `pixi run pytest tests/test_synthetic_dgp.py tests/test_sensitivity_study.py -x -v` and record results.
+- Pre-flight intent (2026-05-29): implement sensitivity-study Phase 1-2 scaffolding — add `src/rfm_pipeline/synthetic_dgp.py`, `src/rfm_pipeline/sensitivity_study.py`, new configs/scripts/tests, then run `pixi run pytest tests/test_synthetic_dgp.py tests/test_sensitivity_study.py -x -v` and record results.
 
 - Pre-flight intent (2026-05-29): update `docs/manuscripts/jds_bsm.tex` with verified short_hp1 counts, revised screening/pruning workflow text, and SVG figure references.
 
@@ -65,7 +65,7 @@ next_slice: if Phase 3 is requested, wire generated job configs/results into an 
 
 - Pre-flight intent (2026-05-27): complete and validate readability/color-blind figure style updates requested by user, then report exactly what changed in renderer outputs.
 
-- Outcome (2026-05-27): updated `src/bsm_rfm/manuscript_stages.py` SVG styling to manuscript-friendly, color-blind-safe defaults (Okabe-Ito palette, white background, higher-contrast text/axes, distinct quantile/cutoff styles, heatmap adaptive text contrast); targeted lint/tests passed (`ruff check`, `tests/test_manuscript_final_artifacts.py`).
+- Outcome (2026-05-27): updated `src/rfm_pipeline/manuscript_stages.py` SVG styling to manuscript-friendly, color-blind-safe defaults (Okabe-Ito palette, white background, higher-contrast text/axes, distinct quantile/cutoff styles, heatmap adaptive text contrast); targeted lint/tests passed (`ruff check`, `tests/test_manuscript_final_artifacts.py`).
 
 - Pre-flight intent (2026-05-27): update manuscript figure rendering styles for readability and color-blind accessibility across all generated SVGs, then validate with targeted final-artifact tests.
 
@@ -255,7 +255,7 @@ Priority order:
 
 - User clarification persisted: pruning decisions must be tunable/inspectable, with automatic
   elbow detection and explicit user override capability.
-- Implemented final-stage post-fit diagnostics in `src/bsm_rfm/manuscript_stages.py`:
+- Implemented final-stage post-fit diagnostics in `src/rfm_pipeline/manuscript_stages.py`:
   - per-feature no-refit `delta_nrmse_when_feature_removed` impact table
   - robust utility auto-cutoff (parsimony gain vs normalized cumulative error penalty)
   - override controls via config (`feature_pruning.delta_threshold_override` or
@@ -272,7 +272,7 @@ Priority order:
   - `figures/figure_feature_pruning_curve_data.csv`
   - `figures/figure_feature_pruning_curve.svg`
 - Validation:
-  - `pixi run ruff check src/bsm_rfm/manuscript_stages.py tests/test_manuscript_final_artifacts.py tests/test_hc3_inferential_filter.py`
+  - `pixi run ruff check src/rfm_pipeline/manuscript_stages.py tests/test_manuscript_final_artifacts.py tests/test_hc3_inferential_filter.py`
   - `pixi run pytest -q tests/test_hc3_inferential_filter.py tests/test_manuscript_final_artifacts.py`
 
 ## Full-data runtime resiliency hotfix (2026-05-19)
@@ -372,7 +372,7 @@ Priority order:
   - Added `scripts/kestrel/common_paths.sh`.
   - Updated `status_all_tests.sh`, collectors, and queue watchers to source shared helpers.
 - Slice 4 (legacy figure integration into canonical workflow):
-  - Expanded final-stage figure registry in `src/bsm_rfm/manuscript_stages.py` with:
+  - Expanded final-stage figure registry in `src/rfm_pipeline/manuscript_stages.py` with:
     - `figure_selected_by_module_count`
     - `figure_selected_by_module_share`
     - `figure_nrmse_bootstrap_summary`
@@ -415,7 +415,7 @@ Priority order:
   - `artifacts/kestrel_cpu_scaling_suite/cpu_scaling_results_summary.csv`
 - Monitor helper shows `squeue`/`sacct` snapshots, tails latest array/reduce logs per tier, and refreshes collector output.
 - GPU kickoff hardening:
-  - `src/bsm_rfm/distributed/slurm_array_runner.py` `submit_all.sh` generation now prefers `gpu_stage` when present (GPU-enabled configs submit GPU array path by default).
+  - `src/rfm_pipeline/distributed/slurm_array_runner.py` `submit_all.sh` generation now prefers `gpu_stage` when present (GPU-enabled configs submit GPU array path by default).
   - Added GPU coverage in `tests/test_distributed_phase8bc_gpu.py` to assert `submit_all.sh` references `submit_interaction_discovery_gpu_array.sh`.
 
 ## Phase 8c — CPU distributed scaling scaffold (2026-05-13)
@@ -462,7 +462,7 @@ Priority order:
 
 ## Phase 8b — sparse_selection streaming I/O integration (2026-05-13)
 
-- Implemented sparse-selection streaming path in `src/bsm_rfm/phase8b_chunked_integration.py`:
+- Implemented sparse-selection streaming path in `src/rfm_pipeline/phase8b_chunked_integration.py`:
   - Added runtime-aware stage config resolution for both dict-style and dataclass-style config containers.
   - Added runtime-level fallback detection so chunked mode activates from `runtime.use_chunked_io` / `runtime.out_of_core.*` when stage-level toggle is absent.
   - Added out-of-core setting resolver with legacy `chunked_io_config` compatibility.
@@ -479,7 +479,7 @@ Priority order:
 
 ## Phase 8b — memory tracking integration (2026-05-13)
 
-- Enhanced `src/bsm_rfm/phase8b_chunked_integration.py` with memory tracking:
+- Enhanced `src/rfm_pipeline/phase8b_chunked_integration.py` with memory tracking:
   - Added psutil import for process memory monitoring
   - Implemented `_get_current_memory_mb()` to read process RSS in MB
   - Implemented `_log_memory_usage()` for formatted memory logs with prefix
@@ -502,7 +502,7 @@ Priority order:
 
 ## Phase 8b — chunked I/O integration wrapper (2026-05-13)
 
-- Created wrapper module `src/bsm_rfm/phase8b_chunked_integration.py`:
+- Created wrapper module `src/rfm_pipeline/phase8b_chunked_integration.py`:
   - `should_use_chunked_io_for_stage(stage_config)` — detector for stage-level `use_chunked_io` config
   - `wrap_sparse_selection_with_chunked_io(original_fn)` — wrapper for sparse_selection_stability stage
   - `wrap_final_artifacts_with_chunked_io(original_fn)` — wrapper for final_manuscript_artifacts stage
@@ -538,7 +538,7 @@ Priority order:
 
 ## Phase 8c — submit-path input resolution (2026-05-13)
 
-- Implemented artifact path resolver in `src/bsm_rfm/distributed/manifest.py`:
+- Implemented artifact path resolver in `src/rfm_pipeline/distributed/manifest.py`:
   - `resolve_interaction_discovery_shard_inputs(artifact_dir)` locates prior-stage outputs
   - Resolves pca_scores from output_conditioning, retained_terms from empirical_null_screen
   - Resolves X, holdout_assignments, feature_catalog from artifact root
@@ -570,7 +570,7 @@ Priority order:
     - `interaction_pair_scores_merged.csv`
   - deduplicates by `pair_name`, preferring highest `interaction_score`
   - writes merge summary `interaction_discovery_merged.json`
-- Completed shard manifest partition safeguard in `src/bsm_rfm/distributed/manifest.py`:
+- Completed shard manifest partition safeguard in `src/rfm_pipeline/distributed/manifest.py`:
   - caps effective shard count at `expected_columns` to avoid empty shards when requested shards exceed feature columns
 - Added/updated focused tests:
   - `tests/test_hpc_shard_reduce.py` (new)
@@ -652,7 +652,7 @@ Priority order:
   - final-artifacts spec parsing + HC3 subset behavior (`tests/test_manuscript_final_artifacts.py`)
 - Validation:
   - `pixi run pytest -q tests/test_config_loader.py tests/test_manuscript_final_artifacts.py` ✅
-  - `pixi run ruff check src/bsm_rfm/config.py tools/run_manuscript_pipeline.py src/bsm_rfm/manuscript_stages.py tests/test_config_loader.py tests/test_manuscript_final_artifacts.py` ✅
+  - `pixi run ruff check src/rfm_pipeline/config.py tools/run_manuscript_pipeline.py src/rfm_pipeline/manuscript_stages.py tests/test_config_loader.py tests/test_manuscript_final_artifacts.py` ✅
 - Merged to main; branch cleaned.
 
 ## Post-Merge HC3-Optimized Phased Testing (2026-05-11)
@@ -773,7 +773,7 @@ Scaling exponent from ladder: **0.896** (subquadratic; interaction discovery dom
 
 **Deliverables** (ALL COMPLETE):
 
-- ✅ `src/bsm_rfm/config.py` — typed config dataclasses (256 lines)
+- ✅ `src/rfm_pipeline/config.py` — typed config dataclasses (256 lines)
 - ✅ `tools/run_manuscript_pipeline.py` — unified entry point with full integration (245 lines)
 - ✅ `configs/` directory — 3 production example configs
 - ✅ `tests/test_config_loader.py` — 7 unit tests (all pass)
@@ -891,7 +891,7 @@ python tools/monitor_validation_timing.py artifacts/validation_300_sample_no_cap
 
 - Changed `max_shap_samples` from fixed 500 to adaptive: `min(250, max(100, int(0.3 * n_train)))`
 - For 1000-row dataset: uses 250 samples instead of 500 (50% reduction in SHAP phase)
-- Files: `src/bsm_rfm/manuscript_stages.py` lines 1333–1367
+- Files: `src/rfm_pipeline/manuscript_stages.py` lines 1333–1367
 
 **Phase 2: GBT Parameter Reduction** (Commit: acbd5ae)
 
@@ -903,7 +903,7 @@ python tools/monitor_validation_timing.py artifacts/validation_300_sample_no_cap
 
 - Increased batch divisor from 25 to 8 (larger batches, reduced parallelization overhead)
 - 41 permutations: 2 per batch → ~6 per batch
-- Files: `src/bsm_rfm/manuscript_stages.py` (permutation scoring loop)
+- Files: `src/rfm_pipeline/manuscript_stages.py` (permutation scoring loop)
 
 ### Test Results (Phased Runtime Investigation)
 
@@ -955,7 +955,7 @@ Interaction pair counts (critical for downstream HC3 cost):
 
 ### Deployment Status
 
-- ✅ All implementations in `src/bsm_rfm/manuscript_stages.py` and `tools/run_runtime_investigation.py`
+- ✅ All implementations in `src/rfm_pipeline/manuscript_stages.py` and `tools/run_runtime_investigation.py`
 - ✅ Tests passing: interaction discovery (5 tests), final artifacts (7 tests), config loader (7 tests)
 - ✅ Ruff linting clean (no warnings)
 - ✅ Merged to main (commits a766636, acbd5ae, a1239c0)
@@ -981,11 +981,11 @@ Interaction pair counts (critical for downstream HC3 cost):
 - [x] Phase 8 plan revision: local-first vs HPC-first
 - [x] Feature branch `feature/phase-8a-out-of-core-foundation` created
 - [x] Phase 8a foundation modules implemented + tested + committed:
-  - `src/bsm_rfm/out_of_core/chunked_io.py` — ChunkedParquetReader, ChunkedCSVReader
-  - `src/bsm_rfm/out_of_core/streaming_ops.py` — StreamingAggregation, StreamingQuantile
-  - `src/bsm_rfm/out_of_core/memory.py` — MemoryBudget, choose_temp_dir, get_disk_free_mb
-  - `src/bsm_rfm/out_of_core/spill_ops.py` — SpillToDiskBuffer, LargeArrayWriter
-  - `src/bsm_rfm/out_of_core/progress.py` — ChunkProgress telemetry
+  - `src/rfm_pipeline/out_of_core/chunked_io.py` — ChunkedParquetReader, ChunkedCSVReader
+  - `src/rfm_pipeline/out_of_core/streaming_ops.py` — StreamingAggregation, StreamingQuantile
+  - `src/rfm_pipeline/out_of_core/memory.py` — MemoryBudget, choose_temp_dir, get_disk_free_mb
+  - `src/rfm_pipeline/out_of_core/spill_ops.py` — SpillToDiskBuffer, LargeArrayWriter
+  - `src/rfm_pipeline/out_of_core/progress.py` — ChunkProgress telemetry
 - [x] Tests committed (19 unit tests, all passing)
   - `tests/test_chunked_io.py` — 8 I/O tests
   - `tests/test_streaming_ops.py` — 11 aggregation + equivalence tests
@@ -1034,7 +1034,7 @@ runtime:
 
 ## Files in scope
 
-- `src/bsm_rfm/manuscript_stages.py`
+- `src/rfm_pipeline/manuscript_stages.py`
 - `tests/test_manuscript_interaction_discovery.py`
 - `tests/test_manuscript_final_artifacts.py`
 - `tools/run_manuscript_pipeline.py`
@@ -1176,7 +1176,7 @@ pixi run env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_
 
 **Methodology:**
 
-1. Reviewed current implementation (`src/bsm_rfm/manuscript_stages.py:1256–1432`).
+1. Reviewed current implementation (`src/rfm_pipeline/manuscript_stages.py:1256–1432`).
 1. Analyzed computational flow:
    - Pre-generate permuted response matrices (41 permutations for large profile)
    - For each permutation, for each active PCA component (~20):
@@ -1389,7 +1389,7 @@ Implemented 5 low-risk performance optimizations targeting interaction discovery
 
 ### Implementation Details
 
-**Stratified Resampling** (src/bsm_rfm/manuscript_stages.py:4042-4085):
+**Stratified Resampling** (src/rfm_pipeline/manuscript_stages.py:4042-4085):
 
 ```
 First resample: uniform random selection
@@ -1397,7 +1397,7 @@ Subsequent resamples: importance-weighted probabilities based on row feature val
 Fallback to uniform if importance information unavailable
 ```
 
-**Component Pruning** (src/bsm_rfm/manuscript_stages.py:1565-1580):
+**Component Pruning** (src/rfm_pipeline/manuscript_stages.py:1565-1580):
 
 ```
 Compute component variance fractions relative to max variance

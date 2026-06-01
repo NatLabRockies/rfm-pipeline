@@ -2,8 +2,8 @@
 
 The functions in this module implement source-level stage computations that are shared by the
 tracked manuscript notebooks and automated tests. They operate on the artifact tables resolved by
-``bsm_rfm.manuscript_runtime`` and write deterministic intermediate artifacts under the resolved
-manuscript output root.
+``rfm_pipeline.manuscript_runtime`` and write deterministic intermediate artifacts under the
+resolved manuscript output root.
 """
 
 from __future__ import annotations
@@ -522,7 +522,7 @@ class NonlinearDiscoverySpec:
     transform_library
         Ordered list of algebraic transform families to attempt for each retained
         first-order feature.  Defaults to
-        :data:`~bsm_rfm.transforms.DEFAULT_TRANSFORM_LIBRARY` when ``None``.
+        :data:`~rfm_pipeline.transforms.DEFAULT_TRANSFORM_LIBRARY` when ``None``.
     """
 
     method: str
@@ -1081,7 +1081,8 @@ def run_output_conditioning_stage(context: Any) -> OutputConditioningStageResult
     Parameters
     ----------
     context
-        ``bsm_rfm.manuscript_runtime.ManuscriptNotebookContext``. It is typed as ``Any`` here to
+        ``rfm_pipeline.manuscript_runtime.ManuscriptNotebookContext``. It is typed as
+        ``Any`` here to
         avoid an import cycle between the runtime and stage modules.
 
     Returns
@@ -1382,7 +1383,8 @@ def run_empirical_null_screening_stage(context: Any) -> EmpiricalNullScreeningSt
     Parameters
     ----------
     context
-        ``bsm_rfm.manuscript_runtime.ManuscriptNotebookContext``. It is typed as ``Any`` here to
+        ``rfm_pipeline.manuscript_runtime.ManuscriptNotebookContext``. It is typed as
+        ``Any`` here to
         avoid an import cycle between the runtime and stage modules.
 
     Returns
@@ -2191,7 +2193,8 @@ def run_interaction_discovery_stage(context: Any) -> InteractionDiscoveryStageRe
     Parameters
     ----------
     context
-        ``bsm_rfm.manuscript_runtime.ManuscriptNotebookContext``. It is typed as ``Any`` here to
+        ``rfm_pipeline.manuscript_runtime.ManuscriptNotebookContext``. It is typed as
+        ``Any`` here to
         avoid an import cycle between the runtime and stage modules.
 
     Returns
@@ -2646,7 +2649,8 @@ def run_nonlinear_discovery_stage(context: Any) -> NonlinearDiscoveryStageResult
     Parameters
     ----------
     context
-        ``bsm_rfm.manuscript_runtime.ManuscriptNotebookContext``. It is typed as ``Any`` here to
+        ``rfm_pipeline.manuscript_runtime.ManuscriptNotebookContext``. It is typed as
+        ``Any`` here to
         avoid an import cycle between the runtime and stage modules.
 
     Returns
@@ -2977,7 +2981,8 @@ def run_sparse_selection_stability_stage(context: Any) -> SparseSelectionStabili
     Parameters
     ----------
     context
-        ``bsm_rfm.manuscript_runtime.ManuscriptNotebookContext``. It is typed as ``Any`` here to
+        ``rfm_pipeline.manuscript_runtime.ManuscriptNotebookContext``. It is typed as
+        ``Any`` here to
         avoid an import cycle between the runtime and stage modules.
 
     Returns
@@ -4075,7 +4080,8 @@ def run_final_manuscript_artifacts_stage(
     Parameters
     ----------
     context
-        ``bsm_rfm.manuscript_runtime.ManuscriptNotebookContext``. It is typed as ``Any`` here to
+        ``rfm_pipeline.manuscript_runtime.ManuscriptNotebookContext``. It is typed as
+        ``Any`` here to
         avoid an import cycle between the runtime and stage modules.
 
     Returns
@@ -4162,7 +4168,8 @@ def run_manuscript_reproduction_stage_chain(
     Parameters
     ----------
     context
-        ``bsm_rfm.manuscript_runtime.ManuscriptNotebookContext``. It is typed as ``Any`` here to
+        ``rfm_pipeline.manuscript_runtime.ManuscriptNotebookContext``. It is typed as
+        ``Any`` here to
         avoid an import cycle between the runtime and stage modules.
 
     Returns
@@ -4379,7 +4386,8 @@ def run_manuscript_reproduction_audit_stage(
     Parameters
     ----------
     context
-        ``bsm_rfm.manuscript_runtime.ManuscriptNotebookContext``. It is typed as ``Any`` here to
+        ``rfm_pipeline.manuscript_runtime.ManuscriptNotebookContext``. It is typed as
+        ``Any`` here to
         avoid an import cycle between the runtime and stage modules.
 
     Returns
@@ -5631,10 +5639,10 @@ def _apply_transform_family(
     x_values: np.ndarray,
     transform: TransformDef,
 ) -> np.ndarray | None:
-    """Apply a :class:`~bsm_rfm.transforms.TransformDef` to raw input values.
+    """Apply a :class:`~rfm_pipeline.transforms.TransformDef` to raw input values.
 
     Returns ``None`` when the transform produces no finite values at all
-    (i.e. :meth:`~bsm_rfm.transforms.TransformDef.valid_fraction` is 0).
+    (i.e. :meth:`~rfm_pipeline.transforms.TransformDef.valid_fraction` is 0).
     Otherwise returns the result array, which may contain ``NaN`` for individual
     invalid rows.
     """
@@ -5658,9 +5666,9 @@ def _generate_supported_nonlinear_candidates(
     input_matrix
         Full input table (must include ``sample_id`` and all feature columns).
     transform_library
-        Ordered list of :class:`~bsm_rfm.transforms.TransformDef` objects to
+        Ordered list of :class:`~rfm_pipeline.transforms.TransformDef` objects to
         attempt for each feature.  Defaults to
-        :data:`~bsm_rfm.transforms.DEFAULT_TRANSFORM_LIBRARY`.
+        :data:`~rfm_pipeline.transforms.DEFAULT_TRANSFORM_LIBRARY`.
 
     Returns
     -------
@@ -5695,7 +5703,7 @@ def _parse_supported_transformation_name(
     """Parse a nonlinear-transformation feature name into (base_feature, TransformDef).
 
     The expected naming convention is ``"{base}_{label}"`` where *label* is
-    :attr:`~bsm_rfm.transforms.TransformDef.label`.  Each transform in
+    :attr:`~rfm_pipeline.transforms.TransformDef.label`.  Each transform in
     *transform_library* is tried in order; the first whose label suffix matches
     is returned.
 
@@ -5705,7 +5713,7 @@ def _parse_supported_transformation_name(
         Candidate derived column name, e.g. ``"income_sq"``.
     transform_library
         Transforms to check.  Defaults to
-        :data:`~bsm_rfm.transforms.DEFAULT_TRANSFORM_LIBRARY`.
+        :data:`~rfm_pipeline.transforms.DEFAULT_TRANSFORM_LIBRARY`.
 
     Returns
     -------

@@ -13,7 +13,7 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from bsm_rfm.sensitivity_study import collect_study_results  # noqa: E402
+from rfm_pipeline.sensitivity_study import collect_study_results  # noqa: E402
 
 
 def _parse_args() -> argparse.Namespace:

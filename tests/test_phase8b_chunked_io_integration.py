@@ -17,13 +17,13 @@ from unittest import mock
 import pandas as pd
 import pytest
 
-from bsm_rfm.config import load_config
-from bsm_rfm.manuscript_runtime import build_manuscript_notebook_context
-from bsm_rfm.manuscript_stages import (
+from rfm_pipeline.config import load_config
+from rfm_pipeline.manuscript_runtime import build_manuscript_notebook_context
+from rfm_pipeline.manuscript_stages import (
     run_final_manuscript_artifacts_stage,
     run_sparse_selection_stability_stage,
 )
-from bsm_rfm.phase8b_chunked_integration import (
+from rfm_pipeline.phase8b_chunked_integration import (
     wrap_final_artifacts_with_chunked_io,
     wrap_sparse_selection_with_chunked_io,
 )

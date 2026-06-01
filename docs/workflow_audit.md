@@ -42,7 +42,7 @@ The audited archive contains four distinct workflow fragments:
   `null_distribution.py`.
 - It begins after an already reduced-and-expanded `X` exists.
 - The canonical upstream null-screening implementation is therefore still the recovered
-  source script, accessed in the package through `bsm_rfm.null_screening`.
+  source script, accessed in the package through `rfm_pipeline.null_screening`.
 
 ### Modeling subset creation
 

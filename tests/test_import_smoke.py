@@ -17,4 +17,4 @@ def test_import_smoke_cli_runs() -> None:
         capture_output=True,
         text=True,
     )
-    assert "Imported bsm_rfm" in result.stdout
+    assert "Imported rfm_pipeline" in result.stdout

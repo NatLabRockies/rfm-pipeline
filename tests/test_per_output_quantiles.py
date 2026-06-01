@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from bsm_rfm.manuscript_runtime import build_manuscript_notebook_context
-from bsm_rfm.manuscript_stages import run_final_manuscript_artifacts_stage
+from rfm_pipeline.manuscript_runtime import build_manuscript_notebook_context
+from rfm_pipeline.manuscript_stages import run_final_manuscript_artifacts_stage
 
 
 def test_per_output_nrmse_quantiles_monotonic() -> None:

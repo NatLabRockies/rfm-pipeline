@@ -1,7 +1,7 @@
 import importlib
 
 try:
-    dl = importlib.import_module("bsm_rfm.debiased_lasso")
+    dl = importlib.import_module("rfm_pipeline.debiased_lasso")
 except ModuleNotFoundError:
     dl = None
 import numpy as np

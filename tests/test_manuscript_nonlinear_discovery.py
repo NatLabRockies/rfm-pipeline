@@ -6,19 +6,19 @@ from pathlib import Path
 
 import pandas as pd
 
-import bsm_rfm.manuscript_stages as manuscript_stages
-from bsm_rfm.manuscript_runtime import (
+import rfm_pipeline.manuscript_stages as manuscript_stages
+from rfm_pipeline.manuscript_runtime import (
     build_manuscript_notebook_context,
     load_manuscript_case_study_config,
 )
-from bsm_rfm.manuscript_stages import (
+from rfm_pipeline.manuscript_stages import (
     NonlinearDiscoverySpec,
     discover_manuscript_nonlinear_transformations,
     nonlinear_discovery_spec_from_case_study_config,
     run_nonlinear_discovery_stage,
     write_nonlinear_discovery_artifacts,
 )
-from bsm_rfm.transforms import QUADRATIC
+from rfm_pipeline.transforms import QUADRATIC
 
 
 def test_nonlinear_discovery_spec_matches_frozen_case_study_contract() -> None:

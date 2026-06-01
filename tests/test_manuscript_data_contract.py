@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from bsm_rfm import (
+from rfm_pipeline import (
     manuscript_notebook_manifest_table,
     manuscript_notebook_order,
     manuscript_placeholder_path_policy,

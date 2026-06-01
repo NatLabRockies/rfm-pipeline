@@ -16,8 +16,8 @@ from typing import Any
 
 import pandas as pd
 
-from bsm_rfm.config import apply_fast_mode_overrides, load_config
-from bsm_rfm.manuscript_stages import (
+from rfm_pipeline.config import apply_fast_mode_overrides, load_config
+from rfm_pipeline.manuscript_stages import (
     condition_manuscript_outputs,
     discover_manuscript_nonlinear_transformations,
     empirical_null_screening_spec_from_case_study_config,
@@ -73,8 +73,8 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
 
-    from bsm_rfm.distributed.checkpoint import CheckpointManager
-    from bsm_rfm.distributed.manifest import load_manifest
+    from rfm_pipeline.distributed.checkpoint import CheckpointManager
+    from rfm_pipeline.distributed.manifest import load_manifest
 
     shards = load_manifest(args.manifest)
     shard_ids = [s.shard_id for s in shards]

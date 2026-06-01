@@ -29,7 +29,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "src"))
 
-from bsm_rfm.manuscript_stages import (  # noqa: E402
+from rfm_pipeline.manuscript_stages import (  # noqa: E402
     _build_model_performance_figure_data,
     _render_feature_pruning_curve_svg,
     _render_horizontal_bar_svg,

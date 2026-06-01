@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from bsm_rfm.hpc_workflow_config import (
+from rfm_pipeline.hpc_workflow_config import (
     build_collect_command,
     build_remote_status_command,
     build_remote_submit_commands,

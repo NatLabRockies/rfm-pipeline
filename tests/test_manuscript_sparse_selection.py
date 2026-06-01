@@ -7,12 +7,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-import bsm_rfm.manuscript_stages as manuscript_stages
-from bsm_rfm.manuscript_runtime import (
+import rfm_pipeline.manuscript_stages as manuscript_stages
+from rfm_pipeline.manuscript_runtime import (
     build_manuscript_notebook_context,
     load_manuscript_case_study_config,
 )
-from bsm_rfm.manuscript_stages import (
+from rfm_pipeline.manuscript_stages import (
     SparseSelectionStabilitySpec,
     run_sparse_selection_stability_stage,
     select_manuscript_sparse_support,

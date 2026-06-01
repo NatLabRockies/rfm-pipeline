@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bsm_rfm.out_of_core import StreamingAggregation, StreamingQuantile
+from rfm_pipeline.out_of_core import StreamingAggregation, StreamingQuantile
 
 
 class TestStreamingAggregation:

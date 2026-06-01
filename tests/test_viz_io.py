@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from bsm_rfm.viz_io import load_pipeline_outputs
+from rfm_pipeline.viz_io import load_pipeline_outputs
 
 
 def test_load_pipeline_outputs_reads_canonical_postfit_tables(tmp_path: Path):

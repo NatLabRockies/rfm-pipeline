@@ -18,9 +18,9 @@ from typing import Any
 
 import pandas as pd
 
-from bsm_rfm.config import apply_fast_mode_overrides, load_config
-from bsm_rfm.manuscript_runtime import load_manuscript_case_study_config
-from bsm_rfm.manuscript_stages import (
+from rfm_pipeline.config import apply_fast_mode_overrides, load_config
+from rfm_pipeline.manuscript_runtime import load_manuscript_case_study_config
+from rfm_pipeline.manuscript_stages import (
     condition_manuscript_outputs,
     discover_manuscript_interactions,
     discover_manuscript_nonlinear_transformations,
@@ -74,7 +74,7 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
 
-    from bsm_rfm.distributed.manifest import load_manifest
+    from rfm_pipeline.distributed.manifest import load_manifest
 
     shards = load_manifest(args.manifest)
     if args.task_id >= len(shards):
@@ -121,7 +121,7 @@ def run_shard(
     corrupted manifest entries when many array tasks ran simultaneously.
     ``manifest_path`` is accepted but ignored to preserve call-site compatibility.
     """
-    from bsm_rfm.distributed.checkpoint import CheckpointManager
+    from rfm_pipeline.distributed.checkpoint import CheckpointManager
 
     cm = CheckpointManager(output_root, shard.shard_id)
     if cm.is_complete():
@@ -452,7 +452,7 @@ def _resolve_interaction_inputs(input_paths: list[str]) -> dict[str, Path]:
 
 
 def _load_interaction_spec(config_path: str | None):
-    from bsm_rfm.manuscript_stages import interaction_discovery_spec_from_case_study_config
+    from rfm_pipeline.manuscript_stages import interaction_discovery_spec_from_case_study_config
 
     if config_path:
         workflow_config = apply_fast_mode_overrides(load_config(config_path))

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from bsm_rfm.manuscript_stages import (
+from rfm_pipeline.manuscript_stages import (
     SparseSelectionStabilitySpec,
     select_manuscript_sparse_support,
 )

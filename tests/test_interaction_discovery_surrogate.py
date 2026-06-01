@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from bsm_rfm.manuscript_stages import (
+from rfm_pipeline.manuscript_stages import (
     InteractionDiscoverySpec,
     discover_manuscript_interactions,
 )

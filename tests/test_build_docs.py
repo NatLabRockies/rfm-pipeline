@@ -55,12 +55,12 @@ def test_docs_index_includes_scope_boundary_guide() -> None:
 
 def test_module_plan_uses_live_module_names() -> None:
     module_plan = Path("docs/module_plan.md").read_text(encoding="utf-8")
-    assert "`bsm_rfm.feature_expansion`" in module_plan
-    assert "`bsm_rfm.regularized_screening`" in module_plan
-    assert "`bsm_rfm.workflow`" in module_plan
-    assert "`bsm_rfm.regularized_screen`" not in module_plan
-    assert "`bsm_rfm.screening_null`" not in module_plan
-    assert "`bsm_rfm.feature_engineering`" not in module_plan
+    assert "`rfm_pipeline.feature_expansion`" in module_plan
+    assert "`rfm_pipeline.regularized_screening`" in module_plan
+    assert "`rfm_pipeline.workflow`" in module_plan
+    assert "`rfm_pipeline.regularized_screen`" not in module_plan
+    assert "`rfm_pipeline.screening_null`" not in module_plan
+    assert "`rfm_pipeline.feature_engineering`" not in module_plan
 
 
 def test_build_docs_uses_repo_build_directory_by_default(tmp_path: Path) -> None:

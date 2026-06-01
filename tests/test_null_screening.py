@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from bsm_rfm.null_screening import NullScreeningConfig, run_null_screening_with_source
+from rfm_pipeline.null_screening import NullScreeningConfig, run_null_screening_with_source
 
 
 class FakeSourceModule:

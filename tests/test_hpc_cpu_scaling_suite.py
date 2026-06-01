@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from bsm_rfm.config import load_config
-from bsm_rfm.distributed.config_distributed import load_distributed_config
-from bsm_rfm.distributed.manifest import build_manifest, save_manifest
-from bsm_rfm.distributed.slurm_array_runner import SlurmArrayRunner
+from rfm_pipeline.config import load_config
+from rfm_pipeline.distributed.config_distributed import load_distributed_config
+from rfm_pipeline.distributed.manifest import build_manifest, save_manifest
+from rfm_pipeline.distributed.slurm_array_runner import SlurmArrayRunner
 
 _CPU_SCALING_CASES = [
     (

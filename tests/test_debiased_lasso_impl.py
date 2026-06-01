@@ -3,7 +3,7 @@ import pandas as pd
 from sklearn.linear_model import MultiTaskLasso
 from sklearn.preprocessing import StandardScaler
 
-from bsm_rfm.debiased_lasso import (
+from rfm_pipeline.debiased_lasso import (
     debias_coeffs_batched,
     nodewise_precision,
     ztests_from_debias_scores,

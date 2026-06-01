@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from bsm_rfm import (
+from rfm_pipeline import (
     build_manuscript_notebook_context,
     load_manuscript_artifact_tables,
     manuscript_notebook_order,
@@ -15,7 +15,7 @@ from bsm_rfm import (
     validate_manuscript_artifact_tables,
     write_demo_manuscript_artifacts,
 )
-from bsm_rfm.manuscript_runtime import ManuscriptRuntimeContext
+from rfm_pipeline.manuscript_runtime import ManuscriptRuntimeContext
 
 
 def test_resolve_manuscript_runtime_uses_real_data_when_configured(
@@ -26,11 +26,11 @@ def test_resolve_manuscript_runtime_uses_real_data_when_configured(
     template = {name: str(path) for name, path in paths.items()}
     template["output_root"] = str(tmp_path / "real-output")
     monkeypatch.setattr(
-        "bsm_rfm.manuscript_runtime.load_manuscript_paths_template",
+        "rfm_pipeline.manuscript_runtime.load_manuscript_paths_template",
         lambda _: template,
     )
     monkeypatch.setattr(
-        "bsm_rfm.manuscript_runtime.load_manuscript_local_override",
+        "rfm_pipeline.manuscript_runtime.load_manuscript_local_override",
         lambda _: {},
     )
 
@@ -102,7 +102,9 @@ def test_build_notebook_context_falls_back_to_demo_for_incompatible_real_sample_
         local_override_used=True,
         runtime_dir=None,
     )
-    monkeypatch.setattr("bsm_rfm.manuscript_runtime.resolve_manuscript_runtime", lambda _: runtime)
+    monkeypatch.setattr(
+        "rfm_pipeline.manuscript_runtime.resolve_manuscript_runtime", lambda _: runtime
+    )
 
     context = build_manuscript_notebook_context(Path.cwd(), manuscript_notebook_order()[0])
 

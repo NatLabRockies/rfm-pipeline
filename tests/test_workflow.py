@@ -7,8 +7,8 @@ import json
 import pandas as pd
 import pytest
 
-from bsm_rfm.viz_io import load_postfit_bundle
-from bsm_rfm.workflow import (
+from rfm_pipeline.viz_io import load_postfit_bundle
+from rfm_pipeline.workflow import (
     canonical_case_study_numbers,
     canonical_workflow_stages,
     case_study_number_table,

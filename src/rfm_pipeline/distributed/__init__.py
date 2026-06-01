@@ -5,8 +5,8 @@ Phase 8b: Out-of-core chunk processing + checkpoint/recovery.
 Phase 8c: Optional Dask/MPI/Ray adapters.
 """
 
-from bsm_rfm.distributed.checkpoint import CheckpointManager, ShardStatus
-from bsm_rfm.distributed.config_distributed import (
+from rfm_pipeline.distributed.checkpoint import CheckpointManager, ShardStatus
+from rfm_pipeline.distributed.config_distributed import (
     DaskConfig,
     DistributedConfig,
     GpuConfig,
@@ -15,10 +15,15 @@ from bsm_rfm.distributed.config_distributed import (
     SpillConfig,
     load_distributed_config,
 )
-from bsm_rfm.distributed.dask_runner import DaskRunner
-from bsm_rfm.distributed.gpu_scoring import detect_device, is_gpu_available
-from bsm_rfm.distributed.manifest import ShardManifest, build_manifest, load_manifest, save_manifest
-from bsm_rfm.distributed.mpi_runner import assign_shards, get_rank_size
+from rfm_pipeline.distributed.dask_runner import DaskRunner
+from rfm_pipeline.distributed.gpu_scoring import detect_device, is_gpu_available
+from rfm_pipeline.distributed.manifest import (
+    ShardManifest,
+    build_manifest,
+    load_manifest,
+    save_manifest,
+)
+from rfm_pipeline.distributed.mpi_runner import assign_shards, get_rank_size
 
 __all__ = [
     "CheckpointManager",

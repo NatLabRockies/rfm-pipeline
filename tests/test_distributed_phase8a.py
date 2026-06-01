@@ -1,4 +1,4 @@
-"""Tests for bsm_rfm.distributed — Phase 8a: SLURM array baseline.
+"""Tests for rfm_pipeline.distributed — Phase 8a: SLURM array baseline.
 
 Covers:
 - Config loading and validation
@@ -14,22 +14,22 @@ from pathlib import Path
 
 import pytest
 
-from bsm_rfm.distributed.checkpoint import CheckpointManager
-from bsm_rfm.distributed.config_distributed import (
+from rfm_pipeline.distributed.checkpoint import CheckpointManager
+from rfm_pipeline.distributed.config_distributed import (
     DistributedConfig,
     KestrelConfig,
     SlurmConfig,
     SpillConfig,
     load_distributed_config,
 )
-from bsm_rfm.distributed.manifest import (
+from rfm_pipeline.distributed.manifest import (
     build_manifest,
     load_manifest,
     manifest_summary,
     save_manifest,
     update_shard_status,
 )
-from bsm_rfm.distributed.slurm_array_runner import SlurmArrayRunner
+from rfm_pipeline.distributed.slurm_array_runner import SlurmArrayRunner
 
 # ---------------------------------------------------------------------------
 # Config tests
@@ -409,7 +409,7 @@ class TestSlurmArrayRunner:
         runner = self._make_runner(tmp_path)
         script = runner.generate_diagnostic_script()
         assert "#!/bin/bash" in script
-        assert "import bsm_rfm" in script
+        assert "import rfm_pipeline" in script
         assert "debug" in script
 
     def test_write_scripts_creates_files(self, tmp_path):
@@ -483,36 +483,36 @@ class TestSlurmArrayRunner:
 
 
 class TestTaskIdsToArraySpec:
-    from bsm_rfm.distributed.slurm_array_runner import _task_ids_to_array_spec
+    from rfm_pipeline.distributed.slurm_array_runner import _task_ids_to_array_spec
 
     def test_single_id(self):
-        from bsm_rfm.distributed.slurm_array_runner import _task_ids_to_array_spec
+        from rfm_pipeline.distributed.slurm_array_runner import _task_ids_to_array_spec
 
         assert _task_ids_to_array_spec([5], 10) == "5%10"
 
     def test_consecutive_range(self):
-        from bsm_rfm.distributed.slurm_array_runner import _task_ids_to_array_spec
+        from rfm_pipeline.distributed.slurm_array_runner import _task_ids_to_array_spec
 
         assert _task_ids_to_array_spec([0, 1, 2, 3], 500) == "0-3%500"
 
     def test_sparse_list(self):
-        from bsm_rfm.distributed.slurm_array_runner import _task_ids_to_array_spec
+        from rfm_pipeline.distributed.slurm_array_runner import _task_ids_to_array_spec
 
         assert _task_ids_to_array_spec([0, 1, 2, 5, 6, 10], 50) == "0-2,5-6,10%50"
 
     def test_full_range_1000(self):
-        from bsm_rfm.distributed.slurm_array_runner import _task_ids_to_array_spec
+        from rfm_pipeline.distributed.slurm_array_runner import _task_ids_to_array_spec
 
         spec = _task_ids_to_array_spec(list(range(1000)), 500)
         assert spec == "0-999%500"
 
     def test_deduplicates_ids(self):
-        from bsm_rfm.distributed.slurm_array_runner import _task_ids_to_array_spec
+        from rfm_pipeline.distributed.slurm_array_runner import _task_ids_to_array_spec
 
         assert _task_ids_to_array_spec([3, 3, 3], 1) == "3%1"
 
     def test_empty_raises(self):
-        from bsm_rfm.distributed.slurm_array_runner import _task_ids_to_array_spec
+        from rfm_pipeline.distributed.slurm_array_runner import _task_ids_to_array_spec
 
         with pytest.raises(ValueError):
             _task_ids_to_array_spec([], 10)

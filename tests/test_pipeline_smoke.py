@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import pandas as pd
 
-from bsm_rfm.artifacts import PipelineManifest
-from bsm_rfm.data import (
+from rfm_pipeline.artifacts import PipelineManifest
+from rfm_pipeline.data import (
     add_scenario_flags,
     fit_standardizers,
     stratified_holdout_split,
     stratified_subset_by_boolean_combination,
 )
-from bsm_rfm.features import parse_selected_input_structure
-from bsm_rfm.metrics import bootstrap_macro_nrmse_ci, make_null_mean_prediction
+from rfm_pipeline.features import parse_selected_input_structure
+from rfm_pipeline.metrics import bootstrap_macro_nrmse_ci, make_null_mean_prediction
 
 SCENARIOS = [
     "AFSCoff_UAEOROoff",

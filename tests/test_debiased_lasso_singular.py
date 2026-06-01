@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from bsm_rfm import debiased_lasso as dl
+from rfm_pipeline import debiased_lasso as dl
 
 
 def test_debiased_lasso_handles_singular_X() -> None:

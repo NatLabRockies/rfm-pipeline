@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import pytest
 import yaml
 
-from bsm_rfm.config import (
+from rfm_pipeline.config import (
     DatasetConfig,
     WorkflowConfig,
     apply_fast_mode_overrides,
@@ -18,7 +18,7 @@ from bsm_rfm.config import (
 from tools.run_manuscript_pipeline import config_to_legacy_case_study
 
 if TYPE_CHECKING:
-    from bsm_rfm.config import WorkflowConfig
+    from rfm_pipeline.config import WorkflowConfig
 
 
 class TestLoadConfig:

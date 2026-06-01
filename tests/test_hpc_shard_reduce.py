@@ -7,9 +7,9 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from bsm_rfm.distributed.checkpoint import CheckpointManager
-from bsm_rfm.distributed.manifest import ShardManifest
-from bsm_rfm.manuscript_stages import InteractionDiscoveryResult, InteractionDiscoverySpec
+from rfm_pipeline.distributed.checkpoint import CheckpointManager
+from rfm_pipeline.distributed.manifest import ShardManifest
+from rfm_pipeline.manuscript_stages import InteractionDiscoveryResult, InteractionDiscoverySpec
 
 
 def _minimal_interaction_result() -> InteractionDiscoveryResult:

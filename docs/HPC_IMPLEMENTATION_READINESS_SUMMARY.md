@@ -169,7 +169,7 @@ ______________________________________________________________________
 ### New Code Locations
 
 ```
-src/bsm_rfm/
+src/rfm_pipeline/
   ├── config.py (expanded with distributed_* config classes)
   ├── chunked_io.py (new)
   ├── spill_ops.py (new)

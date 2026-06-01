@@ -19,6 +19,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 PREDICTOR_CANDIDATES = {
+    # DGP characteristics
+    "n_runs": ["n_runs"],
+    "n_inputs": ["n_inputs"],
+    "sparsity": ["sparsity"],
+    "interaction_density": ["interaction_density"],
+    "nonlinearity_strength": ["nonlinearity_strength"],
+    "noise_snr": ["noise_snr"],
+    # Pipeline config parameters
     "holdout_fraction": ["holdout_fraction"],
     "variance_threshold": ["variance_threshold", "algorithm.variance_threshold"],
     "n_perm_screen": ["stages.empirical_null_screening.n_permutations"],
@@ -51,18 +59,56 @@ def _first_present(frame: pd.DataFrame, candidates: list[str]) -> str:
 
 
 def _prepare_analysis_frame(results: pd.DataFrame) -> pd.DataFrame:
-    final_rows = results.loc[results["stage"] == "final_ols"].copy()
-    null_rows = results.loc[
-        results["stage"] == "null_baseline", ["job_id", "subsample_n", "nrmse"]
-    ].copy()
-    null_rows = null_rows.rename(columns={"nrmse": "nrmse_null"})
-    analysis = final_rows.merge(null_rows, on=["job_id", "subsample_n"], how="inner")
-    analysis["nrmse_relative"] = (analysis["nrmse"] - analysis["nrmse_null"]) / analysis[
-        "nrmse_null"
-    ]
+    """Build the regression-ready frame from either long or flat format.
+
+    Long format (legacy): has ``stage``, ``subsample_n``, ``nrmse`` columns.
+    Flat format (current): has ``nrmse_final``, ``null_mean_nrmse`` columns written
+    by ``run_sensitivity_job.py``.
+    """
+    if "stage" in results.columns and "nrmse" in results.columns:
+        # Legacy long format.
+        final_rows = results.loc[results["stage"] == "final_ols"].copy()
+        null_rows = results.loc[
+            results["stage"] == "null_baseline", ["job_id", "subsample_n", "nrmse"]
+        ].copy()
+        null_rows = null_rows.rename(columns={"nrmse": "nrmse_null"})
+        analysis = final_rows.merge(null_rows, on=["job_id", "subsample_n"], how="inner")
+        analysis["nrmse_relative"] = (analysis["nrmse"] - analysis["nrmse_null"]) / analysis[
+            "nrmse_null"
+        ]
+    else:
+        # Flat format from run_sensitivity_job.py.
+        # nrmse_relative may already be present; if not, compute from available columns.
+        analysis = results.copy()
+        if "nrmse_relative" not in analysis.columns:
+            null_col = next(
+                (c for c in ("null_mean_nrmse", "nrmse_null") if c in analysis.columns), None
+            )
+            final_col = next(
+                (c for c in ("nrmse_final", "final_ols_nrmse") if c in analysis.columns), None
+            )
+            if null_col and final_col:
+                analysis["nrmse_relative"] = (analysis[final_col] - analysis[null_col]) / analysis[
+                    null_col
+                ].abs()
+            else:
+                raise KeyError("Cannot determine nrmse_relative: missing nrmse_final/nrmse_null")
+
     analysis = analysis.replace([np.inf, -np.inf], np.nan).dropna(subset=["nrmse_relative"])
 
-    analysis["log_subsample_n"] = np.log(analysis["subsample_n"].astype(float))
+    # DGP predictors (from jobs.csv join, may be absent in legacy data).
+    if "n_runs" in analysis.columns:
+        analysis["log_n_runs"] = np.log(analysis["n_runs"].astype(float).clip(lower=1))
+    else:
+        analysis["log_n_runs"] = np.nan
+
+    if "subsample_n" in analysis.columns:
+        analysis["log_subsample_n"] = np.log(analysis["subsample_n"].astype(float).clip(lower=1))
+    elif "n_runs" in analysis.columns:
+        analysis["log_subsample_n"] = analysis["log_n_runs"]
+    else:
+        analysis["log_subsample_n"] = np.nan
+
     analysis["holdout_fraction_model"] = analysis[
         _first_present(analysis, PREDICTOR_CANDIDATES["holdout_fraction"])
     ]
@@ -108,6 +154,19 @@ def main() -> int:
         "lasso_alpha_percentile_model",
         "log_delta_threshold",
     ]
+    # Add DGP predictors when available (from jobs.csv join).
+    dgp_predictors = []
+    for col in ("sparsity", "interaction_density", "nonlinearity_strength"):
+        if col in analysis.columns and analysis[col].notna().any():
+            dgp_predictors.append(col)
+    for col in ("noise_snr", "n_inputs"):
+        if col in analysis.columns and analysis[col].notna().any():
+            log_col = f"log_{col}"
+            analysis[log_col] = np.log(analysis[col].astype(float).clip(lower=1e-9))
+            dgp_predictors.append(log_col)
+    predictors = predictors + dgp_predictors
+    # Drop rows with NaN in any predictor.
+    analysis = analysis.dropna(subset=predictors)
     x = analysis[predictors].to_numpy(dtype=float)
     y = analysis["nrmse_relative"].to_numpy(dtype=float)
 

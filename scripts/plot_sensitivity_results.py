@@ -69,16 +69,41 @@ def _save_svg(path: Path, content: str) -> None:
 
 
 def _fit_relative_model(results: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray]:
-    final_rows = results.loc[results["stage"] == "final_ols"].copy()
-    null_rows = results.loc[
-        results["stage"] == "null_baseline", ["job_id", "subsample_n", "nrmse"]
-    ].rename(columns={"nrmse": "nrmse_null"})
-    frame = final_rows.merge(null_rows, on=["job_id", "subsample_n"], how="inner")
-    frame["nrmse_relative"] = (frame["nrmse"] - frame["nrmse_null"]) / frame["nrmse_null"]
+    """Fit a degree-2 OLS on nrmse_relative. Handles long and flat formats."""
+    if "stage" in results.columns and "nrmse" in results.columns:
+        # Legacy long format.
+        final_rows = results.loc[results["stage"] == "final_ols"].copy()
+        null_rows = results.loc[
+            results["stage"] == "null_baseline", ["job_id", "subsample_n", "nrmse"]
+        ].rename(columns={"nrmse": "nrmse_null"})
+        frame = final_rows.merge(null_rows, on=["job_id", "subsample_n"], how="inner")
+        frame["nrmse_relative"] = (frame["nrmse"] - frame["nrmse_null"]) / frame["nrmse_null"]
+    else:
+        # Flat format: nrmse_relative already present, or compute it.
+        frame = results.copy()
+        if "nrmse_relative" not in frame.columns:
+            null_col = next(
+                (c for c in ("null_mean_nrmse", "nrmse_null") if c in frame.columns), None
+            )
+            final_col = next(
+                (c for c in ("nrmse_final", "final_ols_nrmse") if c in frame.columns), None
+            )
+            if null_col and final_col:
+                frame["nrmse_relative"] = (frame[final_col] - frame[null_col]) / frame[
+                    null_col
+                ].abs()
+        # Use n_runs as the sample-size predictor when subsample_n is absent.
+        if "subsample_n" not in frame.columns and "n_runs" in frame.columns:
+            frame["subsample_n"] = frame["n_runs"]
+
     frame = frame.replace([np.inf, -np.inf], np.nan).dropna(subset=["nrmse_relative"])
     predictors = pd.DataFrame(
         {
-            "log_subsample_n": np.log(frame["subsample_n"].astype(float)),
+            "log_subsample_n": np.log(
+                frame.get("subsample_n", frame.get("n_runs", pd.Series(1000, index=frame.index)))
+                .astype(float)
+                .clip(lower=1)
+            ),
             "holdout_fraction": frame.get("holdout_fraction", 0.05),
             "variance_threshold": frame.get(
                 "variance_threshold", frame.get("algorithm.variance_threshold", 0.90)
@@ -116,8 +141,20 @@ def _fit_relative_model(results: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray
 
 
 def _render_sample_size_curve(results: pd.DataFrame) -> str:
-    frame = results.loc[results["stage"] == "final_ols", ["subsample_n", "nrmse"]].copy()
-    grouped = frame.groupby("subsample_n")["nrmse"].agg(["mean", "std", "count"]).reset_index()
+    """Render nRMSE vs sample size. Handles both long and flat result formats."""
+    if "stage" in results.columns and "nrmse" in results.columns:
+        frame = results.loc[results["stage"] == "final_ols", ["subsample_n", "nrmse"]].copy()
+        x_col, y_col = "subsample_n", "nrmse"
+    else:
+        # Flat format: use n_runs as the x axis and nrmse_final as y.
+        x_col = "subsample_n" if "subsample_n" in results.columns else "n_runs"
+        y_col = next((c for c in ("nrmse_final", "final_ols_nrmse") if c in results.columns), None)
+        if x_col not in results.columns or y_col is None:
+            return _svg_canvas(900, 540, _title("Sensitivity sample-size curve"))
+        frame = results[[x_col, y_col]].copy().rename(columns={y_col: "nrmse"})
+        x_col = x_col  # keep local name consistent
+    grouped = frame.groupby(x_col)["nrmse"].agg(["mean", "std", "count"]).reset_index()
+    grouped = grouped.rename(columns={x_col: "subsample_n"})
     grouped["ci"] = 1.96 * grouped["std"].fillna(0.0) / np.sqrt(grouped["count"].clip(lower=1))
     if grouped.empty:
         return _svg_canvas(900, 540, _title("Sensitivity sample-size curve"))
@@ -243,6 +280,8 @@ def main() -> int:
 
     frame, predicted = _fit_relative_model(results)
     sample_curve = _render_sample_size_curve(results)
+    # Build the analysis frame for correlations (flat format: use frame already filtered).
+    analysis_frame = frame
     main_effects_labels = [
         "holdout_fraction",
         "variance_threshold",
@@ -254,54 +293,52 @@ def main() -> int:
         "lasso_alpha_percentile",
         "delta_threshold_override",
     ]
+    aidx = analysis_frame.index
+    nrmse_rel = analysis_frame["nrmse_relative"]
     main_effects_values = [
+        abs(analysis_frame.get("holdout_fraction", pd.Series(0.05, index=aidx)).corr(nrmse_rel)),
         abs(
-            frame.get("holdout_fraction", pd.Series(0.05, index=frame.index)).corr(
-                frame["nrmse_relative"]
-            )
-        ),
-        abs(
-            frame.get(
+            analysis_frame.get(
                 "variance_threshold",
-                frame.get("algorithm.variance_threshold", pd.Series(0.90, index=frame.index)),
-            ).corr(frame["nrmse_relative"])
+                analysis_frame.get("algorithm.variance_threshold", pd.Series(0.90, index=aidx)),
+            ).corr(nrmse_rel)
         ),
         abs(
-            frame.get(
-                "stages.empirical_null_screening.n_permutations", pd.Series(201, index=frame.index)
-            ).corr(frame["nrmse_relative"])
+            analysis_frame.get(
+                "stages.empirical_null_screening.n_permutations", pd.Series(201, index=aidx)
+            ).corr(nrmse_rel)
         ),
         abs(
-            frame.get(
-                "stages.empirical_null_screening.bh_q_threshold", pd.Series(0.05, index=frame.index)
-            ).corr(frame["nrmse_relative"])
+            analysis_frame.get(
+                "stages.empirical_null_screening.bh_q_threshold", pd.Series(0.05, index=aidx)
+            ).corr(nrmse_rel)
         ),
         abs(
-            frame.get(
-                "stages.interaction_discovery.n_permutations", pd.Series(31, index=frame.index)
-            ).corr(frame["nrmse_relative"])
+            analysis_frame.get(
+                "stages.interaction_discovery.n_permutations", pd.Series(31, index=aidx)
+            ).corr(nrmse_rel)
         ),
         abs(
-            frame.get(
-                "stages.interaction_discovery.p_threshold", pd.Series(0.05, index=frame.index)
-            ).corr(frame["nrmse_relative"])
+            analysis_frame.get(
+                "stages.interaction_discovery.p_threshold", pd.Series(0.05, index=aidx)
+            ).corr(nrmse_rel)
         ),
         abs(
-            frame.get(
-                "stages.sparse_selection.n_stability_subsamples", pd.Series(50, index=frame.index)
-            ).corr(frame["nrmse_relative"])
+            analysis_frame.get(
+                "stages.sparse_selection.n_stability_subsamples", pd.Series(50, index=aidx)
+            ).corr(nrmse_rel)
         ),
         abs(
-            frame.get(
-                "stages.sparse_selection.lasso_alpha_percentile", pd.Series(40, index=frame.index)
-            ).corr(frame["nrmse_relative"])
+            analysis_frame.get(
+                "stages.sparse_selection.lasso_alpha_percentile", pd.Series(40, index=aidx)
+            ).corr(nrmse_rel)
         ),
         abs(
-            frame.get(
-                "stages.final_artifacts.delta_threshold_override", pd.Series(0.0, index=frame.index)
+            analysis_frame.get(
+                "stages.final_artifacts.delta_threshold_override", pd.Series(0.0, index=aidx)
             )
             .fillna(0.0)
-            .corr(frame["nrmse_relative"])
+            .corr(nrmse_rel)
         ),
     ]
     main_effects_values = [0.0 if pd.isna(value) else float(value) for value in main_effects_values]
@@ -312,15 +349,37 @@ def main() -> int:
         _SVG_COLOR_ACCENT_ORANGE,
     )
 
-    runtime = (
-        results.groupby("stage", as_index=False)["runtime_seconds"]
-        .mean()
-        .sort_values("runtime_seconds", ascending=False)
-    )
+    # Runtime breakdown: long format uses stage/runtime_seconds; flat format uses pipeline_seconds.
+    if "stage" in results.columns and "runtime_seconds" in results.columns:
+        runtime = (
+            results.groupby("stage", as_index=False)["runtime_seconds"]
+            .mean()
+            .sort_values("runtime_seconds", ascending=False)
+        )
+        runtime_labels = runtime["stage"].tolist()
+        runtime_values = runtime["runtime_seconds"].astype(float).tolist()
+    else:
+        # Flat format: show mean wall time by block (pure_synthetic vs bsm_structure).
+        rt_col = next(
+            (c for c in ("pipeline_seconds", "total_wall_seconds") if c in results.columns), None
+        )
+        if rt_col and "block" in results.columns:
+            runtime = (
+                results.groupby("block", as_index=False)[rt_col]
+                .mean()
+                .sort_values(rt_col, ascending=False)
+            )
+            runtime_labels = runtime["block"].tolist()
+            runtime_values = runtime[rt_col].astype(float).tolist()
+        elif rt_col:
+            runtime_labels = ["mean_pipeline"]
+            runtime_values = [float(results[rt_col].mean())]
+        else:
+            runtime_labels, runtime_values = [], []
     runtime_svg = _render_horizontal_bar_chart(
         "Sensitivity runtime breakdown",
-        runtime["stage"].tolist(),
-        runtime["runtime_seconds"].astype(float).tolist(),
+        runtime_labels,
+        runtime_values,
         _SVG_COLOR_ACCENT_GREEN,
     )
     validation_svg = _render_scatter(frame, predicted)

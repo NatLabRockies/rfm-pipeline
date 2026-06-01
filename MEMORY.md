@@ -2,6 +2,36 @@
 
 Durable project memory. Record canonical interfaces, known hazards, validation expectations, and important decisions here.
 
+## ⚠️ DIRECTORY RENAME REQUIRED (2026-06-01)
+
+User must rename local directories after exiting this session:
+
+```bash
+mv ~/src/bsm-public-rf ~/src/rfm-pipeline       # rename framework repo dir
+mv ~/src/bsm-public-rf-new ~/src/bsm-public-rf  # rename new BSM study repo dir
+```
+
+## Three-repo architecture (established 2026-06-01)
+
+| Repo                                   | Local dir (after rename)       | Purpose                                 |
+| -------------------------------------- | ------------------------------ | --------------------------------------- |
+| NatLabRockies/rfm-pipeline             | ~/src/rfm-pipeline             | Generic pipeline package `rfm_pipeline` |
+| NatLabRockies/bsm-public-rf            | ~/src/bsm-public-rf            | BSM configs + committed model artifacts |
+| NatLabRockies/bsm-public-rf-manuscript | ~/src/bsm-public-rf-manuscript | LaTeX + figures                         |
+
+### Package rename: bsm_rfm → rfm_pipeline (commit ce6768b, 2026-06-01)
+
+- All imports updated; src/bsm_rfm/ deleted; 471 tests pass, 1 xfailed
+- Notebooks use `RFM_STUDY_ROOT` env var and `_find_study_root()` (checks `configs/` + `pyproject.toml`)
+
+### Phase 6 remaining: remove BSM-specific configs from rfm-pipeline
+
+Configs now in bsm-public-rf — delete from rfm-pipeline after confirming safe:
+
+- `configs/manuscript_*.yml`, `configs/local/`, `configs/datasets/real_data.yml`
+- `configs/hpc/kestrel_publication_*.yml`, `configs/kestrel_final_cost_*.yml`
+- Keep: `configs/manuscript_case_study_fast_sparse.yml` (dev/validation config)
+
 ## Operator continuity requirement (2026-05-27)
 
 Before starting work, write a pre-flight next-action note in `docs/AGENT_SYNC.md`; after execution, update `docs/AGENT_SYNC.md` and memory docs with outcomes.
@@ -10,11 +40,32 @@ Persist live publication run telemetry (study IDs, controller/array/reduce job I
 
 Keep manuscript figure rendering publication-readable and color-blind friendly (high contrast + color-blind-safe palette + non-color cues).
 
-For `publication_full_dataset_distributed_20260526_short_hp1`, use the deterministic post-completion pull/verify checklist documented in `docs/AGENT_SYNC.md`.
-Use `docs/AGENT_SYNC.md` as the rolling source for live shard-level interaction retention telemetry.
-Latest state: `publication_full_dataset_distributed_20260526_short_hp1` is complete (`RUN_COMPLETE` present) with all six stages complete and merged outputs present.
-Controller login pid `333185` is `NOT_RUNNING` after successful completion.
-Job `14012760` is the completed empirical-null screening reduce job for `publication_full_dataset_distributed_20260526_short_hp1`.
+## Publication run: COMPLETE (2026-05-29)
 
-- 2026-05-29: `docs/manuscripts/jds_bsm.tex` was reconciled to the verified short_hp1 manuscript values: 30,000 runs, 5% holdout, 9,954 PCA-retained outputs, 69 screened inputs, 62 retained interactions, 41 retained nonlinear terms, 132 final predictors, and holdout macro nRMSE 0.0721. The manuscript now describes the L2/BH screening method, 40th-percentile LASSO alpha choice, HC3-plus-pruning stage, and SVG figure set; unresolved TODOs remain for DOIs, Steve Peterson affiliation, acknowledgements/disclaimer, per-scenario holdout breakdown, and worst-output investigation.
-- 2026-05-29: sensitivity-study Phase 1-2 scaffolding is now present. `src/rfm_pipeline/synthetic_dgp.py` provides standalone pure/BSM-structure synthetic generators with true-support tracking and manuscript-table schemas; `src/rfm_pipeline/sensitivity_study.py` provides LHS DGP/config generation, job enumeration, DataFrame serialization, and result collection; companion configs/scripts/tests live under `configs/sensitivity_study/`, `scripts/`, and `tests/`. Validation passed with targeted pytest (12 tests) plus `py_compile`/CLI-help smoke checks.
+- Study: `publication_full_dataset_distributed_20260526_short_hp1` → `RUN_COMPLETE`
+- All 6 stages complete; results in `artifacts/publication_full_dataset_distributed_results/`
+- Key numbers: 30k runs, 69 screened inputs, 62 interactions, 132 final predictors, nRMSE 0.0721
+- ⚠️ Final OLS all-outputs rerun job **14043519** submitted 2026-05-30 — verify completion before using new artifacts
+
+## Sensitivity study HPC (last known: 2026-05-30)
+
+- Job **14039970** = Batch 0; batch watcher PID **3198706** auto-submitting batches 1–5
+- ETA all batches: ~June 4, 2026
+- Wave 1 results in §7 (commit `7a74d29`); meta-regression degree-3 fitted (commit `61f9b0f`)
+- ~46% "too few retained" = legitimate data points for sparse DGPs
+
+## Manuscript state (2026-05-29)
+
+- `docs/manuscripts/jds_bsm.tex` reconciled to verified values above
+- Unresolved TODOs: DOIs, Steve Peterson affiliation, acknowledgements/disclaimer, per-scenario holdout breakdown, §7 sensitivity final numbers
+
+## TransformDef API (commit b8c6520)
+
+- `from rfm_pipeline import TransformDef, QUADRATIC, LOGARITHMIC, INVERSE, SQRT, EXPONENTIAL, DEFAULT_TRANSFORM_LIBRARY`
+- Column naming: `{base}_{label}` (e.g. `x1_sq`, `income_log1p`)
+- Legacy column names still resolve via fallback in `_materialize_feature_column()`
+
+## Validation gate
+
+- Full: `pixi run pytest -q` → 471 passed, 1 xfailed (ce6768b)
+- Pre-push: `./test_repo.sh --check`

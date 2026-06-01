@@ -5,6 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from bsm_rfm import (
+    DEFAULT_TRANSFORM_LIBRARY,
+    EXPONENTIAL,
+    INVERSE,
+    LOGARITHMIC,
+    QUADRATIC,
+    SQRT,
     EmpiricalNullScreeningSpec,
     FeatureExpansionResult,
     FeatureExpansionSpec,
@@ -16,6 +22,7 @@ from bsm_rfm import (
     NonlinearDiscoverySpec,
     OutputConditioningSpec,
     SparseSelectionStabilitySpec,
+    TransformDef,
     apply_feature_expansion,
     audit_manuscript_reproduction_outputs,
     build_manuscript_feature_design,
@@ -52,6 +59,7 @@ from bsm_rfm import (
     screen_manuscript_empirical_null_terms,
     select_manuscript_sparse_support,
     sparse_selection_stability_spec_from_case_study_config,
+    warn_nan_transforms,
     workflow_scope_boundary_table,
     write_final_manuscript_artifacts,
     write_interaction_discovery_artifacts,
@@ -67,6 +75,17 @@ def test_package_exports_feature_expansion_contract() -> None:
     assert callable(default_feature_expansion_spec)
     assert callable(ordered_expanded_feature_names)
     assert callable(apply_feature_expansion)
+
+
+def test_package_exports_transform_library() -> None:
+    assert TransformDef.__name__ == "TransformDef"
+    assert len(DEFAULT_TRANSFORM_LIBRARY) == 5
+    assert QUADRATIC.label == "sq"
+    assert LOGARITHMIC.label == "log1p"
+    assert INVERSE.label == "inv"
+    assert SQRT.label == "sqrt"
+    assert EXPONENTIAL.label == "exp"
+    assert callable(warn_nan_transforms)
 
 
 def test_package_exports_postfit_bundle_loaders() -> None:

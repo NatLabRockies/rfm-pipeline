@@ -29,3 +29,7 @@ __MACOSX/
 .DS_Store
 configs/local/
 artifacts/
+
+# Sensitivity study local analysis artifacts
+artifacts/sensitivity/wave1_results.csv
+artifacts/sensitivity/wave1_formula_table.csv

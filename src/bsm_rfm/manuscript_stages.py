@@ -46,6 +46,7 @@ from .metrics import (
     per_output_nrmse_frame,
 )
 from .parallel import get_executor
+from .transforms import DEFAULT_TRANSFORM_LIBRARY, TransformDef
 
 _PROGRESS_TELEMETRY_PATH: Path | None = None
 
@@ -518,6 +519,10 @@ class NonlinearDiscoverySpec:
         Reference label for the manuscript nonlinear workflow to reconcile against.
     source_workflow_equivalence_status
         Validation status for equivalence to the manuscript nonlinear workflow.
+    transform_library
+        Ordered list of algebraic transform families to attempt for each retained
+        first-order feature.  Defaults to
+        :data:`~bsm_rfm.transforms.DEFAULT_TRANSFORM_LIBRARY` when ``None``.
     """
 
     method: str
@@ -531,6 +536,7 @@ class NonlinearDiscoverySpec:
     source_workflow_reference: str = "private_gam_nonlinear_discovery_workflow"
     source_workflow_equivalence_status: str = "manuscript_aligned_via_scipy_smoothing_spline"
     n_jobs: int = 1
+    transform_library: list[TransformDef] | None = None
 
 
 @dataclass(frozen=True)
@@ -2242,6 +2248,13 @@ def nonlinear_discovery_spec_from_case_study_config(
     """
     section = case_study_config["case_study"]["nonlinear_discovery"]
     runtime = case_study_config["case_study"].get("runtime", {})
+
+    # Read optional transform_library from config; fall back to DEFAULT_TRANSFORM_LIBRARY.
+    raw_library = section.get("transform_library") or []
+    transform_library = (
+        [TransformDef.from_config(entry) for entry in raw_library] if raw_library else None
+    )
+
     return NonlinearDiscoverySpec(
         method=str(section["method"]),
         curvature_rule=str(section["curvature_rule"]),
@@ -2267,6 +2280,7 @@ def nonlinear_discovery_spec_from_case_study_config(
             section.get("source_workflow_equivalence_status", "not_yet_validated")
         ),
         n_jobs=int(runtime.get("n_jobs", 1)),
+        transform_library=transform_library,
     )
 
 
@@ -2328,6 +2342,7 @@ def discover_manuscript_nonlinear_transformations(
     candidates = _generate_supported_nonlinear_candidates(
         _retained_first_order_term_names(retained_terms, input_matrix),
         input_matrix,
+        transform_library=spec.transform_library,
     )
     if not candidates:
         raise ValueError("feature_catalog does not contain supported nonlinear candidates.")
@@ -2349,9 +2364,9 @@ def discover_manuscript_nonlinear_transformations(
     train_rows = indexed.loc[list(train_ids)].reset_index(drop=True)
 
     # Group candidates by base feature for per-feature GAM tests.
-    candidates_by_base: dict[str, list[tuple[str, str, str]]] = {}
-    for feat_name, base_feat, family in candidates:
-        candidates_by_base.setdefault(base_feat, []).append((feat_name, base_feat, family))
+    candidates_by_base: dict[str, list[tuple[str, str, TransformDef]]] = {}
+    for feat_name, base_feat, td in candidates:
+        candidates_by_base.setdefault(base_feat, []).append((feat_name, base_feat, td))
 
     # Pre-fetch raw base feature values for all base features.
     x_by_base: dict[str, np.ndarray] = {
@@ -2520,7 +2535,7 @@ def discover_manuscript_nonlinear_transformations(
 
     # Build transformation_scores table (all domain-valid candidates with GAM diagnostics).
     rows = []
-    for feat_name, base_feat, family in candidates:
+    for feat_name, base_feat, td in candidates:
         fr = feature_results[base_feat]
         is_best = feat_name == fr["best_transform_name"]
         retained = bool(fr["nonlinear"] and is_best)
@@ -2528,7 +2543,7 @@ def discover_manuscript_nonlinear_transformations(
             {
                 "feature_name": feat_name,
                 "base_feature": base_feat,
-                "transformation_family": family,
+                "transformation_family": td.name if td.name else td.label,
                 "curvature_score": fr["best_edf"],
                 "gam_p_value": fr["best_p"],
                 "best_component": fr["best_comp_name"],
@@ -5473,7 +5488,7 @@ def _build_sparse_selection_provenance(
 
 def _nonlinear_transformation_candidates(
     feature_catalog: pd.DataFrame,
-) -> list[tuple[str, str, str]]:
+) -> list[tuple[str, str, TransformDef]]:
     """Return supported nonlinear-transformation candidates from a feature catalog."""
     if "feature_name" not in feature_catalog.columns:
         raise ValueError("feature_catalog must include a feature_name column.")
@@ -5484,13 +5499,13 @@ def _nonlinear_transformation_candidates(
     else:
         candidate_rows = feature_catalog
 
-    candidates: list[tuple[str, str, str]] = []
+    candidates: list[tuple[str, str, TransformDef]] = []
     for feature_name in candidate_rows["feature_name"].astype(str):
         parsed = _parse_supported_transformation_name(feature_name)
         if parsed is None:
             continue
-        base_feature, family = parsed
-        candidates.append((feature_name, base_feature, family))
+        base_feature, td = parsed
+        candidates.append((feature_name, base_feature, td))
     if not candidates:
         return []
     names = [candidate[0] for candidate in candidates]
@@ -5554,7 +5569,7 @@ def _gam_test_and_smooth(
 
 def _score_one_nonlinear_feature(
     base_feat: str,
-    base_candidates: list[tuple[str, str, str]],
+    base_candidates: list[tuple[str, str, TransformDef]],
     x_vals: np.ndarray,
     y_scaled: np.ndarray,
     component_names: list[str],
@@ -5591,8 +5606,8 @@ def _score_one_nonlinear_feature(
     if is_nonlinear and best_smooth is not None:
         smooth_std = _standardize_vector(best_smooth)
         best_rmse = float("inf")
-        for feat_name, _, family in base_candidates:
-            t_vals = _apply_transform_family(x_vals, family)
+        for feat_name, _, td in base_candidates:
+            t_vals = _apply_transform_family(x_vals, td)
             if t_vals is not None and np.isfinite(t_vals).all():
                 t_std = _standardize_vector(t_vals)
                 rmse = float(np.sqrt(np.mean((t_std - smooth_std) ** 2)))
@@ -5612,71 +5627,106 @@ def _score_one_nonlinear_feature(
     return base_feat, feature_result, cache_entries
 
 
-def _apply_transform_family(x_values: np.ndarray, family: str) -> np.ndarray | None:
-    """Apply a named algebraic transform family to raw input values."""
-    if family == "quadratic":
-        return x_values**2
-    if family == "logarithmic":
-        return np.log1p(x_values)
-    if family == "inverse":
-        return 1.0 / x_values
-    if family == "sqrt":
-        return np.sqrt(x_values)
-    if family == "exponential":
-        return np.exp(x_values)
-    return None
+def _apply_transform_family(
+    x_values: np.ndarray,
+    transform: TransformDef,
+) -> np.ndarray | None:
+    """Apply a :class:`~bsm_rfm.transforms.TransformDef` to raw input values.
+
+    Returns ``None`` when the transform produces no finite values at all
+    (i.e. :meth:`~bsm_rfm.transforms.TransformDef.valid_fraction` is 0).
+    Otherwise returns the result array, which may contain ``NaN`` for individual
+    invalid rows.
+    """
+    result = transform.apply(x_values)
+    if not np.isfinite(result).any():
+        return None
+    return result
 
 
 def _generate_supported_nonlinear_candidates(
     retained_first_order_features: list[str],
     input_matrix: pd.DataFrame,
-) -> list[tuple[str, str, str]]:
-    """Generate domain-valid nonlinear candidates from retained first-order features."""
+    transform_library: list[TransformDef] | None = None,
+) -> list[tuple[str, str, TransformDef]]:
+    """Generate domain-valid nonlinear candidates from retained first-order features.
+
+    Parameters
+    ----------
+    retained_first_order_features
+        Names of first-order features that passed empirical-null screening.
+    input_matrix
+        Full input table (must include ``sample_id`` and all feature columns).
+    transform_library
+        Ordered list of :class:`~bsm_rfm.transforms.TransformDef` objects to
+        attempt for each feature.  Defaults to
+        :data:`~bsm_rfm.transforms.DEFAULT_TRANSFORM_LIBRARY`.
+
+    Returns
+    -------
+    list of (column_name, base_feature, TransformDef)
+        Candidate nonlinear features.  A candidate is omitted when the
+        transform produces no finite values for the observed data.
+    """
     if "sample_id" not in input_matrix.columns:
         raise ValueError("input_matrix must include a sample_id column.")
     if not retained_first_order_features:
         return []
-    candidates: list[tuple[str, str, str]] = []
+    if transform_library is None:
+        transform_library = DEFAULT_TRANSFORM_LIBRARY
+
+    candidates: list[tuple[str, str, TransformDef]] = []
     for feature_name in retained_first_order_features:
         values = _source_input_column(
             input_matrix,
             feature_name,
             feature_name,
         ).to_numpy(dtype=float)
-        candidates.append((f"{feature_name}_squared", feature_name, "quadratic"))
-        if np.all(values > -1.0):
-            candidates.append((f"log1p_{feature_name}", feature_name, "logarithmic"))
-        if np.all(values != 0.0):
-            candidates.append((f"inverse_{feature_name}", feature_name, "inverse"))
-        if np.all(values >= 0.0):
-            candidates.append((f"sqrt_{feature_name}", feature_name, "sqrt"))
+        for td in transform_library:
+            if td.valid_fraction(values) > 0.0:
+                candidates.append((td.column_name(feature_name), feature_name, td))
     return candidates
 
 
-def _parse_supported_transformation_name(feature_name: str) -> tuple[str, str] | None:
-    """Parse a supported nonlinear-transformation feature name."""
-    if feature_name.endswith("_squared"):
-        base = feature_name.removesuffix("_squared")
-        return (base, "quadratic") if base else None
-    if feature_name.startswith("log1p_"):
-        base = feature_name.removeprefix("log1p_")
-        return (base, "logarithmic") if base else None
-    if feature_name.startswith("inverse_"):
-        base = feature_name.removeprefix("inverse_")
-        return (base, "inverse") if base else None
-    if feature_name.startswith("sqrt_"):
-        base = feature_name.removeprefix("sqrt_")
-        return (base, "sqrt") if base else None
-    if feature_name.startswith("exp_"):
-        base = feature_name.removeprefix("exp_")
-        return (base, "exponential") if base else None
+def _parse_supported_transformation_name(
+    feature_name: str,
+    transform_library: list[TransformDef] | None = None,
+) -> tuple[str, TransformDef] | None:
+    """Parse a nonlinear-transformation feature name into (base_feature, TransformDef).
+
+    The expected naming convention is ``"{base}_{label}"`` where *label* is
+    :attr:`~bsm_rfm.transforms.TransformDef.label`.  Each transform in
+    *transform_library* is tried in order; the first whose label suffix matches
+    is returned.
+
+    Parameters
+    ----------
+    feature_name
+        Candidate derived column name, e.g. ``"income_sq"``.
+    transform_library
+        Transforms to check.  Defaults to
+        :data:`~bsm_rfm.transforms.DEFAULT_TRANSFORM_LIBRARY`.
+
+    Returns
+    -------
+    (base_feature, TransformDef) or None
+        ``None`` if the name does not match any known transform label.
+    """
+    if transform_library is None:
+        transform_library = DEFAULT_TRANSFORM_LIBRARY
+    for td in transform_library:
+        suffix = f"_{td.label}"
+        if feature_name.endswith(suffix):
+            base = feature_name[: -len(suffix)]
+            if base:
+                return base, td
     return None
 
 
 def _residualized_transformation_matrix(
     input_matrix: pd.DataFrame,
     train_ids: pd.Series,
-    candidates: list[tuple[str, str, str]],
+    candidates: list[tuple[str, str, TransformDef]],
 ) -> tuple[np.ndarray, np.ndarray]:
     """Materialize train-standardized residual nonlinear transformation terms."""
     if not candidates:
@@ -5731,7 +5781,7 @@ def _best_component_replacement_rmse(
 
 def _build_nonlinear_transformation_scores(
     *,
-    candidates: list[tuple[str, str, str]],
+    candidates: list[tuple[str, str, TransformDef]],
     curvature_scores: np.ndarray,
     active_transformations: np.ndarray,
     retained: np.ndarray,
@@ -5743,12 +5793,12 @@ def _build_nonlinear_transformation_scores(
 ) -> pd.DataFrame:
     """Build the transformation-level nonlinear-discovery score table."""
     rows = []
-    for index, (feature_name, base_feature, family) in enumerate(candidates):
+    for index, (feature_name, base_feature, td) in enumerate(candidates):
         rows.append(
             {
                 "feature_name": feature_name,
                 "base_feature": base_feature,
-                "transformation_family": family,
+                "transformation_family": td.name if td.name else td.label,
                 "curvature_score": float(curvature_scores[index]),
                 "best_component": component_names[int(best_component_indices[index])],
                 "replacement_training_rmse": float(replacement_rmse[index]),
@@ -5768,7 +5818,7 @@ def _build_nonlinear_transformation_scores(
 
 def _build_component_transformation_scores(
     *,
-    candidates: list[tuple[str, str, str]],
+    candidates: list[tuple[str, str, TransformDef]],
     component_names: list[str],
     coefficients: np.ndarray,
 ) -> pd.DataFrame:
@@ -6025,6 +6075,16 @@ def _materialize_feature_column(input_matrix: pd.DataFrame, feature_name: str) -
                 )
             values = values * pd.to_numeric(input_matrix[factor], errors="raise")
         return values
+    # Try new {base}_{label} convention using DEFAULT_TRANSFORM_LIBRARY.
+    parsed = _parse_supported_transformation_name(feature_name)
+    if parsed is not None:
+        base_name, td = parsed
+        base_values = _source_input_column(input_matrix, base_name, feature_name).to_numpy(
+            dtype=float
+        )
+        result = td.apply(base_values)
+        return pd.Series(result, index=input_matrix.index, name=feature_name)
+    # Legacy fallback patterns (for backward compatibility with old artifacts).
     if feature_name.endswith("_squared"):
         base_name = feature_name.removesuffix("_squared")
         return _source_input_column(input_matrix, base_name, feature_name) ** 2

@@ -10,6 +10,8 @@ from pathlib import Path
 
 import yaml
 
+from bsm_rfm.transforms import DEFAULT_TRANSFORM_LIBRARY, TransformDef
+
 
 @dataclass
 class DatasetConfig:
@@ -137,8 +139,14 @@ class NonlinearStageConfig:
 
     edf_threshold: float = 2.5
     """Empirical density function threshold."""
-    transform_families: list[str] = field(default_factory=lambda: ["spline", "poly", "log"])
-    """Transformation families to discover."""
+    transform_library: list[TransformDef] = field(
+        default_factory=lambda: list(DEFAULT_TRANSFORM_LIBRARY)
+    )
+    """Algebraic transform library; each entry is a :class:`~bsm_rfm.transforms.TransformDef`
+    with ``expr`` (SymPy expression in ``x``), ``label`` (column suffix), and optional ``name``.
+    When not specified in config, defaults to the five standard families: quadratic (sq),
+    logarithmic (log1p), inverse (inv), square-root (sqrt), and exponential (exp).
+    """
 
 
 @dataclass
@@ -238,6 +246,22 @@ class WorkflowConfig:
     output: OutputConfig = field(default_factory=OutputConfig)
 
 
+def _nonlinear_stage_config_from_data(data: dict) -> NonlinearStageConfig:
+    """Deserialize a :class:`NonlinearStageConfig` from a YAML-parsed dict.
+
+    Handles the ``transform_library`` key as a list of dicts, each with
+    ``expr``, ``label``, and optional ``name`` fields.  Ignores the legacy
+    ``transform_families`` key if present.
+    """
+    raw = dict(data)
+    library_data = raw.pop("transform_library", None)
+    raw.pop("transform_families", None)  # drop legacy key
+    cfg = NonlinearStageConfig(**raw)
+    if library_data is not None:
+        cfg.transform_library = [TransformDef.from_config(d) for d in library_data]
+    return cfg
+
+
 def load_config(config_path: str | Path) -> WorkflowConfig:
     """Load and validate workflow configuration from YAML file.
 
@@ -298,7 +322,9 @@ def load_config(config_path: str | Path) -> WorkflowConfig:
         interaction_discovery=InteractionStageConfig(
             **stages_data.get("interaction_discovery", {})
         ),
-        nonlinear_discovery=NonlinearStageConfig(**stages_data.get("nonlinear_discovery", {})),
+        nonlinear_discovery=_nonlinear_stage_config_from_data(
+            stages_data.get("nonlinear_discovery", {})
+        ),
         sparse_selection=SparseStageConfig(**stages_data.get("sparse_selection", {})),
         final_artifacts=FinalArtifactsStageConfig(**stages_data.get("final_artifacts", {})),
     )

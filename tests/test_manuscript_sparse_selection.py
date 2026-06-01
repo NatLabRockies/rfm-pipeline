@@ -145,7 +145,7 @@ def test_sparse_selection_materializes_dynamic_terms_absent_from_static_catalog(
     )
     retained_terms = pd.DataFrame({"feature_name": ["x1", "x2"]})
     retained_pairs = pd.DataFrame({"pair_name": ["x1:x2"]})
-    retained_transformations = pd.DataFrame({"feature_name": ["inverse_x2"]})
+    retained_transformations = pd.DataFrame({"feature_name": ["x2_inv"]})
     spec = SparseSelectionStabilitySpec(
         model_class="l1_penalized_linear_model_per_retained_component",
         ebic_gamma=0.5,
@@ -172,7 +172,7 @@ def test_sparse_selection_materializes_dynamic_terms_absent_from_static_catalog(
     assert result.summary.loc[0, "n_candidate_terms"] == 4
     support_candidates = result.support_candidates.set_index("feature_name")
     assert support_candidates.loc["x1:x2", "feature_type"] == "interaction"
-    assert support_candidates.loc["inverse_x2", "feature_type"] == "transformation"
+    assert support_candidates.loc["x2_inv", "feature_type"] == "transformation"
 
 
 def test_sparse_selection_applies_deterministic_top_k_candidate_cap() -> None:
@@ -212,7 +212,7 @@ def test_sparse_selection_applies_deterministic_top_k_candidate_cap() -> None:
     )
     retained_transformations = pd.DataFrame(
         {
-            "feature_name": ["inverse_x2"],
+            "feature_name": ["x2_inv"],
             "empirical_p_value": [0.9],
             "curvature_score": [0.1],
         }

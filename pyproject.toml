@@ -27,6 +27,7 @@ dependencies = [
   "pandas",
   "scikit-learn",
   "PyYAML",
+  "sympy>=1.12",
 ]
 
 [project.urls]

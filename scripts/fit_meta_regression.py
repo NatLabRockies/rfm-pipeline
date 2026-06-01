@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Dylan Hettinger
-"""Fit a degree-2 OLS response surface for sensitivity-study results."""
+"""Fit an OLS polynomial response surface for sensitivity-study results.
+
+For degree=2 (default), plain OLS is used and t-statistics are reliable.
+For degree>=3, LASSO-then-OLS is used: LASSO selects a parsimonious subset
+of terms (via cross-validated alpha), then OLS is refit on those terms for
+interpretable coefficients. Cross-validated R² and RMSE are always reported.
+"""
 
 from __future__ import annotations
 
@@ -11,8 +17,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy import stats
+from sklearn.linear_model import LassoCV, LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.preprocessing import PolynomialFeatures
+from sklearn.model_selection import KFold
+from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 
 try:
     from sklearn.metrics import root_mean_squared_error as _rmse_fn
@@ -55,6 +63,18 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("formula_table.csv"),
         help="Output coefficient table CSV path.",
+    )
+    parser.add_argument(
+        "--degree",
+        type=int,
+        default=2,
+        choices=[2, 3, 4],
+        help="Polynomial degree (default: 2). Degree>=3 uses LASSO+OLS.",
+    )
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="Report cross-validated performance across degrees 2 and 3 then exit.",
     )
     return parser.parse_args()
 
@@ -145,8 +165,81 @@ def _prepare_analysis_frame(results: pd.DataFrame) -> pd.DataFrame:
     return analysis
 
 
+def _cv_r2_rmse(
+    x: np.ndarray,
+    y: np.ndarray,
+    degree: int,
+    n_splits: int = 10,
+    random_state: int = 42,
+) -> tuple[float, float]:
+    """Return cross-validated R² and RMSE using the appropriate estimator."""
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+    preds = np.zeros_like(y, dtype=float)
+    poly = PolynomialFeatures(degree=degree, include_bias=True)
+    for tr, va in kf.split(x):
+        D_tr = poly.fit_transform(x[tr])
+        D_va = poly.transform(x[va])
+        if degree <= 2:
+            coef, _, _, _ = np.linalg.lstsq(D_tr, y[tr], rcond=None)
+            preds[va] = D_va @ coef
+        else:
+            sc = StandardScaler()
+            D_tr_s = sc.fit_transform(D_tr)
+            D_va_s = sc.transform(D_va)
+            lc = LassoCV(cv=5, max_iter=5000, n_jobs=-1)
+            lc.fit(D_tr_s, y[tr])
+            sel = np.where(np.abs(lc.coef_) > 0)[0]
+            if len(sel) == 0:
+                preds[va] = y[tr].mean()
+            else:
+                lr = LinearRegression(fit_intercept=True)
+                lr.fit(D_tr_s[:, sel], y[tr])
+                preds[va] = lr.predict(D_va_s[:, sel])
+    return float(r2_score(y, preds)), float(_rmse_fn(y, preds))
+
+
+def _fit_lasso_ols(
+    design_scaled: np.ndarray,
+    y: np.ndarray,
+    feature_names: np.ndarray,
+) -> pd.DataFrame:
+    """LASSO term selection + OLS refit; return coefficient table."""
+    lasso = LassoCV(cv=10, max_iter=10000, n_jobs=-1, random_state=42)
+    lasso.fit(design_scaled, y)
+    sel = np.where(np.abs(lasso.coef_) > 0)[0]
+
+    D_sel = np.hstack([np.ones((len(y), 1)), design_scaled[:, sel]])
+    coef, _, _, _ = np.linalg.lstsq(D_sel, y, rcond=None)
+    fitted = D_sel @ coef
+    n_obs, n_terms = D_sel.shape
+    dof = max(1, n_obs - n_terms)
+    rss = float(np.sum((y - fitted) ** 2))
+    sigma2 = rss / dof
+    xtx_inv = np.linalg.pinv(D_sel.T @ D_sel)
+    se = np.sqrt(np.maximum(np.diag(xtx_inv) * sigma2, 0.0))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t_vals = np.divide(coef, se, out=np.zeros_like(coef), where=se > 0)
+    p_vals = 2.0 * stats.t.sf(np.abs(t_vals), df=dof)
+
+    selected_names = np.concatenate([["intercept"], feature_names[sel]])
+    table = pd.DataFrame(
+        {
+            "term": selected_names,
+            "coefficient": coef,
+            "se": se,
+            "t_stat": t_vals,
+            "p_value": p_vals,
+            "lasso_selected": True,
+        }
+    )
+    table.attrs["n_candidates"] = len(feature_names)
+    table.attrs["n_selected"] = len(sel)
+    table.attrs["lasso_alpha"] = float(lasso.alpha_)
+    return table, fitted
+
+
 def main() -> int:
-    """Fit and report the degree-2 meta-regression response surface."""
+    """Fit and report the polynomial meta-regression response surface."""
     args = _parse_args()
     results = pd.read_csv(args.results)
     analysis = _prepare_analysis_frame(results)
@@ -173,49 +266,84 @@ def main() -> int:
             analysis[log_col] = np.log(analysis[col].astype(float).clip(lower=1e-9))
             dgp_predictors.append(log_col)
     predictors = predictors + dgp_predictors
-    # Drop rows with NaN in any predictor.
     analysis = analysis.dropna(subset=predictors)
     x = analysis[predictors].to_numpy(dtype=float)
     y = analysis["nrmse_relative"].to_numpy(dtype=float)
+    n_obs = len(y)
 
-    poly = PolynomialFeatures(degree=2, include_bias=True)
+    if args.compare:
+        print(f"rows={n_obs}")
+        for deg in [2, 3]:
+            poly_tmp = PolynomialFeatures(degree=deg, include_bias=False)
+            n_terms = poly_tmp.fit_transform(x).shape[1]
+            r2_cv, rmse_cv = _cv_r2_rmse(x, y, deg)
+            method = "OLS" if deg <= 2 else "LASSO+OLS"
+            print(
+                f"degree={deg} ({method}): terms={n_terms}"
+                f"  CV_R2={r2_cv:.4f}  CV_RMSE={rmse_cv:.5f}"
+            )
+        return 0
+
+    degree = args.degree
+    poly = PolynomialFeatures(degree=degree, include_bias=True)
     design = poly.fit_transform(x)
-    coef, _, _, _ = np.linalg.lstsq(design, y, rcond=None)
-    fitted = design @ coef
-    n_obs, n_terms = design.shape
-    dof = max(1, n_obs - n_terms)
-    rss = float(np.sum((y - fitted) ** 2))
-    sigma2 = rss / dof
-    xtx_inv = np.linalg.pinv(design.T @ design)
-    standard_errors = np.sqrt(np.maximum(np.diag(xtx_inv) * sigma2, 0.0))
-    with np.errstate(divide="ignore", invalid="ignore"):
-        t_stats = np.divide(
-            coef, standard_errors, out=np.zeros_like(coef), where=standard_errors > 0
-        )
-    p_values = 2.0 * stats.t.sf(np.abs(t_stats), df=dof)
+    poly_noconst = PolynomialFeatures(degree=degree, include_bias=False)
+    poly_noconst.fit(x)
+    feature_names = poly_noconst.get_feature_names_out(predictors)
 
-    terms = poly.get_feature_names_out(predictors)
-    formula_table = pd.DataFrame(
-        {
-            "term": terms,
-            "coefficient": coef,
-            "se": standard_errors,
-            "t_stat": t_stats,
-            "p_value": p_values,
-        }
-    )
+    print(f"rows={n_obs}  degree={degree}  terms_total={design.shape[1]}")
+
+    # Cross-validated performance (always reported).
+    r2_cv, rmse_cv = _cv_r2_rmse(x, y, degree)
+    print(f"CV_R2={r2_cv:.4f}  CV_RMSE={rmse_cv:.5f}")
+
+    if degree <= 2:
+        # Plain OLS — reliable t-statistics.
+        coef, _, _, _ = np.linalg.lstsq(design, y, rcond=None)
+        fitted = design @ coef
+        n_terms = design.shape[1]
+        dof = max(1, n_obs - n_terms)
+        rss = float(np.sum((y - fitted) ** 2))
+        sigma2 = rss / dof
+        xtx_inv = np.linalg.pinv(design.T @ design)
+        se = np.sqrt(np.maximum(np.diag(xtx_inv) * sigma2, 0.0))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t_vals = np.divide(coef, se, out=np.zeros_like(coef), where=se > 0)
+        p_vals = 2.0 * stats.t.sf(np.abs(t_vals), df=dof)
+        terms = poly.get_feature_names_out(predictors)
+        formula_table = pd.DataFrame(
+            {
+                "term": terms,
+                "coefficient": coef,
+                "se": se,
+                "t_stat": t_vals,
+                "p_value": p_vals,
+            }
+        )
+        top_col = "t_stat"
+    else:
+        # Degree ≥ 3: LASSO selection then OLS refit on selected terms.
+        scaler = StandardScaler()
+        design_scaled = scaler.fit_transform(design[:, 1:])  # skip bias col
+        formula_table, fitted = _fit_lasso_ols(design_scaled, y, feature_names)
+        n_sel = formula_table.attrs.get("n_selected", "?")
+        n_cand = formula_table.attrs.get("n_candidates", "?")
+        alpha_lasso = formula_table.attrs.get("lasso_alpha", "?")
+        print(f"LASSO selected {n_sel}/{n_cand} terms  (alpha={alpha_lasso:.5f})")
+        top_col = "t_stat"
+
+    r2_insample = float(r2_score(y, fitted))
+    rmse_insample = float(_rmse_fn(y, fitted))
+    print(f"R2_insample={r2_insample:.4f}  RMSE_insample={rmse_insample:.5f}")
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
     formula_table.to_csv(args.output, index=False)
 
-    top_terms = formula_table.assign(abs_t=np.abs(formula_table["t_stat"]))
+    top_terms = formula_table.assign(abs_t=np.abs(formula_table[top_col]))
     top_terms = top_terms.sort_values("abs_t", ascending=False).head(10)
-
-    print(f"rows={len(analysis)}")
-    print(f"r2={r2_score(y, fitted):.6f}")
-    print(f"rmse={_rmse_fn(y, fitted):.6f}")
     print("top_terms=")
     for _, row in top_terms.iterrows():
-        print(f"  {row['term']}: coef={row['coefficient']:.6g}, t={row['t_stat']:.4f}")
+        print(f"  {row['term']}: coef={row['coefficient']:.6g}, t={row[top_col]:.4f}")
     print(f"formula_table={args.output}")
     return 0
 

@@ -654,13 +654,15 @@ This centering removes between-DGP variation in absolute error and focuses on th
 A secondary response is per-stage wall-clock runtime, modeled separately for each stage.
 Precision and recall of true feature support recovery are tracked as diagnostics.
 
-A polynomial degree-2 response surface is fitted to $r$ by ordinary least squares:
+A polynomial response surface is fitted to $r$ by ordinary least squares:
 \begin{equation}
 \hat{r}(\mathbf{x}) = \beta_0 + \boldsymbol{\beta}_1^\top \mathbf{x} + \mathbf{x}^\top \mathbf{B}_2 \mathbf{x},
 \label{eq:meta-regression}
 \end{equation}
-where $\mathbf{x}$ contains the log-transformed run count, log-transformed output count, sparsity, and the nine configuration parameters after standardization.
-Variance inflation factors and leave-one-DGP-out cross-validation RMSE are reported alongside the coefficient estimates.
+where $\mathbf{x}$ contains the log-transformed run count, log-transformed input count, sparsity, and the nine configuration parameters after standardization.
+The primary reported model uses degree-2 terms (136 parameters), for which ordinary least-squares standard errors are reliable at the current sample size.
+A degree-3 variant using LASSO-then-OLS (114 terms selected from 815 candidates) was also evaluated; it achieves better cross-validated predictive performance (10-fold CV $R^2 = 0.926$, RMSE $= 0.064$, versus $R^2 = 0.910$, RMSE $= 0.070$ for degree-2), with the additional cubic terms capturing interactions such as $\rho \times \log^2 d$ and $s \times \rho \times \log\sigma$.
+Cross-validation RMSE and $R^2$ are reported for both models; the degree-2 coefficient table is presented for interpretability.
 The BSM case study result serves as a held-out validation point: the predicted $\hat{r}$ at the BSM operating point ($n=28{,}500$, $d=158$, $p=9{,}954$, baseline configuration) is compared against the observed $r_\mathrm{BSM}$.
 
 \subsection{Effect of simulator run count}
@@ -690,7 +692,8 @@ Permutation count primarily controls calibration of the null distribution: retur
 In Wave~1, the BH threshold $q$ is the strongest individual configuration driver of relative improvement, with Pearson $|r| = 0.483$ versus $\mathrm{nRMSE}_\mathrm{relative}$; screening permutation count follows with $|r| = 0.380$.
 Looser $q$ values permit more candidate inputs to advance, improving downstream prediction on DGPs where the screen would otherwise be overly conservative.
 
-A degree-2 polynomial response surface fitted to all 2{,}583 Wave~1 results (including null-screened cases coded as $r = 0$) achieves $R^2 = 0.916$ with leave-one-out RMSE $= 0.068$ on the relative-improvement scale.
+A degree-2 polynomial response surface fitted to all 2{,}583 Wave~1 results (including null-screened cases coded as $r = 0$) achieves 10-fold cross-validated $R^2 = 0.910$ (RMSE $= 0.070$) on the relative-improvement scale; in-sample fit is $R^2 = 0.916$ (RMSE $= 0.068$).
+A degree-3 LASSO+OLS model with 114 selected terms improves cross-validated performance to $R^2 = 0.926$ (RMSE $= 0.064$), confirming genuine nonlinear structure beyond the quadratic approximation.
 Figure~\ref{fig:sensitivity-main-effects} reports the absolute Pearson correlations between each configuration parameter and $r$.
 
 \begin{figure}[h]
@@ -764,7 +767,7 @@ Expected runtime (104 CPU cores)          & $< 5$~min & $\sim$18~min (median) & 
 Table~\ref{tab:meta-regression-formula} reports the ten strongest terms from the fitted Wave~1 response surface (full table in supplementary materials).
 \begin{table}[h]
 \centering
-\caption{Top 10 terms from the degree-2 meta-regression for nRMSE relative improvement (Wave~1, $n = 2{,}583$, $R^2 = 0.916$, RMSE $= 0.068$). Terms ordered by $|t|$. All listed terms are significant at $p < 10^{-17}$.}
+\caption{Top 10 terms from the degree-2 meta-regression for nRMSE relative improvement (Wave~1, $n = 2{,}583$, CV $R^2 = 0.910$, CV RMSE $= 0.070$, in-sample $R^2 = 0.916$). Terms ordered by $|t|$. Degree-2 OLS is reported for interpretability; a degree-3 LASSO+OLS variant achieves CV $R^2 = 0.926$. All listed terms are significant at $p < 10^{-17}$.}
 \label{tab:meta-regression-formula}
 \begin{tabular}{lrrrr}
 \hline
@@ -796,7 +799,8 @@ The BSM case study shows that a high-dimensional simulator interface can be redu
 The workflow perspective matters because the underlying statistical tasks are heterogeneous. Interface definition, calibrated screening, structured feature discovery, sparse support recovery, final estimation, and external validation solve different problems and should not be collapsed into a single model-fitting step. The calibrated screen is deliberately permissive because its role is to remove evidently negligible drivers without making early irreversible exclusions. The reduced-response discovery stages are computational devices for exposing structure across a very large output collection. The final OLS refit serves a different purpose again: it removes shrinkage from support recovery and produces the coefficient bundle required for export.
 
 Section~\ref{sec:sensitivity} extends the empirical evidence beyond the single BSM problem by running the complete pipeline on a family of 2{,}583 synthetic DGP--configuration--replicate combinations.
-The degree-2 meta-regression achieves $R^2 = 0.916$ on the relative improvement outcome, with BH FDR threshold, LASSO $\alpha$ percentile, and screening permutation count as the dominant drivers.
+The degree-2 meta-regression achieves cross-validated $R^2 = 0.910$ on the relative improvement outcome, with BH FDR threshold, LASSO $\alpha$ percentile, and screening permutation count as the dominant drivers.
+A degree-3 LASSO+OLS extension (114 selected terms from 815 candidates) improves cross-validated $R^2$ to $0.926$, with the additional cubic terms primarily capturing nonlinear interactions between interaction density, problem dimensionality, and sparsity; the substantive interpretation of the leading drivers is unchanged.
 The BSM result serves as a held-out validation point for that formula.
 
 The results should nevertheless be interpreted cautiously. First, the final surrogate is linear in the selected algebraic feature library, so higher-order nonlinearities, discontinuities, and regime changes can still be missed. Second, the screening and discovery stages can be computationally demanding, especially the permutation-calibrated L2 coefficient-norm screen and SHAP interaction discovery. Third, the reduced form is validated on held-out runs drawn from the same experimental design, so the reported performance is best interpreted as within-design generalization rather than unrestricted extrapolative validity. Fourth, the evidence reported here includes macro holdout error, bootstrap ablation summaries, the per-output error distribution, and structural summaries of the retained support, but it still stops short of a full module-by-module or scenario-by-scenario audit. Fifth, this article does not present a head-to-head benchmark against alternative surrogate classes, so its claim is about the viability of the workflow, not about dominance over other modeling strategies. The sensitivity study in Section~\ref{sec:sensitivity} characterizes relative performance within the workflow's own configuration space rather than against external alternatives.

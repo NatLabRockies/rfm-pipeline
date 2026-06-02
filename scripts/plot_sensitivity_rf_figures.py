@@ -358,11 +358,11 @@ def render_bsm_validation(results_path: Path) -> str:
     df = pd.read_csv(results_path)
     r_vals = df["nrmse_relative"].replace([np.inf, -np.inf], np.nan).dropna().values
 
-    W, H = 1130, 520
+    W, H = 1130, 550
 
     # ── Left panel: histogram ────────────────────────────────────────────────
-    # Plot area within x=25..535, y=60..360 → 510 × 300
-    lp_x0, lp_y0 = 25, 60
+    # Plot area within x=25..535, y=80..380 → 510 × 300
+    lp_x0, lp_y0 = 25, 80
     lp_w, lp_h = 510, 300
 
     bins = np.arange(-0.90, 0.021, 0.02)
@@ -379,15 +379,16 @@ def render_bsm_validation(results_path: Path) -> str:
 
     body: list[str] = []
 
-    # Title + rule
+    # Title + rule — two lines to keep within the 510-px panel width
     body.append(
-        _panel_title(
-            "Distribution of r across sensitivity study runs (n\u00a0=\u00a02,583)",
-            lp_x0 + 5,
-            34,
-            lp_x0,
-            lp_x0 + lp_w,
-        )
+        f'<text x="{lp_x0 + 5}" y="20" font-family="{_FONT}" font-size="{_FS_TITLE}" '
+        f'font-weight="700" fill="{_SVG_COLOR_TITLE}">'
+        "Distribution of r across sensitivity study runs</text>"
+        f'<text x="{lp_x0 + 5}" y="44" font-family="{_FONT}" font-size="{_FS_TITLE}" '
+        f'font-weight="700" fill="{_SVG_COLOR_TITLE}">'
+        "(n\u00a0=\u00a02,583)</text>"
+        f'<line x1="{lp_x0}" y1="54" x2="{lp_x0 + lp_w}" y2="54" '
+        f'stroke="{_SVG_COLOR_EDGE}" stroke-width="0.8"/>'
     )
 
     # Axes

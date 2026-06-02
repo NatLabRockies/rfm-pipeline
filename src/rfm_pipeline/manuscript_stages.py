@@ -64,6 +64,16 @@ _SVG_COLOR_ACCENT_GREEN = "#009E73"  # Okabe-Ito bluish green
 _SVG_COLOR_ACCENT_SKY = "#56B4E9"  # Okabe-Ito sky blue
 _SVG_COLOR_ACCENT_PURPLE = "#CC79A7"  # Okabe-Ito reddish purple
 
+# Typography scale — shared across all SVG figure renderers.
+# Sized for legibility on an 8.5×11 in printed page (96 px/in screen; ~13.3 px/pt).
+_SVG_FS_TITLE = 20  # main figure / panel title
+_SVG_FS_PANEL = 18  # section sub-title (multi-panel figures)
+_SVG_FS_AXIS = 14  # axis labels
+_SVG_FS_TICK = 13  # tick labels
+_SVG_FS_LABEL = 13  # bar value labels, annotations
+_SVG_FS_LEGEND = 12  # legend entries, inline captions
+_SVG_FS_SMALL = 11  # constrained-space text (heatmap cells, tight annotations)
+
 # Label layout constants — shared across all chart types so the gap between the
 # longest label's right edge and the plot content (bars, cells) is uniform.
 _LABEL_CHAR_WIDTH_PX = 7.5  # estimated px per character at 13 px Helvetica
@@ -7829,7 +7839,7 @@ def _render_module_pair_heatmap_svg(module_matrix: pd.DataFrame) -> str:
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}">',
         f'<rect width="100%" height="100%" fill="{_SVG_COLOR_BACKGROUND}"/>',
-        f'<text x="24" y="36" font-family="{_SVG_FONT_FAMILY}" font-size="20" '
+        f'<text x="24" y="36" font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_TITLE}" '
         f'fill="{_SVG_COLOR_TITLE}" font-weight="bold">'
         "Interaction Density by Module Pair</text>",
     ]
@@ -7838,7 +7848,7 @@ def _render_module_pair_heatmap_svg(module_matrix: pd.DataFrame) -> str:
         x = left_margin + j * cell + (cell / 2.0)
         elements.append(
             f'<text x="{x:.2f}" y="{label_y:.2f}" font-family="{_SVG_FONT_FAMILY}" '
-            f'font-size="11" text-anchor="end" fill="{_SVG_COLOR_TEXT}" '
+            f'font-size="{_SVG_FS_SMALL}" text-anchor="end" fill="{_SVG_COLOR_TEXT}" '
             f'transform="rotate(35 {x:.2f},{label_y:.2f})">'
             f"{escape(module)}</text>"
         )
@@ -7846,7 +7856,7 @@ def _render_module_pair_heatmap_svg(module_matrix: pd.DataFrame) -> str:
         y = top_margin + i * cell + (cell / 2.0)
         elements.append(
             f'<text x="{left_margin - _LABEL_CONTENT_GAP_PX:.2f}" y="{y + 4:.2f}" font-family="{_SVG_FONT_FAMILY}" '  # noqa: E501
-            f'font-size="11" text-anchor="end" fill="{_SVG_COLOR_TEXT}">'
+            f'font-size="{_SVG_FS_SMALL}" text-anchor="end" fill="{_SVG_COLOR_TEXT}">'
             f"{escape(module)}</text>"
         )
         for j, _ in enumerate(modules):
@@ -7859,8 +7869,8 @@ def _render_module_pair_heatmap_svg(module_matrix: pd.DataFrame) -> str:
             )
             elements.append(
                 f'<text x="{x0 + cell / 2.0:.2f}" y="{y0 + cell / 2.0 + 4:.2f}" '
-                f'font-family="{_SVG_FONT_FAMILY}" font-size="11" text-anchor="middle" '
-                f'fill="{text_color_for(value)}">'
+                f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_SMALL}" '
+                f'text-anchor="middle" fill="{text_color_for(value)}">'
                 f"{int(round(value))}</text>"
             )
     elements.append("</svg>")
@@ -8058,7 +8068,7 @@ def _render_feature_pruning_curve_svg(
             'viewBox="0 0 640 220">'
             f'<rect x="0" y="0" width="640" height="220" fill="{_SVG_COLOR_BACKGROUND}"/>'
             f'<text x="320" y="110" text-anchor="middle" font-family="{_SVG_FONT_FAMILY}" '
-            f'font-size="14" fill="{_SVG_COLOR_TEXT_MUTED}">'
+            f'font-size="{_SVG_FS_AXIS}" fill="{_SVG_COLOR_TEXT_MUTED}">'
             "No feature-pruning curve data available.</text></svg>"
         )
 
@@ -8123,7 +8133,8 @@ def _render_feature_pruning_curve_svg(
         )
         elements.append(
             f'<text x="{x:.2f}" y="{top + plot_h + 24:.2f}" text-anchor="middle" '
-            f'font-family="{_SVG_FONT_FAMILY}" font-size="11" fill="{_SVG_COLOR_TEXT_MUTED}">'
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_TICK}" '
+            f'fill="{_SVG_COLOR_TEXT_MUTED}">'
             f"{int(round(tick))}</text>"
         )
     for tick in y_ticks:
@@ -8138,7 +8149,8 @@ def _render_feature_pruning_curve_svg(
         )
         elements.append(
             f'<text x="{left - 10:.2f}" y="{y + 4:.2f}" text-anchor="end" '
-            f'font-family="{_SVG_FONT_FAMILY}" font-size="11" fill="{_SVG_COLOR_TEXT_MUTED}">'
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_TICK}" '
+            f'fill="{_SVG_COLOR_TEXT_MUTED}">'
             f"{tick:.3f}</text>"
         )
     elements.extend(
@@ -8179,19 +8191,20 @@ def _render_feature_pruning_curve_svg(
         )
         elements.append(
             f'<text x="{legend_x + 26:.2f}" y="{y + 4:.2f}" font-family="{_SVG_FONT_FAMILY}" '
-            f'font-size="11" fill="{_SVG_COLOR_TEXT}">{label}</text>'
+            f'font-size="{_SVG_FS_LEGEND}" fill="{_SVG_COLOR_TEXT}">{label}</text>'
         )
     elements.extend(
         [
             f'<text x="{left + plot_w / 2.0:.2f}" y="{height - 20:.2f}" text-anchor="middle" '
-            f'font-family="{_SVG_FONT_FAMILY}" font-size="13" fill="{_SVG_COLOR_TEXT}">'
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_AXIS}" fill="{_SVG_COLOR_TEXT}">'
             "Retained feature count</text>",
             f'<text x="{20:.2f}" y="{top + plot_h / 2.0:.2f}" text-anchor="middle" '
-            f'font-family="{_SVG_FONT_FAMILY}" font-size="13" fill="{_SVG_COLOR_TEXT}" '
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_AXIS}" fill="{_SVG_COLOR_TEXT}" '
             f'transform="rotate(-90 20 {top + plot_h / 2.0:.2f})">'
             "Approx. macro nRMSE upper bound</text>",
             f'<text x="{left + plot_w - 8:.2f}" y="{top + plot_h - 10:.2f}" text-anchor="end" '
-            f'font-family="{_SVG_FONT_FAMILY}" font-size="11" fill="{_SVG_COLOR_TEXT_MUTED}">'
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_SMALL}" '
+            f'fill="{_SVG_COLOR_TEXT_MUTED}">'
             f"Auto remove={auto_remove}, effective remove={effective_remove}</text>",
             "</svg>",
         ]
@@ -8239,7 +8252,7 @@ def _render_nrmse_summary_svg(data: pd.DataFrame) -> str:
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}">',
         f'<rect width="100%" height="100%" fill="{_SVG_COLOR_BACKGROUND}"/>',
-        f'<text x="24" y="32" font-family="{_SVG_FONT_FAMILY}" font-size="20" '
+        f'<text x="24" y="32" font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_TITLE}" '
         f'fill="{_SVG_COLOR_TITLE}" font-weight="bold">'
         "Macro nRMSE with bootstrap confidence intervals</text>",
         f'<line x1="{left_margin}" y1="{top_margin - 14}" x2="{left_margin + axis_width}" '
@@ -8257,13 +8270,13 @@ def _render_nrmse_summary_svg(data: pd.DataFrame) -> str:
         elements.extend(
             [
                 f'<text x="24" y="{y + 18}" font-family="{_SVG_FONT_FAMILY}" '
-                f'font-size="13" fill="{_SVG_COLOR_TEXT}">{label}</text>',
+                f'font-size="{_SVG_FS_LABEL}" fill="{_SVG_COLOR_TEXT}">{label}</text>',
                 f'<line x1="{x_lower:.2f}" y1="{y + 12}" x2="{x_upper:.2f}" y2="{y + 12}" '
                 f'stroke="{_SVG_COLOR_EDGE}" stroke-width="2"/>',
                 f'<circle cx="{x_point:.2f}" cy="{y + 12}" r="4.2" fill="{_SVG_COLOR_PRIMARY}" '
                 'stroke="#ffffff" stroke-width="1"/>',
                 f'<text x="{x_upper + 8:.2f}" y="{y + 16}" font-family="{_SVG_FONT_FAMILY}" '
-                f'font-size="12" fill="{_SVG_COLOR_TEXT_MUTED}">'
+                f'font-size="{_SVG_FS_LEGEND}" fill="{_SVG_COLOR_TEXT_MUTED}">'
                 f"{point:.4g}</text>",
             ]
         )
@@ -8290,7 +8303,7 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
         return (
             '<svg xmlns="http://www.w3.org/2000/svg" width="700" height="120">'
             f'<rect width="100%" height="100%" fill="{_SVG_COLOR_BACKGROUND}"/>'
-            f'<text x="24" y="60" font-family="{_SVG_FONT_FAMILY}" font-size="14" '
+            f'<text x="24" y="60" font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_AXIS}" '
             f'fill="{_SVG_COLOR_TEXT_MUTED}">no data</text>'
             "</svg>"
         )
@@ -8347,7 +8360,7 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
         f'viewBox="0 0 {width} {height}">',
         f'<rect width="100%" height="100%" fill="{_SVG_COLOR_BACKGROUND}"/>',
         f'<text x="{left_margin}" y="32" font-family="{_SVG_FONT_FAMILY}" '
-        f'font-size="18" font-weight="bold" fill="{_SVG_COLOR_TITLE}">'
+        f'font-size="{_SVG_FS_PANEL}" font-weight="bold" fill="{_SVG_COLOR_TITLE}">'
         f"Per-output holdout nRMSE distribution (n={n:,})</text>",
         # Axes
         f'<line x1="{axis_x1}" y1="{axis_y_top}" x2="{axis_x1}" y2="{axis_y_bot}" '
@@ -8356,11 +8369,11 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
         f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1.5"/>',
         # X-axis label
         f'<text x="{left_margin + plot_w / 2:.0f}" y="{height - 10}" '
-        f'font-family="{_SVG_FONT_FAMILY}" font-size="13" text-anchor="middle" '
+        f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_AXIS}" text-anchor="middle" '
         f'fill="{_SVG_COLOR_TEXT}">Holdout nRMSE</text>',
         # Y-axis label
         f'<text x="14" y="{top_margin + plot_h / 2:.0f}" font-family="{_SVG_FONT_FAMILY}" '
-        f'font-size="12" fill="{_SVG_COLOR_TEXT}" '
+        f'font-size="{_SVG_FS_LEGEND}" fill="{_SVG_COLOR_TEXT}" '
         'text-anchor="middle" transform="'
         f'rotate(-90 14 {top_margin + plot_h / 2:.0f})">Cumulative fraction</text>',
     ]
@@ -8373,7 +8386,7 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
                 f'<line x1="{axis_x1 - 5}" y1="{yp:.1f}" x2="{axis_x1}" y2="{yp:.1f}" '
                 f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>',
                 f'<text x="{axis_x1 - 8}" y="{yp + 4:.1f}" font-family="{_SVG_FONT_FAMILY}" '
-                f'font-size="11" text-anchor="end" fill="{_SVG_COLOR_TEXT_MUTED}">'
+                f'font-size="{_SVG_FS_TICK}" text-anchor="end" fill="{_SVG_COLOR_TEXT_MUTED}">'
                 f"{frac:.2f}</text>",
                 f'<line x1="{axis_x1}" y1="{yp:.1f}" x2="{axis_x1 + plot_w}" y2="{yp:.1f}" '
                 f'stroke="{_SVG_COLOR_LIGHT}" stroke-width="0.7" stroke-dasharray="4,4"/>',
@@ -8390,7 +8403,7 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
                 f'<line x1="{xp:.1f}" y1="{axis_y_bot}" x2="{xp:.1f}" y2="{axis_y_bot + 5}" '
                 f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>',
                 f'<text x="{xp:.1f}" y="{axis_y_bot + 18}" font-family="{_SVG_FONT_FAMILY}" '
-                f'font-size="11" text-anchor="middle" fill="{_SVG_COLOR_TEXT_MUTED}">'
+                f'font-size="{_SVG_FS_TICK}" text-anchor="middle" fill="{_SVG_COLOR_TEXT_MUTED}">'
                 f"{v:.3f}</text>",
             ]
         )
@@ -8424,7 +8437,7 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
                 f'<circle cx="{xp:.1f}" cy="{yp_cdf:.1f}" r="3.5" fill="{color}" '
                 'stroke="#ffffff" stroke-width="0.9"/>',
                 f'<text x="{xp:.1f}" y="{axis_y_bot + 32}" '
-                f'font-family="{_SVG_FONT_FAMILY}" font-size="10" '
+                f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_SMALL}" '
                 f'text-anchor="middle" fill="{_SVG_COLOR_TEXT}">{label}={qval:.3f}</text>',
             ]
         )
@@ -8462,7 +8475,7 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
                 f'x2="{xp_worst:.1f}" y2="{axis_y_bot}" '
                 f'stroke="{_SVG_COLOR_DANGER}" stroke-width="1.2" stroke-dasharray="3,3"/>',
                 f'<text x="{xp_worst:.1f}" y="{yann}" font-family="{_SVG_FONT_FAMILY}" '
-                f'font-size="9" text-anchor="{text_anchor}" fill="{_SVG_COLOR_TEXT}">'
+                f'font-size="{_SVG_FS_SMALL}" text-anchor="{text_anchor}" fill="{_SVG_COLOR_TEXT}">'
                 f"{annotation}</text>",
             ]
         )
@@ -8526,7 +8539,7 @@ def _render_horizontal_bar_svg(
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}">',
         f'<rect width="100%" height="100%" fill="{_SVG_COLOR_BACKGROUND}"/>',
-        f'<text x="24" y="36" font-family="{_SVG_FONT_FAMILY}" font-size="20" '
+        f'<text x="24" y="36" font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_TITLE}" '
         f'fill="{_SVG_COLOR_TITLE}" font-weight="bold">{escape(title)}</text>',
         f'<line x1="{left_margin}" y1="{top_margin - 14}" x2="{left_margin + bar_max_width}" '
         f'y2="{top_margin - 14}" stroke="{_SVG_COLOR_LIGHT}" stroke-width="1"/>',
@@ -8544,8 +8557,8 @@ def _render_horizontal_bar_svg(
         bar_width = max(1.0, bar_max_width * value / max_value)
         elements.extend(
             [
-                f'<text x="24" y="{y + 19}" font-family="{_SVG_FONT_FAMILY}" font-size="13" '
-                f'fill="{_SVG_COLOR_TEXT}">{label}</text>',
+                f'<text x="24" y="{y + 19}" font-family="{_SVG_FONT_FAMILY}" '
+                f'font-size="{_SVG_FS_LABEL}" fill="{_SVG_COLOR_TEXT}">{label}</text>',
                 f'<rect x="{left_margin}" y="{y}" width="{bar_width:.2f}" '
                 f'height="21" fill="{_SVG_COLOR_PRIMARY}" stroke="{_SVG_COLOR_EDGE}" '
                 'stroke-width="0.8"/>',
@@ -8588,7 +8601,7 @@ def _render_horizontal_bar_svg(
         )
         elements.append(
             f'<text x="{label_x:.2f}" y="{y + 16}" '
-            f'font-family="{_SVG_FONT_FAMILY}" font-size="12" '
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_LEGEND}" '
             f'fill="{_SVG_COLOR_TEXT_MUTED}">{value:.4g}</text>'
         )
     elements.append("</svg>")

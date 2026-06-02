@@ -34,6 +34,12 @@ from rfm_pipeline.manuscript_stages import (  # noqa: E402
     _SVG_COLOR_TEXT_MUTED,
     _SVG_COLOR_TITLE,
     _SVG_FONT_FAMILY,
+    _SVG_FS_AXIS,
+    _SVG_FS_LABEL,
+    _SVG_FS_LEGEND,
+    _SVG_FS_SMALL,
+    _SVG_FS_TICK,
+    _SVG_FS_TITLE,
 )
 
 # ── Hardcoded sensitivity results ───────────────────────────────────────────
@@ -102,11 +108,11 @@ BSM_ANALOG_NRMSE = [
 # ── SVG helpers ──────────────────────────────────────────────────────────────
 
 _FONT = _SVG_FONT_FAMILY
-_FS_TITLE = 15
-_FS_AXIS = 11
-_FS_TICK = 10
-_FS_LABEL = 11
-_FS_VAL = 10
+_FS_TITLE = _SVG_FS_TITLE
+_FS_AXIS = _SVG_FS_AXIS
+_FS_TICK = _SVG_FS_TICK
+_FS_LABEL = _SVG_FS_LABEL
+_FS_VAL = _SVG_FS_LEGEND
 
 
 def _canvas(w: int, h: int, body: str) -> str:
@@ -144,6 +150,45 @@ def _tick_label(text: str, x: float, y: float, anchor: str = "middle") -> str:
 def _save_svg(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content + "\n", encoding="utf-8")
+
+
+def _save_pdf(svg_path: Path) -> None:
+    """Convert SVG to PDF using Chrome headless with proper page sizing."""
+    import re
+    import subprocess
+    import tempfile
+
+    svg_text = svg_path.read_text(encoding="utf-8")
+    m = re.search(r'<svg[^>]+width="(\d+(?:\.\d+)?)"[^>]+height="(\d+(?:\.\d+)?)"', svg_text)
+    w, h = (int(float(m.group(1))), int(float(m.group(2)))) if m else (1200, 600)
+    html_content = (
+        f"<!DOCTYPE html><html><head><style>"
+        f"@page{{size:{w}px {h}px;margin:0}}"
+        f"html,body{{margin:0;padding:0;width:{w}px;height:{h}px;overflow:hidden}}"
+        f"</style></head><body><img src='file://{svg_path.resolve()}' "
+        f"width='{w}' height='{h}'/></body></html>"
+    )
+    chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    pdf_path = svg_path.with_suffix(".pdf")
+    with tempfile.NamedTemporaryFile(suffix=".html", mode="w", delete=False) as f:
+        f.write(html_content)
+        tmp_html = f.name
+    try:
+        subprocess.run(
+            [
+                chrome,
+                "--headless=new",
+                "--no-sandbox",
+                "--disable-gpu",
+                f"--print-to-pdf={pdf_path}",
+                "--print-to-pdf-no-header",
+                f"file://{tmp_html}",
+            ],
+            check=True,
+            capture_output=True,
+        )
+    finally:
+        Path(tmp_html).unlink(missing_ok=True)
 
 
 # ── Figure 1: RF feature importance ─────────────────────────────────────────
@@ -296,7 +341,6 @@ def render_rf_importance() -> str:
         W,
     )
 
-
     return _canvas(W, H, "".join(body))
 
 
@@ -423,7 +467,7 @@ def render_bsm_validation(results_path: Path) -> str:
     )
     body.append(
         f'<text x="{lp_x0 + 38}" y="{leg_y + 4}" font-family="{_FONT}" '
-        f'font-size="9.5" fill="{_SVG_COLOR_TEXT}">'
+        f'font-size="{_SVG_FS_LEGEND}" fill="{_SVG_COLOR_TEXT}">'
         f"BSM r = {BSM_R:.3f}</text>"
     )
     body.append(
@@ -432,7 +476,7 @@ def render_bsm_validation(results_path: Path) -> str:
     )
     body.append(
         f'<text x="{lp_x0 + 38}" y="{leg_y + 21}" font-family="{_FONT}" '
-        f'font-size="9.5" fill="{_SVG_COLOR_TEXT}">'
+        f'font-size="{_SVG_FS_LEGEND}" fill="{_SVG_COLOR_TEXT}">'
         f"Median (successful fits) = {BSM_MEDIAN_SUCCESSFUL:.3f}</text>"
     )
 
@@ -442,7 +486,7 @@ def render_bsm_validation(results_path: Path) -> str:
     spike_top = lp_y(counts[spike_bin_idx])
     body.append(
         f'<text x="{spike_x:.1f}" y="{spike_top - 5:.1f}" text-anchor="middle" '
-        f'font-family="{_FONT}" font-size="9" fill="{_SVG_COLOR_TEXT_MUTED}">'
+        f'font-family="{_FONT}" font-size="{_SVG_FS_SMALL}" fill="{_SVG_COLOR_TEXT_MUTED}">'
         f"null-screened (n=534)</text>"
     )
 
@@ -507,7 +551,7 @@ def render_bsm_validation(results_path: Path) -> str:
         ax_pos = rp_x(val)
         body.append(
             f'<circle cx="{ax_pos:.2f}" cy="{pp_ya:.1f}" r="3.5" '
-            f'fill="#9ca3af" fill-opacity="0.85"/>'
+            f'fill="{_SVG_COLOR_TEXT_MUTED}" fill-opacity="0.85"/>'
         )
 
     # ── RF prediction point
@@ -530,7 +574,7 @@ def render_bsm_validation(results_path: Path) -> str:
         ),
         (_SVG_COLOR_ACCENT_ORANGE, 1.0, "circle", f"RF prediction ({BSM_RF_PRED:.4f})"),
         (_SVG_COLOR_DANGER, 1.0, "diamond", f"BSM actual ({BSM_NRMSE_ACTUAL:.4f})"),
-        ("#9ca3af", 0.85, "circle_sm", "BSM-structure analogs (n=25, n_runs=28,750)"),
+        (_SVG_COLOR_TEXT_MUTED, 0.85, "circle_sm", "BSM-structure analogs (n=25, n_runs=28,750)"),
     ]
     lex = rp_left + 10
     ley0 = 60
@@ -554,7 +598,7 @@ def render_bsm_validation(results_path: Path) -> str:
             )
         body.append(
             f'<text x="{lex + 28}" y="{ly + 2}" font-family="{_FONT}" '
-            f'font-size="9.5" fill="{_SVG_COLOR_TEXT}">{html.escape(label)}</text>'
+            f'font-size="{_SVG_FS_LEGEND}" fill="{_SVG_COLOR_TEXT}">{html.escape(label)}</text>'
         )
 
     # Panel divider
@@ -577,16 +621,20 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    """Generate RF meta-regression sensitivity figures and save as SVG."""
+    """Generate RF meta-regression sensitivity figures and save as SVG + PDF."""
     args = _parse_args()
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
 
-    _save_svg(out / "fig_sensitivity_rf_importance.svg", render_rf_importance())
-    print("  fig_sensitivity_rf_importance.svg")
+    fig1 = out / "fig_sensitivity_rf_importance.svg"
+    _save_svg(fig1, render_rf_importance())
+    _save_pdf(fig1)
+    print("  fig_sensitivity_rf_importance.svg/pdf")
 
-    _save_svg(out / "fig_sensitivity_bsm_validation.svg", render_bsm_validation(args.results))
-    print("  fig_sensitivity_bsm_validation.svg")
+    fig2 = out / "fig_sensitivity_bsm_validation.svg"
+    _save_svg(fig2, render_bsm_validation(args.results))
+    _save_pdf(fig2)
+    print("  fig_sensitivity_bsm_validation.svg/pdf")
 
     print(f"output_dir={out}")
     return 0

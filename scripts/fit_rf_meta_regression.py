@@ -232,9 +232,7 @@ def _fit_runtime_model(
     rf.fit(X, y)
 
     if "config_idx" in successful.columns and "dgp_idx" in successful.columns:
-        pair_key = (
-            successful["config_idx"].astype(str) + "_" + successful["dgp_idx"].astype(str)
-        )
+        pair_key = successful["config_idx"].astype(str) + "_" + successful["dgp_idx"].astype(str)
         groups = pair_key.astype("category").cat.codes.values
         n_splits = min(cv_folds, int(groups.max()) + 1)
         kf = GroupKFold(n_splits=n_splits)

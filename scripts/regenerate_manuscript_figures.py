@@ -31,6 +31,7 @@ if str(_REPO_ROOT / "src") not in sys.path:
 
 from rfm_pipeline.manuscript_stages import (  # noqa: E402
     _build_model_performance_figure_data,
+    _build_nrmse_summary_figure_data,
     _render_feature_pruning_curve_svg,
     _render_horizontal_bar_svg,
     _render_module_pair_heatmap_svg,
@@ -66,7 +67,7 @@ def regenerate(artifacts_root: Path) -> dict[str, Path]:
     mp_data = _build_model_performance_figure_data(ablation_table)
     sup_data = _load(fig_dir, "figure_support_composition_data.csv")
     mod_data = _load(fig_dir, "figure_selected_by_module_data.csv")
-    nrmse_data = _load(fig_dir, "figure_nrmse_summary_data.csv")
+    nrmse_data = _build_nrmse_summary_figure_data(ablation_table)
     pruning_data = _load(fig_dir, "figure_feature_pruning_curve_data.csv")
     feat_types = _load(fig_dir, "feature_type_counts.csv")
     influential = _load(fig_dir, "influential_counts_by_module.csv")

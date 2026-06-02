@@ -7381,17 +7381,21 @@ def _build_nrmse_summary_figure_data(ablation_table: pd.DataFrame) -> pd.DataFra
         "penalized_ols": "Penalized OLS",
         "final_ols": "Final OLS",
     }
+    _workflow_order = list(_display_names.keys())
     figure_data = ablation_table.loc[:, ["model_name", "nrmse", "ci_lower", "ci_upper"]].copy()
     figure_data["nrmse"] = pd.to_numeric(figure_data["nrmse"], errors="coerce")
     figure_data["ci_lower"] = pd.to_numeric(figure_data["ci_lower"], errors="coerce")
     figure_data["ci_upper"] = pd.to_numeric(figure_data["ci_upper"], errors="coerce")
     figure_data["ci_lower"] = figure_data["ci_lower"].fillna(figure_data["nrmse"])
     figure_data["ci_upper"] = figure_data["ci_upper"].fillna(figure_data["nrmse"])
-    figure_data = figure_data.loc[np.isfinite(figure_data["nrmse"])]
+    figure_data = figure_data.loc[np.isfinite(figure_data["nrmse"])].copy()
+    figure_data["_order"] = figure_data["model_name"].map(
+        lambda n: _workflow_order.index(n) if n in _workflow_order else len(_workflow_order)
+    )
     figure_data["model_name"] = figure_data["model_name"].map(
         lambda n: _display_names.get(str(n), str(n))
     )
-    return figure_data.sort_values(["nrmse", "model_name"], ignore_index=True)
+    return figure_data.sort_values("_order", ignore_index=True).drop(columns=["_order"])
 
 
 def _build_feature_pruning_diagnostics(
@@ -8186,7 +8190,7 @@ def _render_feature_pruning_curve_svg(
             f'font-family="{_SVG_FONT_FAMILY}" font-size="13" fill="{_SVG_COLOR_TEXT}" '
             f'transform="rotate(-90 20 {top + plot_h / 2.0:.2f})">'
             "Approx. macro nRMSE upper bound</text>",
-            f'<text x="{left:.2f}" y="{height - 44:.2f}" text-anchor="start" '
+            f'<text x="{left + plot_w - 8:.2f}" y="{top + plot_h - 10:.2f}" text-anchor="end" '
             f'font-family="{_SVG_FONT_FAMILY}" font-size="11" fill="{_SVG_COLOR_TEXT_MUTED}">'
             f"Auto remove={auto_remove}, effective remove={effective_remove}</text>",
             "</svg>",

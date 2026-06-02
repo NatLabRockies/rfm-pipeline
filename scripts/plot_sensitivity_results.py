@@ -608,7 +608,7 @@ def main() -> int:
     _save_svg(args.output_dir / "fig_sensitivity_sample_size_curve.svg", sample_curve)
     _save_svg(args.output_dir / "fig_sensitivity_main_effects.svg", main_effects_svg)
     _save_svg(args.output_dir / "fig_sensitivity_runtime_breakdown.svg", runtime_svg)
-    _save_svg(args.output_dir / "fig_sensitivity_formula_validation.svg", validation_svg)
+    _save_svg(args.output_dir / "fig_sensitivity_rf_validation.svg", validation_svg)
     print(f"output_dir={args.output_dir}")
     return 0
 

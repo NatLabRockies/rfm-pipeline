@@ -10,38 +10,13 @@ import pandas as pd
 import rfm_pipeline.manuscript_stages as manuscript_stages
 from rfm_pipeline.manuscript_runtime import (
     build_manuscript_notebook_context,
-    load_manuscript_case_study_config,
 )
 from rfm_pipeline.manuscript_stages import (
     SparseSelectionStabilitySpec,
     run_sparse_selection_stability_stage,
     select_manuscript_sparse_support,
-    sparse_selection_stability_spec_from_case_study_config,
     write_sparse_selection_stability_artifacts,
 )
-
-
-def test_sparse_selection_spec_matches_frozen_case_study_contract() -> None:
-    config = load_manuscript_case_study_config(Path.cwd())
-    spec = sparse_selection_stability_spec_from_case_study_config(config)
-
-    assert spec.model_class == "l1_penalized_linear_model_per_retained_component"
-    assert spec.ebic_gamma == 0.5
-    assert spec.support_aggregation_rule == "union_nonzero_support_across_retained_components"
-    assert (
-        spec.resampling_scheme == "100_subsamples_of_80_percent_rows_without_replacement_seed_123"
-    )
-    assert spec.subsample_count == 100
-    assert spec.subsample_fraction == 0.80
-    assert spec.jaccard_threshold == 0.75
-    assert spec.spearman_threshold == 0.90
-    assert spec.implementation_method == "ebic_l1_component_union_with_subsample_stability"
-    assert spec.implementation_status == "source_backed_public_surrogate"
-    assert spec.source_workflow_reference == "notebook_pca_debiased_lasso"
-    assert spec.source_artifact == "LASSO_to_OLS_v9.ipynb"
-    assert spec.source_workflow_equivalence_status == "not_yet_validated"
-    assert spec.source_selected_feature_count_reference == 346
-    assert spec.random_seed == 123
 
 
 def test_sparse_selection_retains_stable_signal_feature_and_writes_artifacts(

@@ -9,33 +9,14 @@ import pandas as pd
 import rfm_pipeline.manuscript_stages as manuscript_stages
 from rfm_pipeline.manuscript_runtime import (
     build_manuscript_notebook_context,
-    load_manuscript_case_study_config,
 )
 from rfm_pipeline.manuscript_stages import (
     NonlinearDiscoverySpec,
     discover_manuscript_nonlinear_transformations,
-    nonlinear_discovery_spec_from_case_study_config,
     run_nonlinear_discovery_stage,
     write_nonlinear_discovery_artifacts,
 )
 from rfm_pipeline.transforms import QUADRATIC
-
-
-def test_nonlinear_discovery_spec_matches_frozen_case_study_contract() -> None:
-    config = load_manuscript_case_study_config(Path.cwd())
-    spec = nonlinear_discovery_spec_from_case_study_config(config)
-
-    assert spec.method == "gam_plus_restricted_parametric_replacement"
-    assert spec.curvature_rule == "edf_gt_1_and_smooth_pvalue_lt_0p01"
-    assert spec.replacement_selection_rule == "minimum_training_rmse_against_gam_smooth"
-    assert spec.identified_transformations_reference == 112
-    assert spec.final_support_transformations_reference == 37
-    assert spec.implementation_method == "gam_cubic_smoothing_spline"
-    assert spec.implementation_status == "manuscript_aligned"
-    assert spec.source_workflow_reference == "private_gam_nonlinear_discovery_workflow"
-    assert spec.source_workflow_equivalence_status == (
-        "manuscript_aligned_via_scipy_smoothing_spline"
-    )
 
 
 def test_nonlinear_discovery_retains_residual_quadratic_signal_and_writes_artifacts(

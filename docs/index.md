@@ -14,7 +14,6 @@ artifact_reference
 export_bundle
 reproducibility_example
 scope_boundary
-manuscript_contract
 manuscript_data_contract
 debiased_lasso_contract
 debiased_lasso_exactness_audit

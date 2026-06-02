@@ -9,7 +9,6 @@ import pytest
 
 from rfm_pipeline.manuscript_runtime import (
     build_manuscript_notebook_context,
-    load_manuscript_case_study_config,
 )
 from rfm_pipeline.manuscript_stages import (
     FinalManuscriptArtifactsSpec,
@@ -29,28 +28,6 @@ _ABLATION_MODEL_NAMES = {
     "penalized_ols",
     "final_ols",
 }
-
-
-def test_final_artifact_spec_matches_frozen_case_study_contract() -> None:
-    config = load_manuscript_case_study_config(Path.cwd())
-    spec = final_manuscript_artifacts_spec_from_case_study_config(config)
-
-    assert spec.final_predictor_count_reference == 340
-    assert spec.final_first_order_input_count_reference == 62
-    assert spec.intermediate_penalized_holdout_nrmse_reference == 0.0859
-    assert spec.final_ols_holdout_nrmse_reference == 0.0445
-    assert spec.nrmse_denominator_definition == (
-        "macro_average_rmse_divided_by_training_response_range"
-    )
-    assert spec.nrmse_min_range == 1.0e-6
-    assert spec.nrmse_reference_matrix == "Y_train"
-    assert spec.bootstrap_count == 200
-    assert spec.bootstrap_alpha == 0.05
-    assert spec.random_seed == 123
-    assert spec.inferential_filter_interval_method == (
-        "hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs"
-    )
-    assert spec.inferential_filter_alpha == 0.05
 
 
 def test_final_artifact_spec_accepts_optional_runtime_overrides() -> None:

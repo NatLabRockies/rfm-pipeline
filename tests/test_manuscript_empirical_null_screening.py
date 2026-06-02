@@ -9,27 +9,14 @@ import pandas as pd
 import rfm_pipeline.manuscript_stages as manuscript_stages
 from rfm_pipeline.manuscript_runtime import (
     build_manuscript_notebook_context,
-    load_manuscript_case_study_config,
 )
 from rfm_pipeline.manuscript_stages import (
     EmpiricalNullScreeningSpec,
     build_manuscript_feature_design,
-    empirical_null_screening_spec_from_case_study_config,
     run_empirical_null_screening_stage,
     screen_manuscript_empirical_null_terms,
     write_empirical_null_screening_artifacts,
 )
-
-
-def test_empirical_null_screening_spec_matches_frozen_case_study_contract() -> None:
-    config = load_manuscript_case_study_config(Path.cwd())
-    spec = empirical_null_screening_spec_from_case_study_config(config)
-
-    assert spec.statistic == "coefficient_row_l2_norm"
-    assert spec.permutation_count_B == 200
-    assert spec.bh_q_screen == 0.10
-    assert spec.retained_terms_reference == 349
-    assert spec.random_seed == 123
 
 
 def test_build_manuscript_feature_design_materializes_catalog_terms() -> None:

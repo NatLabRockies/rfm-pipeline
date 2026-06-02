@@ -79,9 +79,16 @@ def load_manuscript_runtime_manifest(repo_root: Path) -> dict[str, Any]:
 
 
 def load_manuscript_case_study_config(repo_root: Path) -> dict[str, Any]:
-    """Load the tracked manuscript case-study contract."""
+    """Load the tracked manuscript case-study contract.
+
+    Returns an empty dict when no case-study config is present (e.g. in the
+    generic rfm-pipeline repo without a study-specific config committed).
+    """
     repo_root = normalize_manuscript_repo_root(repo_root)
-    return _read_yaml_mapping(repo_root / "configs" / "manuscript_case_study.yml")
+    path = repo_root / "configs" / "manuscript_case_study.yml"
+    if not path.exists():
+        return {}
+    return _read_yaml_mapping(path)
 
 
 def load_manuscript_paths_template(repo_root: Path) -> dict[str, str]:

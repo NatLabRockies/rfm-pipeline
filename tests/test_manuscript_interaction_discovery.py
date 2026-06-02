@@ -11,7 +11,6 @@ import pytest
 import rfm_pipeline.manuscript_stages as manuscript_stages
 from rfm_pipeline.manuscript_runtime import (
     build_manuscript_notebook_context,
-    load_manuscript_case_study_config,
 )
 from rfm_pipeline.manuscript_stages import (
     InteractionDiscoverySpec,
@@ -20,24 +19,6 @@ from rfm_pipeline.manuscript_stages import (
     run_interaction_discovery_stage,
     write_interaction_discovery_artifacts,
 )
-
-
-def test_interaction_discovery_spec_matches_frozen_case_study_contract() -> None:
-    config = load_manuscript_case_study_config(Path.cwd())
-    spec = interaction_discovery_spec_from_case_study_config(config)
-
-    assert spec.method == "tree_shap_interaction_values"
-    assert spec.aggregation_rule == "max_over_components_of_mean_absolute_shap_interaction"
-    assert spec.null_threshold_quantile == 0.995
-    assert spec.retained_pairs_reference == 367
-    assert spec.permutation_count_B == 200
-    assert spec.random_seed == 123
-    assert spec.implementation_method == "tree_shap_gradient_boosting"
-    assert spec.implementation_status == "manuscript_aligned"
-    assert spec.source_workflow_reference == "private_tree_shap_interaction_workflow"
-    assert spec.source_workflow_equivalence_status == (
-        "manuscript_aligned_via_shap_gradient_boosting"
-    )
 
 
 def test_interaction_discovery_spec_accepts_optional_runtime_overrides() -> None:

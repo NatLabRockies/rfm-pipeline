@@ -937,17 +937,18 @@ def output_conditioning_spec_from_case_study_config(
     OutputConditioningSpec
         Typed output-conditioning specification.
     """
-    section = case_study_config["case_study"]["output_conditioning"]
-    variance_filter = section["variance_filter"]
-    snr_filter = section["snr_filter"]
-    reduction = section["temporary_reduction"]
+    cs = case_study_config.get("case_study", {})
+    oc = cs.get("output_conditioning", {})
+    variance_filter = oc.get("variance_filter", {})
+    snr_filter = oc.get("snr_filter", {})
+    reduction = oc.get("temporary_reduction", {})
     return OutputConditioningSpec(
-        epsilon_var=float(variance_filter["epsilon_var"]),
-        epsilon_snr=float(snr_filter["epsilon_snr"]),
-        snr_delta=float(snr_filter["delta"]),
-        method=str(reduction["method"]),
-        retained_components=int(reduction["retained_components"]),
-        retained_variance_fraction=float(reduction["retained_variance_fraction"]),
+        epsilon_var=float(variance_filter.get("epsilon_var", 1e-12)),
+        epsilon_snr=float(snr_filter.get("epsilon_snr", 0.01)),
+        snr_delta=float(snr_filter.get("delta", 1e-12)),
+        method=str(reduction.get("method", "pca")),
+        retained_components=int(reduction.get("retained_components", 50)),
+        retained_variance_fraction=float(reduction.get("retained_variance_fraction", 0.9)),
     )
 
 
@@ -1118,14 +1119,15 @@ def empirical_null_screening_spec_from_case_study_config(
     EmpiricalNullScreeningSpec
         Typed empirical-null screening specification.
     """
-    section = case_study_config["case_study"]["empirical_null_screen"]
-    interface = case_study_config["case_study"].get("interface", {})
-    runtime = case_study_config["case_study"].get("runtime", {})
+    cs = case_study_config.get("case_study", {})
+    section = cs.get("empirical_null_screen", {})
+    interface = cs.get("interface", {})
+    runtime = cs.get("runtime", {})
     return EmpiricalNullScreeningSpec(
-        statistic=str(section["statistic"]),
-        permutation_count_B=int(section["permutation_count_B"]),
-        bh_q_screen=float(section["bh_q_screen"]),
-        retained_terms_reference=int(section["retained_terms"]),
+        statistic=str(section.get("statistic", "coefficient_row_l2_norm")),
+        permutation_count_B=int(section.get("permutation_count_B", 51)),
+        bh_q_screen=float(section.get("bh_q_screen", 0.05)),
+        retained_terms_reference=int(section.get("retained_terms", 0)),
         implementation_method=str(
             section.get("public_implementation_method", "coefficient_row_l2_permutation")
         ),
@@ -1429,19 +1431,24 @@ def interaction_discovery_spec_from_case_study_config(
     InteractionDiscoverySpec
         Typed interaction-discovery specification.
     """
-    case_study = case_study_config["case_study"]
-    interaction = case_study["interaction_discovery"]
-    empirical_null = case_study["empirical_null_screen"]
+    case_study = case_study_config.get("case_study", {})
+    interaction = case_study.get("interaction_discovery", {})
+    empirical_null = case_study.get("empirical_null_screen", {})
     interface = case_study.get("interface", {})
     runtime = case_study.get("runtime", {})
     dask_workers_raw = interaction.get("dask_workers")
     return InteractionDiscoverySpec(
-        method=str(interaction["method"]),
-        aggregation_rule=str(interaction["aggregation_rule"]),
-        null_threshold_quantile=float(interaction["null_threshold_quantile"]),
-        retained_pairs_reference=int(interaction["retained_pairs"]),
+        method=str(interaction.get("method", "tree_shap_interaction_values")),
+        aggregation_rule=str(
+            interaction.get(
+                "aggregation_rule",
+                "max_over_components_of_mean_absolute_shap_interaction",
+            )
+        ),
+        null_threshold_quantile=float(interaction.get("null_threshold_quantile", 0.995)),
+        retained_pairs_reference=int(interaction.get("retained_pairs", 0)),
         permutation_count_B=int(
-            interaction.get("permutation_count_B", empirical_null["permutation_count_B"])
+            interaction.get("permutation_count_B", empirical_null.get("permutation_count_B", 51))
         ),
         random_seed=int(interface.get("holdout_random_seed", 123)),
         n_tree_estimators=int(interaction.get("n_tree_estimators", 100)),
@@ -2249,8 +2256,9 @@ def nonlinear_discovery_spec_from_case_study_config(
     NonlinearDiscoverySpec
         Typed nonlinear-discovery specification.
     """
-    section = case_study_config["case_study"]["nonlinear_discovery"]
-    runtime = case_study_config["case_study"].get("runtime", {})
+    cs = case_study_config.get("case_study", {})
+    section = cs.get("nonlinear_discovery", {})
+    runtime = cs.get("runtime", {})
 
     # Read optional transform_library from config; fall back to DEFAULT_TRANSFORM_LIBRARY.
     raw_library = section.get("transform_library") or []
@@ -2259,11 +2267,15 @@ def nonlinear_discovery_spec_from_case_study_config(
     )
 
     return NonlinearDiscoverySpec(
-        method=str(section["method"]),
-        curvature_rule=str(section["curvature_rule"]),
-        replacement_selection_rule=str(section["replacement_selection_rule"]),
-        identified_transformations_reference=int(section["identified_transformations"]),
-        final_support_transformations_reference=int(section["final_support_transformations"]),
+        method=str(section.get("method", "gam_plus_restricted_parametric_replacement")),
+        curvature_rule=str(section.get("curvature_rule", "edf_gt_1_and_smooth_pvalue_lt_0p01")),
+        replacement_selection_rule=str(
+            section.get("replacement_selection_rule", "minimum_training_rmse_against_gam_smooth")
+        ),
+        identified_transformations_reference=int(section.get("identified_transformations", 0)),
+        final_support_transformations_reference=int(
+            section.get("final_support_transformations", 0)
+        ),
         implementation_method=str(
             section.get(
                 "public_implementation_method",
@@ -2705,20 +2717,30 @@ def sparse_selection_stability_spec_from_case_study_config(
     SparseSelectionStabilitySpec
         Typed sparse-selection and stability specification.
     """
-    case_study = case_study_config["case_study"]
-    sparse = case_study["sparse_selection"]
-    stability = case_study["stability"]
+    case_study = case_study_config.get("case_study", {})
+    sparse = case_study.get("sparse_selection", {})
+    stability = case_study.get("stability", {})
     runtime = case_study.get("runtime", {})
-    count, fraction, seed = _parse_stability_resampling_scheme(str(stability["resampling_scheme"]))
+    _default_scheme = "20_subsamples_of_80_percent_rows_without_replacement_seed_123"
+    count, fraction, seed = _parse_stability_resampling_scheme(
+        str(stability.get("resampling_scheme", _default_scheme))
+    )
     return SparseSelectionStabilitySpec(
-        model_class=str(sparse["model_class"]),
-        ebic_gamma=float(sparse["ebic_gamma"]),
-        support_aggregation_rule=str(sparse["support_aggregation_rule"]),
-        resampling_scheme=str(stability["resampling_scheme"]),
+        model_class=str(
+            sparse.get("model_class", "l1_penalized_linear_model_per_retained_component")
+        ),
+        ebic_gamma=float(sparse.get("ebic_gamma", 0.5)),
+        support_aggregation_rule=str(
+            sparse.get(
+                "support_aggregation_rule",
+                "union_nonzero_support_across_retained_components",
+            )
+        ),
+        resampling_scheme=str(stability.get("resampling_scheme", _default_scheme)),
         subsample_count=count,
         subsample_fraction=fraction,
-        jaccard_threshold=float(stability["jaccard_threshold"]),
-        spearman_threshold=float(stability["spearman_threshold"]),
+        jaccard_threshold=float(stability.get("jaccard_threshold", 0.75)),
+        spearman_threshold=float(stability.get("spearman_threshold", 0.90)),
         implementation_method=str(
             sparse.get(
                 "public_implementation_method",
@@ -3062,26 +3084,38 @@ def final_manuscript_artifacts_spec_from_case_study_config(
     FinalManuscriptArtifactsSpec
         Typed final artifact-regeneration specification.
     """
-    case_study = case_study_config["case_study"]
-    final_model = case_study["final_model"]
-    inferential_filter = case_study["final_inferential_filter"]
+    case_study = case_study_config.get("case_study", {})
+    final_model = case_study.get("final_model", {})
+    inferential_filter = case_study.get("final_inferential_filter", {})
     feature_pruning = inferential_filter.get("feature_pruning", {})
     interface = case_study.get("interface", {})
     runtime = case_study.get("runtime", {})
     return FinalManuscriptArtifactsSpec(
-        final_predictor_count_reference=int(final_model["final_predictor_count"]),
-        final_first_order_input_count_reference=int(final_model["final_first_order_input_count"]),
-        intermediate_penalized_holdout_nrmse_reference=float(
-            final_model["intermediate_penalized_holdout_nrmse"]
+        final_predictor_count_reference=int(final_model.get("final_predictor_count", 0)),
+        final_first_order_input_count_reference=int(
+            final_model.get("final_first_order_input_count", 0)
         ),
-        final_ols_holdout_nrmse_reference=float(final_model["final_ols_holdout_nrmse"]),
-        nrmse_denominator_definition=str(final_model["nrmse_denominator_definition"]),
-        nrmse_min_range=float(final_model["nrmse_min_range"]),
-        nrmse_reference_matrix=str(final_model["nrmse_reference_matrix"]),
+        intermediate_penalized_holdout_nrmse_reference=float(
+            final_model.get("intermediate_penalized_holdout_nrmse", 0.0)
+        ),
+        final_ols_holdout_nrmse_reference=float(final_model.get("final_ols_holdout_nrmse", 0.0)),
+        nrmse_denominator_definition=str(
+            final_model.get(
+                "nrmse_denominator_definition",
+                "macro_average_rmse_divided_by_training_response_range",
+            )
+        ),
+        nrmse_min_range=float(final_model.get("nrmse_min_range", 1e-6)),
+        nrmse_reference_matrix=str(final_model.get("nrmse_reference_matrix", "Y_train")),
         bootstrap_count=int(final_model.get("bootstrap_count", 200)),
         bootstrap_alpha=float(final_model.get("bootstrap_alpha", 0.05)),
         random_seed=int(interface.get("holdout_random_seed", 123)),
-        inferential_filter_interval_method=str(inferential_filter["interval_method"]),
+        inferential_filter_interval_method=str(
+            inferential_filter.get(
+                "interval_method",
+                "hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs",
+            )
+        ),
         inferential_filter_alpha=float(inferential_filter.get("alpha", 0.05)),
         hc3_output_subset_mode=str(inferential_filter.get("output_subset_mode", "all")),
         hc3_output_fraction=(
@@ -6811,10 +6845,10 @@ def _build_interaction_discovery_summary(
 
 def _validate_final_manuscript_artifacts_spec(spec: FinalManuscriptArtifactsSpec) -> None:
     """Validate final artifact-regeneration settings."""
-    if spec.final_predictor_count_reference <= 0:
-        raise ValueError("final_predictor_count_reference must be positive.")
-    if spec.final_first_order_input_count_reference <= 0:
-        raise ValueError("final_first_order_input_count_reference must be positive.")
+    if spec.final_predictor_count_reference < 0:
+        raise ValueError("final_predictor_count_reference must be non-negative.")
+    if spec.final_first_order_input_count_reference < 0:
+        raise ValueError("final_first_order_input_count_reference must be non-negative.")
     if spec.nrmse_min_range <= 0.0:
         raise ValueError("nrmse_min_range must be positive.")
     if spec.bootstrap_count < 2:

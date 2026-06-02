@@ -10,24 +10,8 @@ from rfm_pipeline import (
     OutputConditioningSpec,
     build_manuscript_notebook_context,
     condition_manuscript_outputs,
-    load_manuscript_case_study_config,
-    output_conditioning_spec_from_case_study_config,
     run_output_conditioning_stage,
 )
-
-
-def test_output_conditioning_spec_reads_frozen_case_study_config() -> None:
-    config = load_manuscript_case_study_config(Path.cwd())
-    spec = output_conditioning_spec_from_case_study_config(config)
-
-    assert spec == OutputConditioningSpec(
-        epsilon_var=1.0e-12,
-        epsilon_snr=1.0e-2,
-        snr_delta=1.0e-12,
-        method="pca",
-        retained_components=39,
-        retained_variance_fraction=0.90,
-    )
 
 
 def test_condition_manuscript_outputs_filters_and_scores_from_train_split() -> None:

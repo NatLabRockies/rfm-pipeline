@@ -40,39 +40,39 @@ from rfm_pipeline.manuscript_stages import (  # noqa: E402
 # ── Hardcoded sensitivity results ───────────────────────────────────────────
 
 QUALITY_IMPORTANCE = [
-    ("BH threshold $q$", 0.331),
-    ("Screening perms $N^{(s)}$", 0.104),
-    ("Sparsity $s$", 0.076),
+    ("BH threshold (q)", 0.331),
+    ("Screening permutations", 0.104),
+    ("Sparsity (s)", 0.076),
     ("Stability subsamples", 0.069),
-    ("Interaction $p$-threshold", 0.068),
-    ("Nonlinearity $\\kappa$", 0.056),
-    ("LASSO $\\alpha$ percentile", 0.054),
-    ("Input count $d$", 0.054),
+    ("Interaction p-threshold", 0.068),
+    ("Nonlinearity strength (\u03ba)", 0.056),
+    ("LASSO \u03b1 percentile", 0.054),
+    ("Input count (d)", 0.054),
 ]
 
 RUNTIME_IMPORTANCE = [
-    ("Input count $d$", 0.314),
-    ("Sparsity $s$", 0.267),
-    ("Run count $n$", 0.103),
-    ("Interaction density $\\rho$", 0.092),
-    ("Nonlinearity $\\kappa$", 0.078),
-    ("SNR $\\sigma$", 0.058),
-    ("Interaction perms $N^{(i)}$", 0.027),
-    ("LASSO $\\alpha$ percentile", 0.016),
+    ("Input count (d)", 0.314),
+    ("Sparsity (s)", 0.267),
+    ("Run count (n)", 0.103),
+    ("Interaction density (\u03c1)", 0.092),
+    ("Nonlinearity strength (\u03ba)", 0.078),
+    ("Signal-to-noise ratio (\u03c3)", 0.058),
+    ("Interaction permutations", 0.027),
+    ("LASSO \u03b1 percentile", 0.016),
 ]
 
 FORMULA_TOP10 = [
     # (label, t-statistic)  -- ordered by |t| descending
-    ("$\\log N^{(s)} \\times s$", +16.0),
-    ("$\\rho \\times \\log d$", +15.5),
-    ("$q \\times s$", +15.0),
-    ("LASSO $\\alpha$ (main)", -13.9),
-    ("$q \\times \\rho$", +12.8),
-    ("Var. threshold $\\times$ LASSO $\\alpha$", +11.8),
-    ("$q \\times \\log d$", +11.4),
-    ("LASSO $\\alpha \\times \\log \\delta$", -10.6),
-    ("Var. threshold $\\times$ $\\log d$", -9.9),
-    ("$\\log N^{(s)} \\times$ LASSO $\\alpha$", -9.8),
+    ("log N(s) \u00d7 sparsity", +16.0),
+    ("\u03c1 \u00d7 log d", +15.5),
+    ("q \u00d7 sparsity", +15.0),
+    ("LASSO \u03b1 (main effect)", -13.9),
+    ("q \u00d7 \u03c1", +12.8),
+    ("Var. threshold \u00d7 LASSO \u03b1", +11.8),
+    ("q \u00d7 log d", +11.4),
+    ("LASSO \u03b1 \u00d7 log \u03b4", -10.6),
+    ("Var. threshold \u00d7 log d", -9.9),
+    ("log N(s) \u00d7 LASSO \u03b1", -9.8),
 ]
 
 # BSM production r_BSM: (0.0721 - 0.1653) / 0.1653 = -0.564
@@ -214,7 +214,7 @@ def _render_importance_panel(
     ax_center = bar_x_start + bar_max_w / 2
     body.append(
         _ax_label(
-            "RF feature importance (mean decrease impurity)",
+            "RF feature importance (mean decrease in impurity)",
             int(ax_center),
             ax_y + 28,
         )
@@ -240,10 +240,18 @@ def _render_importance_panel(
             f'font-family="{_FONT}" font-size="{_FS_LABEL}" fill="{_SVG_COLOR_TEXT}">'
             f"{html.escape(label)}</text>"
         )
-        # value label
+        # value label: inside bar (white) when it would overflow the axis line
+        if bw > bar_max_w - 42:
+            vx = bar_x_start + bw - 5
+            vanchor = "end"
+            vcol = "#ffffff"
+        else:
+            vx = bar_x_start + bw + 5
+            vanchor = "start"
+            vcol = _SVG_COLOR_TEXT_MUTED
         body.append(
-            f'<text x="{bar_x_start + bw + 5:.2f}" y="{y + bar_h - 5}" '
-            f'font-family="{_FONT}" font-size="{_FS_VAL}" fill="{_SVG_COLOR_TEXT_MUTED}">'
+            f'<text x="{vx:.2f}" y="{y + bar_h - 5}" text-anchor="{vanchor}" '
+            f'font-family="{_FONT}" font-size="{_FS_VAL}" fill="{vcol}">'
             f"{val:.3f}</text>"
         )
 
@@ -366,7 +374,7 @@ def render_formula_top10() -> str:
     )
 
     # x-axis label
-    body.append(_ax_label("$t$-statistic", int(plot_x_start + plot_w / 2), y_ax + 28))
+    body.append(_ax_label("t-statistic", int(plot_x_start + plot_w / 2), y_ax + 28))
 
     # Annotation
     body.append(
@@ -428,12 +436,12 @@ def render_bsm_validation(results_path: Path) -> str:
     df = pd.read_csv(results_path)
     r_vals = df["nrmse_relative"].replace([np.inf, -np.inf], np.nan).dropna().values
 
-    W, H = 1130, 480
+    W, H = 1130, 520
 
     # ── Left panel: histogram ────────────────────────────────────────────────
-    # Plot area within x=25..535, y=60..380 → 510 × 320
+    # Plot area within x=25..535, y=60..360 → 510 × 300
     lp_x0, lp_y0 = 25, 60
-    lp_w, lp_h = 510, 320
+    lp_w, lp_h = 510, 300
 
     bins = np.arange(-0.90, 0.021, 0.02)
     counts, edges = np.histogram(r_vals, bins=bins)
@@ -529,15 +537,16 @@ def render_bsm_validation(results_path: Path) -> str:
         f'stroke="{_SVG_COLOR_ACCENT_GREEN}" stroke-width="1.8" stroke-dasharray="3 4"/>'
     )
 
-    # Legend (upper left)
-    leg_y = lp_y0 + 14
+    # Legend — placed below the x-axis to avoid overlapping bars
+    leg_y = lp_y0 + lp_h + 38
     body.append(
         f'<line x1="{lp_x0 + 10}" y1="{leg_y}" x2="{lp_x0 + 34}" y2="{leg_y}" '
         f'stroke="{_SVG_COLOR_DANGER}" stroke-width="1.8" stroke-dasharray="7 4"/>'
     )
     body.append(
         f'<text x="{lp_x0 + 38}" y="{leg_y + 4}" font-family="{_FONT}" '
-        f'font-size="9.5" fill="{_SVG_COLOR_TEXT}">BSM $r_{{\\mathrm{{BSM}}}}$ = {BSM_R:.3f}</text>'
+        f'font-size="9.5" fill="{_SVG_COLOR_TEXT}">'
+        f"BSM r = {BSM_R:.3f}</text>"
     )
     body.append(
         f'<line x1="{lp_x0 + 10}" y1="{leg_y + 17}" x2="{lp_x0 + 34}" y2="{leg_y + 17}" '
@@ -643,7 +652,7 @@ def render_bsm_validation(results_path: Path) -> str:
         ),
         (_SVG_COLOR_ACCENT_ORANGE, 1.0, "circle", f"RF prediction ({BSM_RF_PRED:.4f})"),
         (_SVG_COLOR_DANGER, 1.0, "diamond", f"BSM actual ({BSM_NRMSE_ACTUAL:.4f})"),
-        ("#9ca3af", 0.85, "circle_sm", "BSM-structure analogs (n=25, n\u2081\u2082=28,750)"),
+        ("#9ca3af", 0.85, "circle_sm", "BSM-structure analogs (n=25, n_runs=28,750)"),
     ]
     lex = rp_left + 10
     ley0 = 60

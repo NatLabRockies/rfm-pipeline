@@ -7374,6 +7374,13 @@ def _build_selected_by_module_figure_data(
 
 def _build_nrmse_summary_figure_data(ablation_table: pd.DataFrame) -> pd.DataFrame:
     """Build manuscript-style nRMSE summary rows with confidence intervals."""
+    _display_names = {
+        "null_mean": "Null mean",
+        "main_effects_ols": "Main effects OLS",
+        "screened_ols": "Screened OLS",
+        "penalized_ols": "Penalized OLS",
+        "final_ols": "Final OLS",
+    }
     figure_data = ablation_table.loc[:, ["model_name", "nrmse", "ci_lower", "ci_upper"]].copy()
     figure_data["nrmse"] = pd.to_numeric(figure_data["nrmse"], errors="coerce")
     figure_data["ci_lower"] = pd.to_numeric(figure_data["ci_lower"], errors="coerce")
@@ -7381,6 +7388,9 @@ def _build_nrmse_summary_figure_data(ablation_table: pd.DataFrame) -> pd.DataFra
     figure_data["ci_lower"] = figure_data["ci_lower"].fillna(figure_data["nrmse"])
     figure_data["ci_upper"] = figure_data["ci_upper"].fillna(figure_data["nrmse"])
     figure_data = figure_data.loc[np.isfinite(figure_data["nrmse"])]
+    figure_data["model_name"] = figure_data["model_name"].map(
+        lambda n: _display_names.get(str(n), str(n))
+    )
     return figure_data.sort_values(["nrmse", "model_name"], ignore_index=True)
 
 
@@ -8432,14 +8442,14 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
         if len(set(worst_bases)) == 1 and all(y is not None for y in worst_years):
             base = worst_bases[0]
             year_str = ", ".join(sorted(y for y in worst_years if y is not None))
-            short = (base[:30] + "\u2026") if len(base) > 30 else base
-            annotation = f"{escape(short)} ({year_str}): {max_val:.3f}"
+            escaped_base = (escape(base[:30]) + "&#x2026;") if len(base) > 30 else escape(base)
+            annotation = f"{escaped_base} ({year_str}): {max_val:.3f}"
         else:
             parts_ann = [
-                f"{((n[:18] + chr(0x2026)) if len(n) > 18 else escape(n))} ({v:.3f})"
+                f"{(escape(n[:18]) + '&#x2026;') if len(n) > 18 else escape(n)} ({v:.3f})"
                 for v, n in worst_labels
             ]
-            annotation = escape("; ".join(parts_ann))[:80]
+            annotation = "; ".join(parts_ann)[:80]
         text_anchor = "end" if xp_worst > left_margin + plot_w * 0.6 else "start"
         yann = axis_y_top - 6
         elements.extend(

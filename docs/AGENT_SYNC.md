@@ -1,75 +1,80 @@
 # Agent Sync
 
-repo: NatLabRockies/rfm-pipeline ← RENAMED 2026-06-01
-local_dir_rename_required: ~/src/bsm-public-rf → ~/src/rfm-pipeline ← USER MUST DO THIS
-bsm_study_repo_local: ~/src/bsm-public-rf-new ← rename to ~/src/bsm-public-rf after above
+repo: NatLabRockies/rfm-pipeline
+local_dir: ~/src/rfm-pipeline (renamed by user 2026-06-01)
+bsm_study_repo_local: ~/src/bsm-public-rf
 branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: Repo split (three-repo architecture) + sensitivity study completion
-current_slice: Phase 6 — remove BSM-specific configs from rfm-pipeline; then sensitivity results collection
-slice_status: Phases 1–5 complete as of 2026-06-01. Phase 6 pending.
-last_validation: pixi run pytest -q → 471 passed, 1 xfailed (commit ce6768b, 2026-06-01)
-last_commit: ce6768b — refactor: rename package bsm_rfm → rfm_pipeline
+current_milestone: Sensitivity study completion + manuscript §7 final fill
+current_slice: Sensitivity results collection (wave 2 running, wave 3 queued)
+slice_status: All repo split phases complete. Waiting for sensitivity study completion.
+last_validation: pixi run pytest -q → 461 passed, 1 xfailed (commit 372582f, 2026-06-01)
+last_commit: b1aafa8 — config: add sensitivity study wave 3 spec (seeds 3000)
 
-## SESSION STATE — 2026-06-01T16:50 MT (persist-and-exit checkpoint)
+## SESSION STATE — 2026-06-01T18:xx MT
 
-### Repo split — all phases complete
+### Repo split — ALL PHASES COMPLETE ✅
 
-| Phase                                   | Status     | Commit/Action                   |
-| --------------------------------------- | ---------- | ------------------------------- |
-| 1 Notebooks → RFM_STUDY_ROOT            | ✅ done    | ce6768b                         |
-| 2 Rename package bsm_rfm → rfm_pipeline | ✅ done    | ce6768b; 471 tests pass         |
-| 3 Rename GitHub repo → rfm-pipeline     | ✅ done    | NatLabRockies/rfm-pipeline live |
-| 4 Create bsm-public-rf (new)            | ✅ done    | commit 8676314                  |
-| 5 Create bsm-public-rf-manuscript       | ✅ done    | commit 26f7999                  |
-| 6 Remove BSM configs from rfm-pipeline  | ⏳ pending | see below                       |
+| Phase                                   | Status  | Commit/Action                       |
+| --------------------------------------- | ------- | ----------------------------------- |
+| 1 Notebooks → RFM_STUDY_ROOT            | ✅ done | ce6768b                             |
+| 2 Rename package bsm_rfm → rfm_pipeline | ✅ done | ce6768b; 471 tests pass             |
+| 3 Rename GitHub repo → rfm-pipeline     | ✅ done | NatLabRockies/rfm-pipeline live     |
+| 4 Create bsm-public-rf (new)            | ✅ done | commit 8676314                      |
+| 5 Create bsm-public-rf-manuscript       | ✅ done | commit 26f7999                      |
+| 6 Remove BSM configs from rfm-pipeline  | ✅ done | commit 372582f; 461 passed, 1 xfail |
 
-**Phase 6 work remaining** (delete from rfm-pipeline after confirming they're safe in bsm-public-rf):
+### Post-split cleanup complete
 
-- `configs/manuscript_case_study.yml`
-- `configs/manuscript_case_study_fast_sparse.yml` (keep — dev/validation config)
-- `configs/manuscript_data_contract.yml`
-- `configs/manuscript_paths.template.yml`
-- `configs/manuscript_runtime.yml`
-- `configs/datasets/real_data.yml`
-- `configs/local/` (entire dir — BSM local paths)
-- `configs/hpc/kestrel_publication_full_dataset.yml`
-- `configs/hpc/kestrel_publication_orchestration.yml`
-- `configs/hpc/kestrel_publication_full_dataset_distributed_base.yml`
-- `configs/kestrel_final_cost_*.yml` (old single-node publication configs)
+- Final OLS all-outputs rerun: job 14043519 COMPLETED (2026-05-30), runtime 7m57s
+- Artifacts synced to bsm-public-rf commit c5c6aa9:
+  - `coefficient_matrix_standardized.csv`: 23,495 rows (all outputs, fix confirmed)
+  - `hc3_wald_intervals.csv`: gitignored (450MB) — regen from bootstrap checkpoints
+- HPC clone remote fixed: `/home/dhetting/src/bsm-public-rf` now points to `rfm-pipeline`
 
-### Local directory renames required (USER ACTION)
+### Local directory renames — DONE (user completed 2026-06-01)
+
+- `~/src/rfm-pipeline` → rfm-pipeline repo ✅
+- `~/src/bsm-public-rf` → new BSM study repo ✅
+
+### Three repos live on GitHub ✅
+
+| Repo                                   | Visibility | Purpose                                 | Latest commit |
+| -------------------------------------- | ---------- | --------------------------------------- | ------------- |
+| NatLabRockies/rfm-pipeline             | private    | Generic pipeline package `rfm_pipeline` | b1aafa8       |
+| NatLabRockies/bsm-public-rf            | private    | BSM configs + model artifacts           | c5c6aa9       |
+| NatLabRockies/bsm-public-rf-manuscript | private    | LaTeX + figures                         | 26f7999       |
+
+### Sensitivity study — HPC state (2026-06-01T18:xx MT)
+
+| Wave    | Study dir                                       | Artifacts   | Job ID   | Status                       |
+| ------- | ----------------------------------------------- | ----------- | -------- | ---------------------------- |
+| Wave 1  | `/scratch/dhetting/bsm/sensitivity_study_wave1` | 2,671/2,750 | 14039970 | ~97% complete                |
+| Wave 2  | `/scratch/dhetting/bsm/sensitivity_study_wave2` | 1,229/2,750 | 14045231 | ~45% — running               |
+| Wave 2b | `/scratch/dhetting/bsm/sensitivity_study`       | 3,233/57500 | 14062332 | Running (also covers wave2b) |
+| Wave 3  | `/scratch/dhetting/bsm/sensitivity_study_wave3` | 0/2,750     | 14069433 | Queued (shared, 8h)          |
+
+**Collect command (run after each wave completes):**
 
 ```bash
-mv ~/src/bsm-public-rf ~/src/rfm-pipeline       # rename framework repo dir
-mv ~/src/bsm-public-rf-new ~/src/bsm-public-rf  # rename new BSM study repo dir
+# On Kestrel, from /home/dhetting/src/bsm-public-rf:
+pixi run python scripts/collect_sensitivity_results.py \
+  --study-dir /scratch/dhetting/bsm/sensitivity_study_wave1 \
+  --output results/wave1_results.csv
+pixi run python scripts/collect_sensitivity_results.py \
+  --study-dir /scratch/dhetting/bsm/sensitivity_study_wave2 \
+  --output results/wave2_results.csv
+pixi run python scripts/collect_sensitivity_results.py \
+  --study-dir /scratch/dhetting/bsm/sensitivity_study_wave3 \
+  --output results/wave3_results.csv
+# Then combine and fit meta-regression:
+pixi run python scripts/fit_meta_regression.py \
+  --results results/wave1_results.csv results/wave2_results.csv results/wave3_results.csv
 ```
 
-After renaming, update remote and verify in each dir:
-
-```bash
-cd ~/src/rfm-pipeline && git remote -v   # should show NatLabRockies/rfm-pipeline
-cd ~/src/bsm-public-rf && git remote -v  # should show NatLabRockies/bsm-public-rf
-```
-
-### Three repos live on GitHub
-
-| Repo                                   | Visibility | Purpose                                 | First commit     |
-| -------------------------------------- | ---------- | --------------------------------------- | ---------------- |
-| NatLabRockies/rfm-pipeline             | private    | Generic pipeline package `rfm_pipeline` | existing history |
-| NatLabRockies/bsm-public-rf            | private    | BSM configs + model artifacts           | 8676314          |
-| NatLabRockies/bsm-public-rf-manuscript | private    | LaTeX + figures                         | 26f7999          |
-
-### Sensitivity study — HPC state (last known: 2026-05-30)
-
-- **Study ID**: `publication_full_dataset_distributed_20260526_short_hp1` — COMPLETE (`RUN_COMPLETE`)
-- **Sensitivity study**: Job **14039970** = Batch 0; batch watcher PID **3198706** auto-submitting batches 1–5
-- ETA all sensitivity batches: ~June 4, 2026
-- Wave 1 meta-regression results already in §7 (commit `7a74d29`)
-- Final OLS rerun job **14043519** was submitted (`short` partition, TOP priority); status unknown — verify on Kestrel
-- After final OLS rerun completes: re-sync with `collect_publication_full_dataset_distributed.sh --study-id publication_full_dataset_distributed_20260526_short_hp1`
+**HPC clone remote:** `/home/dhetting/src/bsm-public-rf` now correctly points to `NatLabRockies/rfm-pipeline`.
 
 ### Open manuscript TODOs (in jds_bsm.tex)
 
@@ -81,15 +86,7 @@ cd ~/src/bsm-public-rf && git remote -v  # should show NatLabRockies/bsm-public-
 
 - Per-scenario holdout NRMSE breakdown table
 
-- §7 placeholders: filled for Wave 1; awaiting remaining sensitivity batches for final numbers
-
-- User requirement: after every interaction, persist latest run/study/config/job state in `docs/AGENT_SYNC.md` and memory docs.
-
-- Before starting any new work, first update `docs/AGENT_SYNC.md` with the intended next action/scope (pre-flight intent), then update again with outcomes after execution.
-
-- Required persisted fields each update: active study IDs, stage progress, array/reduce job IDs, controller pid/job, pending reasons, failure/resubmit state, and config-to-study mapping.
-
-- Do not rely on script defaults when reporting status; always scope to explicit `--study-id`/`--study-root`.
+- §7 placeholders: filled for Wave 1; awaiting remaining sensitivity waves for final numbers
 
 - For status requests, report only the latest reconfigured full-data workflow (`publication_full_dataset_distributed_20260526_short_hp1`) unless user explicitly asks for others.
 

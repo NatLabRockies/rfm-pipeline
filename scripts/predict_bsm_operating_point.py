@@ -133,9 +133,7 @@ def _apply_formula_d3(
         for _, row in formula.iterrows()
         if row["term"] != "intercept"
     }
-    intercept = float(
-        formula.loc[formula["term"] == "intercept", "coefficient"].values[0]
-    )
+    intercept = float(formula.loc[formula["term"] == "intercept", "coefficient"].values[0])
     pred = intercept + sum(
         coef_map[name] * design3_scaled[0, i]
         for i, name in enumerate(poly_names)
@@ -217,8 +215,9 @@ def main() -> int:  # noqa: D103
     print("=== BSM actual performance ===")
     print(f"  null_mean nRMSE  : {bsm_null:.4f}")
     print(f"  final_ols nRMSE  : {bsm_final:.4f}")
-    print(f"  nrmse_relative   : {bsm_actual_rel:.4f}  "
-          f"({bsm_actual_rel * 100:.1f}% change vs null)")
+    print(
+        f"  nrmse_relative   : {bsm_actual_rel:.4f}  ({bsm_actual_rel * 100:.1f}% change vs null)"
+    )
 
     base_dict = _bsm_point_dict()
     x_bsm = np.array([[base_dict[p] for p in PREDICTORS]])
@@ -261,8 +260,10 @@ def main() -> int:  # noqa: D103
     sens = _sensitivity_table(formula_d3, scaler_meta, base_dict, bsm_null)
     for _, row in sens.iterrows():
         print(f"  [{row['scenario'][:65]}]")
-        print(f"    rel={row['predicted_nrmse_relative']:.4f}"
-              f"  abs_nrmse={row['predicted_nrmse_abs']:.4f}")
+        print(
+            f"    rel={row['predicted_nrmse_relative']:.4f}"
+            f"  abs_nrmse={row['predicted_nrmse_abs']:.4f}"
+        )
 
     result = pd.DataFrame(
         [

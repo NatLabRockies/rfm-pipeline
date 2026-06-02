@@ -35,6 +35,12 @@ from rfm_pipeline.manuscript_stages import (  # noqa: E402
     _SVG_COLOR_TEXT_MUTED,
     _SVG_COLOR_TITLE,
     _SVG_FONT_FAMILY,
+    _SVG_FS_AXIS,
+    _SVG_FS_LABEL,
+    _SVG_FS_LEGEND,
+    _SVG_FS_SMALL,
+    _SVG_FS_TICK,
+    _SVG_FS_TITLE,
 )
 
 
@@ -61,7 +67,7 @@ def _svg_canvas(width: int, height: int, body: str) -> str:
 
 def _title(text: str) -> str:
     return (
-        f'<text x="40" y="34" font-family="{_SVG_FONT_FAMILY}" font-size="18" '
+        f'<text x="40" y="34" font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_TITLE}" '
         f'font-weight="700" fill="{_SVG_COLOR_TITLE}">{html.escape(text)}</text>'
     )
 
@@ -69,6 +75,45 @@ def _title(text: str) -> str:
 def _save_svg(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content + "\n", encoding="utf-8")
+
+
+def _save_pdf(svg_path: Path) -> None:
+    """Convert SVG to PDF using Chrome headless with proper page sizing."""
+    import re
+    import subprocess
+    import tempfile
+
+    svg_text = svg_path.read_text(encoding="utf-8")
+    m = re.search(r'<svg[^>]+width="(\d+(?:\.\d+)?)"[^>]+height="(\d+(?:\.\d+)?)"', svg_text)
+    w, h = (int(float(m.group(1))), int(float(m.group(2)))) if m else (1200, 600)
+    html_content = (
+        f"<!DOCTYPE html><html><head><style>"
+        f"@page{{size:{w}px {h}px;margin:0}}"
+        f"html,body{{margin:0;padding:0;width:{w}px;height:{h}px;overflow:hidden}}"
+        f"</style></head><body><img src='file://{svg_path.resolve()}' "
+        f"width='{w}' height='{h}'/></body></html>"
+    )
+    chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    pdf_path = svg_path.with_suffix(".pdf")
+    with tempfile.NamedTemporaryFile(suffix=".html", mode="w", delete=False) as f:
+        f.write(html_content)
+        tmp_html = f.name
+    try:
+        subprocess.run(
+            [
+                chrome,
+                "--headless=new",
+                "--no-sandbox",
+                "--disable-gpu",
+                f"--print-to-pdf={pdf_path}",
+                "--print-to-pdf-no-header",
+                f"file://{tmp_html}",
+            ],
+            check=True,
+            capture_output=True,
+        )
+    finally:
+        Path(tmp_html).unlink(missing_ok=True)
 
 
 def _expand_config_overrides(df: pd.DataFrame) -> pd.DataFrame:
@@ -220,7 +265,11 @@ def _render_sample_size_curve(results: pd.DataFrame, rf_path: Path | None = None
     if x_col not in results.columns or "nrmse_relative" not in results.columns:
         return _svg_canvas(900, 540, _title("Sensitivity: effect of training-run count on quality"))
 
-    succ = results[results["null_screened"].isna()].copy() if "null_screened" in results.columns else results.copy()  # noqa: E501
+    succ = (
+        results[results["null_screened"].isna()].copy()
+        if "null_screened" in results.columns
+        else results.copy()
+    )  # noqa: E501
     if succ.empty:
         succ = results.copy()
 
@@ -264,7 +313,9 @@ def _render_sample_size_curve(results: pd.DataFrame, rf_path: Path | None = None
     ]
 
     # Raw CI band (light blue fill)
-    upper_pts = " ".join(f"{xm(n):.2f},{ym(m + c):.2f}" for n, m, c in zip(n_vals, raw_means, raw_ci, strict=True))  # noqa: E501
+    upper_pts = " ".join(
+        f"{xm(n):.2f},{ym(m + c):.2f}" for n, m, c in zip(n_vals, raw_means, raw_ci, strict=True)
+    )  # noqa: E501
     lower_pts = " ".join(
         f"{xm(n):.2f},{ym(m - c):.2f}"
         for n, m, c in zip(n_vals[::-1], raw_means[::-1], raw_ci[::-1], strict=True)  # noqa: E501
@@ -274,9 +325,7 @@ def _render_sample_size_curve(results: pd.DataFrame, rf_path: Path | None = None
         f'fill="{_SVG_COLOR_PRIMARY}" fill-opacity="0.12" stroke="none"/>'
     )
     # Raw mean line (dashed, muted)
-    raw_line = " ".join(
-        f"{xm(n):.2f},{ym(m):.2f}" for n, m in zip(n_vals, raw_means, strict=True)
-    )
+    raw_line = " ".join(f"{xm(n):.2f},{ym(m):.2f}" for n, m in zip(n_vals, raw_means, strict=True))
     body.append(
         f'<polyline points="{raw_line}" fill="none" stroke="{_SVG_COLOR_TEXT_MUTED}" '
         f'stroke-width="1.5" stroke-dasharray="4 3"/>'
@@ -298,12 +347,13 @@ def _render_sample_size_curve(results: pd.DataFrame, rf_path: Path | None = None
             f'<line x1="{legend_x}" y1="{legend_y}" x2="{legend_x + 30}" y2="{legend_y}" '
             f'stroke="{_SVG_COLOR_PRIMARY}" stroke-width="3"/>',
             f'<text x="{legend_x + 36}" y="{legend_y + 4}" font-family="{_SVG_FONT_FAMILY}" '
-            f'font-size="11" fill="{_SVG_COLOR_TEXT}">Partial dependence (RF)</text>',
+            f'font-size="{_SVG_FS_LEGEND}" fill="{_SVG_COLOR_TEXT}">Partial dependence (RF)</text>',
             f'<line x1="{legend_x}" y1="{legend_y + 20}" x2="{legend_x + 30}" '
             f'y2="{legend_y + 20}" stroke="{_SVG_COLOR_TEXT_MUTED}" stroke-width="1.5" '
             f'stroke-dasharray="4 3"/>',
             f'<text x="{legend_x + 36}" y="{legend_y + 24}" font-family="{_SVG_FONT_FAMILY}" '
-            f'font-size="11" fill="{_SVG_COLOR_TEXT}">Observed mean (successful runs)</text>',
+            f'font-size="{_SVG_FS_LEGEND}" fill="{_SVG_COLOR_TEXT}">'
+            "Observed mean (successful runs)</text>",
         ]
 
     # X ticks
@@ -315,7 +365,7 @@ def _render_sample_size_curve(results: pd.DataFrame, rf_path: Path | None = None
             f'<line x1="{tx:.2f}" y1="{top + plot_h}" x2="{tx:.2f}" y2="{top + plot_h + 5}" '
             f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>',
             f'<text x="{tx:.2f}" y="{top + plot_h + 20}" text-anchor="middle" '
-            f'font-family="{_SVG_FONT_FAMILY}" font-size="11" '
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_TICK}" '
             f'fill="{_SVG_COLOR_TEXT_MUTED}">{int(tv):,}</text>',
         ]
 
@@ -327,20 +377,20 @@ def _render_sample_size_curve(results: pd.DataFrame, rf_path: Path | None = None
             f'<line x1="{left - 5}" y1="{ty:.2f}" x2="{left}" y2="{ty:.2f}" '
             f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>',
             f'<text x="{left - 8}" y="{ty + 4:.2f}" text-anchor="end" '
-            f'font-family="{_SVG_FONT_FAMILY}" font-size="10" '
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_TICK}" '
             f'fill="{_SVG_COLOR_TEXT_MUTED}">{tv:.2f}</text>',
         ]
 
     # Axis labels
     body += [
         f'<text x="470" y="510" text-anchor="middle" font-family="{_SVG_FONT_FAMILY}" '
-        f'font-size="13" fill="{_SVG_COLOR_TEXT}">Number of training runs</text>',
+        f'font-size="{_SVG_FS_AXIS}" fill="{_SVG_COLOR_TEXT}">Number of training runs</text>',
         f'<text x="28" y="265" transform="rotate(-90 28 265)" text-anchor="middle" '
-        f'font-family="{_SVG_FONT_FAMILY}" font-size="13" '
+        f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_AXIS}" '
         f'fill="{_SVG_COLOR_TEXT}">r = (nRMSE \u2013 nRMSE\u2080) / nRMSE\u2080</text>',
         # RF importance annotation
         f'<text x="{left + 12}" y="{top + plot_h - 10}" font-family="{_SVG_FONT_FAMILY}" '
-        f'font-size="10" fill="{_SVG_COLOR_TEXT_MUTED}" font-style="italic">'
+        f'font-size="{_SVG_FS_SMALL}" fill="{_SVG_COLOR_TEXT_MUTED}">'
         f"RF importance: 0.029 (lowest of 13 parameters)</text>",
     ]
     return _svg_canvas(width, height, "".join(body))
@@ -360,7 +410,7 @@ def _render_horizontal_bar_chart(
         y_pos = top + idx * (bar_h + gap)
         bar_w = 0.0 if max_value == 0 else (value / max_value) * plot_w
         body.append(
-            f'<text x="220" y="{y_pos + 18}" text-anchor="end" font-family="{_SVG_FONT_FAMILY}" font-size="12" fill="{_SVG_COLOR_TEXT}">{html.escape(label)}</text>'  # noqa: E501
+            f'<text x="220" y="{y_pos + 18}" text-anchor="end" font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_LABEL}" fill="{_SVG_COLOR_TEXT}">{html.escape(label)}</text>'  # noqa: E501
         )
         body.append(
             f'<rect x="{left}" y="{y_pos}" width="{plot_w}" height="{bar_h}" fill="{_SVG_COLOR_LIGHT}" opacity="0.3"/>'  # noqa: E501
@@ -372,12 +422,12 @@ def _render_horizontal_bar_chart(
         if bar_w > plot_w - 42:
             body.append(
                 f'<text x="{left + bar_w - 6:.2f}" y="{y_pos + 18}" text-anchor="end" '
-                f'font-family="{_SVG_FONT_FAMILY}" font-size="11" fill="#ffffff">'
+                f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_LEGEND}" fill="#ffffff">'
                 f"{value:.4f}</text>"
             )
         else:
             body.append(
-                f'<text x="{left + bar_w + 8:.2f}" y="{y_pos + 18}" font-family="{_SVG_FONT_FAMILY}" font-size="11" fill="{_SVG_COLOR_TEXT_MUTED}">{value:.4f}</text>'  # noqa: E501
+                f'<text x="{left + bar_w + 8:.2f}" y="{y_pos + 18}" font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_LEGEND}" fill="{_SVG_COLOR_TEXT_MUTED}">{value:.4f}</text>'  # noqa: E501
             )
     return _svg_canvas(width, height, "".join(body))
 
@@ -432,9 +482,9 @@ def _render_scatter(observed: np.ndarray, predicted: np.ndarray, cv_r2: float) -
     # Axis labels
     body += [
         f'<text x="470" y="500" text-anchor="middle" font-family="{_SVG_FONT_FAMILY}" '
-        f'font-size="13" fill="{_SVG_COLOR_TEXT}">Observed r</text>',
+        f'font-size="{_SVG_FS_AXIS}" fill="{_SVG_COLOR_TEXT}">Observed r</text>',
         f'<text x="32" y="265" transform="rotate(-90 32 265)" text-anchor="middle" '
-        f'font-family="{_SVG_FONT_FAMILY}" font-size="13" '
+        f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_AXIS}" '
         f'fill="{_SVG_COLOR_TEXT}">Predicted r</text>',
     ]
 
@@ -445,7 +495,7 @@ def _render_scatter(observed: np.ndarray, predicted: np.ndarray, cv_r2: float) -
             f'<line x1="{tx:.2f}" y1="{top + plot_h}" x2="{tx:.2f}" y2="{top + plot_h + 5}" '
             f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>',
             f'<text x="{tx:.2f}" y="{top + plot_h + 18}" text-anchor="middle" '
-            f'font-family="{_SVG_FONT_FAMILY}" font-size="10" '
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_TICK}" '
             f'fill="{_SVG_COLOR_TEXT_MUTED}">{tv:.2f}</text>',
         ]
 
@@ -456,20 +506,20 @@ def _render_scatter(observed: np.ndarray, predicted: np.ndarray, cv_r2: float) -
             f'<line x1="{left - 5}" y1="{ty:.2f}" x2="{left}" y2="{ty:.2f}" '
             f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>',
             f'<text x="{left - 8}" y="{ty + 4:.2f}" text-anchor="end" '
-            f'font-family="{_SVG_FONT_FAMILY}" font-size="10" '
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_TICK}" '
             f'fill="{_SVG_COLOR_TEXT_MUTED}">{tv:.2f}</text>',
         ]
 
     # R² annotation (SVG tspan for superscript)
     body.append(
         f'<text x="{left + 16}" y="{top + 26}" font-family="{_SVG_FONT_FAMILY}" '
-        f'font-size="13" fill="{_SVG_COLOR_TEXT_MUTED}">'
-        f'CV R<tspan dy="-5" font-size="9">2</tspan>'
+        f'font-size="{_SVG_FS_LABEL}" fill="{_SVG_COLOR_TEXT_MUTED}">'
+        f'CV R<tspan dy="-5" font-size="{_SVG_FS_SMALL}">2</tspan>'
         f'<tspan dy="5"> = {cv_r2:.3f}</tspan></text>'
     )
     body.append(
         f'<text x="{left + 16}" y="{top + 44}" font-family="{_SVG_FONT_FAMILY}" '
-        f'font-size="11" fill="{_SVG_COLOR_TEXT_MUTED}" font-style="italic">'
+        f'font-size="{_SVG_FS_LEGEND}" fill="{_SVG_COLOR_TEXT_MUTED}">'
         f"Group-blocked CV (config \u00d7 DGP pairs); n = {len(observed):,}</text>"
     )
     return _svg_canvas(width, height, "".join(body))
@@ -489,9 +539,7 @@ def main() -> int:
     sample_curve = _render_sample_size_curve(results, rf_path=rf_path)
 
     # --- Main effects (Pearson |r| with nrmse_relative) ---
-    analysis_frame = results.replace([np.inf, -np.inf], np.nan).dropna(
-        subset=["nrmse_relative"]
-    )
+    analysis_frame = results.replace([np.inf, -np.inf], np.nan).dropna(subset=["nrmse_relative"])
     aidx = analysis_frame.index
     nrmse_rel = analysis_frame["nrmse_relative"]
     main_effects_labels = [
@@ -605,10 +653,17 @@ def main() -> int:
     print(f"  Group-CV R\u00b2 = {cv_r2:.4f} (successful runs, config\u00d7DGP groups)")
     validation_svg = _render_scatter(observed, predicted, cv_r2)
 
-    _save_svg(args.output_dir / "fig_sensitivity_sample_size_curve.svg", sample_curve)
-    _save_svg(args.output_dir / "fig_sensitivity_main_effects.svg", main_effects_svg)
-    _save_svg(args.output_dir / "fig_sensitivity_runtime_breakdown.svg", runtime_svg)
-    _save_svg(args.output_dir / "fig_sensitivity_rf_validation.svg", validation_svg)
+    figs = {
+        "fig_sensitivity_sample_size_curve": sample_curve,
+        "fig_sensitivity_main_effects": main_effects_svg,
+        "fig_sensitivity_runtime_breakdown": runtime_svg,
+        "fig_sensitivity_rf_validation": validation_svg,
+    }
+    for stem, svg in figs.items():
+        p = args.output_dir / f"{stem}.svg"
+        _save_svg(p, svg)
+        _save_pdf(p)
+        print(f"  {stem}.svg/pdf")
     print(f"output_dir={args.output_dir}")
     return 0
 

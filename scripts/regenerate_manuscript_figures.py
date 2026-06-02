@@ -40,6 +40,45 @@ from rfm_pipeline.manuscript_stages import (  # noqa: E402
 )
 
 
+def _save_pdf(svg_path: Path) -> None:
+    """Convert SVG to PDF using Chrome headless."""
+    import re
+    import subprocess
+    import tempfile
+
+    svg_text = svg_path.read_text(encoding="utf-8")
+    m = re.search(r'<svg[^>]+width="(\d+(?:\.\d+)?)"[^>]+height="(\d+(?:\.\d+)?)"', svg_text)
+    w, h = (int(float(m.group(1))), int(float(m.group(2)))) if m else (1200, 600)
+    html_content = (
+        f"<!DOCTYPE html><html><head><style>"
+        f"@page{{size:{w}px {h}px;margin:0}}"
+        f"html,body{{margin:0;padding:0;width:{w}px;height:{h}px;overflow:hidden}}"
+        f"</style></head><body><img src='file://{svg_path.resolve()}' "
+        f"width='{w}' height='{h}'/></body></html>"
+    )
+    chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    pdf_path = svg_path.with_suffix(".pdf")
+    with tempfile.NamedTemporaryFile(suffix=".html", mode="w", delete=False) as f:
+        f.write(html_content)
+        tmp_html = f.name
+    try:
+        subprocess.run(
+            [
+                chrome,
+                "--headless=new",
+                "--no-sandbox",
+                "--disable-gpu",
+                f"--print-to-pdf={pdf_path}",
+                "--print-to-pdf-no-header",
+                f"file://{tmp_html}",
+            ],
+            check=True,
+            capture_output=True,
+        )
+    finally:
+        Path(tmp_html).unlink(missing_ok=True)
+
+
 def _load(fig_dir: Path, name: str) -> pd.DataFrame:
     path = fig_dir / name
     if not path.exists():
@@ -150,6 +189,8 @@ def regenerate(artifacts_root: Path) -> dict[str, Path]:
         path.write_text(svg_text, encoding="utf-8")
         written[name] = path
         print(f"  wrote {path.name}  ({len(svg_text):,} bytes)")
+        _save_pdf(path)
+        print(f"  wrote {path.stem}.pdf")
 
     return written
 

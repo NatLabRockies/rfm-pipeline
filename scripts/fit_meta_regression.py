@@ -11,6 +11,7 @@ interpretable coefficients. Cross-validated R² and RMSE are always reported.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -75,6 +76,17 @@ def _parse_args() -> argparse.Namespace:
         "--compare",
         action="store_true",
         help="Report cross-validated performance across degrees 2 and 3 then exit.",
+    )
+    parser.add_argument(
+        "--save-scaler",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Save scaler metadata (means, stds, predictor names, degree) to a JSON file "
+            "alongside the formula CSV. Required for degree>=3 predictions on new data. "
+            "Ignored for degree<=2 (raw-scale OLS needs no scaler)."
+        ),
     )
     return parser.parse_args()
 
@@ -331,6 +343,27 @@ def main() -> int:
         alpha_lasso = formula_table.attrs.get("lasso_alpha", "?")
         print(f"LASSO selected {n_sel}/{n_cand} terms  (alpha={alpha_lasso:.5f})")
         top_col = "t_stat"
+
+        if args.save_scaler is not None:
+            scaler_meta = {
+                "degree": degree,
+                "predictors": predictors,
+                "poly_feature_names": feature_names.tolist(),
+                "mean_": scaler.mean_.tolist(),
+                "scale_": scaler.scale_.tolist(),
+                "var_": scaler.var_.tolist(),
+                "n_features_in_": int(scaler.n_features_in_),
+                "note": (
+                    f"Scaler applies to the degree-{degree} polynomial features EXCLUDING the "
+                    f"intercept column.  To apply: build PolynomialFeatures(degree={degree}, "
+                    "include_bias=True).fit_transform(x), drop column 0 (bias), then "
+                    "StandardScaler with these mean_/scale_ values."
+                ),
+            }
+            scaler_path = Path(args.save_scaler)
+            scaler_path.parent.mkdir(parents=True, exist_ok=True)
+            scaler_path.write_text(json.dumps(scaler_meta, indent=2))
+            print(f"scaler_metadata={scaler_path}")
 
     r2_insample = float(r2_score(y, fitted))
     rmse_insample = float(_rmse_fn(y, fitted))

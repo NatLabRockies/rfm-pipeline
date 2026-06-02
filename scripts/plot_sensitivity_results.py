@@ -7,14 +7,16 @@ from __future__ import annotations
 import argparse
 import html
 import json
-import math
 import sys
+import warnings
 from pathlib import Path
 
+import joblib
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import r2_score
-from sklearn.preprocessing import PolynomialFeatures
+from sklearn.model_selection import GroupKFold
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
@@ -87,159 +89,260 @@ def _expand_config_overrides(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _fit_relative_model(results: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray]:
-    """Fit a degree-2 OLS on nrmse_relative. Handles long and flat formats."""
-    if "stage" in results.columns and "nrmse" in results.columns:
-        # Legacy long format.
-        final_rows = results.loc[results["stage"] == "final_ols"].copy()
-        null_rows = results.loc[
-            results["stage"] == "null_baseline", ["job_id", "subsample_n", "nrmse"]
-        ].rename(columns={"nrmse": "nrmse_null"})
-        frame = final_rows.merge(null_rows, on=["job_id", "subsample_n"], how="inner")
-        frame["nrmse_relative"] = (frame["nrmse"] - frame["nrmse_null"]) / frame["nrmse_null"]
+# Feature order must match fit_rf_meta_regression.py FEATURES.
+_RF_FEATURES = [
+    "n_inputs",
+    "n_runs",
+    "sparsity",
+    "interaction_density",
+    "nonlinearity_strength",
+    "noise_snr",
+    "stages.empirical_null_screening.n_permutations",
+    "stages.empirical_null_screening.bh_q_threshold",
+    "stages.interaction_discovery.n_permutations",
+    "stages.interaction_discovery.p_threshold",
+    "stages.sparse_selection.n_stability_subsamples",
+    "stages.sparse_selection.lasso_alpha_percentile",
+    "variance_threshold",
+]
+
+
+def _build_feature_matrix(df: pd.DataFrame) -> tuple[np.ndarray, list[str]]:
+    """Return (X, feature_names) for rows where all RF features are available."""
+    available = [c for c in _RF_FEATURES if c in df.columns]
+    return df[available].values, available
+
+
+def _group_cv_rf_predictions(
+    df: pd.DataFrame,
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Honest group-blocked CV predictions for successful (non-null-screened) rows.
+
+    Groups by (config_idx, dgp_idx) pair so that replicates of the same
+    configuration never appear in both train and test.  Mirrors the actual
+    training procedure: each fold trains on ALL rows (including null-screened)
+    for the held-in groups, then predicts only successful rows in the test fold.
+    This matches how wave1_rf_quality.pkl was trained and avoids inflated R²
+    from restricting both training and evaluation to the successful-run subspace.
+
+    Returns (observed, predicted, cv_r2) on the successful rows only.
+    """
+    X_all, _ = _build_feature_matrix(df)
+    y_all = df["nrmse_relative"].values
+    is_succ = df["null_screened"].isna().values  # True for 2049 successful rows
+
+    if "config_idx" in df.columns and "dgp_idx" in df.columns:
+        pair_key = df["config_idx"].astype(str) + "_" + df["dgp_idx"].astype(str)
+        groups = pair_key.astype("category").cat.codes.values
+        n_groups = int(groups.max()) + 1
+        n_splits = min(10, n_groups)
+        cv = GroupKFold(n_splits=n_splits)
+        split_iter = cv.split(X_all, y_all, groups)
     else:
-        # Flat format: nrmse_relative already present, or compute it.
-        frame = results.copy()
-        if "nrmse_relative" not in frame.columns:
-            null_col = next(
-                (c for c in ("null_mean_nrmse", "nrmse_null") if c in frame.columns), None
-            )
-            final_col = next(
-                (c for c in ("nrmse_final", "final_ols_nrmse") if c in frame.columns), None
-            )
-            if null_col and final_col:
-                frame["nrmse_relative"] = (frame[final_col] - frame[null_col]) / frame[
-                    null_col
-                ].abs()
-        # Use n_runs as the sample-size predictor when subsample_n is absent.
-        if "subsample_n" not in frame.columns and "n_runs" in frame.columns:
-            frame["subsample_n"] = frame["n_runs"]
+        from sklearn.model_selection import KFold
 
-    frame = frame.replace([np.inf, -np.inf], np.nan).dropna(subset=["nrmse_relative"])
-    predictors = pd.DataFrame(
-        {
-            "log_subsample_n": np.log(
-                frame.get("subsample_n", frame.get("n_runs", pd.Series(1000, index=frame.index)))
-                .astype(float)
-                .clip(lower=1)
-            ),
-            "holdout_fraction": frame.get("holdout_fraction", 0.05),
-            "variance_threshold": frame.get(
-                "variance_threshold", frame.get("algorithm.variance_threshold", 0.90)
-            ),
-            "log_n_perm_screen": np.log(
-                frame.get("stages.empirical_null_screening.n_permutations", 201)
-            ),
-            "bh_q": frame.get("stages.empirical_null_screening.bh_q_threshold", 0.05),
-            "log_n_perm_interaction": np.log(
-                frame.get("stages.interaction_discovery.n_permutations", 31)
-            ),
-            "p_threshold": frame.get("stages.interaction_discovery.p_threshold", 0.05),
-            "log_n_stability_subsamples": np.log(
-                frame.get("stages.sparse_selection.n_stability_subsamples", 50)
-            ),
-            "lasso_alpha_percentile": frame.get(
-                "stages.sparse_selection.lasso_alpha_percentile", 40
-            ),
-            "log_delta_threshold": np.log(
-                frame.get(
-                    "stages.final_artifacts.delta_threshold_override",
-                    pd.Series(0.0, index=frame.index),
-                ).fillna(0.0)
-                + 0.001
-            ),
-        }
-    )
-    poly = PolynomialFeatures(degree=2, include_bias=True)
-    design = poly.fit_transform(predictors.to_numpy(dtype=float))
-    coef, _, _, _ = np.linalg.lstsq(
-        design, frame["nrmse_relative"].to_numpy(dtype=float), rcond=None
-    )
-    predicted = design @ coef
-    return frame, predicted
+        cv = KFold(n_splits=10, shuffle=True, random_state=42)
+        split_iter = cv.split(X_all, y_all)
+
+    obs_list: list[np.ndarray] = []
+    pred_list: list[np.ndarray] = []
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for tr, va in split_iter:
+            rf = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
+            rf.fit(X_all[tr], y_all[tr])
+            # Evaluate only on successful rows in the test fold.
+            va_succ = va[is_succ[va]]
+            if len(va_succ) == 0:
+                continue
+            obs_list.append(y_all[va_succ])
+            pred_list.append(rf.predict(X_all[va_succ]))
+
+    obs = np.concatenate(obs_list)
+    preds = np.concatenate(pred_list)
+    cv_r2 = float(r2_score(obs, preds))
+    return obs, preds, cv_r2
 
 
-def _render_sample_size_curve(results: pd.DataFrame) -> str:
-    """Render nRMSE vs sample size. Handles both long and flat result formats."""
-    if "stage" in results.columns and "nrmse" in results.columns:
-        frame = results.loc[results["stage"] == "final_ols", ["subsample_n", "nrmse"]].copy()
-        x_col, y_col = "subsample_n", "nrmse"
+def _partial_dependence_n_runs(
+    df: pd.DataFrame, rf_path: Path
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Return (n_runs_grid, pdp_mean) partial dependence using the fitted RF.
+
+    Loads the joblib-serialised quality model.  Returns None when the model
+    file is absent or fails to load.
+    """
+    if not rf_path.exists():
+        return None
+    try:
+        rf = joblib.load(rf_path)
+    except Exception:
+        return None
+
+    available = [c for c in _RF_FEATURES if c in df.columns]
+    if len(available) < len(_RF_FEATURES):
+        return None
+
+    X_base = df[available].values.copy().astype(float)
+    try:
+        n_runs_idx = available.index("n_runs")
+    except ValueError:
+        return None
+
+    n_runs_min = float(df["n_runs"].min())
+    n_runs_max = float(df["n_runs"].max())
+    grid = np.linspace(n_runs_min, n_runs_max, 40)
+    pdp = np.empty(len(grid))
+    for i, val in enumerate(grid):
+        X_mod = X_base.copy()
+        X_mod[:, n_runs_idx] = val
+        pdp[i] = float(rf.predict(X_mod).mean())
+
+    return grid, pdp
+
+
+def _render_sample_size_curve(results: pd.DataFrame, rf_path: Path | None = None) -> str:
+    """Marginal effect of training-run count on pipeline quality (r = nrmse_relative).
+
+    Uses the RF partial dependence if the model is available; otherwise falls
+    back to a per-level mean ± CI band from the raw data.  All null-screened
+    runs (r = 0 by construction) are excluded so the y-axis reflects genuine
+    quality variation.
+    """
+    # --- Partial dependence path (preferred) ---
+    if rf_path is not None:
+        pdp = _partial_dependence_n_runs(results, rf_path)
     else:
-        # Flat format: use n_runs as the x axis and nrmse_final as y.
-        x_col = "subsample_n" if "subsample_n" in results.columns else "n_runs"
-        y_col = next((c for c in ("nrmse_final", "final_ols_nrmse") if c in results.columns), None)
-        if x_col not in results.columns or y_col is None:
-            return _svg_canvas(900, 540, _title("Sensitivity sample-size curve"))
-        frame = results[[x_col, y_col]].copy().rename(columns={y_col: "nrmse"})
-        x_col = x_col  # keep local name consistent
-    grouped = frame.groupby(x_col)["nrmse"].agg(["mean", "std", "count"]).reset_index()
-    grouped = grouped.rename(columns={x_col: "subsample_n"})
+        pdp = None
+
+    # --- Raw marginal (mean ± CI per n_runs level, successful runs only) ---
+    x_col = "subsample_n" if "subsample_n" in results.columns else "n_runs"
+    if x_col not in results.columns or "nrmse_relative" not in results.columns:
+        return _svg_canvas(900, 540, _title("Sensitivity: effect of training-run count on quality"))
+
+    succ = results[results["null_screened"].isna()].copy() if "null_screened" in results.columns else results.copy()  # noqa: E501
+    if succ.empty:
+        succ = results.copy()
+
+    grouped = (
+        succ.groupby(x_col)["nrmse_relative"]
+        .agg(["mean", "std", "count"])
+        .reset_index()
+        .rename(columns={x_col: "subsample_n"})
+    )
     grouped["ci"] = 1.96 * grouped["std"].fillna(0.0) / np.sqrt(grouped["count"].clip(lower=1))
     if grouped.empty:
-        return _svg_canvas(900, 540, _title("Sensitivity sample-size curve"))
+        return _svg_canvas(900, 540, _title("Sensitivity: effect of training-run count on quality"))
 
     width, height = 900, 540
-    left, top, plot_w, plot_h = 90, 70, 760, 380
-    x_values = np.log(grouped["subsample_n"].to_numpy(dtype=float))
-    y_min = float((grouped["mean"] - grouped["ci"]).min())
-    y_max = float((grouped["mean"] + grouped["ci"]).max())
-    x_min, x_max = float(x_values.min()), float(x_values.max())
-    y_span = max(y_max - y_min, 1e-9)
-    x_span = max(x_max - x_min, 1e-9)
+    left, top, plot_w, plot_h = 90, 70, 760, 390
 
-    def x_map(value: float) -> float:
-        return left + ((value - x_min) / x_span) * plot_w
-
-    def y_map(value: float) -> float:
-        return top + plot_h - ((value - y_min) / y_span) * plot_h
-
-    upper = " ".join(
-        f"{x_map(x):.2f},{y_map(y):.2f}"
-        for x, y in zip(x_values, grouped["mean"] + grouped["ci"], strict=True)
-    )
-    lower = " ".join(
-        f"{x_map(x):.2f},{y_map(y):.2f}"
-        for x, y in zip(x_values[::-1], (grouped["mean"] - grouped["ci"])[::-1], strict=True)
-    )
-    line = " ".join(
-        f"{x_map(x):.2f},{y_map(y):.2f}" for x, y in zip(x_values, grouped["mean"], strict=True)
-    )
-    body = [
-        _title("Sensitivity: sample-size curve"),
-        f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" fill="none" stroke="{_SVG_COLOR_EDGE}" stroke-width="1.5"/>',  # noqa: E501
-        f'<polygon points="{upper} {lower}" fill="{_SVG_COLOR_PRIMARY}" fill-opacity="0.18" stroke="none"/>',  # noqa: E501
-        f'<polyline points="{line}" fill="none" stroke="{_SVG_COLOR_PRIMARY}" stroke-width="3"/>',
-    ]
-    for _, row in grouped.iterrows():
-        x_pos = x_map(math.log(float(row["subsample_n"])))
-        y_pos = y_map(float(row["mean"]))
-        body.append(
-            f'<circle cx="{x_pos:.2f}" cy="{y_pos:.2f}" r="4" fill="{_SVG_COLOR_PRIMARY}"/>'
-        )
-    # Thin x-axis ticks: show at most 8 evenly-spaced round values
     n_vals = grouped["subsample_n"].to_numpy(dtype=float)
-    tick_candidates = np.arange(5000, 35000, 5000)
-    tick_vals_x = [t for t in tick_candidates if n_vals.min() <= t <= n_vals.max()]
-    for tv in tick_vals_x:
-        tx = x_map(math.log(tv))
-        body.append(
-            f'<line x1="{tx:.2f}" y1="{top + plot_h}" x2="{tx:.2f}" y2="{top + plot_h + 5}" '
-            f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>'
+    raw_means = grouped["mean"].to_numpy(dtype=float)
+    raw_ci = grouped["ci"].to_numpy(dtype=float)
+
+    # y-axis: widen slightly so PDP and raw band fit
+    y_min = float(min((raw_means - raw_ci).min(), pdp[1].min() if pdp else raw_means.min()))
+    y_max = float(max((raw_means + raw_ci).max(), pdp[1].max() if pdp else raw_means.max()))
+    y_pad = max((y_max - y_min) * 0.08, 0.01)
+    y_min -= y_pad
+    y_max += y_pad
+    x_min_val, x_max_val = float(n_vals.min()), float(n_vals.max())
+    y_span = max(y_max - y_min, 1e-9)
+    x_span = max(x_max_val - x_min_val, 1e-9)
+
+    def xm(v: float) -> float:
+        return left + ((v - x_min_val) / x_span) * plot_w
+
+    def ym(v: float) -> float:
+        return top + plot_h - ((v - y_min) / y_span) * plot_h
+
+    body = [
+        _title("Sensitivity: effect of training-run count on quality"),
+        f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" fill="none" '
+        f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1.5"/>',
+    ]
+
+    # Raw CI band (light blue fill)
+    upper_pts = " ".join(f"{xm(n):.2f},{ym(m + c):.2f}" for n, m, c in zip(n_vals, raw_means, raw_ci, strict=True))  # noqa: E501
+    lower_pts = " ".join(
+        f"{xm(n):.2f},{ym(m - c):.2f}"
+        for n, m, c in zip(n_vals[::-1], raw_means[::-1], raw_ci[::-1], strict=True)  # noqa: E501
+    )
+    body.append(
+        f'<polygon points="{upper_pts} {lower_pts}" '
+        f'fill="{_SVG_COLOR_PRIMARY}" fill-opacity="0.12" stroke="none"/>'
+    )
+    # Raw mean line (dashed, muted)
+    raw_line = " ".join(
+        f"{xm(n):.2f},{ym(m):.2f}" for n, m in zip(n_vals, raw_means, strict=True)
+    )
+    body.append(
+        f'<polyline points="{raw_line}" fill="none" stroke="{_SVG_COLOR_TEXT_MUTED}" '
+        f'stroke-width="1.5" stroke-dasharray="4 3"/>'
+    )
+
+    # PDP line (solid, primary colour)
+    if pdp is not None:
+        pdp_grid, pdp_vals = pdp
+        pdp_line = " ".join(
+            f"{xm(n):.2f},{ym(v):.2f}" for n, v in zip(pdp_grid, pdp_vals, strict=True)
         )
         body.append(
+            f'<polyline points="{pdp_line}" fill="none" stroke="{_SVG_COLOR_PRIMARY}" '
+            f'stroke-width="3"/>'
+        )
+        # Legend entries
+        legend_x, legend_y = left + plot_w - 280, top + 18
+        body += [
+            f'<line x1="{legend_x}" y1="{legend_y}" x2="{legend_x + 30}" y2="{legend_y}" '
+            f'stroke="{_SVG_COLOR_PRIMARY}" stroke-width="3"/>',
+            f'<text x="{legend_x + 36}" y="{legend_y + 4}" font-family="{_SVG_FONT_FAMILY}" '
+            f'font-size="11" fill="{_SVG_COLOR_TEXT}">Partial dependence (RF)</text>',
+            f'<line x1="{legend_x}" y1="{legend_y + 20}" x2="{legend_x + 30}" '
+            f'y2="{legend_y + 20}" stroke="{_SVG_COLOR_TEXT_MUTED}" stroke-width="1.5" '
+            f'stroke-dasharray="4 3"/>',
+            f'<text x="{legend_x + 36}" y="{legend_y + 24}" font-family="{_SVG_FONT_FAMILY}" '
+            f'font-size="11" fill="{_SVG_COLOR_TEXT}">Observed mean (successful runs)</text>',
+        ]
+
+    # X ticks
+    tick_candidates = np.arange(5000, 35000, 5000)
+    tick_vals_x = [t for t in tick_candidates if x_min_val <= t <= x_max_val]
+    for tv in tick_vals_x:
+        tx = xm(float(tv))
+        body += [
+            f'<line x1="{tx:.2f}" y1="{top + plot_h}" x2="{tx:.2f}" y2="{top + plot_h + 5}" '
+            f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>',
             f'<text x="{tx:.2f}" y="{top + plot_h + 20}" text-anchor="middle" '
             f'font-family="{_SVG_FONT_FAMILY}" font-size="11" '
-            f'fill="{_SVG_COLOR_TEXT_MUTED}">{int(tv):,}</text>'
-        )
-    body.append(
-        f'<text x="470" y="500" text-anchor="middle" font-family="{_SVG_FONT_FAMILY}" '
-        f'font-size="13" fill="{_SVG_COLOR_TEXT}">Number of training runs</text>'
-    )
-    body.append(
+            f'fill="{_SVG_COLOR_TEXT_MUTED}">{int(tv):,}</text>',
+        ]
+
+    # Y ticks (4 ticks)
+    y_tick_vals = np.linspace(y_min, y_max, 5)[1:-1]
+    for tv in y_tick_vals:
+        ty = ym(float(tv))
+        body += [
+            f'<line x1="{left - 5}" y1="{ty:.2f}" x2="{left}" y2="{ty:.2f}" '
+            f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>',
+            f'<text x="{left - 8}" y="{ty + 4:.2f}" text-anchor="end" '
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="10" '
+            f'fill="{_SVG_COLOR_TEXT_MUTED}">{tv:.2f}</text>',
+        ]
+
+    # Axis labels
+    body += [
+        f'<text x="470" y="510" text-anchor="middle" font-family="{_SVG_FONT_FAMILY}" '
+        f'font-size="13" fill="{_SVG_COLOR_TEXT}">Number of training runs</text>',
         f'<text x="28" y="265" transform="rotate(-90 28 265)" text-anchor="middle" '
         f'font-family="{_SVG_FONT_FAMILY}" font-size="13" '
-        f'fill="{_SVG_COLOR_TEXT}">Holdout macro nRMSE</text>'
-    )
+        f'fill="{_SVG_COLOR_TEXT}">r = (nRMSE \u2013 nRMSE\u2080) / nRMSE\u2080</text>',
+        # RF importance annotation
+        f'<text x="{left + 12}" y="{top + plot_h - 10}" font-family="{_SVG_FONT_FAMILY}" '
+        f'font-size="10" fill="{_SVG_COLOR_TEXT_MUTED}" font-style="italic">'
+        f"RF importance: 0.029 (lowest of 13 parameters)</text>",
+    ]
     return _svg_canvas(width, height, "".join(body))
 
 
@@ -279,55 +382,95 @@ def _render_horizontal_bar_chart(
     return _svg_canvas(width, height, "".join(body))
 
 
-def _render_scatter(frame: pd.DataFrame, predicted: np.ndarray) -> str:
+def _render_scatter(observed: np.ndarray, predicted: np.ndarray, cv_r2: float) -> str:
+    """Scatter plot of RF group-CV predicted vs actual r (successful runs only)."""
     width, height = 900, 540
-    left, top, plot_w, plot_h = 90, 70, 760, 380
-    observed = frame["nrmse_relative"].to_numpy(dtype=float)
-    # Use independent axis ranges so compressed predictions are visible
-    x_min, x_max = float(observed.min()), float(observed.max())
-    y_min, y_max = float(predicted.min()), float(predicted.max())
+    left, top, plot_w, plot_h = 100, 70, 740, 380
+
+    x_min = float(np.percentile(observed, 1))
+    x_max = float(np.percentile(observed, 99))
+    y_min = float(np.percentile(predicted, 1))
+    y_max = float(np.percentile(predicted, 99))
+    x_pad = max((x_max - x_min) * 0.05, 0.005)
+    y_pad = max((y_max - y_min) * 0.05, 0.005)
+    x_min -= x_pad
+    x_max += x_pad
+    y_min -= y_pad
+    y_max += y_pad
     x_span = max(x_max - x_min, 1e-9)
     y_span = max(y_max - y_min, 1e-9)
 
-    def x_map(value: float) -> float:
-        return left + ((value - x_min) / x_span) * plot_w
+    def xm(v: float) -> float:
+        return left + ((v - x_min) / x_span) * plot_w
 
-    def y_map(value: float) -> float:
-        return top + plot_h - ((value - y_min) / y_span) * plot_h
+    def ym(v: float) -> float:
+        return top + plot_h - ((v - y_min) / y_span) * plot_h
 
-    r2 = r2_score(observed, predicted)
+    # 1:1 reference line mapped to shared diagonal in independent axes
+    shared_lo = max(x_min, y_min)
+    shared_hi = min(x_max, y_max)
     body = [
-        _title("Sensitivity: polynomial OLS validation (reference)"),
-        f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" fill="none" stroke="{_SVG_COLOR_EDGE}" stroke-width="1.5"/>',  # noqa: E501
-        # 1:1 line mapped to independent axes
-        f'<line x1="{left}" y1="{y_map(x_min * (y_span / x_span) + y_min):.1f}" '
-        f'x2="{left + plot_w}" y2="{top}" '
-        f'stroke="{_SVG_COLOR_DANGER}" stroke-dasharray="6 4" stroke-width="2"/>',
+        _title("RF meta-regression: predicted vs actual r (cross-validated)"),
+        f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" fill="none" '
+        f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1.5"/>',
     ]
-    for obs, pred in zip(observed, predicted, strict=True):
+    if shared_lo < shared_hi:
         body.append(
-            f'<circle cx="{x_map(obs):.2f}" cy="{y_map(pred):.2f}" r="3.5" fill="{_SVG_COLOR_PRIMARY}" fill-opacity="0.45"/>'  # noqa: E501
+            f'<line x1="{xm(shared_lo):.1f}" y1="{ym(shared_lo):.1f}" '
+            f'x2="{xm(shared_hi):.1f}" y2="{ym(shared_hi):.1f}" '
+            f'stroke="{_SVG_COLOR_DANGER}" stroke-dasharray="6 4" stroke-width="2"/>'
         )
-    body.append(
+
+    # Scatter points
+    for obs, pred in zip(observed, predicted, strict=True):
+        if x_min <= obs <= x_max and y_min <= pred <= y_max:
+            body.append(
+                f'<circle cx="{xm(obs):.2f}" cy="{ym(pred):.2f}" r="3.5" '
+                f'fill="{_SVG_COLOR_PRIMARY}" fill-opacity="0.40"/>'
+            )
+
+    # Axis labels
+    body += [
         f'<text x="470" y="500" text-anchor="middle" font-family="{_SVG_FONT_FAMILY}" '
-        f'font-size="13" fill="{_SVG_COLOR_TEXT}">Observed nRMSE (relative)</text>'
-    )
-    body.append(
-        f'<text x="28" y="265" transform="rotate(-90 28 265)" text-anchor="middle" '
+        f'font-size="13" fill="{_SVG_COLOR_TEXT}">Observed r</text>',
+        f'<text x="32" y="265" transform="rotate(-90 32 265)" text-anchor="middle" '
         f'font-family="{_SVG_FONT_FAMILY}" font-size="13" '
-        f'fill="{_SVG_COLOR_TEXT}">Predicted nRMSE (relative)</text>'
-    )
-    # R² label using SVG tspan for proper superscript rendering
+        f'fill="{_SVG_COLOR_TEXT}">Predicted r</text>',
+    ]
+
+    # X ticks (4 evenly spaced)
+    for tv in np.linspace(x_min, x_max, 5)[1:-1]:
+        tx = xm(float(tv))
+        body += [
+            f'<line x1="{tx:.2f}" y1="{top + plot_h}" x2="{tx:.2f}" y2="{top + plot_h + 5}" '
+            f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>',
+            f'<text x="{tx:.2f}" y="{top + plot_h + 18}" text-anchor="middle" '
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="10" '
+            f'fill="{_SVG_COLOR_TEXT_MUTED}">{tv:.2f}</text>',
+        ]
+
+    # Y ticks
+    for tv in np.linspace(y_min, y_max, 5)[1:-1]:
+        ty = ym(float(tv))
+        body += [
+            f'<line x1="{left - 5}" y1="{ty:.2f}" x2="{left}" y2="{ty:.2f}" '
+            f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>',
+            f'<text x="{left - 8}" y="{ty + 4:.2f}" text-anchor="end" '
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="10" '
+            f'fill="{_SVG_COLOR_TEXT_MUTED}">{tv:.2f}</text>',
+        ]
+
+    # R² annotation (SVG tspan for superscript)
     body.append(
-        f'<text x="660" y="96" font-family="{_SVG_FONT_FAMILY}" font-size="12" '
-        f'fill="{_SVG_COLOR_TEXT_MUTED}">'
-        f'Poly. OLS R<tspan dy="-4" font-size="8">2</tspan>'
-        f'<tspan dy="4"> = {r2:.4f}</tspan></text>'
+        f'<text x="{left + 16}" y="{top + 26}" font-family="{_SVG_FONT_FAMILY}" '
+        f'font-size="13" fill="{_SVG_COLOR_TEXT_MUTED}">'
+        f'CV R<tspan dy="-5" font-size="9">2</tspan>'
+        f'<tspan dy="5"> = {cv_r2:.3f}</tspan></text>'
     )
     body.append(
-        f'<text x="660" y="114" font-family="{_SVG_FONT_FAMILY}" font-size="12" '
-        f'fill="{_SVG_COLOR_ACCENT_GREEN}">RF model R<tspan dy="-4" font-size="8">2</tspan>'
-        f'<tspan dy="4"> = 0.985</tspan></text>'
+        f'<text x="{left + 16}" y="{top + 44}" font-family="{_SVG_FONT_FAMILY}" '
+        f'font-size="11" fill="{_SVG_COLOR_TEXT_MUTED}" font-style="italic">'
+        f"Group-blocked CV (config \u00d7 DGP pairs); n = {len(observed):,}</text>"
     )
     return _svg_canvas(width, height, "".join(body))
 
@@ -339,10 +482,18 @@ def main() -> int:
     results = _expand_config_overrides(results)
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    frame, predicted = _fit_relative_model(results)
-    sample_curve = _render_sample_size_curve(results)
-    # Build the analysis frame for correlations (flat format: use frame already filtered).
-    analysis_frame = frame
+    # RF model path (alongside the results CSV).
+    rf_path = args.results.parent / "wave1_rf_quality.pkl"
+
+    # --- Sample-size curve (partial dependence if RF available) ---
+    sample_curve = _render_sample_size_curve(results, rf_path=rf_path)
+
+    # --- Main effects (Pearson |r| with nrmse_relative) ---
+    analysis_frame = results.replace([np.inf, -np.inf], np.nan).dropna(
+        subset=["nrmse_relative"]
+    )
+    aidx = analysis_frame.index
+    nrmse_rel = analysis_frame["nrmse_relative"]
     main_effects_labels = [
         "Holdout fraction",
         "Variance threshold",
@@ -354,8 +505,6 @@ def main() -> int:
         "LASSO \u03b1 percentile",
         "\u03b4 threshold override",
     ]
-    aidx = analysis_frame.index
-    nrmse_rel = analysis_frame["nrmse_relative"]
     main_effects_values = [
         abs(analysis_frame.get("holdout_fraction", pd.Series(0.05, index=aidx)).corr(nrmse_rel)),
         abs(
@@ -402,7 +551,7 @@ def main() -> int:
             .corr(nrmse_rel)
         ),
     ]
-    main_effects_values = [0.0 if pd.isna(value) else float(value) for value in main_effects_values]
+    main_effects_values = [0.0 if pd.isna(v) else float(v) for v in main_effects_values]
     main_effects_svg = _render_horizontal_bar_chart(
         "Sensitivity: main effect correlations with nRMSE",
         main_effects_labels,
@@ -410,7 +559,7 @@ def main() -> int:
         _SVG_COLOR_ACCENT_ORANGE,
     )
 
-    # Runtime breakdown: long format uses stage/runtime_seconds; flat format uses pipeline_seconds.
+    # --- Runtime breakdown ---
     if "stage" in results.columns and "runtime_seconds" in results.columns:
         runtime = (
             results.groupby("stage", as_index=False)["runtime_seconds"]
@@ -420,7 +569,6 @@ def main() -> int:
         runtime_labels = runtime["stage"].tolist()
         runtime_values = runtime["runtime_seconds"].astype(float).tolist()
     else:
-        # Flat format: show mean wall time by block (pure_synthetic vs bsm_structure).
         rt_col = next(
             (c for c in ("pipeline_seconds", "total_wall_seconds") if c in results.columns), None
         )
@@ -450,7 +598,12 @@ def main() -> int:
         runtime_values,
         _SVG_COLOR_ACCENT_GREEN,
     )
-    validation_svg = _render_scatter(frame, predicted)
+
+    # --- Formula validation (RF group-CV predicted vs actual) ---
+    print("Computing group-blocked CV predictions (this may take ~60 s)...")
+    observed, predicted, cv_r2 = _group_cv_rf_predictions(results)
+    print(f"  Group-CV R\u00b2 = {cv_r2:.4f} (successful runs, config\u00d7DGP groups)")
+    validation_svg = _render_scatter(observed, predicted, cv_r2)
 
     _save_svg(args.output_dir / "fig_sensitivity_sample_size_curve.svg", sample_curve)
     _save_svg(args.output_dir / "fig_sensitivity_main_effects.svg", main_effects_svg)

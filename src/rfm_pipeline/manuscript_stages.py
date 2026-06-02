@@ -50,7 +50,7 @@ from .transforms import DEFAULT_TRANSFORM_LIBRARY, TransformDef
 
 _PROGRESS_TELEMETRY_PATH: Path | None = None
 
-_SVG_FONT_FAMILY = "Helvetica, Arial, sans-serif"
+_SVG_FONT_FAMILY = "'Times New Roman', 'DejaVu Serif', Georgia, serif"
 _SVG_COLOR_BACKGROUND = "#ffffff"
 _SVG_COLOR_TITLE = "#111827"
 _SVG_COLOR_TEXT = "#111827"
@@ -8284,11 +8284,8 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
     nrmse_sorted = nrmse_vals.sort_values().reset_index(drop=True)
     n = len(nrmse_sorted)
     quantile_marks = {
-        "p10": float(np.quantile(nrmse_sorted, 0.10)),
-        "p25": float(np.quantile(nrmse_sorted, 0.25)),
-        "p50": float(np.quantile(nrmse_sorted, 0.50)),
-        "p75": float(np.quantile(nrmse_sorted, 0.75)),
-        "p90": float(np.quantile(nrmse_sorted, 0.90)),
+        "p5": float(np.quantile(nrmse_sorted, 0.05)),
+        "p95": float(np.quantile(nrmse_sorted, 0.95)),
     }
 
     # Worst-3 outputs by nRMSE
@@ -8392,24 +8389,19 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
         ),
     )
 
-    # Quantile vertical markers
+    # Quantile vertical markers — only p5 and p95
     q_colors = {
-        "p10": _SVG_COLOR_ACCENT_SKY,
-        "p25": _SVG_COLOR_PRIMARY,
-        "p50": _SVG_COLOR_DANGER,
-        "p75": _SVG_COLOR_ACCENT_PURPLE,
-        "p90": _SVG_COLOR_ACCENT_ORANGE,
+        "p5": _SVG_COLOR_ACCENT_SKY,
+        "p95": _SVG_COLOR_ACCENT_ORANGE,
     }
     q_dash = {
-        "p10": "9,4",
-        "p25": "6,3",
-        "p50": "2,2",
-        "p75": "6,3",
-        "p90": "9,4",
+        "p5": "9,4",
+        "p95": "9,4",
     }
+    q_frac = {"p5": 0.05, "p95": 0.95}
     for label, qval in quantile_marks.items():
         xp = sx(qval)
-        yp_cdf = sy({"p10": 0.10, "p25": 0.25, "p50": 0.50, "p75": 0.75, "p90": 0.90}[label])
+        yp_cdf = sy(q_frac[label])
         color = q_colors[label]
         elements.extend(
             [
@@ -8423,18 +8415,41 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
             ]
         )
 
-    # Worst-3 annotations (small triangles + labels above the top axis line)
-    for rank, (wval, wname) in enumerate(worst_labels):
-        xp = sx(wval)
-        short = wname[:35] + "…" if len(wname) > 35 else wname
-        short = escape(short)
-        yann = axis_y_top - 4 - rank * 13
+    # Worst-3 outputs: detect shared base + year-suffix pattern and merge into one annotation
+    def _year_suffix(name: str) -> str | None:
+        parts = name.rsplit("_", 1)
+        if len(parts) == 2 and len(parts[1]) == 4 and parts[1].isdigit():
+            return parts[1]
+        return None
+
+    if worst_labels:
+        max_val = max(v for v, _ in worst_labels)
+        xp_worst = sx(max_val)
+        worst_bases = [
+            name.rsplit("_", 1)[0] if _year_suffix(name) else name for _, name in worst_labels
+        ]
+        worst_years = [_year_suffix(name) for _, name in worst_labels]
+        if len(set(worst_bases)) == 1 and all(y is not None for y in worst_years):
+            base = worst_bases[0]
+            year_str = ", ".join(sorted(y for y in worst_years if y is not None))
+            short = (base[:30] + "\u2026") if len(base) > 30 else base
+            annotation = f"{escape(short)} ({year_str}): {max_val:.3f}"
+        else:
+            parts_ann = [
+                f"{((n[:18] + chr(0x2026)) if len(n) > 18 else escape(n))} ({v:.3f})"
+                for v, n in worst_labels
+            ]
+            annotation = escape("; ".join(parts_ann))[:80]
+        text_anchor = "end" if xp_worst > left_margin + plot_w * 0.6 else "start"
+        yann = axis_y_top - 6
         elements.extend(
             [
-                f'<line x1="{xp:.1f}" y1="{axis_y_top}" x2="{xp:.1f}" y2="{axis_y_bot}" '
+                f'<line x1="{xp_worst:.1f}" y1="{axis_y_top}" '
+                f'x2="{xp_worst:.1f}" y2="{axis_y_bot}" '
                 f'stroke="{_SVG_COLOR_DANGER}" stroke-width="1.2" stroke-dasharray="3,3"/>',
-                f'<text x="{xp:.1f}" y="{yann}" font-family="{_SVG_FONT_FAMILY}" font-size="9" '
-                f'text-anchor="middle" fill="{_SVG_COLOR_TEXT}">{short} ({wval:.3f})</text>',
+                f'<text x="{xp_worst:.1f}" y="{yann}" font-family="{_SVG_FONT_FAMILY}" '
+                f'font-size="9" text-anchor="{text_anchor}" fill="{_SVG_COLOR_TEXT}">'
+                f"{annotation}</text>",
             ]
         )
 

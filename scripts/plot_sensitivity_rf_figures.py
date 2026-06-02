@@ -358,12 +358,12 @@ def render_bsm_validation(results_path: Path) -> str:
     df = pd.read_csv(results_path)
     r_vals = df["nrmse_relative"].replace([np.inf, -np.inf], np.nan).dropna().values
 
-    W, H = 1130, 550
+    W, H = 1130, 370
 
     # ── Left panel: histogram ────────────────────────────────────────────────
-    # Plot area within x=25..535, y=80..380 → 510 × 300
-    lp_x0, lp_y0 = 25, 80
-    lp_w, lp_h = 510, 300
+    # Plot area x=25..535, y=60..295 → 510 × 235; matches right panel ax_y_r=295
+    lp_x0, lp_y0 = 25, 60
+    lp_w, lp_h = 510, 235
 
     bins = np.arange(-0.90, 0.021, 0.02)
     counts, edges = np.histogram(r_vals, bins=bins)
@@ -379,15 +379,15 @@ def render_bsm_validation(results_path: Path) -> str:
 
     body: list[str] = []
 
-    # Title + rule — two lines to keep within the 510-px panel width
+    # Title + rule — two lines, both starting at the same y as the right panel title
     body.append(
-        f'<text x="{lp_x0 + 5}" y="20" font-family="{_FONT}" font-size="{_FS_TITLE}" '
+        f'<text x="{lp_x0 + 5}" y="17" font-family="{_FONT}" font-size="{_FS_TITLE}" '
         f'font-weight="700" fill="{_SVG_COLOR_TITLE}">'
         "Distribution of r across sensitivity study runs</text>"
-        f'<text x="{lp_x0 + 5}" y="44" font-family="{_FONT}" font-size="{_FS_TITLE}" '
+        f'<text x="{lp_x0 + 5}" y="38" font-family="{_FONT}" font-size="{_FS_TITLE}" '
         f'font-weight="700" fill="{_SVG_COLOR_TITLE}">'
         "(n\u00a0=\u00a02,583)</text>"
-        f'<line x1="{lp_x0}" y1="54" x2="{lp_x0 + lp_w}" y2="54" '
+        f'<line x1="{lp_x0}" y1="46" x2="{lp_x0 + lp_w}" y2="46" '
         f'stroke="{_SVG_COLOR_EDGE}" stroke-width="0.8"/>'
     )
 
@@ -483,10 +483,9 @@ def render_bsm_validation(results_path: Path) -> str:
 
     # Null-screened annotation on the spike
     spike_bin_idx = np.argmax(counts)
-    spike_x = lp_x0 + spike_bin_idx * bin_px + bin_px / 2
     spike_top = lp_y(counts[spike_bin_idx])
     body.append(
-        f'<text x="{spike_x:.1f}" y="{spike_top - 5:.1f}" text-anchor="middle" '
+        f'<text x="{lp_x0 + lp_w - 6}" y="{spike_top - 5:.1f}" text-anchor="end" '
         f'font-family="{_FONT}" font-size="{_SVG_FS_SMALL}" fill="{_SVG_COLOR_TEXT_MUTED}">'
         f"null-screened (n=534)</text>"
     )
@@ -511,7 +510,7 @@ def render_bsm_validation(results_path: Path) -> str:
         _panel_title(
             "BSM operating-point validation",
             rp_left + 5,
-            34,
+            17,
             rp_left,
             rp_right - 10,
         )
@@ -604,7 +603,7 @@ def render_bsm_validation(results_path: Path) -> str:
 
     # Panel divider
     body.append(
-        f'<line x1="565" y1="20" x2="565" y2="{H - 20}" '
+        f'<line x1="565" y1="10" x2="565" y2="{H - 10}" '
         f'stroke="{_SVG_COLOR_LIGHT}" stroke-width="1"/>'
     )
 

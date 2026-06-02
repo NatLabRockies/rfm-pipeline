@@ -4,12 +4,10 @@ Durable project memory. Record canonical interfaces, known hazards, validation e
 
 ## ⚠️ DIRECTORY RENAME REQUIRED (2026-06-01)
 
-User must rename local directories after exiting this session:
+**DONE** — user completed rename before this session.
 
-```bash
-mv ~/src/bsm-public-rf ~/src/rfm-pipeline       # rename framework repo dir
-mv ~/src/bsm-public-rf-new ~/src/bsm-public-rf  # rename new BSM study repo dir
-```
+- `~/src/rfm-pipeline` → rfm-pipeline repo (NatLabRockies/rfm-pipeline)
+- `~/src/bsm-public-rf` → new BSM study repo (NatLabRockies/bsm-public-rf)
 
 ## Three-repo architecture (established 2026-06-01)
 
@@ -40,19 +38,22 @@ Persist live publication run telemetry (study IDs, controller/array/reduce job I
 
 Keep manuscript figure rendering publication-readable and color-blind friendly (high contrast + color-blind-safe palette + non-color cues).
 
-## Publication run: COMPLETE (2026-05-29)
+## Phase 6 removal — COMPLETE (commit 372582f, 2026-06-01)
 
-- Study: `publication_full_dataset_distributed_20260526_short_hp1` → `RUN_COMPLETE`
-- All 6 stages complete; results in `artifacts/publication_full_dataset_distributed_results/`
-- Key numbers: 30k runs, 69 screened inputs, 62 interactions, 132 final predictors, nRMSE 0.0721
-- ⚠️ Final OLS all-outputs rerun job **14043519** submitted 2026-05-30 — verify completion before using new artifacts
+All BSM-specific configs removed from rfm-pipeline. Generic defaults work without a case study config (`.get()` fallbacks). 461 tests pass, 1 xfailed.
 
-## Sensitivity study HPC (last known: 2026-05-30)
+## Final OLS all-outputs fix — COMPLETE (commit c5c6aa9 in bsm-public-rf)
 
-- Job **14039970** = Batch 0; batch watcher PID **3198706** auto-submitting batches 1–5
-- ETA all batches: ~June 4, 2026
-- Wave 1 results in §7 (commit `7a74d29`); meta-regression degree-3 fitted (commit `61f9b0f`)
-- ~46% "too few retained" = legitimate data points for sparse DGPs
+Job 14043519 completed 2026-05-30 (7m57s). `coefficient_matrix_standardized.csv` = 23,495 rows (all outputs). Artifacts synced to `bsm-public-rf`. `hc3_wald_intervals.csv` (450MB) gitignored with regen note.
+
+## Sensitivity study HPC (2026-06-01)
+
+- Wave 1: job 14039970 — ~97% done (2,671/2,750 artifacts), results.csv collected
+- Wave 2: job 14045231 — ~45% done (1,229/2,750 artifacts), running on shared partition
+- Wave 2b (main study): job 14062332 — running, writing to `/scratch/dhetting/bsm/sensitivity_study/`
+- Wave 3: job **14069433** — queued on shared partition (8h, 2,750 tasks, seeds 3000)
+- Wave 3 spec: `configs/sensitivity_study/study_spec_wave3.yml`
+- HPC clone at `/home/dhetting/src/bsm-public-rf` remote now points to `NatLabRockies/rfm-pipeline`
 
 ## Manuscript state (2026-05-29)
 

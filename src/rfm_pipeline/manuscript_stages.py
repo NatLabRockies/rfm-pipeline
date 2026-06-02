@@ -50,7 +50,7 @@ from .transforms import DEFAULT_TRANSFORM_LIBRARY, TransformDef
 
 _PROGRESS_TELEMETRY_PATH: Path | None = None
 
-_SVG_FONT_FAMILY = "'Times New Roman', 'DejaVu Serif', Georgia, serif"
+_SVG_FONT_FAMILY = "'CMU Serif', 'Computer Modern', 'Latin Modern Roman', Georgia, serif"
 _SVG_COLOR_BACKGROUND = "#ffffff"
 _SVG_COLOR_TITLE = "#111827"
 _SVG_COLOR_TEXT = "#111827"

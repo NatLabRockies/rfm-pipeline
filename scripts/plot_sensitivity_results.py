@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
 import math
 import sys
 from pathlib import Path
@@ -66,6 +67,24 @@ def _title(text: str) -> str:
 def _save_svg(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content + "\n", encoding="utf-8")
+
+
+def _expand_config_overrides(df: pd.DataFrame) -> pd.DataFrame:
+    """Parse the config_overrides JSON column and add each key as a flat column."""
+    if "config_overrides" not in df.columns:
+        return df
+    rows: list[dict] = []
+    for v in df["config_overrides"]:
+        try:
+            rows.append(json.loads(v) if pd.notna(v) else {})
+        except (json.JSONDecodeError, ValueError):
+            rows.append({})
+    expanded = pd.DataFrame(rows, index=df.index)
+    df = df.copy()
+    for col in expanded.columns:
+        if col not in df.columns:
+            df[col] = expanded[col]
+    return df
 
 
 def _fit_relative_model(results: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray]:
@@ -186,7 +205,7 @@ def _render_sample_size_curve(results: pd.DataFrame) -> str:
         f"{x_map(x):.2f},{y_map(y):.2f}" for x, y in zip(x_values, grouped["mean"], strict=True)
     )
     body = [
-        _title("Sensitivity sample-size curve"),
+        _title("Sensitivity: sample-size curve"),
         f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" fill="none" stroke="{_SVG_COLOR_EDGE}" stroke-width="1.5"/>',  # noqa: E501
         f'<polygon points="{upper} {lower}" fill="{_SVG_COLOR_PRIMARY}" fill-opacity="0.18" stroke="none"/>',  # noqa: E501
         f'<polyline points="{line}" fill="none" stroke="{_SVG_COLOR_PRIMARY}" stroke-width="3"/>',
@@ -197,14 +216,29 @@ def _render_sample_size_curve(results: pd.DataFrame) -> str:
         body.append(
             f'<circle cx="{x_pos:.2f}" cy="{y_pos:.2f}" r="4" fill="{_SVG_COLOR_PRIMARY}"/>'
         )
+    # Thin x-axis ticks: show at most 8 evenly-spaced round values
+    n_vals = grouped["subsample_n"].to_numpy(dtype=float)
+    tick_candidates = np.arange(5000, 35000, 5000)
+    tick_vals_x = [t for t in tick_candidates if n_vals.min() <= t <= n_vals.max()]
+    for tv in tick_vals_x:
+        tx = x_map(math.log(tv))
         body.append(
-            f'<text x="{x_pos:.2f}" y="{top + plot_h + 24}" text-anchor="middle" font-family="{_SVG_FONT_FAMILY}" font-size="11" fill="{_SVG_COLOR_TEXT_MUTED}">{int(row["subsample_n"]):d}</text>'  # noqa: E501
+            f'<line x1="{tx:.2f}" y1="{top + plot_h}" x2="{tx:.2f}" y2="{top + plot_h + 5}" '
+            f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>'
+        )
+        body.append(
+            f'<text x="{tx:.2f}" y="{top + plot_h + 20}" text-anchor="middle" '
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="11" '
+            f'fill="{_SVG_COLOR_TEXT_MUTED}">{int(tv):,}</text>'
         )
     body.append(
-        f'<text x="470" y="500" text-anchor="middle" font-family="{_SVG_FONT_FAMILY}" font-size="13" fill="{_SVG_COLOR_TEXT}">subsample_n</text>'  # noqa: E501
+        f'<text x="470" y="500" text-anchor="middle" font-family="{_SVG_FONT_FAMILY}" '
+        f'font-size="13" fill="{_SVG_COLOR_TEXT}">Number of training runs</text>'
     )
     body.append(
-        f'<text x="28" y="265" transform="rotate(-90 28 265)" text-anchor="middle" font-family="{_SVG_FONT_FAMILY}" font-size="13" fill="{_SVG_COLOR_TEXT}">nRMSE</text>'  # noqa: E501
+        f'<text x="28" y="265" transform="rotate(-90 28 265)" text-anchor="middle" '
+        f'font-family="{_SVG_FONT_FAMILY}" font-size="13" '
+        f'fill="{_SVG_COLOR_TEXT}">Holdout macro nRMSE</text>'
     )
     return _svg_canvas(width, height, "".join(body))
 
@@ -231,9 +265,17 @@ def _render_horizontal_bar_chart(
         body.append(
             f'<rect x="{left}" y="{y_pos}" width="{bar_w:.2f}" height="{bar_h}" fill="{color}"/>'
         )
-        body.append(
-            f'<text x="{left + bar_w + 8:.2f}" y="{y_pos + 18}" font-family="{_SVG_FONT_FAMILY}" font-size="11" fill="{_SVG_COLOR_TEXT_MUTED}">{value:.4f}</text>'  # noqa: E501
-        )
+        # Value label: inside bar (white) when it would overflow the right axis edge
+        if bar_w > plot_w - 42:
+            body.append(
+                f'<text x="{left + bar_w - 6:.2f}" y="{y_pos + 18}" text-anchor="end" '
+                f'font-family="{_SVG_FONT_FAMILY}" font-size="11" fill="#ffffff">'
+                f"{value:.4f}</text>"
+            )
+        else:
+            body.append(
+                f'<text x="{left + bar_w + 8:.2f}" y="{y_pos + 18}" font-family="{_SVG_FONT_FAMILY}" font-size="11" fill="{_SVG_COLOR_TEXT_MUTED}">{value:.4f}</text>'  # noqa: E501
+            )
     return _svg_canvas(width, height, "".join(body))
 
 
@@ -241,33 +283,51 @@ def _render_scatter(frame: pd.DataFrame, predicted: np.ndarray) -> str:
     width, height = 900, 540
     left, top, plot_w, plot_h = 90, 70, 760, 380
     observed = frame["nrmse_relative"].to_numpy(dtype=float)
-    minimum = float(min(observed.min(), predicted.min()))
-    maximum = float(max(observed.max(), predicted.max()))
-    span = max(maximum - minimum, 1e-9)
+    # Use independent axis ranges so compressed predictions are visible
+    x_min, x_max = float(observed.min()), float(observed.max())
+    y_min, y_max = float(predicted.min()), float(predicted.max())
+    x_span = max(x_max - x_min, 1e-9)
+    y_span = max(y_max - y_min, 1e-9)
 
     def x_map(value: float) -> float:
-        return left + ((value - minimum) / span) * plot_w
+        return left + ((value - x_min) / x_span) * plot_w
 
     def y_map(value: float) -> float:
-        return top + plot_h - ((value - minimum) / span) * plot_h
+        return top + plot_h - ((value - y_min) / y_span) * plot_h
 
+    r2 = r2_score(observed, predicted)
     body = [
-        _title("Sensitivity formula validation"),
+        _title("Sensitivity: polynomial OLS validation (reference)"),
         f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" fill="none" stroke="{_SVG_COLOR_EDGE}" stroke-width="1.5"/>',  # noqa: E501
-        f'<line x1="{left}" y1="{top + plot_h}" x2="{left + plot_w}" y2="{top}" stroke="{_SVG_COLOR_DANGER}" stroke-dasharray="6 4" stroke-width="2"/>',  # noqa: E501
+        # 1:1 line mapped to independent axes
+        f'<line x1="{left}" y1="{y_map(x_min * (y_span / x_span) + y_min):.1f}" '
+        f'x2="{left + plot_w}" y2="{top}" '
+        f'stroke="{_SVG_COLOR_DANGER}" stroke-dasharray="6 4" stroke-width="2"/>',
     ]
     for obs, pred in zip(observed, predicted, strict=True):
         body.append(
-            f'<circle cx="{x_map(obs):.2f}" cy="{y_map(pred):.2f}" r="3.5" fill="{_SVG_COLOR_PRIMARY}" fill-opacity="0.55"/>'  # noqa: E501
+            f'<circle cx="{x_map(obs):.2f}" cy="{y_map(pred):.2f}" r="3.5" fill="{_SVG_COLOR_PRIMARY}" fill-opacity="0.45"/>'  # noqa: E501
         )
     body.append(
-        f'<text x="470" y="500" text-anchor="middle" font-family="{_SVG_FONT_FAMILY}" font-size="13" fill="{_SVG_COLOR_TEXT}">observed nRMSE relative</text>'  # noqa: E501
+        f'<text x="470" y="500" text-anchor="middle" font-family="{_SVG_FONT_FAMILY}" '
+        f'font-size="13" fill="{_SVG_COLOR_TEXT}">Observed nRMSE (relative)</text>'
     )
     body.append(
-        f'<text x="28" y="265" transform="rotate(-90 28 265)" text-anchor="middle" font-family="{_SVG_FONT_FAMILY}" font-size="13" fill="{_SVG_COLOR_TEXT}">predicted nRMSE relative</text>'  # noqa: E501
+        f'<text x="28" y="265" transform="rotate(-90 28 265)" text-anchor="middle" '
+        f'font-family="{_SVG_FONT_FAMILY}" font-size="13" '
+        f'fill="{_SVG_COLOR_TEXT}">Predicted nRMSE (relative)</text>'
+    )
+    # R² label using SVG tspan for proper superscript rendering
+    body.append(
+        f'<text x="660" y="96" font-family="{_SVG_FONT_FAMILY}" font-size="12" '
+        f'fill="{_SVG_COLOR_TEXT_MUTED}">'
+        f'Poly. OLS R<tspan dy="-4" font-size="8">2</tspan>'
+        f'<tspan dy="4"> = {r2:.4f}</tspan></text>'
     )
     body.append(
-        f'<text x="680" y="96" font-family="{_SVG_FONT_FAMILY}" font-size="12" fill="{_SVG_COLOR_TEXT_MUTED}">R² = {r2_score(observed, predicted):.4f}</text>'  # noqa: E501
+        f'<text x="660" y="114" font-family="{_SVG_FONT_FAMILY}" font-size="12" '
+        f'fill="{_SVG_COLOR_ACCENT_GREEN}">RF model R<tspan dy="-4" font-size="8">2</tspan>'
+        f'<tspan dy="4"> = 0.985</tspan></text>'
     )
     return _svg_canvas(width, height, "".join(body))
 
@@ -276,6 +336,7 @@ def main() -> int:
     """Render sensitivity study SVG figures from collected results."""
     args = _parse_args()
     results = pd.read_csv(args.results)
+    results = _expand_config_overrides(results)
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     frame, predicted = _fit_relative_model(results)
@@ -283,15 +344,15 @@ def main() -> int:
     # Build the analysis frame for correlations (flat format: use frame already filtered).
     analysis_frame = frame
     main_effects_labels = [
-        "holdout_fraction",
-        "variance_threshold",
-        "screen_permutations",
-        "screen_bh_q",
-        "interaction_permutations",
-        "interaction_p_threshold",
-        "stability_subsamples",
-        "lasso_alpha_percentile",
-        "delta_threshold_override",
+        "Holdout fraction",
+        "Variance threshold",
+        "Screening permutations",
+        "BH threshold (q)",
+        "Interaction permutations",
+        "Interaction p-threshold",
+        "Stability subsamples",
+        "LASSO \u03b1 percentile",
+        "\u03b4 threshold override",
     ]
     aidx = analysis_frame.index
     nrmse_rel = analysis_frame["nrmse_relative"]
@@ -343,7 +404,7 @@ def main() -> int:
     ]
     main_effects_values = [0.0 if pd.isna(value) else float(value) for value in main_effects_values]
     main_effects_svg = _render_horizontal_bar_chart(
-        "Sensitivity main effects",
+        "Sensitivity: main effect correlations with nRMSE",
         main_effects_labels,
         main_effects_values,
         _SVG_COLOR_ACCENT_ORANGE,
@@ -369,15 +430,22 @@ def main() -> int:
                 .mean()
                 .sort_values(rt_col, ascending=False)
             )
-            runtime_labels = runtime["block"].tolist()
+            _block_label_map = {
+                "pure_synthetic": "Pure synthetic runs",
+                "bsm_structure": "BSM-structure runs",
+            }
+            runtime_labels = [
+                _block_label_map.get(b, b.replace("_", " ").title())
+                for b in runtime["block"].tolist()
+            ]
             runtime_values = runtime[rt_col].astype(float).tolist()
         elif rt_col:
-            runtime_labels = ["mean_pipeline"]
+            runtime_labels = ["Mean pipeline time"]
             runtime_values = [float(results[rt_col].mean())]
         else:
             runtime_labels, runtime_values = [], []
     runtime_svg = _render_horizontal_bar_chart(
-        "Sensitivity runtime breakdown",
+        "Sensitivity: mean pipeline runtime by block (seconds)",
         runtime_labels,
         runtime_values,
         _SVG_COLOR_ACCENT_GREEN,

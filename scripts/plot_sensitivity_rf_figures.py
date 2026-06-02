@@ -4,7 +4,6 @@
 
 Figures produced:
   fig_sensitivity_rf_importance.svg   -- two-panel RF feature importance
-  fig_sensitivity_formula_top10.svg   -- diverging top-10 t-statistics
   fig_sensitivity_bsm_validation.svg  -- r histogram + BSM validation dot plot
 """
 
@@ -61,19 +60,7 @@ RUNTIME_IMPORTANCE = [
     ("LASSO \u03b1 percentile", 0.016),
 ]
 
-FORMULA_TOP10 = [
-    # (label, t-statistic)  -- ordered by |t| descending
-    ("log N(s) \u00d7 sparsity", +16.0),
-    ("\u03c1 \u00d7 log d", +15.5),
-    ("q \u00d7 sparsity", +15.0),
-    ("LASSO \u03b1 (main effect)", -13.9),
-    ("q \u00d7 \u03c1", +12.8),
-    ("Var. threshold \u00d7 LASSO \u03b1", +11.8),
-    ("q \u00d7 log d", +11.4),
-    ("LASSO \u03b1 \u00d7 log \u03b4", -10.6),
-    ("Var. threshold \u00d7 log d", -9.9),
-    ("log N(s) \u00d7 LASSO \u03b1", -9.8),
-]
+FORMULA_TOP10: list[tuple[str, float]] = []  # retained for reference only — not plotted
 
 # BSM production r_BSM: (0.0721 - 0.1653) / 0.1653 = -0.564
 # (uses current pipeline nRMSE with production-dataset null nRMSE)
@@ -309,120 +296,11 @@ def render_rf_importance() -> str:
         W,
     )
 
-    return _canvas(W, H, "".join(body))
-
-
-# ── Figure 2: formula top-10 diverging bar chart ────────────────────────────
-
-
-def render_formula_top10() -> str:
-    """Render diverging horizontal bar chart of top-10 polynomial t-statistics."""
-    W, H = 1000, 530
-    label_x_end = 278
-    plot_x_start = 288
-    plot_w = 640
-    bar_h, bar_gap = 26, 13
-    stride = bar_h + bar_gap
-    y_top = 65
-    n = len(FORMULA_TOP10)
-    y_ax = y_top + n * stride + 4
-
-    # Data range symmetric enough for ±17
-    x_min_data, x_max_data = -17.0, 17.0
-    span = x_max_data - x_min_data
-    x0 = plot_x_start + (abs(x_min_data) / span) * plot_w  # zero line x
-
-    def xp(t: float) -> float:
-        return plot_x_start + ((t - x_min_data) / span) * plot_w
-
-    body: list[str] = []
-
-    # Title + rule
-    body.append(
-        _panel_title(
-            "Degree-2 meta-regression: top 10 terms by |t|",
-            18,
-            34,
-            12,
-            W - 12,
-        )
-    )
-
-    # x-axis bottom line
-    body.append(
-        f'<line x1="{plot_x_start}" y1="{y_ax}" x2="{plot_x_start + plot_w}" y2="{y_ax}" '
-        f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1.2"/>'
-    )
-
-    # Ticks
-    for tv in [-15, -10, -5, 0, 5, 10, 15]:
-        tx = xp(tv)
-        body.append(
-            f'<line x1="{tx:.1f}" y1="{y_ax}" x2="{tx:.1f}" y2="{y_ax + 4}" '
-            f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1"/>'
-        )
-        body.append(
-            f'<line x1="{tx:.1f}" y1="{y_top}" x2="{tx:.1f}" y2="{y_ax}" '
-            f'stroke="{_SVG_COLOR_LIGHT}" stroke-width="0.5" stroke-dasharray="2 3"/>'
-        )
-        body.append(_tick_label(str(tv), tx, y_ax + 14))
-
-    # Zero line (prominent)
-    body.append(
-        f'<line x1="{x0:.1f}" y1="{y_top - 5}" x2="{x0:.1f}" y2="{y_ax}" '
-        f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1.8"/>'
-    )
-
-    # x-axis label
-    body.append(_ax_label("t-statistic", int(plot_x_start + plot_w / 2), y_ax + 28))
-
-    # Annotation
-    body.append(
-        f'<text x="{plot_x_start + plot_w - 5}" y="{y_ax + 46}" text-anchor="end" '
-        f'font-family="{_FONT}" font-size="9" fill="{_SVG_COLOR_TEXT_MUTED}">'
-        f"Blue = positive coefficient; Red = negative coefficient</text>"
-    )
-
-    # Bars
-    for i, (label, t) in enumerate(FORMULA_TOP10):
-        y = y_top + i * stride
-        color = _SVG_COLOR_PRIMARY if t >= 0 else _SVG_COLOR_DANGER
-        bar_x_left = min(x0, xp(t))
-        bar_x_right = max(x0, xp(t))
-        bw = bar_x_right - bar_x_left
-
-        # background track (full width)
-        body.append(
-            f'<rect x="{plot_x_start}" y="{y}" width="{plot_w}" height="{bar_h}" '
-            f'fill="{_SVG_COLOR_LIGHT}" fill-opacity="0.25"/>'
-        )
-        # bar
-        body.append(
-            f'<rect x="{bar_x_left:.2f}" y="{y}" width="{bw:.2f}" height="{bar_h}" fill="{color}"/>'
-        )
-        # term label (right-aligned, left of plot)
-        body.append(
-            f'<text x="{label_x_end}" y="{y + bar_h - 5}" text-anchor="end" '
-            f'font-family="{_FONT}" font-size="{_FS_LABEL}" fill="{_SVG_COLOR_TEXT}">'
-            f"{html.escape(label)}</text>"
-        )
-        # value label (outside bar end)
-        if t >= 0:
-            vx = bar_x_right + 5
-            anchor = "start"
-        else:
-            vx = bar_x_left - 5
-            anchor = "end"
-        body.append(
-            f'<text x="{vx:.1f}" y="{y + bar_h - 5}" text-anchor="{anchor}" '
-            f'font-family="{_FONT}" font-size="{_FS_VAL}" fill="{_SVG_COLOR_TEXT_MUTED}">'
-            f"{t:+.1f}</text>"
-        )
 
     return _canvas(W, H, "".join(body))
 
 
-# ── Figure 3: r histogram + BSM validation ──────────────────────────────────
+# ── Figure 2: r histogram + BSM validation ──────────────────────────────────
 
 
 def _diamond(cx: float, cy: float, r: float, color: str, **kw: str) -> str:
@@ -706,9 +584,6 @@ def main() -> int:
 
     _save_svg(out / "fig_sensitivity_rf_importance.svg", render_rf_importance())
     print("  fig_sensitivity_rf_importance.svg")
-
-    _save_svg(out / "fig_sensitivity_formula_top10.svg", render_formula_top10())
-    print("  fig_sensitivity_formula_top10.svg")
 
     _save_svg(out / "fig_sensitivity_bsm_validation.svg", render_bsm_validation(args.results))
     print("  fig_sensitivity_bsm_validation.svg")

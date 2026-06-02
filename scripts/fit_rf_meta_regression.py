@@ -24,6 +24,7 @@ Outputs
     wave1_rf_runtime.pkl       - sklearn RF runtime model (joblib)
     wave1_rf_quality_imp.csv   - feature importances, quality model
     wave1_rf_runtime_imp.csv   - feature importances, runtime model
+    wave1_rf_cv_predictions.csv - honest group-blocked CV predictions (quality model)
     wave1_rf_summary.txt       - CV metrics and BSM operating-point predictions
 """
 
@@ -38,7 +39,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import KFold, cross_val_score
+from sklearn.model_selection import GroupKFold
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -164,7 +165,7 @@ def _fit_quality_model(
     n_estimators: int,
     cv_folds: int,
     seed: int,
-) -> tuple[RandomForestRegressor, dict[str, float]]:
+) -> tuple[RandomForestRegressor, dict[str, float], np.ndarray]:
     X = all_clean[FEATURES].values
     y = all_clean["nrmse_relative"].values
     rf = RandomForestRegressor(
@@ -175,22 +176,42 @@ def _fit_quality_model(
         n_jobs=-1,
     )
     rf.fit(X, y)
-    kf = KFold(n_splits=cv_folds, shuffle=True, random_state=seed)
+
+    # Honest group-blocked CV: group by (config_idx, dgp_idx) pair so that
+    # replicates of the same configuration cannot appear in both train and test.
+    if "config_idx" in all_clean.columns and "dgp_idx" in all_clean.columns:
+        pair_key = all_clean["config_idx"].astype(str) + "_" + all_clean["dgp_idx"].astype(str)
+        groups = pair_key.astype("category").cat.codes.values
+        n_splits = min(cv_folds, int(groups.max()) + 1)
+        kf = GroupKFold(n_splits=n_splits)
+        split_iter = kf.split(X, y, groups)
+    else:
+        from sklearn.model_selection import KFold
+
+        kf = KFold(n_splits=cv_folds, shuffle=True, random_state=seed)
+        split_iter = kf.split(X, y)
+
+    cv_preds = np.zeros_like(y, dtype=float)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        cv_r2 = float(cross_val_score(rf, X, y, cv=kf, scoring="r2", n_jobs=-1).mean())
-    cv_rmse = float(
-        np.sqrt(
-            -cross_val_score(rf, X, y, cv=kf, scoring="neg_mean_squared_error", n_jobs=-1).mean()
-        )
-    )
+        for tr, va in split_iter:
+            rf_fold = RandomForestRegressor(
+                n_estimators=200, max_features="sqrt", random_state=seed, n_jobs=-1
+            )
+            rf_fold.fit(X[tr], y[tr])
+            cv_preds[va] = rf_fold.predict(X[va])
+
+    from sklearn.metrics import r2_score
+
+    cv_r2 = float(r2_score(y, cv_preds))
+    cv_rmse = float(np.sqrt(np.mean((y - cv_preds) ** 2)))
     metrics = {
         "oob_r2": float(rf.oob_score_),
         "cv_r2": cv_r2,
         "cv_rmse": cv_rmse,
         "n": len(y),
     }
-    return rf, metrics
+    return rf, metrics, cv_preds
 
 
 def _fit_runtime_model(
@@ -209,15 +230,35 @@ def _fit_runtime_model(
         n_jobs=-1,
     )
     rf.fit(X, y)
-    kf = KFold(n_splits=cv_folds, shuffle=True, random_state=seed)
+
+    if "config_idx" in successful.columns and "dgp_idx" in successful.columns:
+        pair_key = (
+            successful["config_idx"].astype(str) + "_" + successful["dgp_idx"].astype(str)
+        )
+        groups = pair_key.astype("category").cat.codes.values
+        n_splits = min(cv_folds, int(groups.max()) + 1)
+        kf = GroupKFold(n_splits=n_splits)
+        split_iter = kf.split(X, y, groups)
+    else:
+        from sklearn.model_selection import KFold
+
+        kf = KFold(n_splits=cv_folds, shuffle=True, random_state=seed)
+        split_iter = kf.split(X, y)
+
+    cv_preds = np.zeros_like(y, dtype=float)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        cv_r2 = float(cross_val_score(rf, X, y, cv=kf, scoring="r2", n_jobs=-1).mean())
-    cv_rmse_log = float(
-        np.sqrt(
-            -cross_val_score(rf, X, y, cv=kf, scoring="neg_mean_squared_error", n_jobs=-1).mean()
-        )
-    )
+        for tr, va in split_iter:
+            rf_fold = RandomForestRegressor(
+                n_estimators=200, max_features="sqrt", random_state=seed, n_jobs=-1
+            )
+            rf_fold.fit(X[tr], y[tr])
+            cv_preds[va] = rf_fold.predict(X[va])
+
+    from sklearn.metrics import r2_score
+
+    cv_r2 = float(r2_score(y, cv_preds))
+    cv_rmse_log = float(np.sqrt(np.mean((y - cv_preds) ** 2)))
     metrics = {
         "oob_r2": float(rf.oob_score_),
         "cv_r2": cv_r2,
@@ -274,10 +315,12 @@ def main() -> None:  # noqa: D103
     print(f"  All jobs: {len(all_clean)}, Successful (non-null-screened): {len(successful)}")
 
     print("\nFitting quality model ...")
-    rf_q, q_metrics = _fit_quality_model(all_clean, args.n_estimators, args.cv_folds, args.seed)
+    rf_q, q_metrics, q_cv_preds = _fit_quality_model(
+        all_clean, args.n_estimators, args.cv_folds, args.seed
+    )
     print(
-        f"  OOB R²={q_metrics['oob_r2']:.4f}, "
-        f"CV R²={q_metrics['cv_r2']:.4f}, "
+        f"  OOB R²={q_metrics['oob_r2']:.4f} (biased; group-blocked CV below), "
+        f"CV R²={q_metrics['cv_r2']:.4f} (group-blocked), "
         f"CV RMSE={q_metrics['cv_rmse']:.4f}"
     )
 
@@ -317,22 +360,28 @@ def main() -> None:  # noqa: D103
     fi_q.to_csv(out_dir / "wave1_rf_quality_imp.csv")
     fi_r.to_csv(out_dir / "wave1_rf_runtime_imp.csv")
 
+    # Save honest CV predictions for use by plotting scripts.
+    cv_df = all_clean[["nrmse_relative"]].copy()
+    cv_df["cv_predicted"] = q_cv_preds
+    cv_df.to_csv(out_dir / "wave1_rf_cv_predictions.csv", index=False)
+
     # Write summary.
     summary_lines = [
         "=== Random Forest Meta-Regression Summary ===",
         "",
         "Quality model (target: nrmse_relative, all jobs including null-screened):",
-        f"  n_jobs         = {q_metrics['n']}",
-        f"  OOB R²         = {q_metrics['oob_r2']:.4f}",
-        f"  CV R²          = {q_metrics['cv_r2']:.4f}",
-        f"  CV RMSE        = {q_metrics['cv_rmse']:.4f}",
+        f"  n_jobs             = {q_metrics['n']}",
+        f"  OOB R² (biased)    = {q_metrics['oob_r2']:.4f}",
+        f"  CV R² (group-blocked, config×DGP pairs) = {q_metrics['cv_r2']:.4f}",
+        f"  CV RMSE            = {q_metrics['cv_rmse']:.4f}",
+        "  NOTE: OOB is inflated by replicate leakage; use group-blocked CV R².",
         "",
         "Runtime model (target: log(total_wall_seconds), successful jobs only):",
-        f"  n_jobs         = {r_metrics['n']}",
-        f"  OOB R²         = {r_metrics['oob_r2']:.4f}",
-        f"  CV R²          = {r_metrics['cv_r2']:.4f}",
-        f"  CV RMSE (log)  = {r_metrics['cv_rmse_log']:.4f}",
-        f"  Mult. uncert.  = ×{r_metrics['cv_multiplicative_uncertainty']:.2f}",
+        f"  n_jobs             = {r_metrics['n']}",
+        f"  OOB R² (biased)    = {r_metrics['oob_r2']:.4f}",
+        f"  CV R² (group-blocked) = {r_metrics['cv_r2']:.4f}",
+        f"  CV RMSE (log)      = {r_metrics['cv_rmse_log']:.4f}",
+        f"  Mult. uncert.      = ×{r_metrics['cv_multiplicative_uncertainty']:.2f}",
         "",
         "BSM operating-point predictions:",
         f"  nRMSE predicted  = {bsm_pred['quality_nRMSE']:.4f} "

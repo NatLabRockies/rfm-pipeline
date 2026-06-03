@@ -247,11 +247,11 @@ def _partial_dependence_n_runs(
 
 
 def _render_sample_size_curve(results: pd.DataFrame, rf_path: Path | None = None) -> str:
-    """Marginal effect of training-run count on pipeline quality (r = nrmse_relative).
+    """Marginal effect of training-run count on pipeline quality (γ = nrmse_relative).
 
     Uses the RF partial dependence if the model is available; otherwise falls
     back to a per-level mean ± CI band from the raw data.  All null-screened
-    runs (r = 0 by construction) are excluded so the y-axis reflects genuine
+    runs (γ = 0 by construction) are excluded so the y-axis reflects genuine
     quality variation.
     """
     # --- Partial dependence path (preferred) ---
@@ -427,7 +427,7 @@ def _render_sample_size_curve(results: pd.DataFrame, rf_path: Path | None = None
         f'font-size="{_SVG_FS_AXIS}" fill="{_SVG_COLOR_TEXT}">Number of training runs</text>',
         f'<text x="28" y="265" transform="rotate(-90 28 265)" text-anchor="middle" '
         f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_AXIS}" '
-        f'fill="{_SVG_COLOR_TEXT}">r = (nRMSE \u2013 nRMSE\u2080) / nRMSE\u2080</text>',
+        f'fill="{_SVG_COLOR_TEXT}">\u03b3 = (nRMSE \u2013 nRMSE\u2080) / nRMSE\u2080</text>',
         # RF importance annotation
         f'<text x="{left + 12}" y="{top + plot_h - 10}" font-family="{_SVG_FONT_FAMILY}" '
         f'font-size="{_SVG_FS_SMALL}" fill="{_SVG_COLOR_TEXT_MUTED}">'
@@ -473,7 +473,7 @@ def _render_horizontal_bar_chart(
 
 
 def _render_scatter(observed: np.ndarray, predicted: np.ndarray, cv_r2: float) -> str:
-    """Scatter plot of RF group-CV predicted vs actual r (successful runs only)."""
+    """Scatter plot of RF group-CV predicted vs actual γ (successful runs only)."""
     width, height = 900, 540
     left, top, plot_w, plot_h = 100, 70, 740, 380
 
@@ -500,7 +500,7 @@ def _render_scatter(observed: np.ndarray, predicted: np.ndarray, cv_r2: float) -
     shared_lo = max(x_min, y_min)
     shared_hi = min(x_max, y_max)
     body = [
-        _title("RF meta-regression: predicted vs actual r (cross-validated)"),
+        _title("RF meta-regression: predicted vs actual \u03b3 (cross-validated)"),
         f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" fill="none" '
         f'stroke="{_SVG_COLOR_EDGE}" stroke-width="1.5"/>',
     ]
@@ -522,10 +522,10 @@ def _render_scatter(observed: np.ndarray, predicted: np.ndarray, cv_r2: float) -
     # Axis labels
     body += [
         f'<text x="470" y="500" text-anchor="middle" font-family="{_SVG_FONT_FAMILY}" '
-        f'font-size="{_SVG_FS_AXIS}" fill="{_SVG_COLOR_TEXT}">Observed r</text>',
+        f'font-size="{_SVG_FS_AXIS}" fill="{_SVG_COLOR_TEXT}">Observed \u03b3</text>',
         f'<text x="32" y="265" transform="rotate(-90 32 265)" text-anchor="middle" '
         f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_AXIS}" '
-        f'fill="{_SVG_COLOR_TEXT}">Predicted r</text>',
+        f'fill="{_SVG_COLOR_TEXT}">Predicted \u03b3</text>',
     ]
 
     # X ticks (4 evenly spaced)

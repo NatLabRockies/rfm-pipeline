@@ -341,19 +341,59 @@ def _render_sample_size_curve(results: pd.DataFrame, rf_path: Path | None = None
             f'<polyline points="{pdp_line}" fill="none" stroke="{_SVG_COLOR_PRIMARY}" '
             f'stroke-width="3"/>'
         )
-        # Legend entries
-        legend_x, legend_y = left + plot_w - 280, top + 18
+
+    # Legend — bottom-right inside plot bounding box
+    n_legend_items = 3 if pdp is not None else 2
+    legend_item_h = 22
+    legend_pad_v = 10
+    legend_pad_h = 12
+    legend_swatch_w = 30
+    legend_text_w = 222  # wide enough for "Observed mean (successful runs)"
+    legend_total_w = legend_pad_h + legend_swatch_w + 6 + legend_text_w + legend_pad_h
+    legend_total_h = n_legend_items * legend_item_h + 2 * legend_pad_v
+    legend_right = left + plot_w - 12
+    legend_bottom = top + plot_h - 12
+    legend_bg_x = legend_right - legend_total_w
+    legend_bg_y = legend_bottom - legend_total_h
+    lx = legend_bg_x + legend_pad_h
+
+    body.append(
+        f'<rect x="{legend_bg_x}" y="{legend_bg_y}" '
+        f'width="{legend_total_w}" height="{legend_total_h}" '
+        f'fill="{_SVG_COLOR_BACKGROUND}" fill-opacity="0.92" '
+        f'stroke="{_SVG_COLOR_EDGE}" stroke-width="0.75" rx="3"/>'
+    )
+
+    def _legy(i: int) -> float:
+        return legend_bg_y + legend_pad_v + (i + 0.5) * legend_item_h
+
+    # Row 0: CI band swatch
+    ly0 = _legy(0)
+    body += [
+        f'<rect x="{lx}" y="{ly0 - 6:.1f}" width="{legend_swatch_w}" height="12" '
+        f'fill="{_SVG_COLOR_PRIMARY}" fill-opacity="0.35" stroke="none"/>',
+        f'<text x="{lx + legend_swatch_w + 6}" y="{ly0 + 4:.1f}" '
+        f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_LEGEND}" '
+        f'fill="{_SVG_COLOR_TEXT}">95% CI (observed mean)</text>',
+    ]
+    # Row 1: observed mean (dashed)
+    ly1 = _legy(1)
+    body += [
+        f'<line x1="{lx}" y1="{ly1:.1f}" x2="{lx + legend_swatch_w}" y2="{ly1:.1f}" '
+        f'stroke="{_SVG_COLOR_TEXT_MUTED}" stroke-width="1.5" stroke-dasharray="4 3"/>',
+        f'<text x="{lx + legend_swatch_w + 6}" y="{ly1 + 4:.1f}" '
+        f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_LEGEND}" '
+        f'fill="{_SVG_COLOR_TEXT}">Observed mean (successful runs)</text>',
+    ]
+    # Row 2 (only when RF model available): PDP solid line
+    if pdp is not None:
+        ly2 = _legy(2)
         body += [
-            f'<line x1="{legend_x}" y1="{legend_y}" x2="{legend_x + 30}" y2="{legend_y}" '
+            f'<line x1="{lx}" y1="{ly2:.1f}" x2="{lx + legend_swatch_w}" y2="{ly2:.1f}" '
             f'stroke="{_SVG_COLOR_PRIMARY}" stroke-width="3"/>',
-            f'<text x="{legend_x + 36}" y="{legend_y + 4}" font-family="{_SVG_FONT_FAMILY}" '
-            f'font-size="{_SVG_FS_LEGEND}" fill="{_SVG_COLOR_TEXT}">Partial dependence (RF)</text>',
-            f'<line x1="{legend_x}" y1="{legend_y + 20}" x2="{legend_x + 30}" '
-            f'y2="{legend_y + 20}" stroke="{_SVG_COLOR_TEXT_MUTED}" stroke-width="1.5" '
-            f'stroke-dasharray="4 3"/>',
-            f'<text x="{legend_x + 36}" y="{legend_y + 24}" font-family="{_SVG_FONT_FAMILY}" '
-            f'font-size="{_SVG_FS_LEGEND}" fill="{_SVG_COLOR_TEXT}">'
-            "Observed mean (successful runs)</text>",
+            f'<text x="{lx + legend_swatch_w + 6}" y="{ly2 + 4:.1f}" '
+            f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_LEGEND}" '
+            f'fill="{_SVG_COLOR_TEXT}">Partial dependence (RF)</text>',
         ]
 
     # X ticks

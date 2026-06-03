@@ -4,7 +4,7 @@
 
 Figures produced:
   fig_sensitivity_rf_importance.svg   -- two-panel RF feature importance
-  fig_sensitivity_bsm_validation.svg  -- r histogram + BSM validation dot plot
+  fig_sensitivity_bsm_validation.svg  -- \u03b3 histogram + BSM validation dot plot
 """
 
 from __future__ import annotations
@@ -344,7 +344,7 @@ def render_rf_importance() -> str:
     return _canvas(W, H, "".join(body))
 
 
-# ── Figure 2: r histogram + BSM validation ──────────────────────────────────
+# ── Figure 2: γ histogram + BSM validation ──────────────────────────────────
 
 
 def _diamond(cx: float, cy: float, r: float, color: str, **kw: str) -> str:
@@ -354,7 +354,7 @@ def _diamond(cx: float, cy: float, r: float, color: str, **kw: str) -> str:
 
 
 def render_bsm_validation(results_path: Path) -> str:
-    """Render two-panel figure: r histogram and BSM operating-point dot plot."""
+    """Render two-panel figure: γ histogram and BSM operating-point dot plot."""
     df = pd.read_csv(results_path)
     r_vals = df["nrmse_relative"].replace([np.inf, -np.inf], np.nan).dropna().values
 
@@ -383,7 +383,7 @@ def render_bsm_validation(results_path: Path) -> str:
     body.append(
         f'<text x="{lp_x0 + 5}" y="17" font-family="{_FONT}" font-size="{_FS_TITLE}" '
         f'font-weight="700" fill="{_SVG_COLOR_TITLE}">'
-        "Distribution of r across sensitivity study runs</text>"
+        "Distribution of \u03b3 across sensitivity study runs</text>"
         f'<text x="{lp_x0 + 5}" y="38" font-family="{_FONT}" font-size="{_FS_TITLE}" '
         f'font-weight="700" fill="{_SVG_COLOR_TITLE}">'
         "(n\u00a0=\u00a02,583)</text>"
@@ -435,7 +435,7 @@ def render_bsm_validation(results_path: Path) -> str:
     # Axis labels
     body.append(
         _ax_label(
-            "r = (nRMSE_final \u2212 nRMSE_null) / nRMSE_null",
+            "\u03b3 = (nRMSE_final \u2212 nRMSE_null) / nRMSE_null",
             lp_x0 + lp_w // 2,
             lp_y0 + lp_h + 30,
         )
@@ -469,7 +469,7 @@ def render_bsm_validation(results_path: Path) -> str:
     body.append(
         f'<text x="{lp_x0 + 38}" y="{leg_y + 4}" font-family="{_FONT}" '
         f'font-size="{_SVG_FS_LEGEND}" fill="{_SVG_COLOR_TEXT}">'
-        f"BSM r = {BSM_R:.3f}</text>"
+        f"BSM \u03b3 = {BSM_R:.3f}</text>"
     )
     body.append(
         f'<line x1="{lp_x0 + 10}" y1="{leg_y + 17}" x2="{lp_x0 + 34}" y2="{leg_y + 17}" '

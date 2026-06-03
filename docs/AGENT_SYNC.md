@@ -8,8 +8,8 @@ base_branch: main
 autonomy_tier: 3
 profile: autonomous
 current_milestone: Sensitivity study completion + manuscript §7 final fill
-current_slice: Sensitivity results collection (wave 2 running, wave 3 queued)
-slice_status: All repo split phases complete. Waiting for sensitivity study completion.
+current_slice: Sensitivity wave 3 running; wave 2 partial results collected; resubmitted missing jobs
+slice_status: Wave 1 collected (2,583 rows). Wave 2 partial (2,506/2,750; 207 BSM-structure pending as jobs 14074255+). Wave 3 running (job 14069433, 100 concurrent). RF model trained on wave 1 only (CV R²=0.908 quality, 0.965 runtime). BSM validation confirmed. Awaiting wave 2/3 completion for final model.
 last_validation: pixi run pytest -q → 461 passed, 1 xfailed (commit 372582f, 2026-06-01)
 last_commit: b1aafa8 — config: add sensitivity study wave 3 spec (seeds 3000)
 
@@ -47,14 +47,34 @@ last_commit: b1aafa8 — config: add sensitivity study wave 3 spec (seeds 3000)
 | NatLabRockies/bsm-public-rf            | private    | BSM configs + model artifacts           | c5c6aa9       |
 | NatLabRockies/bsm-public-rf-manuscript | private    | LaTeX + figures                         | 26f7999       |
 
-### Sensitivity study — HPC state (2026-06-01T18:xx MT)
+### Sensitivity study — HPC state (2026-06-02T~15:xx MT)
 
-| Wave    | Study dir                                       | Artifacts   | Job ID   | Status                       |
-| ------- | ----------------------------------------------- | ----------- | -------- | ---------------------------- |
-| Wave 1  | `/scratch/dhetting/bsm/sensitivity_study_wave1` | 2,671/2,750 | 14039970 | ~97% complete                |
-| Wave 2  | `/scratch/dhetting/bsm/sensitivity_study_wave2` | 1,229/2,750 | 14045231 | ~45% — running               |
-| Wave 2b | `/scratch/dhetting/bsm/sensitivity_study`       | 3,233/57500 | 14062332 | Running (also covers wave2b) |
-| Wave 3  | `/scratch/dhetting/bsm/sensitivity_study_wave3` | 0/2,750     | 14069433 | Queued (shared, 8h)          |
+| Wave              | Study dir                                       | Results CSV                             | Rows  | Job ID   | Status                                                                                    |
+| ----------------- | ----------------------------------------------- | --------------------------------------- | ----- | -------- | ----------------------------------------------------------------------------------------- |
+| Wave 1 (complete) | `/scratch/dhetting/bsm/sensitivity_study_wave1` | artifacts/sensitivity/wave1_results.csv | 2,583 | —        | 2,583/2,750 collected; 14 BSM-structure jobs resubmitted as 14074257                      |
+| Wave 1 missing    | same as above                                   | —                                       | 14    | 14074257 | PENDING (QOSMaxNodePerUserLimit behind wave 3)                                            |
+| Wave 2 (partial)  | `/scratch/dhetting/bsm/sensitivity_study_wave2` | artifacts/sensitivity/wave2_results.csv | 2,506 | —        | 2,506/2,750 collected; 43/250 BSM-structure done; 207 BSM-structure still running/pending |
+| Wave 2 missing    | same as above                                   | —                                       | 143   | 14074255 | PENDING (QOSMaxNodePerUserLimit behind wave 3)                                            |
+| Wave 3            | `/scratch/dhetting/bsm/sensitivity_study_wave3` | not yet collected                       | —     | 14069433 | RUNNING (100 concurrent, shared 12h); unblocked after 14062332 cancelled                  |
+
+**NOTE (2026-06-02):** Job 14062332 (previously misidentified in AGENT_SYNC as "Wave 2b: 57,500-job original study") was actually running wave 2's remaining 143 BSM-structure jobs. It was cancelled, then those 143 jobs were resubmitted as job 14074255. The original `sensitivity_study` (57,500-job spec) is a separate abandoned study with ~3,233 artifacts from earlier batch runs; it is NOT being continued.
+
+**Next collection steps (on Kestrel after jobs 14074255/14074257 complete):**
+
+```bash
+# Collect remaining wave 2 BSM-structure results (re-run after 14074255 finishes):
+pixi run python scripts/collect_sensitivity_results.py \
+  --study-dir /scratch/dhetting/bsm/sensitivity_study_wave2 \
+  --output results/wave2_results.csv
+# Collect wave 3 after 14069433 finishes:
+pixi run python scripts/collect_sensitivity_results.py \
+  --study-dir /scratch/dhetting/bsm/sensitivity_study_wave3 \
+  --output results/wave3_results.csv
+# Re-fit RF meta-regression after each collection:
+pixi run python scripts/fit_rf_meta_regression.py \
+  --results results/wave1_results.csv results/wave2_results.csv \
+  --output-dir artifacts/sensitivity/
+```
 
 **Collect command (run after each wave completes):**
 

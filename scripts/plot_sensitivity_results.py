@@ -360,8 +360,8 @@ def _render_sample_size_curve(results: pd.DataFrame, rf_path: Path | None = None
     body.append(
         f'<rect x="{legend_bg_x}" y="{legend_bg_y}" '
         f'width="{legend_total_w}" height="{legend_total_h}" '
-        f'fill="{_SVG_COLOR_BACKGROUND}" fill-opacity="0.92" '
-        f'stroke="{_SVG_COLOR_EDGE}" stroke-width="0.75" rx="3"/>'
+        f'fill="{_SVG_COLOR_BACKGROUND}" fill-opacity="0.85" '
+        f'stroke="none"/>'
     )
 
     def _legy(i: int) -> float:

@@ -279,7 +279,7 @@ def stratified_holdout_split(
     X: pd.DataFrame,
     Y: pd.DataFrame,
     *,
-    holdout_fraction: float = 0.10,
+    holdout_fraction: float = 0.05,
     random_state: int = 123,
     scenario_column: str = "scenario",
     afsc_column: str = "AFSC",

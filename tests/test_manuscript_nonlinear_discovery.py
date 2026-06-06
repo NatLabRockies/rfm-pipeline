@@ -131,8 +131,9 @@ def test_run_nonlinear_discovery_stage_executes_demo_context() -> None:
     result = run_nonlinear_discovery_stage(context)
 
     assert result.nonlinear.summary.loc[0, "stage"] == "nonlinear_discovery"
-    # 2 retained features × 5 default transforms (all domain-valid) = 10 candidates
-    assert result.nonlinear.summary.loc[0, "n_candidate_transformations"] == 10
+    # 2 retained features × 4 default transforms (quadratic, log, inverse,
+    # sqrt — matches the manuscript algebraic library) = 8 candidates.
+    assert result.nonlinear.summary.loc[0, "n_candidate_transformations"] == 8
     assert result.artifact_paths["transformation_scores"].exists()
     assert result.artifact_paths["nonlinear_discovery_provenance"].exists()
 

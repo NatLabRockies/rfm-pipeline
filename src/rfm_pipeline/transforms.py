@@ -231,18 +231,17 @@ SQRT = TransformDef(expr="sqrt(x)", label="sqrt", name="square_root")
 EXPONENTIAL = TransformDef(expr="exp(x)", label="exp", name="exponential")
 
 #: Default library used when no ``transform_library`` is specified in config.
-#: Matches the families reported in the manuscript (§7): quadratic,
-#: logarithmic, inverse, and exponential, plus square root.
+#: Matches the families reported in the JDS manuscript Section 3.5: quadratic,
+#: logarithmic, inverse, and square-root. Exponential is available as
+#: :data:`EXPONENTIAL` and can be opted in explicitly via the config, but is
+#: excluded from the default library because it is not part of the manuscript
+#: algebraic library and tends to overflow on standardized inputs.
 DEFAULT_TRANSFORM_LIBRARY: list[TransformDef] = [
     QUADRATIC,
     LOGARITHMIC,
     INVERSE,
     SQRT,
-    EXPONENTIAL,
 ]
-
-# Convenience lookup by label for use in tests and downstream code.
-_LIBRARY_BY_LABEL: dict[str, TransformDef] = {t.label: t for t in DEFAULT_TRANSFORM_LIBRARY}
 
 # ---------------------------------------------------------------------------
 # Warning helpers

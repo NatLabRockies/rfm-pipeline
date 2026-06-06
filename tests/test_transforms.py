@@ -154,13 +154,15 @@ def test_warn_nan_transforms_skips_empty_feature_list():
 # ---------------------------------------------------------------------------
 
 
-def test_default_transform_library_has_five_entries():
-    assert len(DEFAULT_TRANSFORM_LIBRARY) == 5
+def test_default_transform_library_has_four_entries():
+    # Default library matches the manuscript algebraic family list (quadratic,
+    # logarithmic, inverse, square-root). EXPONENTIAL is intentionally omitted.
+    assert len(DEFAULT_TRANSFORM_LIBRARY) == 4
 
 
 def test_default_transform_library_labels():
     labels = {td.label for td in DEFAULT_TRANSFORM_LIBRARY}
-    assert labels == {"sq", "log1p", "inv", "sqrt", "exp"}
+    assert labels == {"sq", "log1p", "inv", "sqrt"}
 
 
 # ---------------------------------------------------------------------------

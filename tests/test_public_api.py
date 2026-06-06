@@ -81,7 +81,7 @@ def test_package_exports_feature_expansion_contract() -> None:
 
 def test_package_exports_transform_library() -> None:
     assert TransformDef.__name__ == "TransformDef"
-    assert len(DEFAULT_TRANSFORM_LIBRARY) == 5
+    assert len(DEFAULT_TRANSFORM_LIBRARY) == 4
     assert QUADRATIC.label == "sq"
     assert LOGARITHMIC.label == "log1p"
     assert INVERSE.label == "inv"

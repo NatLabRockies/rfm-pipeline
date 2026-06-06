@@ -21,11 +21,20 @@ EXCLUDED_PARTS = {
 }
 MARKDOWN_SUFFIXES = {".md", ".mdx", ".markdown"}
 
+# Files where mdformat must NOT run because they require strict formatting that
+# the default mdformat rules would mangle (e.g. JOSS YAML front matter, where
+# the `---` opening delimiter would be reinterpreted as a Setext heading rule).
+EXCLUDED_FILES = {
+    Path("paper") / "paper.md",
+}
+
 
 def is_excluded(path: Path, repo_root: Path | None = None) -> bool:
-    """Return whether a path is inside an excluded directory tree."""
+    """Return whether a path is inside an excluded directory tree or listed in EXCLUDED_FILES."""
     rel = path.relative_to(repo_root) if repo_root is not None and path.is_absolute() else path
-    return any(part in EXCLUDED_PARTS for part in rel.parts)
+    if any(part in EXCLUDED_PARTS for part in rel.parts):
+        return True
+    return rel in EXCLUDED_FILES
 
 
 def _git_markdown_files(repo_root: Path) -> list[Path]:

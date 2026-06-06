@@ -101,28 +101,38 @@ class OutOfCoreConfig:
 
 @dataclass
 class ScreeningStageConfig:
-    """Empirical null screening parameters."""
+    """Empirical null screening parameters.
 
-    n_permutations: int = 1000
-    """Number of null permutations (B+1)."""
-    bh_q_threshold: float = 0.10
-    """Benjamini-Hochberg FDR threshold."""
+    Defaults match the BSM publication run reported in the JDS manuscript
+    (``n_permutations=201`` corresponds to ``B=200`` null draws plus one
+    observed statistic; ``bh_q_threshold=0.05`` is the manuscript value).
+    """
+
+    n_permutations: int = 201
+    """Number of null permutations (B+1); manuscript baseline is B=200."""
+    bh_q_threshold: float = 0.05
+    """Benjamini-Hochberg FDR threshold; manuscript baseline is q=0.05."""
     max_retained_terms: int | None = None
     """Optional deterministic top-K cap on retained first-order terms."""
 
 
 @dataclass
 class InteractionStageConfig:
-    """Interaction discovery parameters."""
+    """Interaction discovery parameters.
+
+    Defaults match the BSM publication run: ``n_permutations=31`` (B=30
+    permutation null draws plus the observed statistic), ``n_tree_estimators=250``,
+    and ``max_tree_depth=5`` are the manuscript baseline values.
+    """
 
     p_threshold: float = 0.05
     """Interaction significance threshold."""
-    n_permutations: int | None = None
-    """Optional interaction null permutations (B+1); default inherits empirical stage."""
-    n_tree_estimators: int = 100
-    """SHAP tree ensemble size."""
-    max_tree_depth: int = 10
-    """Max tree depth for ensemble."""
+    n_permutations: int | None = 31
+    """Interaction null permutations (B+1); manuscript baseline is B=30."""
+    n_tree_estimators: int = 250
+    """SHAP tree ensemble size; manuscript baseline is 250."""
+    max_tree_depth: int = 5
+    """Max tree depth for ensemble; manuscript baseline is 5."""
     parallel_batch_timeout_seconds: int | None = None
     """Per-batch parallel timeout; <=0 disables timeout (useful for long HPC shards)."""
     max_shap_samples: int = 500
@@ -151,24 +161,34 @@ class NonlinearStageConfig:
 
 @dataclass
 class SparseStageConfig:
-    """Sparse selection/stability parameters."""
+    """Sparse selection/stability parameters.
 
-    n_stability_subsamples: int = 100
-    """Number of stability resamples."""
-    subsample_fraction: float = 1.0
-    """Fraction of data per resample."""
-    lasso_alpha_percentile: int = 50
-    """LASSO alpha selection percentile."""
+    Defaults match the BSM publication run: ``n_stability_subsamples=50``
+    resamples at ``subsample_fraction=0.8`` (80% of training rows per
+    subsample) are the manuscript baseline values.
+    """
+
+    n_stability_subsamples: int = 50
+    """Number of stability resamples; manuscript baseline is 50."""
+    subsample_fraction: float = 0.8
+    """Fraction of data per resample; manuscript baseline is 0.80."""
+    lasso_alpha_percentile: int = 40
+    """LASSO alpha selection percentile; manuscript baseline is the 40th percentile."""
     max_candidate_terms: int | None = None
     """Optional deterministic top-K candidate cap before sparse stability."""
 
 
 @dataclass
 class FinalArtifactsStageConfig:
-    """Final OLS and artifact parameters."""
+    """Final OLS and artifact parameters.
 
-    bootstrap_count: int = 200
-    """Number of bootstrap replicates."""
+    Defaults match the BSM publication run: ``bootstrap_count=100`` replicates
+    at ``bootstrap_alpha=0.05`` and ``delta_threshold_override=0.002`` for
+    feature pruning are the manuscript baseline values.
+    """
+
+    bootstrap_count: int = 100
+    """Number of bootstrap replicates; manuscript baseline is 100."""
     bootstrap_alpha: float = 0.05
     """Two-sided bootstrap error level."""
     hc3_output_subset_mode: str = "all"
@@ -183,8 +203,8 @@ class FinalArtifactsStageConfig:
     """Deterministic seed for random output subsetting."""
     hc3_output_subset_metric: str = "variance"
     """Ranking metric for principled downselection modes."""
-    delta_threshold_override: float | None = None
-    """Optional delta threshold override for feature pruning in final artifacts."""
+    delta_threshold_override: float | None = 0.002
+    """Delta threshold for feature pruning; manuscript baseline is 0.002."""
 
 
 @dataclass

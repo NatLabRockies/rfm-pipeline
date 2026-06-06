@@ -58,3 +58,8 @@ watch.sh
 hpc_kestrel_config.sh
 ai_context/api_docs/kestrel_*.md
 ai_context/api_docs/runtime_api_bundle_*.md
+
+# Internal agent workflow files — not for public consumption
+MEMORY.md
+docs/AGENT_SYNC.md
+docs/MEMORY.md

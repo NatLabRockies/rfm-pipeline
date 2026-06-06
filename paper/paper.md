@@ -56,8 +56,9 @@ and manage intermediate artifacts.
    data-generating processes (DGPs);
 1. supports HPC-scale execution via SLURM array jobs with built-in
    checkpointing and artifact collection;
-1. ships with a random-forest meta-regression model for predicting pipeline
-   runtime given dataset and configuration characteristics.
+1. ships with a polynomial OLS meta-regression model (with optional
+   LASSO-then-OLS for high-degree terms) for predicting pipeline runtime
+   given dataset and configuration characteristics.
 
 # Implementation
 
@@ -67,9 +68,9 @@ directory, reads its inputs, writes its outputs, and returns a provenance record
 
 The sensitivity study framework generates Latin hypercube samples over the
 pipeline hyperparameter space, runs each configuration on both pure-synthetic
-and calibrated-structure DGPs, and fits a random forest meta-regression to
-predict normalized root-mean-square error (NRMSE) as a function of
-configuration and dataset characteristics.
+and calibrated-structure DGPs, and fits a polynomial OLS meta-regression (via
+`scripts/fit_meta_regression.py`) to predict normalized root-mean-square error
+(NRMSE) as a function of configuration and dataset characteristics.
 
 The package uses [Pixi](https://pixi.sh) for reproducible environment
 management and ships with a `test_repo.sh` script that enforces code

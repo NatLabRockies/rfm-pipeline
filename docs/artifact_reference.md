@@ -614,7 +614,7 @@ Holdout-set prediction accuracy.
 
 | Column                | Type  | Description                     |
 | --------------------- | ----- | ------------------------------- |
-| `nrmse_point`         | float | Point estimate of holdout nRMSE |
+| `point_estimate`      | float | Point estimate of holdout nRMSE |
 | `ci_lower`            | float | 95% bootstrap lower bound       |
 | `ci_upper`            | float | 95% bootstrap upper bound       |
 | `n_bootstrap_samples` | int   | Bootstrap resamples             |

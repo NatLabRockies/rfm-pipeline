@@ -468,13 +468,13 @@ import pandas as pd
 
 # Load holdout performance
 perf = pd.read_parquet('artifacts/output/final_artifacts/holdout_performance.csv')
-print(perf[['output_name', 'nrmse_point']])
+print(perf[['output_name', 'point_estimate']])
 
 # Check for NaN
-print(f"NaN nRMSE count: {perf['nrmse_point'].isna().sum()}")
+print(f"NaN nRMSE count: {perf['point_estimate'].isna().sum()}")
 
 # Check for > 1.0
-print(f"nRMSE > 1.0 count: {(perf['nrmse_point'] > 1.0).sum()}")
+print(f"nRMSE > 1.0 count: {(perf['point_estimate'] > 1.0).sum()}")
 ```
 
 **Solutions:**

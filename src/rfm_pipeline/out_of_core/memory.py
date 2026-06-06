@@ -80,7 +80,7 @@ def choose_temp_dir(preferred_root: str = None, fallback_root: str = None) -> st
 
     Args:
         preferred_root: Preferred directory (e.g., /scratch/$USER/bsm_run)
-        fallback_root: Fallback directory (e.g., /projects/bsm/temp)
+        fallback_root: Fallback directory (e.g., /projects/rfm/temp)
 
     Returns
     -------

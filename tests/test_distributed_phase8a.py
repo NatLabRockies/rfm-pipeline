@@ -548,7 +548,7 @@ class TestFindIncompleteTaskIds:
         import sys
 
         sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
-        from rfm_hpc_submit import _find_incomplete_task_ids
+        from rfm_pipeline.hpc_submit import _find_incomplete_task_ids
 
         result = _find_incomplete_task_ids(tmp_path / "shards", 5)
         assert result == [0, 1, 2, 3, 4]
@@ -557,7 +557,7 @@ class TestFindIncompleteTaskIds:
         import sys
 
         sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
-        from rfm_hpc_submit import _find_incomplete_task_ids
+        from rfm_pipeline.hpc_submit import _find_incomplete_task_ids
 
         root = tmp_path / "shards"
         self._write_success(root, 0)
@@ -569,7 +569,7 @@ class TestFindIncompleteTaskIds:
         import sys
 
         sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
-        from rfm_hpc_submit import _find_incomplete_task_ids
+        from rfm_pipeline.hpc_submit import _find_incomplete_task_ids
 
         root = tmp_path / "shards"
         for i in range(3):
@@ -583,7 +583,7 @@ class TestReconcileManifestFromFs:
         import sys
 
         sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
-        from rfm_hpc_submit import _reconcile_manifest_from_fs
+        from rfm_pipeline.hpc_submit import _reconcile_manifest_from_fs
 
         shards = build_manifest(
             stage="output_conditioning",

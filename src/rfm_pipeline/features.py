@@ -1,4 +1,4 @@
-"""Selected-feature parsing utilities for recovered BSM naming conventions."""
+"""Selected-feature parsing utilities for recovered pipeline naming conventions."""
 
 from __future__ import annotations
 

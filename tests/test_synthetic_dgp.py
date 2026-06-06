@@ -7,7 +7,7 @@ import pandas as pd
 
 from rfm_pipeline.synthetic_dgp import (
     SyntheticDGPSpec,
-    generate_bsm_structure_synthetic,
+    generate_calibrated_structure_synthetic,
     generate_pure_synthetic,
 )
 
@@ -73,7 +73,7 @@ def test_pure_synthetic_no_nan() -> None:
 
 
 def test_bsm_structure_output_shapes() -> None:
-    dataset = generate_bsm_structure_synthetic(_small_spec(family="bsm_structure"))
+    dataset = generate_calibrated_structure_synthetic(_small_spec(family="bsm_structure"))
 
     assert dataset.input_matrix.shape == (100, 11)
     assert dataset.output_matrix.shape == (100, 6)

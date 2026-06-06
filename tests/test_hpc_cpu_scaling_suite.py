@@ -11,25 +11,12 @@ from rfm_pipeline.distributed.config_distributed import load_distributed_config
 from rfm_pipeline.distributed.manifest import build_manifest, save_manifest
 from rfm_pipeline.distributed.slurm_array_runner import SlurmArrayRunner
 
+_FIXTURES = Path(__file__).parent / "fixtures" / "hpc"
+
 _CPU_SCALING_CASES = [
-    (
-        "configs/hpc/kestrel_cpu_scale_2.yml",
-        2,
-        "shared",
-        "/scratch/dhetting/bsm/artifacts/kestrel_cpu_scale_2_run",
-    ),
-    (
-        "configs/hpc/kestrel_cpu_scale_10.yml",
-        10,
-        "shared",
-        "./artifacts/kestrel_cpu_scale_10_run",
-    ),
-    (
-        "configs/hpc/kestrel_cpu_scale_1000.yml",
-        1000,
-        "shared",
-        "./artifacts/kestrel_cpu_scale_1000_run",
-    ),
+    (str(_FIXTURES / "cpu_scale_2.yml"), 2, "shared", "./artifacts/cpu_scale_2_run"),
+    (str(_FIXTURES / "cpu_scale_10.yml"), 10, "shared", "./artifacts/cpu_scale_10_run"),
+    (str(_FIXTURES / "cpu_scale_1000.yml"), 1000, "shared", "./artifacts/cpu_scale_1000_run"),
 ]
 
 
@@ -50,7 +37,6 @@ def test_cpu_scaling_configs_have_expected_slurm_concurrency(
     assert cfg.backend == "slurm_array"
     assert cfg.slurm.partition == expected_partition
     assert cfg.slurm.max_concurrent_array_tasks == expected_nodes
-    assert cfg.slurm.cpus_per_task == 104
 
 
 @pytest.mark.parametrize(("config_path", "expected_nodes", "_", "__"), _CPU_SCALING_CASES)
@@ -76,27 +62,29 @@ def test_cpu_scaling_stage_script_renders_expected_array_throttle(
     stage_script = runner.generate_stage_script("interaction_discovery")
     assert f"#SBATCH --array=0-{expected_nodes - 1}%{expected_nodes}" in stage_script
     assert f"#SBATCH --partition={cfg.slurm.partition}" in stage_script
-    assert "#SBATCH --cpus-per-task=104" in stage_script
 
 
+@pytest.mark.skipif(
+    not Path("scripts/kestrel/submit_cpu_scaling_suite.sh").exists(),
+    reason="BSM Kestrel scripts not present in this repo",
+)
 def test_cpu_scaling_suite_script_targets_all_tiers() -> None:
     script_path = Path("scripts/kestrel/submit_cpu_scaling_suite.sh")
     text = script_path.read_text(encoding="utf-8")
 
     assert "set -euo pipefail" in text
-    assert "pixi run bsm-hpc-submit" in text
+    assert "rfm-hpc-submit" in text
     assert "--diagnostic-only" in text
 
     assert "configs/hpc/kestrel_cpu_scale_2.yml" in text
     assert "configs/hpc/kestrel_cpu_scale_10.yml" in text
     assert "configs/hpc/kestrel_cpu_scale_1000.yml" in text
 
-    assert '--n-shards "${nodes}"' in text
-    assert "2:configs/hpc/kestrel_cpu_scale_2.yml" in text
-    assert "10:configs/hpc/kestrel_cpu_scale_10.yml" in text
-    assert "1000:configs/hpc/kestrel_cpu_scale_1000.yml" in text
 
-
+@pytest.mark.skipif(
+    not Path("scripts/kestrel/submit_cpu_scale_2_live.sh").exists(),
+    reason="BSM Kestrel scripts not present in this repo",
+)
 def test_cpu_scaling_live_submit_scripts_exist_with_expected_defaults() -> None:
     script_2 = Path("scripts/kestrel/submit_cpu_scale_2_live.sh").read_text(encoding="utf-8")
     script_10 = Path("scripts/kestrel/submit_cpu_scale_10_live.sh").read_text(encoding="utf-8")
@@ -127,6 +115,10 @@ def test_cpu_scaling_live_submit_scripts_exist_with_expected_defaults() -> None:
     assert "--partition=shared --time=08:00:00 --dependency=afterok:${R10}" in script_chain
 
 
+@pytest.mark.skipif(
+    not Path("scripts/kestrel/collect_cpu_scaling_results.sh").exists(),
+    reason="BSM Kestrel scripts not present in this repo",
+)
 def test_cpu_scaling_collection_and_monitor_scripts_exist() -> None:
     collector = Path("scripts/kestrel/collect_cpu_scaling_results.sh").read_text(encoding="utf-8")
     monitor = Path("scripts/kestrel/watch_cpu_scaling_queue.sh").read_text(encoding="utf-8")

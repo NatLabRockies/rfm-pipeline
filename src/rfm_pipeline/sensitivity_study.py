@@ -33,12 +33,12 @@ class SensitivityStudySpec:
     """Top-level sensitivity-study design."""
 
     pure_synthetic_n_dgps: int = 200
-    bsm_structure_n_dgps: int = 50
+    calibrated_n_dgps: int = 50
     n_configs_per_dgp_pure: int = 50
-    n_configs_per_dgp_bsm: int = 30
+    n_configs_per_dgp_calibrated: int = 30
     n_replicates: int = 5
     pure_synthetic_n_subsample_levels: int = 8
-    bsm_structure_n_subsample_levels: int = 8
+    calibrated_n_subsample_levels: int = 8
     config_lhs_seed: int = 42
     dgp_lhs_seed: int = 0
 
@@ -46,12 +46,12 @@ class SensitivityStudySpec:
         """Validate that all count fields are positive integers."""
         for field_name in (
             "pure_synthetic_n_dgps",
-            "bsm_structure_n_dgps",
+            "calibrated_n_dgps",
             "n_configs_per_dgp_pure",
-            "n_configs_per_dgp_bsm",
+            "n_configs_per_dgp_calibrated",
             "n_replicates",
             "pure_synthetic_n_subsample_levels",
-            "bsm_structure_n_subsample_levels",
+            "calibrated_n_subsample_levels",
         ):
             value = getattr(self, field_name)
             if not isinstance(value, int) or value <= 0:
@@ -135,9 +135,9 @@ def generate_pure_synthetic_dgps(spec: SensitivityStudySpec) -> list[SyntheticDG
     return dgps
 
 
-def generate_bsm_structure_dgps(spec: SensitivityStudySpec) -> list[SyntheticDGPSpec]:
-    """Generate LHS-sampled BSM-structure DGPs."""
-    lhs = generate_lhs_points(spec.bsm_structure_n_dgps, 9, spec.dgp_lhs_seed + 10_000)
+def generate_calibrated_structure_dgps(spec: SensitivityStudySpec) -> list[SyntheticDGPSpec]:
+    """Generate LHS-sampled calibrated-structure DGPs (mirroring case-study dataset properties)."""
+    lhs = generate_lhs_points(spec.calibrated_n_dgps, 9, spec.dgp_lhs_seed + 10_000)
     dgps: list[SyntheticDGPSpec] = []
     for idx, row in enumerate(lhs):
         dgps.append(
@@ -150,7 +150,7 @@ def generate_bsm_structure_dgps(spec: SensitivityStudySpec) -> list[SyntheticDGP
                 nonlinearity_strength=_scale_float(row[5], 0.1, 0.5),
                 noise_snr=_scale_float(row[6], 5.0, 50.0, log_scale=True),
                 holdout_fraction=0.05,
-                dgp_family="bsm_structure",
+                dgp_family="calibrated_structure",
                 seed=spec.dgp_lhs_seed + 100_000 + idx,
                 factor_model_rank=_scale_int(row[7], 10, 40),
                 input_correlation_strength=_scale_float(row[8], 0.1, 0.5),
@@ -178,7 +178,7 @@ def generate_study_jobs(spec: SensitivityStudySpec) -> list[SensitivityStudyJob]
     pure_configs = generate_config_lhs(spec, spec.n_configs_per_dgp_pure)
     bsm_configs = generate_config_lhs(
         replace(spec, config_lhs_seed=spec.config_lhs_seed + 1),
-        spec.n_configs_per_dgp_bsm,
+        spec.n_configs_per_dgp_calibrated,
     )
 
     for block, dgps, configs, n_levels in (
@@ -189,10 +189,10 @@ def generate_study_jobs(spec: SensitivityStudySpec) -> list[SensitivityStudyJob]
             spec.pure_synthetic_n_subsample_levels,
         ),
         (
-            "bsm_structure",
-            generate_bsm_structure_dgps(spec),
+            "calibrated_structure",
+            generate_calibrated_structure_dgps(spec),
             bsm_configs,
-            spec.bsm_structure_n_subsample_levels,
+            spec.calibrated_n_subsample_levels,
         ),
     ):
         for dgp_idx, dgp_spec in enumerate(dgps):
@@ -330,7 +330,7 @@ __all__ = [
     "SensitivityStudyJob",
     "SensitivityStudySpec",
     "collect_study_results",
-    "generate_bsm_structure_dgps",
+    "generate_calibrated_structure_dgps",
     "generate_config_lhs",
     "generate_lhs_points",
     "generate_pure_synthetic_dgps",

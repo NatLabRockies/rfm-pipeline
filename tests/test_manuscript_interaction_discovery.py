@@ -609,7 +609,7 @@ def test_interaction_discovery_resumes_from_checkpointed_permutation_scores(
         parallel_backend="threading",
     )
     checkpoint_root = tmp_path / "interaction_checkpoints"
-    monkeypatch.setenv("BSM_PROGRESS_BATCH_SIZE", "2")
+    monkeypatch.setenv("RFM_PROGRESS_BATCH_SIZE", "2")
 
     interrupted_call_counter = {"count": 0}
 

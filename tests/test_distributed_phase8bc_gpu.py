@@ -250,6 +250,10 @@ def test_write_scripts_no_gpu_scripts_when_disabled(tmp_path):
     assert "gpu_diagnostic" not in scripts
 
 
+@pytest.mark.skipif(
+    not Path("scripts/kestrel/submit_gpu_h100_live.sh").exists(),
+    reason="BSM Kestrel scripts not present in this repo",
+)
 def test_gpu_live_scripts_exist_with_expected_defaults() -> None:
     submit_script = Path("scripts/kestrel/submit_gpu_h100_live.sh").read_text(encoding="utf-8")
     collect_script = Path("scripts/kestrel/collect_gpu_interaction_results.sh").read_text(
@@ -275,7 +279,7 @@ def test_gpu_live_scripts_exist_with_expected_defaults() -> None:
 
 
 def test_hpc_submit_prefers_gpu_stage_script() -> None:
-    from tools.bsm_hpc_submit import _select_array_script
+    from tools.rfm_hpc_submit import _select_array_script
 
     scripts = {
         "stage": Path("submit_interaction_discovery_array.sh"),
@@ -285,7 +289,7 @@ def test_hpc_submit_prefers_gpu_stage_script() -> None:
 
 
 def test_hpc_submit_falls_back_to_cpu_stage_script() -> None:
-    from tools.bsm_hpc_submit import _select_array_script
+    from tools.rfm_hpc_submit import _select_array_script
 
     scripts = {"stage": Path("submit_interaction_discovery_array.sh")}
     assert _select_array_script(scripts) == Path("submit_interaction_discovery_array.sh")

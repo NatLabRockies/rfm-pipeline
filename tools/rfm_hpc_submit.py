@@ -1,4 +1,4 @@
-"""bsm-hpc-submit — Generate and optionally submit SLURM array jobs for the BSM pipeline.
+"""rfm-hpc-submit — Generate and optionally submit SLURM array jobs for an rfm-pipeline workflow.
 
 Reads a workflow config (with an embedded 'distributed' section) and produces:
   - A JSONL shard manifest
@@ -8,18 +8,18 @@ Reads a workflow config (with an embedded 'distributed' section) and produces:
 Usage::
 
     # Generate scripts only (safe to run locally)
-    pixi run bsm-hpc-submit --config configs/hpc/kestrel_30k.yml --stage interaction_discovery
+    pixi run rfm-hpc-submit --config configs/hpc/kestrel_30k.yml --stage interaction_discovery
 
     # Generate and submit (requires sbatch on PATH)
-    pixi run bsm-hpc-submit --config configs/hpc/kestrel_30k.yml \\
+    pixi run rfm-hpc-submit --config configs/hpc/kestrel_30k.yml \\
         --stage interaction_discovery --submit
 
     # Dry run (show sbatch commands, don't execute)
-    pixi run bsm-hpc-submit --config configs/hpc/kestrel_30k.yml \\
+    pixi run rfm-hpc-submit --config configs/hpc/kestrel_30k.yml \\
         --stage interaction_discovery --submit --dry-run
 
     # Smoke test on debug partition first
-    pixi run bsm-hpc-submit --config configs/hpc/kestrel_30k.yml --diagnostic-only --submit
+    pixi run rfm-hpc-submit --config configs/hpc/kestrel_30k.yml --diagnostic-only --submit
 
 Output directory defaults to <artifact_dir>/hpc_scripts/.
 """
@@ -34,7 +34,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
-logger = logging.getLogger("bsm.hpc_submit")
+logger = logging.getLogger("rfm_pipeline.hpc_submit")
 
 
 def _find_incomplete_task_ids(output_root: Path, n_shards: int) -> list[int]:
@@ -61,7 +61,7 @@ def _reconcile_manifest_from_fs(shards: list, output_root: Path) -> tuple[list, 
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Generate and optionally submit BSM HPC SLURM scripts",
+        description="Generate and optionally submit rfm-pipeline HPC SLURM scripts",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -412,7 +412,7 @@ def _make_executable(path: Path) -> None:
 def _print_summary(scripts: dict, stage: str, run_id: str, submitted: bool, dry_run: bool) -> None:
     print()
     print("=" * 60)
-    print(f"BSM HPC Scripts — stage={stage}  run_id={run_id}")
+    print(f"rfm-pipeline HPC scripts — stage={stage}  run_id={run_id}")
     print("=" * 60)
     for name, path in scripts.items():
         print(f"  {name:15s}: {path}")
@@ -434,7 +434,7 @@ def _print_summary(scripts: dict, stage: str, run_id: str, submitted: bool, dry_
             "gpu_stage",
             scripts.get("stage", scripts.get("diagnostic", "")),
         ).parent
-        print(f"  tail -f {log_parent}/bsm_{stage}_*.out")
+        print(f"  tail -f {log_parent}/rfm_{stage}_*.out")
     print()
 
 

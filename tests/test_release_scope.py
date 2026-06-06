@@ -28,10 +28,10 @@ def test_scope_boundary_doc_matches_machine_readable_boundary() -> None:
 def test_pyproject_includes_release_facing_repository_metadata() -> None:
     project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]
     urls = project["urls"]
-    assert urls["Homepage"].endswith("NatLabRockies/bsm-public-rf")
-    assert urls["Repository"].endswith("NatLabRockies/bsm-public-rf")
-    assert urls["Issues"].endswith("NatLabRockies/bsm-public-rf/issues")
-    assert urls["Changelog"].endswith("NatLabRockies/bsm-public-rf/blob/main/CHANGELOG.md")
+    assert urls["Homepage"].endswith("NatLabRockies/rfm-pipeline")
+    assert urls["Repository"].endswith("NatLabRockies/rfm-pipeline")
+    assert urls["Issues"].endswith("NatLabRockies/rfm-pipeline/issues")
+    assert urls["Changelog"].endswith("NatLabRockies/rfm-pipeline/blob/main/CHANGELOG.md")
     assert "keywords" in project and "workflow" in project["keywords"]
     assert "classifiers" in project
     assert any(

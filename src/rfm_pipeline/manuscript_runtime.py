@@ -320,7 +320,7 @@ def resolve_manuscript_runtime(repo_root: Path) -> ManuscriptRuntimeContext:
         mode = "real"
         runtime_dir = None
     else:
-        runtime_dir = Path(tempfile.mkdtemp(prefix="bsm_manuscript_demo_"))
+        runtime_dir = Path(tempfile.mkdtemp(prefix="rfm_pipeline_demo_"))
         artifact_paths = write_demo_manuscript_artifacts(runtime_dir / "data")
         output_root = runtime_dir / "artifacts"
         output_root.mkdir(parents=True, exist_ok=True)
@@ -351,7 +351,7 @@ def build_manuscript_notebook_context(
     except (ImportError, OSError, ValueError):
         if runtime.mode != "real":
             raise
-        runtime_dir = Path(tempfile.mkdtemp(prefix="bsm_manuscript_demo_"))
+        runtime_dir = Path(tempfile.mkdtemp(prefix="rfm_pipeline_demo_"))
         artifact_paths = write_demo_manuscript_artifacts(runtime_dir / "data")
         output_root = runtime_dir / "artifacts"
         output_root.mkdir(parents=True, exist_ok=True)
@@ -367,7 +367,7 @@ def build_manuscript_notebook_context(
         tables = load_manuscript_artifact_tables(runtime.artifact_paths)
     alignment_issues = _runtime_sample_alignment_issues(tables)
     if runtime.mode == "real" and alignment_issues:
-        runtime_dir = Path(tempfile.mkdtemp(prefix="bsm_manuscript_demo_"))
+        runtime_dir = Path(tempfile.mkdtemp(prefix="rfm_pipeline_demo_"))
         artifact_paths = write_demo_manuscript_artifacts(runtime_dir / "data")
         output_root = runtime_dir / "artifacts"
         output_root.mkdir(parents=True, exist_ok=True)

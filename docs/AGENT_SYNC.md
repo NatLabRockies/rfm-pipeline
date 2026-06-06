@@ -47,54 +47,79 @@ last_commit: b1aafa8 — config: add sensitivity study wave 3 spec (seeds 3000)
 | NatLabRockies/bsm-public-rf            | private    | BSM configs + model artifacts           | c5c6aa9       |
 | NatLabRockies/bsm-public-rf-manuscript | private    | LaTeX + figures                         | 26f7999       |
 
-### Sensitivity study — HPC state (2026-06-02T~15:xx MT)
+### Sensitivity study — HPC state (UPDATED 2026-06-06T05:47 MT)
 
-| Wave              | Study dir                                       | Results CSV                             | Rows  | Job ID   | Status                                                                                    |
-| ----------------- | ----------------------------------------------- | --------------------------------------- | ----- | -------- | ----------------------------------------------------------------------------------------- |
-| Wave 1 (complete) | `/scratch/dhetting/bsm/sensitivity_study_wave1` | artifacts/sensitivity/wave1_results.csv | 2,583 | —        | 2,583/2,750 collected; 14 BSM-structure jobs resubmitted as 14074257                      |
-| Wave 1 missing    | same as above                                   | —                                       | 14    | 14074257 | PENDING (QOSMaxNodePerUserLimit behind wave 3)                                            |
-| Wave 2 (partial)  | `/scratch/dhetting/bsm/sensitivity_study_wave2` | artifacts/sensitivity/wave2_results.csv | 2,506 | —        | 2,506/2,750 collected; 43/250 BSM-structure done; 207 BSM-structure still running/pending |
-| Wave 2 missing    | same as above                                   | —                                       | 143   | 14074255 | PENDING (QOSMaxNodePerUserLimit behind wave 3)                                            |
-| Wave 3            | `/scratch/dhetting/bsm/sensitivity_study_wave3` | not yet collected                       | —     | 14069433 | RUNNING (100 concurrent, shared 12h); unblocked after 14062332 cancelled                  |
+**SUPERSEDES prior wave status table.**
 
-**NOTE (2026-06-02):** Job 14062332 (previously misidentified in AGENT_SYNC as "Wave 2b: 57,500-job original study") was actually running wave 2's remaining 143 BSM-structure jobs. It was cancelled, then those 143 jobs were resubmitted as job 14074255. The original `sensitivity_study` (57,500-job spec) is a separate abandoned study with ~3,233 artifacts from earlier batch runs; it is NOT being continued.
+| Wave    | Artifact dir (Kestrel)                          | result.json count | Total | Gap | Status         |
+| ------- | ----------------------------------------------- | ----------------- | ----- | --- | -------------- |
+| Wave 1  | `/scratch/dhetting/bsm/sensitivity_study_wave1` | 2,750             | 2,750 | 0   | ✅ Complete    |
+| Wave 2  | `/scratch/dhetting/bsm/sensitivity_study_wave2` | 2,649             | 2,750 | 101 | ⚠️ Resubmitted |
+| Wave 3  | `/scratch/dhetting/bsm/sensitivity_study_wave3` | 2,750             | 2,750 | 0   | ✅ Complete    |
+| **All** |                                                 | **8,149**         | 8,250 | 101 | 98.8% done     |
 
-**Next collection steps (on Kestrel after jobs 14074255/14074257 complete):**
+#### Wave 2 resubmit — currently PENDING on standard partition
 
-```bash
-# Collect remaining wave 2 BSM-structure results (re-run after 14074255 finishes):
-pixi run python scripts/collect_sensitivity_results.py \
-  --study-dir /scratch/dhetting/bsm/sensitivity_study_wave2 \
-  --output results/wave2_results.csv
-# Collect wave 3 after 14069433 finishes:
-pixi run python scripts/collect_sensitivity_results.py \
-  --study-dir /scratch/dhetting/bsm/sensitivity_study_wave3 \
-  --output results/wave3_results.csv
-# Re-fit RF meta-regression after each collection:
-pixi run python scripts/fit_rf_meta_regression.py \
-  --results results/wave1_results.csv results/wave2_results.csv \
-  --output-dir artifacts/sensitivity/
-```
+| Job ID   | Tasks | Block          | Walltime | Partition | Array file (Kestrel)                                                          | Status as of 2026-06-06T05:47 MT |
+| -------- | ----- | -------------- | -------- | --------- | ----------------------------------------------------------------------------- | -------------------------------- |
+| 14106277 | 64    | bsm_structure  | 6h       | standard  | `/scratch/dhetting/bsm/sensitivity_study_wave2/slurm_array_bsm_missing2.txt`  | PENDING, queue pos ~4,743        |
+| 14106278 | 37    | pure_synthetic | 2h       | standard  | `/scratch/dhetting/bsm/sensitivity_study_wave2/slurm_array_pure_missing2.txt` | PENDING, queue pos ~4,744        |
 
-**Collect command (run after each wave completes):**
+- Submitted: 2026-06-05 ~18:00 MT from `/home/dhetting/src/bsm-public-rf`
+- Standard partition: 1,379 nodes allocated, 0 idle, 4,683 total pending → ETA 1–3 days
+- No tasks started as of last check (2026-06-06T05:47 MT)
+- Config used: `/scratch/dhetting/bsm/bsm-public-rf/configs/sensitivity_study/study_spec_wave2.yml`
+- Submit script: `scripts/submit_sensitivity_study.sh` (uses `ARRAY_FILENAME` env var)
+
+#### After wave 2 resubmit completes — collection + RF retraining
+
+Run from `/home/dhetting/src/bsm-public-rf` on Kestrel (run `git pull` first):
 
 ```bash
-# On Kestrel, from /home/dhetting/src/bsm-public-rf:
+git pull
+
+# 1. Collect all three waves
 pixi run python scripts/collect_sensitivity_results.py \
   --study-dir /scratch/dhetting/bsm/sensitivity_study_wave1 \
-  --output results/wave1_results.csv
+  --output artifacts/sensitivity/wave1_results.csv
+
 pixi run python scripts/collect_sensitivity_results.py \
   --study-dir /scratch/dhetting/bsm/sensitivity_study_wave2 \
-  --output results/wave2_results.csv
+  --output artifacts/sensitivity/wave2_results.csv
+
 pixi run python scripts/collect_sensitivity_results.py \
   --study-dir /scratch/dhetting/bsm/sensitivity_study_wave3 \
-  --output results/wave3_results.csv
-# Then combine and fit meta-regression:
-pixi run python scripts/fit_meta_regression.py \
-  --results results/wave1_results.csv results/wave2_results.csv results/wave3_results.csv
+  --output artifacts/sensitivity/wave3_results.csv
+
+# 2. Combine all waves into one CSV
+python3 -c "
+import pandas as pd
+waves = ['artifacts/sensitivity/wave1_results.csv',
+         'artifacts/sensitivity/wave2_results.csv',
+         'artifacts/sensitivity/wave3_results.csv']
+pd.concat([pd.read_csv(f) for f in waves], ignore_index=True)\
+  .to_csv('artifacts/sensitivity/all_waves_results.csv', index=False)
+print('Done')
+"
+
+# 3. Retrain RF meta-regression on combined data
+pixi run python scripts/fit_rf_meta_regression.py \
+  --results artifacts/sensitivity/all_waves_results.csv \
+  --output-dir artifacts/sensitivity/
+
+# 4. Sync artifacts back to local + commit
+# scp artifacts/sensitivity/ back to ~/src/bsm-public-rf/artifacts/sensitivity/
+# then: git add artifacts/sensitivity/ && git commit -m "sens: retrain RF on all 3 waves"
 ```
 
-**HPC clone remote:** `/home/dhetting/src/bsm-public-rf` now correctly points to `NatLabRockies/rfm-pipeline`.
+**CRITICAL NOTE on n_jobs:** All three waves used `n_jobs: 100` (100 parallel cores). The RF model
+predicts 100-core wall time, NOT single-core. The predicted ~103 min at BSM operating point
+is for n_jobs=100. Single-core estimated at 15–28 h via Amdahl's law. See runtime bundle at
+`/tmp/runtime_prediction_bundle/` for full analysis.
+
+**Kestrel git repo:** `/home/dhetting/src/bsm-public-rf` is a clone of `NatLabRockies/rfm-pipeline`.
+Run `git pull` before any work. The `bsm-public-rf` study data repo is separate
+(`/scratch/dhetting/bsm/bsm-public-rf/` holds configs/artifacts, not the pipeline code).
 
 ### Open manuscript TODOs (in jds_bsm.tex)
 

@@ -208,7 +208,7 @@ def main() -> int:
 
         from rfm_pipeline.synthetic_dgp import (
             SyntheticDGPSpec,
-            generate_bsm_structure_synthetic,
+            generate_calibrated_structure_synthetic,
             generate_pure_synthetic,
         )
 
@@ -236,11 +236,11 @@ def main() -> int:
         dataset = (
             generate_pure_synthetic(dgp_spec)
             if dgp_family == "pure_synthetic"
-            else generate_bsm_structure_synthetic(dgp_spec)
+            else generate_calibrated_structure_synthetic(dgp_spec)
         )
         gen_elapsed = time.perf_counter() - t0
 
-        with tempfile.TemporaryDirectory(prefix=f"bsm_sens_{job_id}_") as tmpdir:
+        with tempfile.TemporaryDirectory(prefix=f"rfm_sens_{job_id}_") as tmpdir:
             data_dir = Path(tmpdir) / "data"
             data_dir.mkdir()
             dataset.input_matrix.to_parquet(data_dir / "X.parquet", index=False)

@@ -8606,3 +8606,152 @@ def _render_horizontal_bar_svg(
         )
     elements.append("</svg>")
     return "\n".join(elements) + "\n"
+
+
+def regenerate_figures_from_committed_data(
+    *,
+    figure_data_dir: Path,
+    tables_dir: Path,
+    output_dir: Path,
+) -> dict[str, Path]:
+    """Regenerate manuscript SVG figures from committed figure-source CSV files.
+
+    Public entry point for downstream reproducibility packages (e.g.
+    ``bsm-public-rf``) that want to regenerate the exact manuscript figures
+    from committed artifact CSVs — no raw BSM data or HPC required.
+
+    Produces the same 11 SVG figures as the original pipeline run by calling
+    the same rendering functions used during the full pipeline execution.
+
+    Parameters
+    ----------
+    figure_data_dir
+        Directory containing the committed figure-source CSVs:
+        ``figure_support_composition_data.csv``,
+        ``figure_selected_by_module_data.csv``,
+        ``figure_feature_pruning_curve_data.csv``,
+        ``feature_type_counts.csv``,
+        ``influential_counts_by_module.csv``,
+        ``interaction_counts_by_module_pair.csv``,
+        ``interaction_density_module_matrix.csv``,
+        ``module_total_interactions.csv``.
+    tables_dir
+        Directory containing committed table CSVs:
+        ``ablation_table.csv``, ``per_output_nrmse.csv``,
+        ``feature_pruning_summary.csv``.
+    output_dir
+        Directory where SVG figures are written.  Created if absent.
+
+    Returns
+    -------
+    dict[str, Path]
+        Map from figure name to the written SVG ``Path``.
+
+    Raises
+    ------
+    FileNotFoundError
+        If any required CSV file is missing.
+    """
+
+    def _load(directory: Path, name: str) -> pd.DataFrame:
+        path = directory / name
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Required committed CSV not found: {path}\n"
+                "Ensure all figure source CSVs are committed under artifacts/figure_data/ "
+                "and all table CSVs under artifacts/tables/."
+            )
+        return pd.read_csv(path)
+
+    # ---------------------------------------------------------------------- load
+    ablation_table = _load(tables_dir, "ablation_table.csv")
+    per_output_nrmse = _load(tables_dir, "per_output_nrmse.csv")
+    pruning_summary = _load(tables_dir, "feature_pruning_summary.csv")
+
+    sup_data = _load(figure_data_dir, "figure_support_composition_data.csv")
+    mod_data = _load(figure_data_dir, "figure_selected_by_module_data.csv")
+    pruning_data = _load(figure_data_dir, "figure_feature_pruning_curve_data.csv")
+    feat_types = _load(figure_data_dir, "feature_type_counts.csv")
+    influential = _load(figure_data_dir, "influential_counts_by_module.csv")
+    # interaction_counts_by_module_pair is loaded for completeness / validation;
+    # the heatmap renderer uses the pivoted matrix form.
+    _load(figure_data_dir, "interaction_counts_by_module_pair.csv")
+    matrix_df = _load(figure_data_dir, "interaction_density_module_matrix.csv")
+    total_iact = _load(figure_data_dir, "module_total_interactions.csv")
+
+    auto_remove = int(pruning_summary["auto_remove_count"].iloc[0])
+    effective_remove = int(pruning_summary["effective_remove_count"].iloc[0])
+
+    # Heatmap renderer expects module as the DataFrame index (not a column).
+    matrix_indexed = matrix_df.set_index(matrix_df.columns[0])
+    matrix_indexed.index.name = None
+
+    mp_data = _build_model_performance_figure_data(ablation_table)
+    nrmse_data = _build_nrmse_summary_figure_data(ablation_table)
+
+    # ---------------------------------------------------------------------- render
+    svg_figures: dict[str, str] = {
+        "figure_model_performance": _render_horizontal_bar_svg(
+            mp_data,
+            label_column="display_name",
+            value_column="nrmse",
+            title="Holdout macro nRMSE",
+            ci_lower_column="ci_lower",
+            ci_upper_column="ci_upper",
+        ),
+        "figure_support_composition": _render_horizontal_bar_svg(
+            sup_data,
+            label_column="feature_type",
+            value_column="n_features",
+            title="Final support composition",
+        ),
+        "figure_selected_by_module_count": _render_horizontal_bar_svg(
+            mod_data,
+            label_column="module",
+            value_column="n_selected_inputs",
+            title="Selected inputs by module (count)",
+        ),
+        "figure_selected_by_module_share": _render_horizontal_bar_svg(
+            mod_data,
+            label_column="module",
+            value_column="share_selected_support",
+            title="Selected inputs by module (share)",
+        ),
+        "figure_nrmse_bootstrap_summary": _render_nrmse_summary_svg(nrmse_data),
+        "fig_feature_type_distribution": _render_horizontal_bar_svg(
+            feat_types,
+            label_column="feature_type",
+            value_column="count",
+            title="Distribution of Influential Feature Types",
+        ),
+        "fig_influential_by_module": _render_horizontal_bar_svg(
+            influential.sort_values("module", ignore_index=True),
+            label_column="module",
+            value_column="count",
+            title="Influential Features by Module",
+        ),
+        "fig_module_pair_heatmap": _render_module_pair_heatmap_svg(matrix_indexed),
+        "fig_module_total_interactions": _render_horizontal_bar_svg(
+            total_iact,
+            label_column="module",
+            value_column="total_interactions",
+            title="Total Interactions by Module",
+        ),
+        "figure_feature_pruning_curve": _render_feature_pruning_curve_svg(
+            pruning_data,
+            auto_remove_count=auto_remove,
+            effective_remove_count=effective_remove,
+        ),
+        "figure_per_output_nrmse_distribution": _render_per_output_nrmse_distribution_svg(
+            per_output_nrmse
+        ),
+    }
+
+    # ---------------------------------------------------------------------- write
+    output_dir.mkdir(parents=True, exist_ok=True)
+    written: dict[str, Path] = {}
+    for name, svg_text in svg_figures.items():
+        path = output_dir / f"{name}.svg"
+        path.write_text(svg_text, encoding="utf-8")
+        written[name] = path
+    return written

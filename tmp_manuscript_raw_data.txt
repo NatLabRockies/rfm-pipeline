@@ -1,6 +1,0 @@
-X data: /Users/dhetting/Box
-Sync/2022-08-09_BSM_reduction/data/study_results/model_factors.20240613/068/combined_group_0/sample_7500.X.parquet
-  - Shape: 30,000 samples × 158 features
-  - Breakdown: 7,500 samples per scenario × 4 scenarios
- - Y data: /Users/dhetting/Box
-Sync/2022-08-09_BSM_reduction/data/study_results/model_factors.20240613/068/combined_group_0/sample_7500.Y.parquet

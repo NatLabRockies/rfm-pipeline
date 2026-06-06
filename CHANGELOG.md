@@ -4,7 +4,7 @@ All notable changes to this repository should be documented in this file.
 
 ## 0.1.0
 
-Initial public package candidate for the BSM reduced-form modeling workflow.
+Initial public package candidate for the rfm-pipeline reduced-form modeling workflow.
 
 ### Added
 
@@ -18,6 +18,6 @@ Initial public package candidate for the BSM reduced-form modeling workflow.
 ### Notes
 
 - the upstream Delta permutation-null screen remains exposed through the
-  recovered source adapter in `bsm_rfm.null_screening`
-- the recovered notebook-specific feature-expansion defaults remain only
+  recovered source adapter in `rfm_pipeline.null_screening`
+- the notebook-specific feature-expansion defaults remain only
   partially promoted into the canonical package path

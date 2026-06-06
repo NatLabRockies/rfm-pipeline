@@ -181,8 +181,8 @@ ______________________________________________________________________
 
 **Manuscript Benchmarks:**
 
-- **Final retained predictors:** 340
-- **Distinct first-order inputs:** 62
+- **Final retained predictors:** 132
+- **Distinct first-order main effects:** 54
 - **EBIC gamma:** 0.5
 - **L1 ratio:** 1.0 (pure lasso)
 
@@ -214,9 +214,9 @@ ______________________________________________________________________
 
 **Manuscript Benchmarks:**
 
-- **Intermediate penalized holdout nRMSE:** 0.0859
-- **Final OLS holdout nRMSE:** 0.0445
-- **Holdout fraction:** 10%
+- **Intermediate penalized holdout nRMSE:** 0.0709
+- **Final OLS holdout nRMSE:** 0.0721 [0.0706, 0.0730]
+- **Holdout fraction:** 5%
 
 **Your Results Should Show:**
 
@@ -254,8 +254,8 @@ ______________________________________________________________________
 |                           | Retention rate     | 1.3%             | 0.5%–5%       |
 | **Interaction Discovery** | Pairs identified   | 367              | 50–500        |
 | **Nonlinear Discovery**   | Transformations    | 112              | 20–150        |
-| **Sparse Selection**      | Final features     | 340              | 100–500       |
-| **Holdout Performance**   | Final nRMSE        | 0.0445           | 0.01–0.50     |
+| **Sparse Selection**      | Final features            | 132              | 100–500       |
+| **Holdout Performance**   | Final nRMSE        | 0.0721           | 0.01–0.50     |
 
 ### Important Notes
 
@@ -338,7 +338,7 @@ This is **expected and correct**. Here's why:
 - Smaller holdout → wider confidence intervals
 - Less stable model selection
 
-**Example:** Test dataset may retain 150–250 features vs. manuscript's 340
+**Example:** Test dataset may retain 150–250 features vs. manuscript's 132
 
 #### 2. Random Seed Variation
 
@@ -372,12 +372,12 @@ Your results show **good agreement** with manuscript if:
 ✅ **Feature counts within 2x of manuscript:**
 
 - Manuscript: 349 after screening → Your result: 150–700 = ✓
-- Manuscript: 340 final → Your result: 150–680 = ✓
+- Manuscript: 132 final → Your result: 150–680 = ✓
 
 ✅ **nRMSE within 2x of manuscript:**
 
-- Manuscript: 0.0445 → Your result: 0.02–0.09 = ✓
-- Manuscript: 0.0445 → Your result: 0.20–0.50 = ⚠️ acceptable if data differs
+- Manuscript: 0.0721 → Your result: 0.02–0.09 = ✓
+- Manuscript: 0.0721 → Your result: 0.20–0.50 = ⚠️ acceptable if data differs
 - Your result: >1.0 = ❌ problem
 
 ✅ **Variance explained within 10% of manuscript:**
@@ -414,8 +414,8 @@ Stage 6: Holdout nRMSE = 0.067
 | Screened features    | 349        | 287         | 0.82x | ✅ Good                 |
 | Interaction pairs    | 367        | 198         | 0.54x | ⚠️ Lower but acceptable |
 | Nonlinear transforms | 112        | 87          | 0.78x | ✅ Good                 |
-| Final features       | 340        | 256         | 0.75x | ✅ Good                 |
-| Holdout nRMSE        | 0.0445     | 0.067       | 1.51x | ✅ Good                 |
+| Final features       | 132        | 256         | 1.94x | ⚠️ More features than manuscript |
+| Holdout nRMSE        | 0.0721     | 0.067       | 0.93x | ✅ Good                 |
 
 **Interpretation:** Results show **good agreement**. Feature counts are 20–50% lower due to smaller sample size (3k vs. 20k), but all ratios are within expected range. nRMSE is slightly higher but well within acceptable bounds.
 

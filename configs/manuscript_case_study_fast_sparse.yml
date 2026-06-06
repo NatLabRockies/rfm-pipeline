@@ -9,18 +9,18 @@ case_study:
       - quadratic
       - logarithmic
       - inverse
-      - exponential
+      - square_root
       family_list_status: frozen_from_manuscript
     reported_candidate_count: 26560
     source_of_truth: released_feature_catalog
     source_of_truth_status: frozen_repo_decision
   empirical_null_screen:
-    bh_q_screen: 0.1
+    bh_q_screen: 0.05
     permutation_count_B: 200
     permutation_count_status: frozen_source_derived_repo_decision
     public_implementation_method: coefficient_row_l2_permutation
     public_implementation_status: source_backed_public_surrogate
-    retained_terms: 349
+    retained_terms: 69
     source_script_equivalence_status: not_yet_validated
     source_script_reference: private_delta_null_screening_script
     statistic: coefficient_row_l2_norm
@@ -29,10 +29,10 @@ case_study:
     interval_method: hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs
     interval_method_status: frozen_repo_decision
   final_model:
-    final_first_order_input_count: 62
-    final_ols_holdout_nrmse: 0.0445
-    final_predictor_count: 340
-    intermediate_penalized_holdout_nrmse: 0.0859
+    final_main_effect_count: 54
+    final_ols_holdout_nrmse: 0.0721
+    final_predictor_count: 132
+    intermediate_penalized_holdout_nrmse: 0.0709
     nrmse_definition_status: frozen_repo_decision_matching_live_code
     nrmse_denominator_definition: macro_average_rmse_divided_by_training_response_range
     nrmse_min_range: 1.0e-06
@@ -44,11 +44,11 @@ case_study:
     null_threshold_quantile: 0.995
     public_implementation_method: tree_shap_gradient_boosting
     public_implementation_status: manuscript_aligned
-    retained_pairs: 367
+    retained_pairs: 62
     source_workflow_equivalence_status: manuscript_aligned_via_shap_gradient_boosting
     source_workflow_reference: private_tree_shap_interaction_workflow
   interface:
-    holdout_fraction: 0.1
+    holdout_fraction: 0.05
     holdout_random_seed: 123
     holdout_split_rule: afsc_uaeoro_stratified_else_scenario
     holdout_split_rule_status: frozen_repo_decision
@@ -62,8 +62,8 @@ case_study:
   nonlinear_discovery:
     curvature_rule: edf_gt_1_and_smooth_pvalue_lt_0p01
     curvature_rule_status: frozen_repo_decision
-    final_support_transformations: 37
-    identified_transformations: 112
+    final_support_transformations: 29
+    identified_transformations: 41
     method: gam_plus_restricted_parametric_replacement
     public_implementation_method: gam_cubic_smoothing_spline
     public_implementation_status: manuscript_aligned
@@ -79,7 +79,7 @@ case_study:
     temporary_reduction:
       method: pca
       method_status: frozen_case_study_choice
-      retained_components: 39
+      retained_components: 20
       retained_variance_fraction: 0.9
       screening_target: retained_pca_scores
     variance_filter:
@@ -100,7 +100,7 @@ case_study:
     public_implementation_method: ebic_l1_component_union_with_subsample_stability
     public_implementation_status: source_backed_public_surrogate
     source_artifact: LASSO_to_OLS_v9.ipynb
-    source_selected_feature_count_reference: 346
+    source_selected_feature_count_reference: 172
     source_workflow_equivalence_status: not_yet_validated
     source_workflow_reference: notebook_pca_debiased_lasso
     support_aggregation_rule: union_nonzero_support_across_retained_components
@@ -114,5 +114,5 @@ case_study:
     spearman_threshold_status: frozen_repo_decision
 contract_source: docs/manuscript_contract.md
 contract_status: phase0_complete
-manuscript_source: jds_bsm_v3.tex
+manuscript_source: jds_bsm_v22.tex
 phase0_blockers: []

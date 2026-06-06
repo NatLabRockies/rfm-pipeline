@@ -31,12 +31,12 @@ This allows you to customize parameters without modifying tracked files.
 ```yaml
 output_conditioning:
   variance_filter_threshold: 0.01    # Min train variance to retain output
-  pca_variance_retained: 0.99        # PCA dimensionality reduction target
+  pca_variance_retained: 0.90        # PCA dimensionality reduction target
 
 empirical_null_screen:
   method: "permutation"              # Null screening method
-  alpha: 0.10                        # BH FDR threshold
-  n_permutations: 1000               # Permutation samples for null dist.
+  alpha: 0.05                        # BH FDR threshold (manuscript baseline)
+  n_permutations: 201                # B+1 = 201 (B=200 manuscript baseline)
 
 sparse_selection:
   ebic_gamma: 0.5                    # EBIC penalty
@@ -46,11 +46,11 @@ final_ols:
   hc3_alpha: 0.05                    # HC3 Wald inferential filter (95%)
 ```
 
-**Example change:** To use a stricter p-value threshold:
+**Example change:** To use a less strict p-value threshold:
 
 ```yaml
 empirical_null_screen:
-  alpha: 0.05  # Changed from 0.10
+  alpha: 0.10  # Loosened from manuscript baseline 0.05
 ```
 
 ### `configs/manuscript_runtime.yml`
@@ -443,10 +443,10 @@ ______________________________________________________________________
 | Config     | Section               | Field                     | Type  | Default       | Purpose                                 |
 | ---------- | --------------------- | ------------------------- | ----- | ------------- | --------------------------------------- |
 | case_study | output_conditioning   | variance_filter_threshold | float | 0.01          | Minimum train variance to retain output |
-| case_study | output_conditioning   | pca_variance_retained     | float | 0.99          | PCA cumulative variance target          |
+| case_study | output_conditioning   | pca_variance_retained     | float | 0.90          | PCA cumulative variance target          |
 | case_study | empirical_null_screen | method                    | str   | "permutation" | Null screening method                   |
-| case_study | empirical_null_screen | alpha                     | float | 0.10          | Benjamini-Hochberg FDR threshold        |
-| case_study | empirical_null_screen | n_permutations            | int   | 1000          | Permutations for null distribution      |
+| case_study | empirical_null_screen | alpha                     | float | 0.05          | Benjamini-Hochberg FDR threshold        |
+| case_study | empirical_null_screen | n_permutations            | int   | 201           | Permutations for null distribution      |
 | case_study | sparse_selection      | ebic_gamma                | float | 0.5           | EBIC penalty weight                     |
 | case_study | sparse_selection      | l1_ratio                  | float | 1.0           | Elastic-net L1 ratio (1=Lasso)          |
 | case_study | final_ols             | hc3_alpha                 | float | 0.05          | HC3 Wald filter (1 - confidence level)  |

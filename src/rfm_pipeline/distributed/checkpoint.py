@@ -42,7 +42,7 @@ class CheckpointManager:
 
     Usage::
 
-        cm = CheckpointManager("/scratch/bsm_run/work", "task-0042")
+        cm = CheckpointManager("/scratch/rfm_run/work", "task-0042")
         if cm.is_complete():
             # skip
             return

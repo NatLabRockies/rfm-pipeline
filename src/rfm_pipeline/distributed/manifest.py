@@ -1,4 +1,4 @@
-"""Shard manifest schema and I/O for distributed BSM pipeline execution.
+"""Shard manifest schema and I/O for distributed rfm-pipeline execution.
 
 A manifest is a JSONL file where each line is a JSON object representing
 one ShardManifest record. The SLURM array runner selects a record by
@@ -23,7 +23,7 @@ class ShardManifest:
     """Describes one shard of distributed pipeline work.
 
     A shard is the unit of work assigned to a single SLURM array task.
-    For the BSM manuscript pipeline, each shard corresponds to one
+    For rfm-pipeline, each shard corresponds to one
     interaction-scoring batch (a subset of feature pairs) or one
     output-conditioning chunk.
 

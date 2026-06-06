@@ -1,6 +1,6 @@
 """Ray-based distributed execution — EXPERIMENTAL.
 
-This module provides a Ray actor pool adapter for the BSM manuscript pipeline.
+This module provides a Ray actor pool adapter for the rfm-pipeline.
 It is EXPERIMENTAL and disabled by default.
 
 To enable: set env var BSM_ENABLE_RAY_EXPERIMENTAL=1
@@ -15,7 +15,7 @@ Why experimental?
     where Ray's task autoscaling is superior.
 
 Recommended alternatives on Kestrel:
-  - SLURM array jobs (Phase 8a): bsm-hpc-submit + array tasks
+  - SLURM array jobs (Phase 8a): rfm-hpc-submit + array tasks
   - Dask-SLURM (Phase 8c): DaskRunner with scheduler='slurm'
   - MPI (Phase 8c): mpi_runner.py via srun
 
@@ -71,7 +71,7 @@ def _require_ray() -> None:
 
 
 class RayRunner:
-    """Ray actor pool adapter for BSM pipeline stages.
+    """Ray actor pool adapter for rfm-pipeline stages.
 
     EXPERIMENTAL — see module docstring.
 

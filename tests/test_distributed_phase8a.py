@@ -41,6 +41,12 @@ class TestDistributedConfig:
         cfg = DistributedConfig()
         errors = cfg.validate()
         assert errors == [], f"Default config has validation errors: {errors}"
+        assert cfg.run_id == "rfm_run"
+        assert cfg.pixi_env_path == "/projects/rfm/.pixi"
+        assert cfg.slurm.account == "rfm"
+        assert cfg.slurm.log_dir == "/scratch/${USER}/rfm/${RUN_ID}/logs"
+        assert cfg.kestrel.projects_root == "/projects/rfm"
+        assert cfg.kestrel.pixi_cache_dir == "/projects/rfm/.cache/pixi"
 
     def test_invalid_backend(self):
         cfg = DistributedConfig(backend="not_a_backend")
@@ -372,6 +378,10 @@ class TestSlurmArrayRunner:
         assert "#!/bin/bash" in script
         assert "#SBATCH --account=bsm" in script
         assert "#SBATCH --partition=debug" in script
+        assert "#SBATCH --job-name=rfm_interaction_discovery_test_run" in script
+        assert "#SBATCH --output=" in script
+        assert "rfm_interaction_discovery_%A_%a.out" in script
+        assert "rfm_interaction_discovery_%A_%a.err" in script
         assert "#SBATCH --array=0-3%2" in script  # 4 shards, max 2 concurrent
         assert "interaction_discovery" in script
         assert "test_run" in script
@@ -394,6 +404,9 @@ class TestSlurmArrayRunner:
         runner = self._make_runner(tmp_path)
         script = runner.generate_reduce_script("interaction_discovery", after_job_id=12345)
         assert "#!/bin/bash" in script
+        assert "#SBATCH --job-name=rfm_reduce_interaction_discovery_test_run" in script
+        assert "rfm_reduce_interaction_discovery_%j.out" in script
+        assert "rfm_reduce_interaction_discovery_%j.err" in script
         assert "--dependency=afterany:12345" in script
         assert "hpc_reduce.py" in script
         # Self-guard completeness check

@@ -24,16 +24,42 @@ pixi install --locked
 
 ## Quick start
 
-```python
-from rfm_pipeline import ManuscriptPipelineConfig, run_manuscript_pipeline
+Use `run_canonical_workflow(...)` for the core API, or the script entry point for the
+full config-driven manuscript workflow.
 
-cfg = ManuscriptPipelineConfig.from_yaml("configs/datasets/my_dataset.yml")
-run_manuscript_pipeline(cfg, output_dir="artifacts/my-run")
+```python
+from pathlib import Path
+
+import pandas as pd
+
+from rfm_pipeline import build_manuscript_notebook_context, run_canonical_workflow
+
+X_train = pd.read_parquet("X_train.parquet")
+Y_train = pd.read_parquet("Y_train.parquet")
+X_holdout = pd.read_parquet("X_holdout.parquet")
+Y_holdout = pd.read_parquet("Y_holdout.parquet")
+
+run = run_canonical_workflow(
+    X_train,
+    Y_train,
+    X_holdout,
+    Y_holdout,
+    dataset_tag="my-run",
+)
+
+context = build_manuscript_notebook_context(
+    Path.cwd(),
+    "00_case_study_data_intake.ipynb",
+)
 ```
 
-Or via the command line:
+For the full config-driven manuscript reproduction, use the script entry point:
 
 ```bash
+pixi run python scripts/run_manuscript_reproduction.py \
+  --config configs/datasets/my_dataset.yml
+
+# equivalent pixi task
 pixi run manuscript-reproduce --config configs/datasets/my_dataset.yml
 ```
 
@@ -76,10 +102,10 @@ how pipeline hyperparameters affect NRMSE across synthetic DGPs:
 ```bash
 pixi run python scripts/generate_sensitivity_study.py \
   --spec configs/sensitivity_study/study_spec.yml \
-  --output-dir /path/to/sensitivity_output
-
-pixi run python scripts/submit_sensitivity_study.sh \
   --study-dir /path/to/sensitivity_output
+
+SENSITIVITY_SPEC=configs/sensitivity_study/study_spec.yml \
+  bash scripts/submit_sensitivity_study.sh --submit-all
 ```
 
 ## Repository gate

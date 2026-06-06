@@ -1,4 +1,4 @@
-"""Distributed and HPC execution adapters for the BSM manuscript pipeline.
+"""Distributed and HPC execution adapters for the rfm-pipeline.
 
 Phase 8a: SLURM array baseline — config schema, manifest, checkpoint, sbatch generation.
 Phase 8b: Out-of-core chunk processing + checkpoint/recovery.

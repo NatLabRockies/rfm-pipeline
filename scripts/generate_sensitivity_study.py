@@ -120,13 +120,13 @@ def main() -> int:
     (study_dir / "slurm_array.txt").write_text("\n".join(slurm_lines) + "\n", encoding="utf-8")
 
     pure_dgps = study_spec.pure_synthetic_n_dgps
-    bsm_dgps = study_spec.bsm_structure_n_dgps
+    calibrated_dgps = study_spec.calibrated_n_dgps
     print(f"study_dir={study_dir}")
     print(f"total_jobs={len(jobs)}")
     print(f"pure_synthetic_dgps={pure_dgps}")
-    print(f"bsm_structure_dgps={bsm_dgps}")
+    print(f"calibrated_structure_dgps={calibrated_dgps}")
     print(f"pure_configs_per_dgp={study_spec.n_configs_per_dgp_pure}")
-    print(f"bsm_configs_per_dgp={study_spec.n_configs_per_dgp_bsm}")
+    print(f"calibrated_configs_per_dgp={study_spec.n_configs_per_dgp_calibrated}")
     print(f"replicates={study_spec.n_replicates}")
     return 0
 

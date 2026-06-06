@@ -291,13 +291,13 @@ ______________________________________________________________________
 **File:** `configs/datasets/test_3k.yml`
 
 ```yaml
-case_study_input_matrix: /Users/you/bsm-public-rf/artifacts/test_dataset_3k/X.parquet
-case_study_output_matrix: /Users/you/bsm-public-rf/artifacts/test_dataset_3k/Y.parquet
-input_metadata: /Users/you/bsm-public-rf/docs/final_scripts_from_hpc/model_artifacts/final_ols_model/postfit_diagnostics/all_input_metadata.parquet
-output_metadata: /Users/you/bsm-public-rf/docs/final_scripts_from_hpc/model_artifacts/final_ols_model/postfit_diagnostics/output_metadata.parquet
-manuscript_feature_catalog: /Users/you/bsm-public-rf/artifacts/test_dataset_3k/full_feature_catalog.parquet
-fixed_holdout_assignments: /Users/you/bsm-public-rf/artifacts/test_dataset_3k/holdout_assignments.parquet
-output_root: /Users/you/bsm-public-rf/artifacts/test_3k_output
+case_study_input_matrix: /Users/you/rfm-pipeline/artifacts/test_dataset_3k/X.parquet
+case_study_output_matrix: /Users/you/rfm-pipeline/artifacts/test_dataset_3k/Y.parquet
+input_metadata: /Users/you/rfm-pipeline/docs/final_scripts_from_hpc/model_artifacts/final_ols_model/postfit_diagnostics/all_input_metadata.parquet
+output_metadata: /Users/you/rfm-pipeline/docs/final_scripts_from_hpc/model_artifacts/final_ols_model/postfit_diagnostics/output_metadata.parquet
+manuscript_feature_catalog: /Users/you/rfm-pipeline/artifacts/test_dataset_3k/full_feature_catalog.parquet
+fixed_holdout_assignments: /Users/you/rfm-pipeline/artifacts/test_dataset_3k/holdout_assignments.parquet
+output_root: /Users/you/rfm-pipeline/artifacts/test_3k_output
 ```
 
 **Use case:** Quick validation (~20 minutes)
@@ -307,13 +307,13 @@ output_root: /Users/you/bsm-public-rf/artifacts/test_3k_output
 **File:** `configs/datasets/real_data.yml`
 
 ```yaml
-case_study_input_matrix: /Users/you/bsm-public-rf/artifacts/preprocessed_real_data/sample_7500.X.parquet
-case_study_output_matrix: /Users/you/bsm-public-rf/artifacts/preprocessed_real_data/sample_7500.Y.parquet
-input_metadata: /Users/you/bsm-public-rf/docs/final_scripts_from_hpc/model_artifacts/final_ols_model/postfit_diagnostics/all_input_metadata.parquet
-output_metadata: /Users/you/bsm-public-rf/docs/final_scripts_from_hpc/model_artifacts/final_ols_model/postfit_diagnostics/output_metadata.parquet
-manuscript_feature_catalog: /Users/you/bsm-public-rf/artifacts/preprocessed_real_data/full_feature_catalog.parquet
-fixed_holdout_assignments: /Users/you/bsm-public-rf/docs/final_scripts_from_hpc/model_artifacts/final_ols_model/postfit_diagnostics/fixed_holdout_assignments.parquet
-output_root: /Users/you/bsm-public-rf/artifacts/real_data_output
+case_study_input_matrix: /Users/you/rfm-pipeline/artifacts/preprocessed_real_data/sample_7500.X.parquet
+case_study_output_matrix: /Users/you/rfm-pipeline/artifacts/preprocessed_real_data/sample_7500.Y.parquet
+input_metadata: /Users/you/rfm-pipeline/docs/final_scripts_from_hpc/model_artifacts/final_ols_model/postfit_diagnostics/all_input_metadata.parquet
+output_metadata: /Users/you/rfm-pipeline/docs/final_scripts_from_hpc/model_artifacts/final_ols_model/postfit_diagnostics/output_metadata.parquet
+manuscript_feature_catalog: /Users/you/rfm-pipeline/artifacts/preprocessed_real_data/full_feature_catalog.parquet
+fixed_holdout_assignments: /Users/you/rfm-pipeline/docs/final_scripts_from_hpc/model_artifacts/final_ols_model/postfit_diagnostics/fixed_holdout_assignments.parquet
+output_root: /Users/you/rfm-pipeline/artifacts/real_data_output
 ```
 
 **Use case:** Full manuscript reproduction (~2 hours)
@@ -410,7 +410,7 @@ case_study_input_matrix: artifacts/test_dataset_3k/X.parquet  # ❌ Relative
 **Correct:**
 
 ```yaml
-case_study_input_matrix: /Users/you/bsm-public-rf/artifacts/test_dataset_3k/X.parquet  # ✅ Absolute
+case_study_input_matrix: /Users/you/rfm-pipeline/artifacts/test_dataset_3k/X.parquet  # ✅ Absolute
 ```
 
 **Fix:** Use `$(pwd)/artifacts/...` in your YAML or expand to absolute path.

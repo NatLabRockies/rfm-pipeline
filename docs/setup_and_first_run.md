@@ -1,6 +1,6 @@
 # Setup and First Run Guide
 
-This guide walks you through setting up your environment and running the complete BSM reduced-form modeling workflow for the first time, from start to finish.
+This guide walks you through setting up your environment and running the complete reduced-form modeling workflow for the first time, from start to finish.
 
 ## Table of Contents
 
@@ -28,8 +28,8 @@ You do NOT need to pre-install Python, conda, or any data science tools—Pixi h
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/NatLabRockies/bsm-public-rf.git
-cd bsm-public-rf
+git clone https://github.com/NatLabRockies/rfm-pipeline.git
+cd rfm-pipeline
 ```
 
 ### Step 2: Install Pixi
@@ -99,7 +99,7 @@ The demo workflow runs end-to-end on built-in synthetic data. No configuration n
 This is the simplest possible entry point—runs the core workflow and writes results:
 
 ```bash
-cd /Users/dhetting/src/bsm-public-rf
+cd <repo-root>
 PYTHONPATH=src python examples/end_to_end_reproducibility.py \
   --output-dir artifacts/my-first-run
 ```
@@ -202,11 +202,11 @@ Open `configs/local/manuscript_paths.local.yml` and update file paths:
 ```yaml
 # Example (adjust paths for your machine):
 paths:
-  x_train: "/Users/you/bsm-data/X_train.parquet"
-  y_train: "/Users/you/bsm-data/Y_train.parquet"
-  x_holdout: "/Users/you/bsm-data/X_holdout.parquet"
-  y_holdout: "/Users/you/bsm-data/Y_holdout.parquet"
-  artifact_root: "/Users/you/bsm-outputs"
+  x_train: "/path/to/my-data/X_train.parquet"
+  y_train: "/path/to/my-data/Y_train.parquet"
+  x_holdout: "/path/to/my-data/X_holdout.parquet"
+  y_holdout: "/path/to/my-data/Y_holdout.parquet"
+  artifact_root: "<repo-root>/artifacts/real-data-output"
 ```
 
 ### Step 4: Validate the Configuration
@@ -321,12 +321,12 @@ source ~/.bashrc  # or ~/.zshrc for zsh
 pixi --version
 ```
 
-### Issue: "Could not locate the bsm-public-rf repository root"
+### Issue: "Could not locate the rfm-pipeline repository root"
 
 **Solution:** Make sure you're running commands from inside the cloned repository:
 
 ```bash
-cd /path/to/bsm-public-rf
+cd /path/to/rfm-pipeline
 ```
 
 ### Issue: "ModuleNotFoundError: No module named 'rfm_pipeline'"
@@ -334,7 +334,7 @@ cd /path/to/bsm-public-rf
 **Solution:** Ensure `PYTHONPATH` is set and Pixi environment is active:
 
 ```bash
-cd /path/to/bsm-public-rf
+cd /path/to/rfm-pipeline
 PYTHONPATH=src python examples/end_to_end_reproducibility.py ...
 ```
 

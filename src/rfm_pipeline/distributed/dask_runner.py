@@ -1,4 +1,4 @@
-r"""Dask distributed execution adapter for the BSM manuscript pipeline.
+r"""Dask distributed execution adapter for the rfm-pipeline.
 
 Provides a SLURMCluster-backed Dask client for Kestrel and generic HPC.
 Used when SLURM arrays are insufficient (dynamic task scheduling needed).
@@ -15,7 +15,7 @@ Usage (standalone)::
 
 Usage (pipeline)::
 
-    pixi run bsm-hpc-submit --config configs/hpc/kestrel_30k.yml \
+    pixi run rfm-hpc-submit --config configs/hpc/kestrel_30k.yml \
         --stage interaction_discovery --backend dask_slurm --submit
 
 Backend: 'dask_slurm' in DistributedConfig.backend.
@@ -56,7 +56,7 @@ except ImportError:
 
 
 class DaskRunner:
-    """Dask distributed runner for BSM pipeline stages.
+    """Dask distributed runner for rfm-pipeline stages.
 
     Supports three scheduler modes controlled by DistributedConfig.dask.scheduler:
       - 'slurm':     SLURMCluster via dask-jobqueue (HPC production)

@@ -5,8 +5,11 @@ type: software
 authors:
   - family-names: Hettinger
     given-names: Dylan
+    email: dylan.hettinger@nrel.gov
+    orcid: "https://orcid.org/0000-0000-0000-0000"
 license: MIT
 version: 0.1.0
+date-released: "2026-XX-XX"
 repository-code: "https://github.com/NatLabRockies/rfm-pipeline"
 url: "https://github.com/NatLabRockies/rfm-pipeline"
 abstract: >-

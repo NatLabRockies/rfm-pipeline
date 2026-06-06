@@ -1,0 +1,51 @@
+# Contributing to rfm-pipeline
+
+Thank you for your interest in contributing!
+
+## Getting started
+
+1. Fork the repository and create a feature branch from `main`.
+1. Install the development environment:
+   ```bash
+   git clone https://github.com/NatLabRockies/rfm-pipeline.git
+   cd rfm-pipeline
+   pixi install --locked
+   ```
+1. Run the test suite to verify your setup:
+   ```bash
+   ./test_repo.sh
+   ```
+
+## Making changes
+
+- Write tests before implementing (TDD).
+- Run targeted tests during development: `pixi run python -m pytest tests/<your_test>.py`
+- Run the full gate before submitting: `./test_repo.sh`
+- Follow existing code style (ruff enforces formatting and linting automatically).
+
+## Pull requests
+
+- Open a PR against `main` with a clear description of what changed and why.
+- Link any related issues.
+- All CI checks must pass before merging.
+- Keep changes focused — one concern per PR.
+
+## Reporting bugs
+
+Open a GitHub issue with:
+
+- A minimal reproducible example
+- Expected vs. actual behavior
+- Python version, OS, and package version (`rfm_pipeline.__version__`)
+
+## Feature requests
+
+Open a GitHub issue describing:
+
+- The use case
+- Why the current API is insufficient
+- A proposed interface (optional)
+
+## Code of conduct
+
+This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).

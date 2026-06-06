@@ -61,6 +61,7 @@ def test_repo_includes_changelog_and_citation_metadata() -> None:
     assert "# Changelog" in changelog_text
     assert f"## {version}" in changelog_text
     assert "cff-version: 1.2.0" in citation_text
-    assert 'title: "rfm-pipeline: Reduced-form modeling workflow package"' in citation_text
+    expected_title = 'title: "rfm-pipeline: A Python package for reduced-form modeling pipelines"'
+    assert expected_title in citation_text
     assert f"version: {version}" in citation_text
     assert 'repository-code: "https://github.com/NatLabRockies/rfm-pipeline"' in citation_text

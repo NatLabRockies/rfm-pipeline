@@ -15,7 +15,7 @@ from rfm_pipeline.config import (
     apply_fast_mode_overrides,
     load_config,
 )
-from tools.run_manuscript_pipeline import config_to_legacy_case_study
+from rfm_pipeline.distributed.stage_loaders import config_to_legacy_case_study
 
 if TYPE_CHECKING:
     from rfm_pipeline.config import WorkflowConfig

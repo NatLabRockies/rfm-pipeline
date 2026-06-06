@@ -123,7 +123,7 @@ def test_write_study_metadata_writes_manifest_and_inventory(tmp_path: Path) -> N
             [
                 "#!/bin/bash",
                 "#SBATCH --account=bsm",
-                "pixi run python tools/hpc_shard_worker.py \\",
+                "pixi run rfm-hpc-worker \\",
                 "  --manifest manifest.jsonl \\",
                 "  --task-id 0",
                 "",
@@ -193,7 +193,7 @@ def test_write_study_metadata_writes_manifest_and_inventory(tmp_path: Path) -> N
     assert target_trace["submission_scripts"]
     assert target_trace["run_started"]["start_stage"] == "output_conditioning"
     assert (
-        "pixi run python tools/hpc_shard_worker.py --manifest manifest.jsonl --task-id 0"
+        "pixi run rfm-hpc-worker --manifest manifest.jsonl --task-id 0"
         in (commands_payload["all_commands"])
     )
     recipe_text = out_recipe.read_text(encoding="utf-8")

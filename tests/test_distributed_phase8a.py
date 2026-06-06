@@ -408,7 +408,7 @@ class TestSlurmArrayRunner:
         assert "rfm_reduce_interaction_discovery_%j.out" in script
         assert "rfm_reduce_interaction_discovery_%j.err" in script
         assert "--dependency=afterany:12345" in script
-        assert "hpc_reduce.py" in script
+        assert "rfm-hpc-reduce" in script
         # Self-guard completeness check
         assert "_SUCCESS.json" in script
         assert "N_EXPECTED" in script

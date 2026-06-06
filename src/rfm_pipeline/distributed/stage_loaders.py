@@ -262,7 +262,8 @@ def _resolve_data_root(config: WorkflowConfig) -> Path:
     if dataset_type == "real_data":
         return study_root / "artifacts" / "preprocessed_real_data"
     if dataset_type.startswith("synthetic"):
-        return study_root / "artifacts" / f"test_dataset_{dataset_type.split('_')[1]}"
+        suffix = "_".join(dataset_type.split("_")[1:])
+        return study_root / "artifacts" / f"test_dataset_{suffix}"
     return study_root / "artifacts" / dataset_type
 
 

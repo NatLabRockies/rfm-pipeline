@@ -218,7 +218,7 @@ def test_hpc_reduce_merges_interaction_pair_outputs(tmp_path):
 
 
 def test_load_interaction_result_falls_back_to_merged_distributed_outputs(tmp_path):
-    from tools.run_manuscript_pipeline import _load_interaction_discovery_result
+    from rfm_pipeline.distributed.stage_loaders import _load_interaction_discovery_result
 
     merged_root = tmp_path / "hpc_shards_interaction_discovery" / "_merged"
     merged_root.mkdir(parents=True)

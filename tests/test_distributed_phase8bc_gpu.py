@@ -13,7 +13,6 @@ Covers:
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -484,10 +483,10 @@ def test_mpi_run_shard_delegates_to_hpc_worker(monkeypatch):
     monkeypatch.setattr("rfm_pipeline.distributed.config_distributed.load_config", lambda _: cfg)
 
     calls: list[dict] = []
-    fake_worker = SimpleNamespace(
-        run_shard=lambda **kwargs: calls.append(kwargs),
-    )
-    monkeypatch.setitem(sys.modules, "hpc_shard_worker", fake_worker)
+
+    import rfm_pipeline.hpc_shard_worker as _hpc_worker
+
+    monkeypatch.setattr(_hpc_worker, "run_shard", lambda **kwargs: calls.append(kwargs))
 
     _run_shard(shard=shard, config_path="config.yml", stage="interaction_discovery")
 

@@ -103,7 +103,7 @@ print('Done')
 "
 
 # 3. Retrain RF meta-regression on combined data
-pixi run python scripts/fit_rf_meta_regression.py \
+pixi run python scripts/fit_meta_regression.py \
   --results artifacts/sensitivity/all_waves_results.csv \
   --output-dir artifacts/sensitivity/
 
@@ -120,6 +120,17 @@ is for n_jobs=100. Single-core estimated at 15–28 h via Amdahl's law. See runt
 **Kestrel git repo:** `/home/dhetting/src/bsm-public-rf` is a clone of `NatLabRockies/rfm-pipeline`.
 Run `git pull` before any work. The `bsm-public-rf` study data repo is separate
 (`/scratch/dhetting/bsm/bsm-public-rf/` holds configs/artifacts, not the pipeline code).
+
+**Compatibility note (2026-06-06):** rfm-pipeline commits `c9abea4`+`c81a01d` renamed:
+
+- `bsm_hpc_submit.py` → `rfm_hpc_submit.py`, pixi task `bsm-hpc-submit` → `rfm-hpc-submit`
+- `BSM_PROGRESS_BATCH_SIZE` → `RFM_PROGRESS_BATCH_SIZE`
+- `bsm_structure` dgp_family → `calibrated_structure` (validator still accepts old name for existing wave jobs)
+- `generate_bsm_structure_synthetic` → `generate_calibrated_structure_synthetic`
+
+Existing wave 1/2/3 job specs have `dgp_family: bsm_structure` — accepted by updated validator. ✅
+bsm-public-rf kestrel scripts updated to use `rfm-hpc-submit` and `RFM_PROGRESS_BATCH_SIZE`. ✅
+bsm-public-rf pixi.toml pin updated to `c81a01df` (HEAD). ✅
 
 ### Open manuscript TODOs (in jds_bsm.tex)
 

@@ -227,7 +227,7 @@ ______________________________________________________________________
 **Check Files:**
 
 - `final_artifacts/holdout_performance.csv`
-  - `nrmse_point` column shows overall performance
+  - `point_estimate` column shows overall performance
   - `nrmse_lower`, `nrmse_upper` show bootstrap CI
 - `final_artifacts/coefficients.csv`
   - Final model weights for each feature × output

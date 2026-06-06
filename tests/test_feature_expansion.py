@@ -18,17 +18,18 @@ from rfm_pipeline.transforms import INVERSE, QUADRATIC
 def test_ordered_expanded_feature_names_follow_expected_catalog_order():
     spec = default_feature_expansion_spec(
         base_features=["x1", "x2"],
+        scenario_flags=("FLAG_A", "FLAG_B"),
         add_transforms={"x1": [QUADRATIC], "x2": [INVERSE]},
-        interaction_pairs=(("x1", "AFSC"), ("x1", "x2")),
+        interaction_pairs=(("x1", "FLAG_A"), ("x1", "x2")),
     )
     assert ordered_expanded_feature_names(spec) == (
         "x1",
         "x2",
-        "AFSC",
-        "UAEORO",
+        "FLAG_A",
+        "FLAG_B",
         "x1_sq",
         "x2_inv",
-        "x1*AFSC",
+        "x1*FLAG_A",
         "x1*x2",
     )
 

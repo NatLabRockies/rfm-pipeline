@@ -304,7 +304,7 @@ result = run_canonical_workflow(
 written = write_postfit_bundle(result.artifacts, Path("artifacts/my-custom-data"))
 
 # Print metrics
-print(f"Holdout nRMSE: {result.holdout_summary['nrmse_point']:.4f}")
+print(f"Holdout nRMSE: {result.holdout_summary['point_estimate']:.4f}")
 print(f"Final support size: {len(result.final_ols_result.retained_features)}")
 ```
 

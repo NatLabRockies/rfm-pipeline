@@ -10,16 +10,26 @@ input–output relationships is unknown.
 
 ## Installation
 
-```bash
-pip install rfm-pipeline
-```
+> **Note:** PyPI publication is pending. Until then, install from source.
 
-Or from source using [Pixi](https://pixi.sh):
+From source using [Pixi](https://pixi.sh) (recommended):
 
 ```bash
 git clone https://github.com/NatLabRockies/rfm-pipeline.git
 cd rfm-pipeline
 pixi install --locked
+```
+
+Or via pip from GitHub (requires git):
+
+```bash
+pip install git+https://github.com/NatLabRockies/rfm-pipeline.git
+```
+
+Once published to PyPI:
+
+```bash
+pip install rfm-pipeline  # coming soon
 ```
 
 ## Quick start
@@ -32,7 +42,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from rfm_pipeline import build_manuscript_notebook_context, run_canonical_workflow
+from rfm_pipeline import run_canonical_workflow
 
 X_train = pd.read_parquet("X_train.parquet")
 Y_train = pd.read_parquet("Y_train.parquet")
@@ -46,11 +56,7 @@ run = run_canonical_workflow(
     Y_holdout,
     dataset_tag="my-run",
 )
-
-context = build_manuscript_notebook_context(
-    Path.cwd(),
-    "00_case_study_data_intake.ipynb",
-)
+print(f"Holdout nRMSE: {run.holdout_summary['point_estimate'].mean():.4f}")
 ```
 
 For the full config-driven manuscript reproduction, use the script entry point:

@@ -16,7 +16,7 @@ import yaml
 class SpillConfig:
     """Spill-to-disk and scratch filesystem configuration."""
 
-    scratch_root: str = "/scratch/${USER}/bsm"
+    scratch_root: str = "/scratch/${USER}/rfm"
     """Scratch directory root for temporary distributed working sets."""
     tmpdir_spill_enabled: bool = False
     """Whether to use $TMPDIR for spill (disabled by default: Kestrel $TMPDIR can be RAM-backed)."""

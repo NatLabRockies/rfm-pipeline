@@ -1,7 +1,4 @@
 
-# TODO: expose rfm-hpc-submit as console_scripts entry point
-# Currently only available via pixi task; tools/rfm_hpc_submit.py is not installed via pip
-
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -30,10 +27,14 @@ dependencies = [
   "numpy>=1.24",
   "pandas>=2.0",
   "scikit-learn>=1.3",
+  "joblib>=1.2",
   "PyYAML>=6.0",
   "sympy>=1.12",
   "scipy>=1.10",
 ]
+
+[project.scripts]
+rfm-hpc-submit = "rfm_pipeline.hpc_submit:main"
 
 [project.urls]
 Homepage = "https://github.com/NatLabRockies/rfm-pipeline"

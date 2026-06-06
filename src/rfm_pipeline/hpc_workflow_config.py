@@ -24,7 +24,7 @@ _VALID_STAGES = {
 class HpcClusterConfig:
     """Cluster identity details used for SSH execution and accounting context."""
 
-    host: str = "kl1.hpc.nrel.gov"
+    host: str = ""  # CONFIGURE: set to your HPC login node hostname
     user: str | None = None
     account: str = ""
 

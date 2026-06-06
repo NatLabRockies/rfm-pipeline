@@ -88,7 +88,7 @@ def _ordered_unique_transform_defs(values: list[TransformDef]) -> tuple[Transfor
 def default_feature_expansion_spec(
     *,
     base_features: list[str],
-    scenario_flags: tuple[str, ...] = ("AFSC", "UAEORO"),
+    scenario_flags: tuple[str, ...] = (),
     add_transforms: dict[str, list[TransformDef]] | None = None,
     interaction_pairs: tuple[tuple[str, str], ...] = (),
 ) -> FeatureExpansionSpec:
@@ -99,7 +99,9 @@ def default_feature_expansion_spec(
     base_features
         Ordered influential first-order feature names.
     scenario_flags
-        Scenario-indicator features preserved in the expanded matrix.
+        Boolean scenario-indicator column names preserved in the expanded
+        matrix (e.g. ``("REGION_A", "POLICY_B")``). Defaults to empty;
+        pass your own column names.
     add_transforms
         Mapping from base feature name to a list of
         :class:`~rfm_pipeline.transforms.TransformDef` objects to apply.

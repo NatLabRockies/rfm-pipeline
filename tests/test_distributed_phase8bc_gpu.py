@@ -279,7 +279,7 @@ def test_gpu_live_scripts_exist_with_expected_defaults() -> None:
 
 
 def test_hpc_submit_prefers_gpu_stage_script() -> None:
-    from tools.rfm_hpc_submit import _select_array_script
+    from rfm_pipeline.hpc_submit import _select_array_script
 
     scripts = {
         "stage": Path("submit_interaction_discovery_array.sh"),
@@ -289,7 +289,7 @@ def test_hpc_submit_prefers_gpu_stage_script() -> None:
 
 
 def test_hpc_submit_falls_back_to_cpu_stage_script() -> None:
-    from tools.rfm_hpc_submit import _select_array_script
+    from rfm_pipeline.hpc_submit import _select_array_script
 
     scripts = {"stage": Path("submit_interaction_discovery_array.sh")}
     assert _select_array_script(scripts) == Path("submit_interaction_discovery_array.sh")

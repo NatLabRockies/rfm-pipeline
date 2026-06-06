@@ -149,13 +149,17 @@ from .transforms import (
 from .viz_io import canonical_bundle_loader_keys, load_pipeline_outputs, load_postfit_bundle
 from .workflow import (
     CanonicalWorkflowRun,
-    canonical_case_study_numbers,
     canonical_workflow_stages,
     case_study_number_table,
     run_canonical_workflow,
     workflow_scope_boundary_table,
     workflow_stage_table,
     write_postfit_bundle,
+)
+
+# BSM case-study provenance helper — available but not a generic API
+from .workflow import (
+    canonical_case_study_numbers as _bsm_canonical_case_study_numbers,  # noqa: F401
 )
 
 __all__ = [
@@ -211,7 +215,6 @@ __all__ = [
     "build_position_map",
     "build_postfit_artifacts",
     "canonical_bundle_loader_keys",
-    "canonical_case_study_numbers",
     "canonical_manifest_position_map_keys",
     "canonical_manifest_top_level_keys",
     "canonical_module_from_factor_name",

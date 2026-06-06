@@ -12,7 +12,7 @@ Requires: mpi4py (optional; import guard provided).
 Usage (inside a Kestrel MPI job)::
 
     srun -n 128 --exclusive pixi run python -m rfm_pipeline.distributed.mpi_runner \\
-        --manifest /scratch/$USER/bsm/manifest.jsonl \\
+        --manifest /scratch/$USER/rfm/manifest.jsonl \\
         --config configs/hpc/kestrel_30k.yml
 
 Rank 0 logs summary statistics after all ranks complete their shards.
@@ -31,7 +31,7 @@ SLURM job template::
 
     module load mpi4py  # or install via pixi
     srun pixi run python -m rfm_pipeline.distributed.mpi_runner \\
-        --manifest /scratch/$USER/bsm/manifest.jsonl \\
+        --manifest /scratch/$USER/rfm/manifest.jsonl \\
         --config configs/hpc/kestrel_30k.yml
 
 Notes

@@ -19,6 +19,15 @@ from typing import Any
 import pandas as pd
 
 from rfm_pipeline.config import apply_fast_mode_overrides, load_config
+from rfm_pipeline.distributed.stage_loaders import (
+    _load_empirical_null_screening_result,
+    _load_interaction_discovery_result,
+    _load_nonlinear_discovery_result,
+    _load_output_conditioning_result,
+    _load_sparse_selection_result,
+    _load_tables,
+    config_to_legacy_case_study,
+)
 from rfm_pipeline.manuscript_runtime import load_manuscript_case_study_config
 from rfm_pipeline.manuscript_stages import (
     condition_manuscript_outputs,
@@ -34,25 +43,11 @@ from rfm_pipeline.manuscript_stages import (
     sparse_selection_stability_spec_from_case_study_config,
 )
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from tools.run_manuscript_pipeline import (  # noqa: E402
-    _load_empirical_null_screening_result,
-    _load_interaction_discovery_result,
-    _load_nonlinear_discovery_result,
-    _load_output_conditioning_result,
-    _load_sparse_selection_result,
-    _load_tables,
-    config_to_legacy_case_study,
-)
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
-logger = logging.getLogger("bsm.hpc_shard_worker")
+logger = logging.getLogger("rfm_pipeline.hpc_shard_worker")
 
 
 def _parse_args() -> argparse.Namespace:

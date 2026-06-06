@@ -77,7 +77,7 @@ def _minimal_interaction_result() -> InteractionDiscoveryResult:
 
 
 def test_hpc_shard_worker_writes_interaction_artifacts(tmp_path, monkeypatch):
-    from tools import hpc_shard_worker
+    from rfm_pipeline import hpc_shard_worker
 
     x_path = tmp_path / "X.parquet"
     holdout_path = tmp_path / "holdout_assignments.parquet"
@@ -246,7 +246,7 @@ def test_load_interaction_result_falls_back_to_merged_distributed_outputs(tmp_pa
 
 
 def test_hpc_shard_worker_dispatches_noninteraction_stage(tmp_path, monkeypatch):
-    from tools import hpc_shard_worker
+    from rfm_pipeline import hpc_shard_worker
 
     config_path = tmp_path / "case_study.yaml"
     config_path.write_text("pipeline:\n  stage_order: [output_conditioning]\n")

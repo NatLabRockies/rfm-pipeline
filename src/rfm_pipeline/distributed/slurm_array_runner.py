@@ -113,8 +113,8 @@ mkdir -p "${{WORK_DIR}}"
 
 cd "{repo_root}"
 
-# Run the shard worker via pixi
-pixi run python tools/hpc_shard_worker.py \\
+# Run the shard worker via installed rfm-hpc-worker entry point
+pixi run rfm-hpc-worker \\
     --manifest "${{MANIFEST}}" \\
     --task-id "${{TASK_ID}}" \\
     --output-root "${{OUTPUT_ROOT}}" \\
@@ -274,7 +274,7 @@ mkdir -p "${{WORK_DIR}}"
 
 cd "{repo_root}"
 
-pixi run python tools/hpc_shard_worker.py \\
+pixi run rfm-hpc-worker \\
     --manifest "${{MANIFEST}}" \\
     --task-id "${{TASK_ID}}" \\
     --output-root "${{OUTPUT_ROOT}}" \\

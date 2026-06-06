@@ -174,7 +174,7 @@ def test_generate_gpu_stage_script_contains_cuda_env(tmp_path):
     assert "BSM_INTERACTION_DEVICE" in script
     assert "gpu-h100s" in script
     assert "gpus-per-node" in script
-    assert "hpc_shard_worker.py" in script
+    assert "rfm-hpc-worker" in script
 
 
 def test_generate_gpu_diagnostic_script(tmp_path):

@@ -119,13 +119,19 @@ def build_context_from_config(
     tables["case_study_input_matrix"] = pd.read_parquet(artifact_paths["case_study_input_matrix"])
     tables["case_study_output_matrix"] = pd.read_parquet(artifact_paths["case_study_output_matrix"])
 
-    # Load case study config (provides workflow parameters)
+    # Load case study config (provides workflow parameters). The manuscript
+    # reproduction pipeline depends on this file — fail loudly instead of
+    # silently substituting an empty dict that produces stale defaults.
     case_study_config_path = REPO_ROOT / "configs" / "manuscript_case_study.yml"
-    if case_study_config_path.exists():
-        with open(case_study_config_path, encoding="utf-8") as f:
-            case_study_config = yaml.safe_load(f)
-    else:
-        case_study_config = {}
+    if not case_study_config_path.exists():
+        raise FileNotFoundError(
+            f"Manuscript case study config not found at {case_study_config_path}. "
+            "This file pins the manuscript hyperparameters (holdout fraction, PCA "
+            "components, retained-pair counts, etc.) and is required to reproduce "
+            "the published results."
+        )
+    with open(case_study_config_path, encoding="utf-8") as f:
+        case_study_config = yaml.safe_load(f)
 
     # Load runtime manifest (workflow needs this for notebook ordering)
     runtime_manifest_path = REPO_ROOT / "configs" / "manuscript_runtime.yml"

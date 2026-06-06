@@ -28,7 +28,7 @@ scope_backlog
 api
 workflow_audit
 module_plan
-manuscripts/jds_bsm_v4_revision_notes
+manuscripts/full_dataset_run_revision_notes
 manuscript_summary_log
 3K_TEST_VALIDATION_REPORT
 CATALOG_GENERATION_GUIDE

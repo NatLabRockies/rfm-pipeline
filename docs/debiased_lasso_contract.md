@@ -28,6 +28,8 @@ The public sparse-selection function is therefore a handoff-compatible surrogate
 
 ## Frozen recovered notebook facts
 
+> **Note:** The values in this table document the original `LASSO_to_OLS_v9.ipynb` private notebook run that this contract was extracted from. They are intentionally preserved as historical reference values — they do **not** match the current published JDS manuscript (v22), which reports 30,000 simulator runs, a 5% holdout (28,500 train / 1,500 holdout), 20 retained PCA components, and 132 final retained predictors. For the current manuscript-aligned values consult `configs/manuscript_case_study.yml` and `artifacts/final_model/final_ols_summary.csv` in the BSM public reproduction repo.
+
 | Quantity                                        | Contract value |
 | ----------------------------------------------- | -------------: |
 | Candidate inputs entering notebook sparse stage |            352 |

@@ -22,10 +22,10 @@ run = run_canonical_workflow(
     Y_train,
     X_holdout,
     Y_holdout,
-    dataset_tag="bsm-demo",
+    dataset_tag="rfm-demo",
 )
-written = write_postfit_bundle(run.artifacts, Path("artifacts/bsm-demo"))
-reloaded = load_postfit_bundle(Path("artifacts/bsm-demo"))
+written = write_postfit_bundle(run.artifacts, Path("artifacts/rfm-demo"))
+reloaded = load_postfit_bundle(Path("artifacts/rfm-demo"))
 ```
 
 ## What `run_canonical_workflow(...)` does

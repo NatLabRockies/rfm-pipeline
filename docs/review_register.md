@@ -64,3 +64,17 @@ Agents use this file to convert review findings into planned work instead of lea
 - Blocks merge: yes (for branches requiring clean gate)
 - Destination: hygiene cleanup slice before milestone merge
 - Notes: not introduced by this slice, but currently prevents checkpoint gate completion.
+
+### REVIEW-0004 — Public release audit found blocker/high release-surface regressions
+
+- Status: fixed
+- Severity: high
+- Category: release_readiness
+- Disposition: blocker
+- Source: 2026-06-06 public release audit remediation slice
+- Evidence: fixed sensitivity-study schema key drift, README quickstart/API mismatch, distributed default `bsm` values, SLURM job-name prefixes, docstring task-name drift, dataset/env var docs, package exports, citation metadata, logger namespace, and pytest slow-mark registration; verified `pixi run python -m pytest tests/test_distributed_phase8a.py tests/test_public_api.py tests/test_parallel_executor.py tests/test_sensitivity_study.py -x -q` and `pixi run python -m pytest tests/ -x -q`
+- Affected files: `configs/sensitivity_study/*.yml`, `scripts/generate_sensitivity_study.py`, `README.md`, `src/rfm_pipeline/distributed/*.py`, `src/rfm_pipeline/__init__.py`, `src/rfm_pipeline/parallel/executor.py`, `src/rfm_pipeline/sensitivity_study.py`, `configs/datasets/*`, `docs/*`, `CITATION.cff`, `pyproject.toml`
+- Required action: completed in code/docs; keep the new public-API/distributed-config regression checks active
+- Blocks merge: no
+- Destination: resolved in the 2026-06-06 release-audit cleanup slice
+- Notes: `configs/local/manuscript_paths.local.yml` was checked and confirmed untracked, so H-13 required no additional repo mutation.

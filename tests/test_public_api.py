@@ -21,6 +21,7 @@ from rfm_pipeline import (
     ManuscriptReproductionStageChainResult,
     NonlinearDiscoverySpec,
     OutputConditioningSpec,
+    SensitivityStudySpec,
     SparseSelectionStabilitySpec,
     TransformDef,
     apply_feature_expansion,
@@ -30,6 +31,7 @@ from rfm_pipeline import (
     canonical_bundle_loader_keys,
     canonical_manifest_position_map_keys,
     canonical_manifest_top_level_keys,
+    collect_study_results,
     condition_manuscript_outputs,
     default_feature_expansion_spec,
     discover_manuscript_interactions,
@@ -115,6 +117,11 @@ def test_docs_include_quickstart_export_bundle_and_runtime_guides() -> None:
 
 def test_package_exports_workflow_scope_boundary_helper() -> None:
     assert callable(workflow_scope_boundary_table)
+
+
+def test_package_exports_sensitivity_study_helpers() -> None:
+    assert SensitivityStudySpec.__name__ == "SensitivityStudySpec"
+    assert callable(collect_study_results)
 
 
 def test_docs_include_reproducibility_example_guide() -> None:

@@ -135,6 +135,7 @@ from .regularized_screening import (
     fit_multitask_elastic_net_screen,
     screening_selection_table,
 )
+from .sensitivity_study import SensitivityStudySpec, collect_study_results
 from .transforms import (
     DEFAULT_TRANSFORM_LIBRARY,
     EXPONENTIAL,
@@ -196,6 +197,7 @@ __all__ = [
     "OutputConditioningSpec",
     "OutputConditioningStageResult",
     "ScreeningSelectionResult",
+    "SensitivityStudySpec",
     "SparseSelectionStabilityStageResult",
     "SparseSelectionStabilitySpec",
     "SparseSelectionStabilityResult",
@@ -216,6 +218,7 @@ __all__ = [
     "canonical_postfit_artifact_names",
     "canonical_workflow_stages",
     "case_study_number_table",
+    "collect_study_results",
     "condition_manuscript_outputs",
     "default_feature_expansion_spec",
     "discover_manuscript_interactions",

@@ -2,6 +2,7 @@
 
 import pytest
 
+import rfm_pipeline.parallel.executor as executor_module
 from rfm_pipeline.parallel import DaskExecutor, JobLibExecutor, get_executor
 
 
@@ -57,6 +58,11 @@ def test_dask_executor_lazy_init():
     assert executor.cluster is None
     assert executor.client is None
     executor.close()
+
+
+def test_parallel_executor_logger_namespace():
+    """Logger should use the package namespace."""
+    assert executor_module.logger.name == "rfm_pipeline.parallel.executor"
 
 
 @pytest.mark.slow

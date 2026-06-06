@@ -119,7 +119,7 @@ paths:
   y_holdout: "/Users/you/data/Y_holdout.parquet"
 
   # Where to write outputs
-  artifact_root: "/Users/you/bsm-outputs"
+  artifact_root: "/Users/you/rfm-outputs"
 ```
 
 **Important notes:**
@@ -215,11 +215,11 @@ PYTHONPATH=src python examples/end_to_end_reproducibility.py \
 
 ```yaml
 paths:
-  x_train: "/Volumes/SharedDrive/BSM_Data/X_train.parquet"
-  y_train: "/Volumes/SharedDrive/BSM_Data/Y_train.parquet"
-  x_holdout: "/Volumes/SharedDrive/BSM_Data/X_holdout.parquet"
-  y_holdout: "/Volumes/SharedDrive/BSM_Data/Y_holdout.parquet"
-  artifact_root: "/Users/you/bsm-outputs"
+  x_train: "/Volumes/SharedDrive/MyData/X_train.parquet"
+  y_train: "/Volumes/SharedDrive/MyData/Y_train.parquet"
+  x_holdout: "/Volumes/SharedDrive/MyData/X_holdout.parquet"
+  y_holdout: "/Volumes/SharedDrive/MyData/Y_holdout.parquet"
+  artifact_root: "/Users/you/rfm-outputs"
 ```
 
 **Verify:**

@@ -2,9 +2,9 @@
 # Sensitivity study specification
 study:
   pure_synthetic_n_dgps: 200
-  bsm_structure_n_dgps: 50
+  calibrated_n_dgps: 50
   n_configs_per_dgp_pure: 50
-  n_configs_per_dgp_bsm: 30
+  n_configs_per_dgp_calibrated: 30
   n_replicates: 5
   config_lhs_seed: 42
   dgp_lhs_seed: 0
@@ -14,7 +14,7 @@ output:
   n_jobs: 8
 
 slurm:
-  account: bsm
+  account: "${SLURM_ACCOUNT:-rfm}"
   partition: shared
   walltime: "01:00:00"
   memory_gb: 32

@@ -11,9 +11,9 @@
 # pooled with prior waves for meta-regression.
 study:
   pure_synthetic_n_dgps: 50
-  bsm_structure_n_dgps: 10
+  calibrated_n_dgps: 10
   n_configs_per_dgp_pure: 10
-  n_configs_per_dgp_bsm: 5
+  n_configs_per_dgp_calibrated: 5
   n_replicates: 5
   config_lhs_seed: 1000
   dgp_lhs_seed: 1000
@@ -23,7 +23,7 @@ output:
   n_jobs: 100
 
 slurm:
-  account: bsm
+  account: "${SLURM_ACCOUNT:-rfm}"
   partition: short
   walltime: "04:00:00"
   memory_gb: 220

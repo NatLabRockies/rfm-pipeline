@@ -1,4 +1,4 @@
-"""GPU-accelerated interaction scoring for the BSM manuscript pipeline.
+"""GPU-accelerated interaction scoring for the rfm-pipeline.
 
 Uses XGBoost with device='cuda' and the SHAP GPU backend to accelerate
 the permutation-based interaction discovery stage.

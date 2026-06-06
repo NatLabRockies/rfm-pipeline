@@ -1,4 +1,4 @@
-"""SLURM array job script generator for distributed BSM pipeline execution.
+"""SLURM array job script generator for distributed rfm-pipeline execution.
 
 Generates ready-to-submit sbatch scripts from config + manifest.
 Supports stage and reduce phases with dependency chains.
@@ -10,11 +10,11 @@ Usage (programmatic)::
     runner = SlurmArrayRunner(config, manifest_path, output_root)
     stage_script = runner.generate_stage_script("interaction_discovery")
     reduce_script = runner.generate_reduce_script("interaction_discovery", after_job_id=12345)
-    runner.write_scripts(output_dir="/scratch/bsm/bsm_run/scripts")
+    runner.write_scripts(output_dir="/scratch/rfm/rfm_run/scripts")
 
 Usage (CLI)::
 
-    pixi run bsm-hpc-submit --config configs/hpc/kestrel_30k.yml --stage interaction_discovery
+    pixi run rfm-hpc-submit --config configs/hpc/kestrel_30k.yml --stage interaction_discovery
 """
 
 from __future__ import annotations
@@ -66,15 +66,15 @@ def _task_ids_to_array_spec(task_ids: list[int], max_concurrent: int) -> str:
 
 _STAGE_SBATCH_TEMPLATE = """\
 #!/bin/bash
-#SBATCH --job-name=bsm_{stage}_{run_id}
+#SBATCH --job-name=rfm_{stage}_{run_id}
 #SBATCH --account={account}
 #SBATCH --partition={partition}
 #SBATCH --time={walltime}
 #SBATCH --mem={memory_mb}M
 #SBATCH --cpus-per-task={cpus_per_task}
 #SBATCH --array={array_spec}
-#SBATCH --output={log_dir}/bsm_{stage}_%A_%a.out
-#SBATCH --error={log_dir}/bsm_{stage}_%A_%a.err
+#SBATCH --output={log_dir}/rfm_{stage}_%A_%a.out
+#SBATCH --error={log_dir}/rfm_{stage}_%A_%a.err
 {requeue_line}
 # ---------------------------------------------------------------------------
 # BSM Manuscript Pipeline — SLURM Array Stage Runner
@@ -126,14 +126,14 @@ echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] BSM shard ${{TASK_ID}} COMPLETE"
 
 _REDUCE_SBATCH_TEMPLATE = """\
 #!/bin/bash
-#SBATCH --job-name=bsm_reduce_{stage}_{run_id}
+#SBATCH --job-name=rfm_reduce_{stage}_{run_id}
 #SBATCH --account={account}
 #SBATCH --partition={partition}
 #SBATCH --time={reduce_walltime}
 #SBATCH --mem={reduce_memory_mb}M
 #SBATCH --cpus-per-task={cpus_per_task}
-#SBATCH --output={log_dir}/bsm_reduce_{stage}_%j.out
-#SBATCH --error={log_dir}/bsm_reduce_{stage}_%j.err
+#SBATCH --output={log_dir}/rfm_reduce_{stage}_%j.out
+#SBATCH --error={log_dir}/rfm_reduce_{stage}_%j.err
 {dependency_line}
 # ---------------------------------------------------------------------------
 # BSM Manuscript Pipeline — SLURM Reduce Job
@@ -177,14 +177,14 @@ echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] BSM reduce ${{STAGE}} COMPLETE"
 
 _DIAGNOSTIC_SBATCH_TEMPLATE = """\
 #!/bin/bash
-#SBATCH --job-name=bsm_diag_{run_id}
+#SBATCH --job-name=rfm_diag_{run_id}
 #SBATCH --account={account}
 #SBATCH --partition={debug_partition}
 #SBATCH --time=00:30:00
 #SBATCH --mem=16G
 #SBATCH --cpus-per-task=4
-#SBATCH --output={log_dir}/bsm_diag_%j.out
-#SBATCH --error={log_dir}/bsm_diag_%j.err
+#SBATCH --output={log_dir}/rfm_diag_%j.out
+#SBATCH --error={log_dir}/rfm_diag_%j.err
 # ---------------------------------------------------------------------------
 # BSM Environment / Connectivity Smoke Test
 # Run this first on a new cluster to validate the environment before submitting
@@ -216,7 +216,7 @@ echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Diagnostic complete"
 
 _GPU_STAGE_SBATCH_TEMPLATE = """\
 #!/bin/bash
-#SBATCH --job-name=bsm_gpu_{stage}_{run_id}
+#SBATCH --job-name=rfm_gpu_{stage}_{run_id}
 #SBATCH --account={account}
 #SBATCH --partition={gpu_partition}
 #SBATCH --time={gpu_walltime}
@@ -224,8 +224,8 @@ _GPU_STAGE_SBATCH_TEMPLATE = """\
 #SBATCH --cpus-per-task={cpus_per_task}
 #SBATCH --gpus-per-node={n_gpus}
 #SBATCH --array=0-{max_task_idx}%{max_concurrent}
-#SBATCH --output={log_dir}/bsm_gpu_{stage}_%A_%a.out
-#SBATCH --error={log_dir}/bsm_gpu_{stage}_%A_%a.err
+#SBATCH --output={log_dir}/rfm_gpu_{stage}_%A_%a.out
+#SBATCH --error={log_dir}/rfm_gpu_{stage}_%A_%a.err
 {requeue_line}
 # ---------------------------------------------------------------------------
 # BSM Manuscript Pipeline — SLURM GPU Array Stage Runner
@@ -286,15 +286,15 @@ echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] BSM GPU shard ${{TASK_ID}} COMPLETE"
 
 _GPU_DIAGNOSTIC_SBATCH_TEMPLATE = """\
 #!/bin/bash
-#SBATCH --job-name=bsm_gpu_diag_{run_id}
+#SBATCH --job-name=rfm_gpu_diag_{run_id}
 #SBATCH --account={account}
 #SBATCH --partition={gpu_partition}
 #SBATCH --time=00:30:00
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=16
 #SBATCH --gpus-per-node=1
-#SBATCH --output={log_dir}/bsm_gpu_diag_%j.out
-#SBATCH --error={log_dir}/bsm_gpu_diag_%j.err
+#SBATCH --output={log_dir}/rfm_gpu_diag_%j.out
+#SBATCH --error={log_dir}/rfm_gpu_diag_%j.err
 # ---------------------------------------------------------------------------
 # BSM GPU Environment / CUDA Smoke Test
 # Verifies GPU availability, XGBoost GPU support, and SHAP GPU backend
@@ -357,7 +357,7 @@ echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] GPU diagnostic complete"
 
 
 class SlurmArrayRunner:
-    """Generate SLURM sbatch scripts for distributed BSM pipeline execution.
+    """Generate SLURM sbatch scripts for distributed rfm-pipeline execution.
 
     Parameters
     ----------

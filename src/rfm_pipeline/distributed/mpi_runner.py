@@ -1,4 +1,4 @@
-r"""MPI-based shard distribution for the BSM manuscript pipeline.
+r"""MPI-based shard distribution for the rfm-pipeline.
 
 Provides rank/size-based work assignment so MPI jobs on Kestrel can
 directly distribute shards across CPU nodes without SLURM array overhead.
@@ -27,7 +27,7 @@ SLURM job template::
     #SBATCH --nodes=4
     #SBATCH --ntasks-per-node=32
     #SBATCH --partition=shared
-    #SBATCH --account=bsm
+    #SBATCH --account=rfm
 
     module load mpi4py  # or install via pixi
     srun pixi run python -m rfm_pipeline.distributed.mpi_runner \\
@@ -212,7 +212,7 @@ def _run_shard(shard, config_path: str, stage: str, dry_run: bool = False) -> No
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point: python -m rfm_pipeline.distributed.mpi_runner."""
-    parser = argparse.ArgumentParser(description="BSM manuscript pipeline MPI shard worker")
+    parser = argparse.ArgumentParser(description="rfm-pipeline MPI shard worker")
     parser.add_argument("--manifest", required=True, help="Path to shard manifest JSONL")
     parser.add_argument("--config", required=True, help="Path to distributed config YAML")
     parser.add_argument("--stage", default="interaction_discovery", help="Pipeline stage")

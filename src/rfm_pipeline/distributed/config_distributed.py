@@ -1,7 +1,7 @@
 """Typed configuration schema for distributed and HPC execution.
 
 Supports SLURM array jobs on NREL Kestrel and generic HPC clusters.
-All fields have sensible defaults that work on Kestrel with account=bsm.
+All fields have sensible defaults for HPC workflows.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ class SpillConfig:
 class SlurmConfig:
     """SLURM job submission parameters for array-based execution."""
 
-    account: str = "bsm"
+    account: str = "rfm"
     """SLURM account (--account=)."""
     partition: str = "shared"
     """SLURM partition (--partition=). Use 'debug' for smoke tests, 'shared' for production."""
@@ -49,7 +49,7 @@ class SlurmConfig:
     """CPUs per SLURM task (--cpus-per-task=)."""
     max_concurrent_array_tasks: int = 50
     """Maximum simultaneously running array tasks (controls %N throttle)."""
-    log_dir: str = "/scratch/${USER}/bsm/${RUN_ID}/logs"
+    log_dir: str = "/scratch/${USER}/rfm/${RUN_ID}/logs"
     """SLURM stdout/stderr log directory."""
     requeue: bool = False
     """Whether to requeue on node failure. Kestrel PreemptMode=OFF so this is usually false."""
@@ -67,9 +67,9 @@ class SlurmConfig:
 class KestrelConfig:
     """NREL Kestrel-specific HPC settings (validated against live system probe)."""
 
-    projects_root: str = "/projects/bsm"
+    projects_root: str = "/projects/rfm"
     """Durable project root for Pixi cache, configs, and final artifacts."""
-    pixi_cache_dir: str = "/projects/bsm/.cache/pixi"
+    pixi_cache_dir: str = "/projects/rfm/.cache/pixi"
     """Shared Pixi package cache (avoids redundant downloads on each node)."""
     dask_network_interface: str = "hsn0"
     """High-speed network interface for Dask cluster communication."""
@@ -139,18 +139,18 @@ class DistributedConfig:
         distributed:
           enabled: true
           backend: slurm_array
-          run_id: bsm_2026_full_30k
-          pixi_env_path: /projects/bsm/.pixi
+          run_id: rfm_2026_full_30k
+          pixi_env_path: /projects/rfm/.pixi
           slurm:
-            account: bsm
+            account: rfm
             partition: shared
             walltime: "08:00:00"
             memory_gb: 128
             cpus_per_task: 104
           kestrel:
-            projects_root: /projects/bsm
+            projects_root: /projects/rfm
           spill:
-            scratch_root: /scratch/${USER}/bsm
+            scratch_root: /scratch/${USER}/rfm
             min_free_gb: 20.0
     """
 
@@ -158,11 +158,11 @@ class DistributedConfig:
     """Enable distributed/HPC execution. When false, runs locally as usual."""
     backend: str = "slurm_array"
     """Execution backend: slurm_array | dask_slurm | mpi | ray_experimental."""
-    run_id: str = "bsm_run"
+    run_id: str = "rfm_run"
     """Unique run identifier used for artifact and scratch directory naming."""
     output_dir: str = "artifacts"
     """Root output directory for shard outputs (relative or absolute path)."""
-    pixi_env_path: str = "/projects/bsm/.pixi"
+    pixi_env_path: str = "/projects/rfm/.pixi"
     """Path to Pixi environment on shared filesystem (all nodes must see this)."""
     slurm: SlurmConfig = field(default_factory=SlurmConfig)
     kestrel: KestrelConfig = field(default_factory=KestrelConfig)

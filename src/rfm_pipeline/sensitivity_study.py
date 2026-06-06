@@ -176,7 +176,7 @@ def generate_study_jobs(spec: SensitivityStudySpec) -> list[SensitivityStudyJob]
     """Enumerate all sensitivity-study jobs."""
     jobs: list[SensitivityStudyJob] = []
     pure_configs = generate_config_lhs(spec, spec.n_configs_per_dgp_pure)
-    bsm_configs = generate_config_lhs(
+    calibrated_configs = generate_config_lhs(
         replace(spec, config_lhs_seed=spec.config_lhs_seed + 1),
         spec.n_configs_per_dgp_calibrated,
     )
@@ -191,7 +191,7 @@ def generate_study_jobs(spec: SensitivityStudySpec) -> list[SensitivityStudyJob]
         (
             "calibrated_structure",
             generate_calibrated_structure_dgps(spec),
-            bsm_configs,
+            calibrated_configs,
             spec.calibrated_n_subsample_levels,
         ),
     ):

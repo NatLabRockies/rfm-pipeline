@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable
 from typing import Any, Generic, Literal, TypeVar
 
-logger = logging.getLogger("bsm.parallel.executor")
+logger = logging.getLogger("rfm_pipeline.parallel.executor")
 
 T = TypeVar("T")
 R = TypeVar("R")

@@ -385,7 +385,7 @@ class TestSlurmArrayRunner:
         assert "#SBATCH --array=0-3%2" in script  # 4 shards, max 2 concurrent
         assert "interaction_discovery" in script
         assert "test_run" in script
-        assert "hpc_shard_worker.py" in script
+        assert "rfm-hpc-worker" in script
         # Bash-level success check must be present
         assert "_SUCCESS.json" in script
 

@@ -35,6 +35,7 @@ dependencies = [
 
 [project.scripts]
 rfm-hpc-submit = "rfm_pipeline.hpc_submit:main"
+rfm-hpc-worker = "rfm_pipeline.hpc_shard_worker:main"
 
 [project.urls]
 Homepage = "https://github.com/NatLabRockies/rfm-pipeline"

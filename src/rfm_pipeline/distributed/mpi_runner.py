@@ -188,15 +188,11 @@ def _run_shard(shard, config_path: str, stage: str, dry_run: bool = False) -> No
     output_root = str(Path(config.output_dir) / config.run_id)
 
     # Delegate to shard worker function (avoids subprocess overhead inside MPI)
-    # Actual implementation lives in tools/hpc_shard_worker.py
     # Import here to keep mpi_runner lean and testable
     try:
-        tools_dir = Path(__file__).parent.parent.parent.parent / "tools"
-        if str(tools_dir) not in sys.path:
-            sys.path.insert(0, str(tools_dir))
-        import hpc_shard_worker
+        from rfm_pipeline.hpc_shard_worker import run_shard
 
-        hpc_shard_worker.run_shard(
+        run_shard(
             shard=shard,
             output_root=output_root,
             config_path=config_path,
@@ -204,8 +200,8 @@ def _run_shard(shard, config_path: str, stage: str, dry_run: bool = False) -> No
         )
     except ImportError:
         logger.error(
-            "[mpi_runner] Could not import hpc_shard_worker from tools/. "
-            "Ensure the tools/ directory is on PYTHONPATH or run via pixi."
+            "[mpi_runner] Could not import rfm_pipeline.hpc_shard_worker. "
+            "Ensure rfm-pipeline is installed (pixi install) before running MPI workers."
         )
         raise
 

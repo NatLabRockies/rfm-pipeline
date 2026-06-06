@@ -167,7 +167,7 @@ echo "Verified: ${{N_COMPLETE}} / ${{N_EXPECTED}} shards complete"
 
 cd "{repo_root}"
 
-pixi run python tools/hpc_reduce.py \\
+pixi run rfm-hpc-reduce \\
     --manifest "${{MANIFEST}}" \\
     --output-root "${{OUTPUT_ROOT}}" \\
     --stage "${{STAGE}}"

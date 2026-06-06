@@ -18,12 +18,12 @@ from rfm_pipeline.sensitivity_study import (
 def _small_study_spec() -> SensitivityStudySpec:
     return SensitivityStudySpec(
         pure_synthetic_n_dgps=4,
-        bsm_structure_n_dgps=2,
+        calibrated_n_dgps=2,
         n_configs_per_dgp_pure=3,
-        n_configs_per_dgp_bsm=2,
+        n_configs_per_dgp_calibrated=2,
         n_replicates=2,
         pure_synthetic_n_subsample_levels=4,
-        bsm_structure_n_subsample_levels=3,
+        calibrated_n_subsample_levels=3,
         config_lhs_seed=17,
         dgp_lhs_seed=5,
     )
@@ -51,7 +51,7 @@ def test_study_jobs_job_id_unique() -> None:
 
     expected = (
         spec.pure_synthetic_n_dgps * spec.n_configs_per_dgp_pure * spec.n_replicates
-        + spec.bsm_structure_n_dgps * spec.n_configs_per_dgp_bsm * spec.n_replicates
+        + spec.calibrated_n_dgps * spec.n_configs_per_dgp_calibrated * spec.n_replicates
     )
     assert len(jobs) == expected
     assert len({job.job_id for job in jobs}) == len(jobs)

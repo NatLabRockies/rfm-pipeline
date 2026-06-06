@@ -43,9 +43,10 @@ class SyntheticDGPSpec:
         _validate_range(self.nonlinearity_strength, "nonlinearity_strength", 0.0, 1.0)
         _validate_range(self.noise_snr, "noise_snr", 5.0, 100.0)
         _validate_range(self.holdout_fraction, "holdout_fraction", 0.05, 0.20)
-        if self.dgp_family not in {"pure_synthetic", "bsm_structure"}:
+        if self.dgp_family not in {"pure_synthetic", "bsm_structure", "calibrated_structure"}:
             raise ValueError(
-                f"dgp_family must be 'pure_synthetic' or 'bsm_structure'; got {self.dgp_family!r}"
+                f"dgp_family must be 'pure_synthetic', 'bsm_structure', or"
+                f" 'calibrated_structure'; got {self.dgp_family!r}"
             )
         _validate_positive_int(self.factor_model_rank, "factor_model_rank")
         _validate_range(
@@ -97,11 +98,12 @@ def generate_pure_synthetic(spec: SyntheticDGPSpec) -> SyntheticDataset:
     return _assemble_dataset(spec=spec, inputs=inputs, rng=rng, factor_signal=None)
 
 
-def generate_bsm_structure_synthetic(spec: SyntheticDGPSpec) -> SyntheticDataset:
+def generate_calibrated_structure_synthetic(spec: SyntheticDGPSpec) -> SyntheticDataset:
     """Generate correlated-input/factor-output synthetic data."""
-    if spec.dgp_family != "bsm_structure":
+    if spec.dgp_family not in {"bsm_structure", "calibrated_structure"}:
         raise ValueError(
-            "generate_bsm_structure_synthetic requires spec.dgp_family='bsm_structure'; "
+            "generate_calibrated_structure_synthetic requires dgp_family"
+            " 'bsm_structure' or 'calibrated_structure'; "
             f"got {spec.dgp_family!r}"
         )
     rng = np.random.default_rng(spec.seed)
@@ -320,6 +322,6 @@ __all__ = [
     "DGPTrueSupport",
     "SyntheticDataset",
     "SyntheticDGPSpec",
-    "generate_bsm_structure_synthetic",
+    "generate_calibrated_structure_synthetic",
     "generate_pure_synthetic",
 ]

@@ -19,7 +19,7 @@ study:
   dgp_lhs_seed: 1000
 
 output:
-  study_dir: "/scratch/dhetting/bsm/sensitivity_study_wave1"
+  study_dir: "/path/to/your/sensitivity_study_output"  # CONFIGURE: set to your desired output directory
   n_jobs: 100
 
 slurm:

@@ -26,7 +26,7 @@ class HpcClusterConfig:
 
     host: str = "kl1.hpc.nrel.gov"
     user: str | None = None
-    account: str = "bsm"
+    account: str = ""
 
 
 @dataclass
@@ -58,10 +58,10 @@ class GpuWorkflowConfig:
 class HpcPathConfig:
     """Local/remote filesystem locations used by orchestration actions."""
 
-    remote_repo_root: str = "/home/dhetting/src/bsm-public-rf"
-    remote_artifacts_root: str = "/scratch/${USER}/bsm/bsm-public-rf/artifacts"
-    remote_logs_root: str = "/scratch/${USER}/bsm"
-    remote_snapshot_root: str = "/scratch/${USER}/bsm/kestrel_hpc_snapshots"
+    remote_repo_root: str = ""
+    remote_artifacts_root: str = "/scratch/${USER}/rfm-pipeline/artifacts"
+    remote_logs_root: str = "/scratch/${USER}/rfm-pipeline"
+    remote_snapshot_root: str = "/scratch/${USER}/rfm-pipeline/snapshots"
     local_bundle_dir: str = "./artifacts/kestrel_collected_bundles"
     cpu_suite_output_root: str | None = None
 
@@ -239,7 +239,7 @@ def build_remote_submit_commands(
         cmd = [
             "pixi",
             "run",
-            "bsm-hpc-submit",
+            "rfm-hpc-submit",
             "--config",
             first_tier_cfg,
             "--diagnostic-only",
@@ -253,7 +253,7 @@ def build_remote_submit_commands(
         cmd = [
             "pixi",
             "run",
-            "bsm-hpc-submit",
+            "rfm-hpc-submit",
             "--config",
             tier.config_path,
             "--stage",
@@ -270,7 +270,7 @@ def build_remote_submit_commands(
         cmd = [
             "pixi",
             "run",
-            "bsm-hpc-submit",
+            "rfm-hpc-submit",
             "--config",
             config.gpu.config_path,
             "--stage",

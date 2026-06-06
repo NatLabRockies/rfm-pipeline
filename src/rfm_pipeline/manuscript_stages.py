@@ -1,4 +1,4 @@
-"""Executable manuscript-reproduction stages for the BSM case study.
+"""Executable manuscript-reproduction pipeline stages.
 
 The functions in this module implement source-level stage computations that are shared by the
 tracked manuscript notebooks and automated tests. They operate on the artifact tables resolved by
@@ -120,7 +120,7 @@ def _progress_batch_size(total: int, default_cap: int) -> int:
     """Choose progress batch size with optional high-fidelity override."""
     if total <= 0:
         return 1
-    override = os.getenv("BSM_PROGRESS_BATCH_SIZE")
+    override = os.getenv("RFM_PROGRESS_BATCH_SIZE")
     if override:
         try:
             return max(1, min(total, int(override)))
@@ -1935,7 +1935,7 @@ def discover_manuscript_interactions(
     total_scores = len(seeds)
     checkpoint_root: Path | None = checkpoint_dir
     if checkpoint_root is None:
-        env_checkpoint_dir = os.getenv("BSM_INTERACTION_CHECKPOINT_DIR")
+        env_checkpoint_dir = os.getenv("RFM_INTERACTION_CHECKPOINT_DIR")
         if env_checkpoint_dir:
             checkpoint_root = Path(env_checkpoint_dir)
     checkpoint_run_dir: Path | None = None
@@ -2042,9 +2042,9 @@ def discover_manuscript_interactions(
     # Use divisor 8 instead of 25 for larger batches (reduce parallelization overhead)
     batch_size = _progress_batch_size(total_scores, 8)
     batch_timeout_seconds = int(
-        os.getenv("BSM_INTERACTION_BATCH_TIMEOUT_SECONDS", spec.parallel_batch_timeout_seconds)
+        os.getenv("RFM_INTERACTION_BATCH_TIMEOUT_SECONDS", spec.parallel_batch_timeout_seconds)
     )
-    parallel_backend = os.getenv("BSM_INTERACTION_PARALLEL_BACKEND", spec.parallel_backend)
+    parallel_backend = os.getenv("RFM_INTERACTION_PARALLEL_BACKEND", spec.parallel_backend)
     if parallel_backend not in {"loky", "threading", "dask"}:
         raise ValueError(
             "interaction_discovery.parallel_backend must be 'loky', 'threading', or 'dask'."
@@ -2062,7 +2062,7 @@ def discover_manuscript_interactions(
         unit="permutation_scores",
         detail=start_detail,
     )
-    with tempfile.TemporaryDirectory(prefix="bsm-interaction-joblib-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="rfm-interaction-joblib-") as temp_dir:
         for start in range(0, total_scores, batch_size):
             stop = min(start + batch_size, total_scores)
             batch_items = list(enumerate(seeds[start:stop], start=start))

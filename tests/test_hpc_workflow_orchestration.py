@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from rfm_pipeline.hpc_workflow_config import (
@@ -16,6 +17,10 @@ from rfm_pipeline.hpc_workflow_config import (
 )
 
 
+@pytest.mark.skipif(
+    not Path("configs/hpc/kestrel_workflow_orchestration.yml").exists(),
+    reason="BSM Kestrel configs not present in this repo",
+)
 def test_committed_kestrel_orchestration_config_loads() -> None:
     config_path = Path("configs/hpc/kestrel_workflow_orchestration.yml")
     cfg = load_hpc_workflow_config(config_path)
@@ -25,6 +30,10 @@ def test_committed_kestrel_orchestration_config_loads() -> None:
     assert cfg.execution.cpu_tiers[0].nodes == 2
 
 
+@pytest.mark.skipif(
+    not Path("configs/hpc/kestrel_workflow_small_distributed.yml").exists(),
+    reason="BSM Kestrel configs not present in this repo",
+)
 def test_committed_small_distributed_orchestration_config_loads() -> None:
     config_path = Path("configs/hpc/kestrel_workflow_small_distributed.yml")
     cfg = load_hpc_workflow_config(config_path)
@@ -38,6 +47,10 @@ def test_committed_small_distributed_orchestration_config_loads() -> None:
     assert cfg.pullback.mode == "study_package"
 
 
+@pytest.mark.skipif(
+    not Path("configs/hpc/kestrel_cpu_scale_2_smoke.yml").exists(),
+    reason="BSM Kestrel configs not present in this repo",
+)
 def test_committed_cpu_scale_2_smoke_config_is_lightweight() -> None:
     cfg = yaml.safe_load(
         Path("configs/hpc/kestrel_cpu_scale_2_smoke.yml").read_text(encoding="utf-8")
@@ -48,6 +61,10 @@ def test_committed_cpu_scale_2_smoke_config_is_lightweight() -> None:
     assert cfg["distributed"]["slurm"]["max_concurrent_array_tasks"] == 2
 
 
+@pytest.mark.skipif(
+    not Path("scripts/kestrel/run_small_distributed_test_local.sh").exists(),
+    reason="BSM Kestrel scripts not present in this repo",
+)
 def test_small_distributed_local_script_calls_unified_runner() -> None:
     script = Path("scripts/kestrel/run_small_distributed_test_local.sh").read_text(encoding="utf-8")
     assert "set -euo pipefail" in script

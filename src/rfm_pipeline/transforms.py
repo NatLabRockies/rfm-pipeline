@@ -231,7 +231,7 @@ SQRT = TransformDef(expr="sqrt(x)", label="sqrt", name="square_root")
 EXPONENTIAL = TransformDef(expr="exp(x)", label="exp", name="exponential")
 
 #: Default library used when no ``transform_library`` is specified in config.
-#: Matches the families reported in the BSM manuscript (§7): quadratic,
+#: Matches the families reported in the manuscript (§7): quadratic,
 #: logarithmic, inverse, and exponential, plus square root.
 DEFAULT_TRANSFORM_LIBRARY: list[TransformDef] = [
     QUADRATIC,

@@ -1,4 +1,4 @@
-"""Public package surface for the BSM reduced-form modeling workflow.
+"""Public package surface for the rfm-pipeline reduced-form modeling workflow.
 
 The package exposes tested modules for data preparation, feature expansion, screening,
 final OLS fitting, artifact assembly, and workflow orchestration.
@@ -287,3 +287,5 @@ __all__ = [
     "write_output_conditioning_artifacts",
     "write_postfit_bundle",
 ]
+
+__version__ = "0.1.0"

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Copyright (c) 2026 Dylan Hettinger
-#SBATCH --job-name=bsm_sensitivity
-#SBATCH --account=bsm
+#SBATCH --job-name=rfm_sensitivity
+#SBATCH --account=${SLURM_ACCOUNT:-rfm}
 #SBATCH --partition=shared
 #SBATCH --time=02:00:00
 #SBATCH --mem=16G
 #SBATCH --cpus-per-task=4
 #SBATCH --array=0-10999%200
-#SBATCH --output=logs/sensitivity_%A_%a.out
-#SBATCH --error=logs/sensitivity_%A_%a.err
+#SBATCH --output=logs/rfm_sensitivity_%A_%a.out
+#SBATCH --error=logs/rfm_sensitivity_%A_%a.err
 
 # Usage:
 #   # Wave 1 (short partition, single batch, 2,750 configs):

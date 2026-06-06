@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it using the metadata below."
-title: "rfm-pipeline: Reduced-form modeling workflow package"
+title: "rfm-pipeline: A Python package for reduced-form modeling pipelines"
 type: software
 authors:
   - family-names: Hettinger
@@ -10,6 +10,9 @@ version: 0.1.0
 repository-code: "https://github.com/NatLabRockies/rfm-pipeline"
 url: "https://github.com/NatLabRockies/rfm-pipeline"
 abstract: >-
-  Public reduced-form modeling workflow package for the Biomass Scenario Model,
-  including screening, final OLS fitting, holdout evaluation, artifact assembly,
-  and manifest-aware export/reload utilities.
+  rfm-pipeline is a Python package for building and executing reduced-form
+  modeling (RFM) pipelines on large-scale simulation or observational datasets.
+  It provides empirical-null screening, interaction discovery, nonlinear
+  discovery, sparse selection with stability filtering, and final manuscript
+  table and figure generation. The package supports both local execution and
+  distributed SLURM array job workflows for HPC environments.

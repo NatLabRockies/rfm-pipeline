@@ -16,7 +16,42 @@ required.
 
 ______________________________________________________________________
 
-## 2026-06-06 — Round-3 adversarial audit
+## 2026-06-06 — Round-4 adversarial audit
+
+### 🟢 No manuscript-value impact
+
+Round-4 fixes were all developer-experience / drift-prevention. No
+shipped manuscript number changes; no re-run required.
+
+- **rfm-pipeline (caeed3a).** `transform_families` now **raises**
+  instead of silently dropping (root-cause fix for round-3 finding).
+  `configs/manuscript_case_study_fast_sparse.yml` renamed to
+  `configs/manuscript_case_study.yml` so the canonical name every
+  docstring already referenced actually exists on disk. Docs build
+  (`pixi run docs`) restored. `paper.md` now discloses the synthetic-DGP
+  sensitivity baseline holds `n_tree_estimators` / `max_tree_depth`
+  below manuscript values for LHS-budget reasons (BSM case study
+  retains full manuscript baselines — no result impact).
+- **bsm-public-rf (pending commit).** 8 HPC configs were carrying the
+  dead `lasso_alpha_percentile` key (would crash on
+  `load_config` against pinned rfm-pipeline a6c18e6) and 8 also
+  carried the dead `transform_families` key (would crash against
+  caeed3a). All cleaned. `pixi.lock` refreshed; pin bumped to
+  caeed3a. New test `tests/test_configs_loadable.py` (parametrized
+  over 16 standalone HPC YAMLs) prevents this drift recurring.
+- **Prediction-equation docs corrected.**
+  `artifacts/final_model/README.md` and `README_intercept.md` had the
+  raw-scale prediction rule wrong (double-divided by `scale_x`, and
+  falsely claimed `scale_y == 1` for all outputs). Corrected. No
+  shipped CSV changed — the formula in the docs disagreed with the
+  numbers; numbers were right. **Reviewers who computed predictions
+  from the broken formula would have gotten values inflated by
+  `scale_x` per term; flag in any released errata.**
+
+**Re-run action:** none.
+**Manuscript text edits:** none.
+
+______________________________________________________________________
 
 ### 🔴 B1. `lasso_alpha_percentile` was a dead config knob
 

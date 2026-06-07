@@ -126,6 +126,7 @@ def test_config_sweep_options_match_manuscript_table4_values():
         "stages.interaction_discovery.n_permutations": (11, 21, 31, 51, 101),
         "stages.interaction_discovery.p_threshold": (0.01, 0.05, 0.10, 0.20),
         "stages.sparse_selection.n_stability_subsamples": (10, 25, 50, 100),
+        "stages.sparse_selection.lasso_alpha_grid_size": (20, 40, 80, 160),
         # Manuscript Table 4: pruning delta sweep is exactly 4 values; no None.
         "stages.final_artifacts.delta_threshold_override": (0.001, 0.002, 0.005, 0.010),
     }

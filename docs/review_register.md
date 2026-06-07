@@ -106,3 +106,17 @@ Agents use this file to convert review findings into planned work instead of lea
 - Blocks merge: no
 - Destination: manuscript edit pass
 - Notes: mechanical guard added to pin the p-threshold sweep in the config-options regression test.
+
+### REVIEW-0007 — Round 17 future-wave LASSO-grid and scratch-path hardening
+
+- Status: deferred
+- Severity: medium
+- Category: reproducibility
+- Disposition: required_follow_up
+- Source: 2026-06-07 round-17 adversarial audit at commit 39c3f19
+- Evidence: `tests/test_sensitivity_study.py::test_config_sweep_options_match_manuscript_table4_values` did not assert the now-live `stages.sparse_selection.lasso_alpha_grid_size` sweep `(20, 40, 80, 160)`; `scripts/run_sensitivity_job.py` wrote generated synthetic Parquet/config files to the host default temp directory; external manuscript `jds_bsm_v22.tex:579` contains `two family]ies`.
+- Affected files: `tests/test_sensitivity_study.py`; `scripts/run_sensitivity_job.py`; external manuscript `jds_bsm_v22.tex`; `docs/manuscripts/manuscript_impact_log.md`
+- Required action: code/test hardening completed; edit manuscript typo before submission; later replace the three Chrome/tempfile SVG→PDF helpers with a repo-local, configurable converter.
+- Blocks merge: no
+- Destination: manuscript edit pass plus future reproducibility-hardening slice
+- Notes: wave12 still has constant LASSO grid size 40; do not cite `(20, 40, 80, 160)` as observed variation for current wave12 results.

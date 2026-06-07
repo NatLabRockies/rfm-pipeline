@@ -51,7 +51,7 @@ PREDICTOR_CANDIDATES = {
     "n_perm_interaction": ["stages.interaction_discovery.n_permutations"],
     "p_threshold": ["stages.interaction_discovery.p_threshold"],
     "n_stability_subsamples": ["stages.sparse_selection.n_stability_subsamples"],
-    "lasso_alpha_percentile": ["stages.sparse_selection.lasso_alpha_percentile"],
+    "lasso_alpha_grid_size": ["stages.sparse_selection.lasso_alpha_grid_size"],
     "delta_threshold": ["stages.final_artifacts.delta_threshold_override"],
 }
 
@@ -168,8 +168,8 @@ def _prepare_analysis_frame(results: pd.DataFrame) -> pd.DataFrame:
     analysis["log_n_stability_subsamples"] = np.log(
         analysis[_first_present(analysis, PREDICTOR_CANDIDATES["n_stability_subsamples"])]
     )
-    analysis["lasso_alpha_percentile_model"] = analysis[
-        _first_present(analysis, PREDICTOR_CANDIDATES["lasso_alpha_percentile"])
+    analysis["lasso_alpha_grid_size_model"] = analysis[
+        _first_present(analysis, PREDICTOR_CANDIDATES["lasso_alpha_grid_size"])
     ]
     delta_column = _first_present(analysis, PREDICTOR_CANDIDATES["delta_threshold"])
     analysis["delta_threshold_model"] = analysis[delta_column].fillna(0.0)
@@ -264,7 +264,7 @@ def main() -> int:
         "log_n_perm_interaction",
         "p_threshold_model",
         "log_n_stability_subsamples",
-        "lasso_alpha_percentile_model",
+        "lasso_alpha_grid_size_model",
         "log_delta_threshold",
     ]
     # Add DGP predictors when available (from jobs.csv join).

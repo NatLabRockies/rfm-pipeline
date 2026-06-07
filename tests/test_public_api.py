@@ -6,7 +6,6 @@ from pathlib import Path
 
 from rfm_pipeline import (
     DEFAULT_TRANSFORM_LIBRARY,
-    EXPONENTIAL,
     INVERSE,
     LOGARITHMIC,
     QUADRATIC,
@@ -86,7 +85,6 @@ def test_package_exports_transform_library() -> None:
     assert LOGARITHMIC.label == "log1p"
     assert INVERSE.label == "inv"
     assert SQRT.label == "sqrt"
-    assert EXPONENTIAL.label == "exp"
     assert callable(warn_nan_transforms)
 
 

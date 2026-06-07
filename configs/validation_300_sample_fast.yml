@@ -20,7 +20,7 @@
     sparse_selection:
       n_stability_subsamples: 8
       subsample_fraction: 1.0
-      lasso_alpha_percentile: 50
+      lasso_alpha_grid_size: 50
     final_artifacts:
       bootstrap_count: 20
       bootstrap_alpha: 0.05

@@ -11494,7 +11494,7 @@ packages:
   - myst-parser>=4 ; extra == 'dev'
   - jupyter>=1 ; extra == 'dev'
   - build>=1.2 ; extra == 'dev'
-  requires_python: '>=3.10'
+  requires_python: '>=3.10,<3.13'
 - pypi: https://files.pythonhosted.org/packages/4a/57/3b7d4dd193ade4641c865bc2b93aeeb71162e81fc348b8dad020215601ed/build-1.4.2-py3-none-any.whl
   name: build
   version: 1.4.2

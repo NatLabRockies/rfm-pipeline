@@ -32,7 +32,7 @@ _SUPPORTED_OVERRIDE_KEYS = {
     "stages.interaction_discovery.n_permutations",
     "stages.interaction_discovery.p_threshold",
     "stages.sparse_selection.n_stability_subsamples",
-    "stages.sparse_selection.lasso_alpha_percentile",
+    "stages.sparse_selection.lasso_alpha_grid_size",
 }
 
 

@@ -39,7 +39,7 @@ stages:
   sparse_selection:
     n_stability_subsamples: 50
     subsample_fraction: 0.8
-    lasso_alpha_percentile: 40
+    lasso_alpha_grid_size: 40
 
   final_artifacts:
     bootstrap_count: 20

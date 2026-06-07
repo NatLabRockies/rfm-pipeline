@@ -38,8 +38,10 @@ def test_runtime_docs_link_alignment_audit_and_do_not_overclaim() -> None:
 def test_readme_distinguishes_audited_scaffold_from_exact_reproduction() -> None:
     """The public README should not imply exact manuscript reproduction is finished."""
     readme = Path("README.md").read_text(encoding="utf-8")
-    assert "should not yet be described as a full exact implementation" in readme
-    assert "scientific exactness gaps" in readme
+    # README should call out that at least one stage is still a public surrogate
+    # and direct the reader to the alignment audit for the full status ledger.
+    assert "Public surrogate" in readme
+    assert "de-biased LASSO" in readme
     assert "docs/manuscript_alignment_audit.md" in readme
 
 

@@ -137,15 +137,22 @@ See `CHANGELOG.md` for release history.
 
 ## Scientific alignment status
 
-The pipeline stages are tested and produce deterministic outputs, but several
-stages are public approximations of the manuscript-exact methods. See
-`docs/manuscript_alignment_audit.md` for the current status ledger.
+The pipeline stages are tested and produce deterministic outputs. The current
+status, summarized from `docs/manuscript_alignment_audit.md`:
 
-The package should not yet be described as a full exact implementation of every
-manuscript method. Known scientific exactness gaps include the tree-SHAP
-interaction workflow, GAM EDF/p-value nonlinear discovery, and the
-de-biased-LASSO stability selection. Higher-level reconciliation remains before
-the package claims complete manuscript reproduction.
+- **Manuscript aligned:** tree-SHAP interaction discovery via gradient-boosted
+  trees, GAM-based nonlinear discovery via cubic smoothing splines, OLS-based
+  final fit and HC3 inferential filter, ablation comparisons, and bootstrap
+  confidence intervals.
+- **Partially aligned (provenance reconciled; private-script equivalence not
+  yet externally validated):** empirical-null screening (matches manuscript
+  BH q = 0.05 and 201 permutations) and PCA-based sparse stability selection.
+- **Public surrogate (not a validated implementation of the private notebook
+  reference):** the de-biased LASSO inference path remains a documented
+  surrogate; users requiring exact manuscript-method equivalence should
+  treat it as a generic L1/EBIC stability selector until externalization.
+
+See `docs/manuscript_alignment_audit.md` for stage-by-stage detail.
 
 ## License
 

@@ -45,25 +45,25 @@ from rfm_pipeline.manuscript_stages import (  # noqa: E402
 # ── Hardcoded sensitivity results ───────────────────────────────────────────
 
 QUALITY_IMPORTANCE = [
-    ("BH threshold (q)", 0.331),
-    ("Screening permutations", 0.104),
-    ("Sparsity (s)", 0.076),
-    ("Stability subsamples", 0.069),
-    ("Interaction p-threshold", 0.068),
-    ("Nonlinearity strength (\u03ba)", 0.056),
-    ("LASSO \u03b1 percentile", 0.054),
-    ("Input count (d)", 0.054),
+    ("BH threshold (q)", 0.533),
+    ("Sparsity (s)", 0.108),
+    ("Input count (d)", 0.070),
+    ("Screening permutations", 0.068),
+    ("Interaction density (\u03c1)", 0.066),
+    ("Nonlinearity strength (\u03ba)", 0.051),
+    ("Signal-to-noise ratio (\u03c3)", 0.037),
+    ("Interaction p-threshold", 0.024),
 ]
 
 RUNTIME_IMPORTANCE = [
-    ("Input count (d)", 0.314),
-    ("Sparsity (s)", 0.267),
-    ("Run count (n)", 0.103),
-    ("Interaction density (\u03c1)", 0.092),
-    ("Nonlinearity strength (\u03ba)", 0.078),
-    ("Signal-to-noise ratio (\u03c3)", 0.058),
-    ("Interaction permutations", 0.027),
-    ("LASSO \u03b1 percentile", 0.016),
+    ("Sparsity (s)", 0.385),
+    ("Input count (d)", 0.351),
+    ("Stability subsamples", 0.074),
+    ("Run count (n)", 0.067),
+    ("Interaction permutations", 0.064),
+    ("Interaction density (\u03c1)", 0.020),
+    ("Nonlinearity strength (\u03ba)", 0.018),
+    ("Signal-to-noise ratio (\u03c3)", 0.010),
 ]
 
 FORMULA_TOP10: list[tuple[str, float]] = []  # retained for reference only — not plotted

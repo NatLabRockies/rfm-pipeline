@@ -16,6 +16,84 @@ required.
 
 ______________________________________________________________________
 
+## 2026-06-07 — Sensitivity Random Forest refit + Figure 8 regeneration (round 8 audit)
+
+### 🟡 R3. RF meta-regression refit on cleaned wave12 (companion to R1)
+
+- **What changed.** Round 7 refit the **linear** sensitivity meta-regression
+  on the cleaned wave12 union (4027 rows) but left the **Random Forest**
+  meta-regression untouched. Round-8 adversarial audit caught the
+  asymmetry: the hardcoded `QUALITY_IMPORTANCE` / `RUNTIME_IMPORTANCE`
+  arrays in `scripts/plot_sensitivity_rf_figures.py` still encoded the
+  pre-cleanup wave1 fit (n = 2583/2049) that included the dead
+  `lasso_alpha_percentile` column.
+- **What we did.**
+  - Added reproducible fit script `scripts/fit_sensitivity_rf.py`
+    (RandomForestRegressor, n_estimators=200, random_state=42).
+  - Refit on cleaned wave12 with the canonical 13-feature
+    `_RF_FEATURES` list (constant `lasso_alpha_grid_size = 40` retained;
+    sklearn assigns it importance ≈ 0).
+  - Quality model: all 4027 rows, target = `nrmse_relative` (null-screened
+    rows filled to 0).
+  - Runtime model: 3014 successful rows only, target =
+    `log(total_wall_seconds)` — matches manuscript Figure 8 caption.
+  - Replaced the 8-row hardcoded tuples and regenerated
+    `fig_sensitivity_rf_importance.{svg,pdf}`.
+- **Manuscript impact (§6 prose + Figure 8 caption).**
+  - Quality (was → now):
+    - BH threshold (q): 33% → **53%** (still #1, larger share)
+    - Sparsity (s): 8% → **11%**
+    - Screening permutations: 10% → 7%
+    - Stability subsamples: 7% → drops out of top-8
+    - LASSO α percentile: 5% → **removed (dead knob)**
+  - Runtime (was → now):
+    - Input count (d): 31% → 35% (now #2, not #1)
+    - Sparsity (s): 27% → **39% (now #1)**
+    - Run count (n): 10% → 7%
+    - LASSO α percentile: 2% → **removed (dead knob)**
+    - Stability subsamples & Interaction permutations enter top-8.
+  - Sample sizes: caption `n = 2{,}583` / `n = 2{,}049` → `n = 4{,}027`
+    / `n = 3{,}014`.
+- **Editor note (replace §6 paragraph starting "For quality, q accounts
+  for 33% …").**
+  - "For quality, q accounts for **53%** of RF importance, followed by
+    sparsity (**11%**), input count d (**7%**), and screening
+    permutations (**7%**) (Figure~\\ref{fig:sensitivity-rf-importance}).
+    q controls how many inputs enter interaction and nonlinearity
+    discovery; loosening it forwards more candidates to the enrichment
+    stages, increasing both model quality and runtime."
+  - "For runtime, sparsity (**39%**) and the number of inputs d
+    (**35%**) together account for over **74%** of the variance
+    (Figure~\\ref{fig:sensitivity-rf-importance}, right panel),
+    consistent with the screening stage's
+    $O(N\_\\mathrm{perm}^{(s)} \\times n \\times d)$ complexity and the
+    quadratic growth in candidate interaction pairs with the screened
+    input count."
+  - Update Figure 8 caption sample sizes to `n = 4{,}027` (quality) and
+    `n = 3{,}014` (runtime).
+- **What was NOT regenerated (deferred — judgment).**
+  - `fig_sensitivity_bsm_validation.{svg,pdf}` and the BSM_RF_PRED /
+    BSM_RF_P10 / BSM_RF_P90 / BSM_ANALOG_NRMSE constants remain at
+    pre-cleanup values. Their reproduction requires the original
+    BSM-analog selection criterion, which is not captured in any
+    in-repo script. Treat as TODO before final manuscript submission.
+- **Files touched.**
+  - `scripts/plot_sensitivity_rf_figures.py` (importance arrays).
+  - `scripts/fit_sensitivity_rf.py` (new).
+  - `docs/manuscripts/fig_sensitivity_rf_importance.svg` (regenerated).
+- **Re-run recipe.**
+  ```bash
+  pixi run python scripts/fit_sensitivity_rf.py \
+      --results artifacts/sensitivity/wave12_combined_clean.csv
+  pixi run python scripts/plot_sensitivity_rf_figures.py \
+      --results artifacts/sensitivity/wave12_combined_clean.csv \
+      --output-dir artifacts/sensitivity/figures_wave12_clean
+  cp artifacts/sensitivity/figures_wave12_clean/fig_sensitivity_rf_importance.svg \
+     docs/manuscripts/
+  ```
+
+______________________________________________________________________
+
 ## 2026-06-07 — Sensitivity meta-regression refit + Table 4 / Figure 7 regeneration
 
 ### 🟡 R1. Dead-knob refit (wave1 + wave2 combined)

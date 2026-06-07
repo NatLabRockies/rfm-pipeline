@@ -45,22 +45,22 @@ from rfm_pipeline.manuscript_stages import (  # noqa: E402
 # ── Hardcoded sensitivity results ───────────────────────────────────────────
 
 QUALITY_IMPORTANCE = [
-    ("BH threshold (q)", 0.533),
+    ("BH threshold (q)", 0.532),
     ("Sparsity (s)", 0.108),
-    ("Input count (d)", 0.070),
+    ("Input count (d)", 0.069),
     ("Screening permutations", 0.068),
     ("Interaction density (\u03c1)", 0.066),
-    ("Nonlinearity strength (\u03ba)", 0.051),
-    ("Signal-to-noise ratio (\u03c3)", 0.037),
-    ("Interaction p-threshold", 0.024),
+    ("Nonlinearity strength (\u03ba)", 0.052),
+    ("Signal-to-noise ratio (\u03c3)", 0.036),
+    ("Interaction p-threshold", 0.025),
 ]
 
 RUNTIME_IMPORTANCE = [
-    ("Sparsity (s)", 0.385),
+    ("Sparsity (s)", 0.386),
     ("Input count (d)", 0.351),
-    ("Stability subsamples", 0.074),
+    ("Stability subsamples", 0.073),
     ("Run count (n)", 0.067),
-    ("Interaction permutations", 0.064),
+    ("Interaction permutations", 0.063),
     ("Interaction density (\u03c1)", 0.020),
     ("Nonlinearity strength (\u03ba)", 0.018),
     ("Signal-to-noise ratio (\u03c3)", 0.010),
@@ -71,7 +71,9 @@ FORMULA_TOP10: list[tuple[str, float]] = []  # retained for reference only — n
 # BSM production r_BSM: (0.0721 - 0.1653) / 0.1653 = -0.564
 # (uses current pipeline nRMSE with production-dataset null nRMSE)
 BSM_R = -0.564
-BSM_MEDIAN_SUCCESSFUL = -0.462
+# NOTE: median of γ across successful sensitivity runs is now computed
+# dynamically inside ``render_bsm_validation`` from the supplied results CSV
+# (avoids drift when wave count changes; was hardcoded -0.462 against wave1).
 
 BSM_NRMSE_ACTUAL = 0.0721
 BSM_RF_PRED = 0.0762
@@ -357,6 +359,9 @@ def render_bsm_validation(results_path: Path) -> str:
     """Render two-panel figure: γ histogram and BSM operating-point dot plot."""
     df = pd.read_csv(results_path)
     r_vals = df["nrmse_relative"].replace([np.inf, -np.inf], np.nan).dropna().values
+    n_successful = int(len(r_vals))
+    n_null_screened = int(df["null_screened"].notna().sum())
+    median_successful = float(np.median(r_vals)) if n_successful else 0.0
 
     W, H = 1130, 370
 
@@ -386,7 +391,7 @@ def render_bsm_validation(results_path: Path) -> str:
         "Distribution of \u03b3 across sensitivity study runs</text>"
         f'<text x="{lp_x0 + 5}" y="38" font-family="{_FONT}" font-size="{_FS_TITLE}" '
         f'font-weight="700" fill="{_SVG_COLOR_TITLE}">'
-        "(n\u00a0=\u00a02,583)</text>"
+        f"(n\u00a0=\u00a0{n_successful:,})</text>"
         f'<line x1="{lp_x0}" y1="46" x2="{lp_x0 + lp_w}" y2="46" '
         f'stroke="{_SVG_COLOR_EDGE}" stroke-width="0.8"/>'
     )
@@ -449,7 +454,7 @@ def render_bsm_validation(results_path: Path) -> str:
 
     # Reference lines
     bsm_x = lp_x(BSM_R)
-    med_x = lp_x(BSM_MEDIAN_SUCCESSFUL)
+    med_x = lp_x(median_successful)
 
     body.append(
         f'<line x1="{bsm_x:.1f}" y1="{lp_y0}" x2="{bsm_x:.1f}" y2="{lp_y0 + lp_h}" '
@@ -478,7 +483,7 @@ def render_bsm_validation(results_path: Path) -> str:
     body.append(
         f'<text x="{lp_x0 + 38}" y="{leg_y + 21}" font-family="{_FONT}" '
         f'font-size="{_SVG_FS_LEGEND}" fill="{_SVG_COLOR_TEXT}">'
-        f"Median (successful fits) = {BSM_MEDIAN_SUCCESSFUL:.3f}</text>"
+        f"Median (successful fits) = {median_successful:.3f}</text>"
     )
 
     # Null-screened annotation on the spike
@@ -487,7 +492,7 @@ def render_bsm_validation(results_path: Path) -> str:
     body.append(
         f'<text x="{lp_x0 + lp_w - 6}" y="{spike_top - 5:.1f}" text-anchor="end" '
         f'font-family="{_FONT}" font-size="{_SVG_FS_SMALL}" fill="{_SVG_COLOR_TEXT_MUTED}">'
-        f"null-screened (n=534)</text>"
+        f"null-screened (n={n_null_screened})</text>"
     )
 
     # ── Right panel: BSM operating-point dot plot ────────────────────────────

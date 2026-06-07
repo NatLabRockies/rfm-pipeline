@@ -194,7 +194,7 @@ def _group_cv_rf_predictions(
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         for tr, va in split_iter:
-            rf = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
+            rf = RandomForestRegressor(n_estimators=500, random_state=42, n_jobs=-1)
             rf.fit(X_all[tr], y_all[tr])
             # Evaluate only on successful rows in the test fold.
             va_succ = va[is_succ[va]]

@@ -16,6 +16,80 @@ required.
 
 ______________________________________________________________________
 
+## 2026-06-07 — Round 9 audit: RF tree count, importance metric, BSM panel labels
+
+### 🟡 R4. RandomForest configuration brought into line with manuscript
+
+- **What changed (code).**
+  - `n_estimators` bumped 200 → **500** in `scripts/fit_sensitivity_rf.py`
+    and the cross-validated RF fit in `scripts/plot_sensitivity_results.py`
+    to match the manuscript's "500-tree Random Forest" wording
+    (`jds_bsm_v22.tex:640`).
+  - Re-refit `QUALITY_IMPORTANCE` / `RUNTIME_IMPORTANCE` arrays at 500
+    trees (third-decimal updates only — RF averaging is already
+    stabilised at 200; ordering and headline percentages unchanged).
+  - `render_bsm_validation` now computes `n_successful`,
+    `n_null_screened`, and the median-γ reference line dynamically from
+    the supplied CSV. Removed hardcoded `BSM_MEDIAN_SUCCESSFUL = -0.462`
+    and inline labels `(n = 2,583)` / `null-screened (n=534)` which were
+    pinned to the pre-wave2 run.
+- **Manuscript impact (editor must fix in v22.tex before submission).**
+  - **§6 / Figure 8 caption — importance metric label is wrong.**
+    Manuscript currently says "mean decrease in **accuracy**" (lines
+    640 and 685). `sklearn.RandomForestRegressor.feature_importances_`
+    returns **mean decrease in impurity (MDI)** — a different quantity
+    (variance-reduction split contribution, not permutation-based
+    out-of-bag accuracy drop). The plot's own axis label correctly says
+    "mean decrease in impurity". **Action: replace both occurrences of
+    "mean decrease in accuracy" with "mean decrease in impurity
+    (Gini-equivalent variance reduction; sklearn `feature_importances_`)".**
+  - **§6 / Figure 8 caption — sample sizes.** Caption currently cites
+    `n = 2{,}583` (quality) and `n = 2{,}049` (runtime, "successful").
+    Refit on wave12 uses `n = 4{,}027` and `n = 3{,}014`.
+  - **§6 / Figure 9 panel ("BSM operating-point validation").** The
+    γ-distribution histogram on the left panel is now drawn from
+    wave12; new headline numbers:
+    - Successful sensitivity runs: **n = 3,014** (was 2,583)
+    - Null-screened runs: **n = 1,013** (was 534)
+    - Median γ across successful fits: **−0.448** (was −0.462)
+    - q10 / q90 of γ: **(−0.655, −0.304)** (was approx. (−0.695, −0.301))
+  - **§6.1 BSM validation prose (jds_bsm_v22.tex:696).** The "103 min,
+    99–111 min PI, 1.6% of measured mean" runtime claim cites the
+    pre-cleanup RF runtime model. After the wave12 refit, the runtime
+    point + 80% PI for the BSM operating point are stale. **Until the
+    BSM analog selection / feature-vector capture script is rebuilt,
+    treat these numbers as TODO; do not republish the validation point
+    estimate.**
+- **What was NOT changed (deferred — coupled to BSM refit).**
+  - `BSM_RF_PRED = 0.0762`, `BSM_RF_P10 = 0.0729`, `BSM_RF_P90 = 0.0774`
+    and the `BSM_ANALOG_NRMSE` list remain at the pre-cleanup values.
+    The plot script's BSM-validation figure is therefore not republished
+    to `docs/manuscripts/` from round 9; only the importance figure was
+    copied. Closing this TODO requires (a) the BSM-config feature
+    vector and (b) the analog-selection criterion (k-nearest by which
+    metric?) — neither captured in any committed script.
+- **Files touched.**
+  - `scripts/fit_sensitivity_rf.py` (n_estimators 200→500).
+  - `scripts/plot_sensitivity_rf_figures.py` (importance arrays + dynamic
+    BSM-panel labels; dropped `BSM_MEDIAN_SUCCESSFUL`).
+  - `scripts/plot_sensitivity_results.py` (CV RF n_estimators 200→500).
+  - `docs/manuscripts/fig_sensitivity_rf_importance.svg` (regenerated
+    at 500 trees).
+- **Re-run recipe.**
+  ```bash
+  pixi run python scripts/fit_sensitivity_rf.py \
+      --results artifacts/sensitivity/wave12_combined_clean.csv
+  pixi run python scripts/plot_sensitivity_rf_figures.py \
+      --results artifacts/sensitivity/wave12_combined_clean.csv \
+      --output-dir artifacts/sensitivity/figures_wave12_clean
+  cp artifacts/sensitivity/figures_wave12_clean/fig_sensitivity_rf_importance.svg \
+     docs/manuscripts/
+  # NOTE: do NOT copy fig_sensitivity_bsm_validation.svg until BSM_RF_PRED
+  # block is refit on cleaned wave12.
+  ```
+
+______________________________________________________________________
+
 ## 2026-06-07 — Sensitivity Random Forest refit + Figure 8 regeneration (round 8 audit)
 
 ### 🟡 R3. RF meta-regression refit on cleaned wave12 (companion to R1)

@@ -16,6 +16,76 @@ required.
 
 ______________________________________________________________________
 
+## 2026-06-07 — Round 14 audit: enumerate §6 prose drift missed by R6
+
+### 🟠 R7. RF importance, sample-size, and runtime-stratification prose drift
+
+- **What changed (code).** None — round-14 audit surfaced numeric claims
+  in `jds_bsm_v22.tex` §6 / §7 prose and Figure 7 + Figure 9 captions
+  that R6 did not enumerate. Quality / runtime / null-screen percentages
+  in prose still reflect pre-cleanup wave1; refits at rounds 8/9/12
+  regenerated the figures but never propagated to the prose tier.
+  Mechanical hardening: `scripts/plot_sensitivity_results.py` now derives
+  the RF pkl prefix from the input CSV stem (mirrors round-13 fix in
+  `fit_sensitivity_rf.py`).
+- **Manuscript impact (editor must fix in v22.tex before submission).**
+  - **§6 line 645 (sample-size sentence).**
+    - "2,583 runs (2,486 pure-synthetic / 97 BSM-structure)" → **4,027
+      runs (3,914 pure-synthetic / 113 BSM-structure)**
+    - "534 (20.7%) null-screened" → **1,013 (25.2%) null-screened**
+    - "21.3% pure-synthetic / 5.2% BSM-structure null-screen rate" →
+      **25.8% pure-synthetic / 4.4% BSM-structure**
+  - **§6 line 647 (CV RMSE).** "CV RMSE = 0.071" → **CV RMSE = 0.066**
+    (computed value 0.0657, γ scale).
+  - **§6 line 666, 671 (n importance).** "RF importance for n is 2.9%"
+    → **1.6%** (wave12 quality model).
+  - **§6 line 678 (quality top-5).**
+    - q: **33% → 53.2%** (still dominant)
+    - empirical_null permutations: 10% → **6.8%**
+    - sparsity: 8% → **10.8%**
+    - stability subsamples: 7% → **0.6% — drops out of top 5
+      entirely** (now ranks 11th)
+  - **§6 line 680 (runtime top drivers).**
+    - d (n_inputs): **31% → 35.1%**
+    - sparsity: **27% → 38.6%** (now dominant)
+  - **§6 line 685 (Figure 9 `rf_importance` caption).**
+    - "n = 2,583 runs (quality)" → **n = 4,027 runs**
+    - "n = 2,049 successful runs (runtime)" → **n = 3,014**
+  - **§6 line 694 (runtime BSM vs pure-synthetic).** Old: "BSM-structure
+    runs averaged 2,558 s versus 2,201 s for pure-synthetic". Wave12
+    refit, **matched on the BSM d range [105, 195]**:
+    - BSM-structure (n=108): **mean 3,300 s, median 1,740 s**
+    - pure-synthetic (n=1,447): **mean 3,825 s, median 2,712 s**
+    - **The direction reverses on wave12 matched-d.** Pure-synthetic is
+      *more* expensive than BSM-structure at comparable d. Recommend
+      replacing the sentence with the matched-d comparison and dropping
+      the "larger output arrays" causal claim, which is no longer
+      supported by the data.
+  - **§7 line 710 (practitioner guidance).** "stability subsamples is
+    the fourth-ranked quality driver" — **no longer true** (ranks 11th
+    at 0.6% importance). Either drop the sentence or rewrite around
+    q / null-permutation-budget / sparsity as the top three.
+  - **§7 / §8 line 740, 751.** Any inline restatement of the §6
+    importance percentages inherits the same drift; sweep the file for
+    "33%", "27%", "31%", "7%" attached to the quality / runtime RF.
+- **Reproducibility.**
+  ```bash
+  pixi run python scripts/fit_sensitivity_rf.py \
+      --results artifacts/sensitivity/wave12_combined_clean.csv \
+      --dump-models artifacts/sensitivity/
+  pixi run python scripts/plot_sensitivity_results.py \
+      --results artifacts/sensitivity/wave12_combined_clean.csv \
+      --output-dir artifacts/sensitivity/figures/
+  # Importance percentages: read rf_importance.svg + stdout
+  # null-screen rates: wave12_combined_clean.csv null_screened groupby dgp_family
+  # BSM vs pure-synthetic runtime: matched-d filter on n_inputs ∈ [105, 195]
+  ```
+- **Files touched.**
+  - `scripts/plot_sensitivity_results.py` (input-derived pkl prefix; 4
+    LoC, mirrors round-13 `fit_sensitivity_rf.py` hardening).
+
+______________________________________________________________________
+
 ## 2026-06-07 — Round 13 audit: stale R² and runtime stats in manuscript §6
 
 ### 🟡 R6. RF goodness-of-fit + runtime distribution drift (manuscript edits)

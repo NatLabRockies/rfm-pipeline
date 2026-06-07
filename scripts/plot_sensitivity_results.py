@@ -581,10 +581,14 @@ def main() -> int:
     results = _expand_config_overrides(results)
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    # RF model path (alongside the results CSV). Prefer the wave12-trained
-    # model; fall back to the historical wave1 model for backwards
-    # compatibility with older artifact bundles.
-    rf_path = args.results.parent / "wave12_rf_quality.pkl"
+    # RF model path (alongside the results CSV). Derive the prefix from the
+    # input CSV stem so a future ``wave34_combined_clean.csv`` picks up
+    # ``wave34_rf_quality.pkl`` instead of silently reusing the wave12 model
+    # (mirrors the ``scripts/fit_sensitivity_rf.py --dump-models`` prefix
+    # convention introduced in round 13). Fall back to the historical wave1
+    # model for backwards compatibility with older artifact bundles.
+    prefix = args.results.stem.split("_", 1)[0]
+    rf_path = args.results.parent / f"{prefix}_rf_quality.pkl"
     if not rf_path.exists():
         rf_path = args.results.parent / "wave1_rf_quality.pkl"
 

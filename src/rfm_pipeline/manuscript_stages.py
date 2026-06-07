@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import multiprocessing as mp
 import os
@@ -47,6 +48,8 @@ from .metrics import (
 )
 from .parallel import get_executor
 from .transforms import DEFAULT_TRANSFORM_LIBRARY, TransformDef
+
+logger = logging.getLogger(__name__)
 
 _PROGRESS_TELEMETRY_PATH: Path | None = None
 
@@ -5618,7 +5621,13 @@ def _gam_test_and_smooth(
         f_stat = ((rss_linear - rss_spline) / df_num) / (rss_spline / df_den)
         p_value = float(_scipy_f.sf(max(f_stat, 0.0), df_num, df_den))
         return smooth_edf, p_value, smooth_at_train
-    except Exception:
+    except (ValueError, np.linalg.LinAlgError) as exc:
+        logger.warning(
+            "spline F-test fell back to non-significant for n_unique=%d k=%d: %s",
+            n_unique,
+            k,
+            exc,
+        )
         return 2.0, 1.0, None
 
 

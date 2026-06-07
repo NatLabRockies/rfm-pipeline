@@ -16,7 +16,73 @@ required.
 
 ______________________________________________________________________
 
-## 2026-06-06 — Round-4 adversarial audit
+## 2026-06-07 — Sensitivity meta-regression refit + Table 4 / Figure 7 regeneration
+
+### 🟡 R1. Dead-knob refit (wave1 + wave2 combined)
+
+- **What changed.** Per impact-log entries B1 (dead `lasso_alpha_percentile`)
+  and H7 (disabled-pruning `delta_threshold_override=None`), the
+  meta-regression was refit on the **cleaned** wave1+wave2 union:
+  - Combined: 5089 rows (wave1=2583, wave2=2506).
+  - Dropped 1008 disabled-pruning rows where
+    `stages.final_artifacts.delta_threshold_override` was null.
+  - Dropped 54 rows with missing `final_ols_nrmse` target.
+  - **Dropped the dead `stages.sparse_selection.lasso_alpha_percentile`
+    column entirely**, replacing it with a constant
+    `lasso_alpha_grid_size = 40` (the manuscript baseline) so the
+    polynomial fit collapses the dead dimension cleanly.
+  - Final analysis frame: **4027 rows × 11 predictors**, d=2 polynomial,
+    136 polynomial terms, in-sample R²=0.840, CV R²=0.831,
+    group-blocked CV R²=0.776.
+  - Cleaned CSV: `artifacts/sensitivity/wave12_combined_clean.csv`.
+  - Refit formula: `artifacts/sensitivity/wave12_formula_d2_clean.csv`.
+- **Dead-knob significance check.** The dead-knob main effect in the
+  pre-cleanup fit was nominally significant (t = −8.4, p ≈ 0), but
+  this is a statistical artifact of LHS non-orthogonality
+  (lasso_alpha_percentile is correlated r ≈ 0.28 with `n_stab` and
+  `holdout_fraction`, r ≈ 0.19 with `delta_threshold`). The total R²
+  contribution from all 12 dead-knob terms was +0.27 %. **Decision
+  (recorded by user 2026-06-07):** drop and refit; no wave-1/2
+  rerun is required. A future wave that varies `lasso_alpha_grid_size`
+  honestly is optional and would fill the Table 4 [TBD] cell.
+- **Manuscript impact (Table 4 / Figure 7 / §6.1 text).**
+  - **Figures regenerated** (cleaned wave1+wave2 basis):
+    - `docs/manuscripts/fig_sensitivity_main_effects.svg`
+    - `docs/manuscripts/fig_sensitivity_runtime_breakdown.svg`
+    - `docs/manuscripts/fig_sensitivity_sample_size_curve.svg`
+    - `docs/manuscripts/fig_sensitivity_rf_validation.svg`
+  - Plot legend `LASSO α percentile` → `LASSO α grid size`
+    (`scripts/plot_sensitivity_results.py:593`).
+  - **Editor note (required action).** Section 6 / §6.1 / Table 4 /
+    Table 5 / Figure 7 caption and inline narrative all referenced the
+    dead `lasso_alpha_percentile` predictor and quoted per-predictor
+    coefficients/importances from the **pre-refit** fit. The numbers
+    below have changed (refit on 4027 rows, dead knob removed,
+    pruning-disabled rows removed). The manuscript editor MUST:
+    1. Re-pull the predictor list in Table 4 to exclude
+       `lasso_alpha_percentile`; insert `lasso_alpha_grid_size` row
+       marked `[TBD — pending future sensitivity wave]`.
+    1. Replace cited Table 5 / §6.1 coefficients and t-stats with the
+       refit values from
+       `artifacts/sensitivity/wave12_formula_d2_clean.csv`.
+    1. Replace Figure 7 cited correlations with the new
+       `fig_sensitivity_main_effects.svg` values:
+       - Holdout fraction: 0.2553
+       - Variance threshold: 0.0948
+       - Screening permutations: 0.4035
+       - BH threshold (q): 0.5189
+       - Interaction permutations: 0.3487
+       - Interaction p-threshold: 0.0623
+       - Stability subsamples: 0.2022
+       - LASSO α grid size: 0.0000 (constant; awaiting future wave)
+       - δ threshold override: 0.3836
+    1. Disclose in the §6 discussion the LHS non-orthogonality finding
+       (dead knob spuriously reached p ≈ 0 via r ≈ 0.28 confound with
+       `n_stability_subsamples` and `holdout_fraction`) as a caveat
+       on Table 4 / Table 5 t-stat interpretation.
+- **Re-run required:** none. Cleaned-CSV refit closes this work.
+
+______________________________________________________________________
 
 ### 🟢 No manuscript-value impact
 

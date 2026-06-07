@@ -88,13 +88,13 @@ pixi install --locked
 ModuleNotFoundError: No module named 'rfm_pipeline'
 ```
 
-**Cause:** Running Python without `PYTHONPATH=src`.
+**Cause:** Bypassing the Pixi-managed environment.
 
 **Solution:**
 
 ```bash
-# Always use PYTHONPATH=src when running scripts
-PYTHONPATH=src pixi run python scripts/run_manuscript_reproduction.py --config ...
+# Always use pixi run for project tooling
+pixi run python scripts/run_manuscript_reproduction.py --config ...
 
 # Or use the pixi task
 pixi run manuscript-reproduce --config ...
@@ -119,7 +119,7 @@ ValueError: case_study_input_matrix must include a sample_id column.
 **Option 1:** Use the preprocessing script (if your data has scenario/run_id):
 
 ```bash
-PYTHONPATH=src pixi run python scripts/add_scenario_factors.py
+pixi run python scripts/add_scenario_factors.py
 ```
 
 **Option 2:** Manually add sample_id:
@@ -197,7 +197,7 @@ ValueError: Feature 'AFSC' is not a direct input or supported catalog expression
 **Option 1:** Use the scenario factor extraction script:
 
 ```bash
-PYTHONPATH=src pixi run python scripts/add_scenario_factors.py
+pixi run python scripts/add_scenario_factors.py
 ```
 
 **Option 2:** Extract from scenario string manually:

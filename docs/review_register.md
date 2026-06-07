@@ -144,7 +144,21 @@ Agents use this file to convert review findings into planned work instead of lea
 - Source: 2026-06-07 round-19 adversarial audit at commit 181bc83
 - Evidence: repo onboarding says users do not need pre-installed Python and repo policy requires Pixi, but 10 markdown snippets still run `PYTHONPATH=src python examples/end_to_end_reproducibility.py` instead of `pixi run python ...`.
 - Affected files: `docs/quickstart.md`; `docs/reproducibility_example.md`; `docs/setup_and_first_run.md`; `docs/configuration_reference.md`
-- Resolution: bulk `sed` replaced all 12 occurrences (auditor undercounted at 10) of `PYTHONPATH=src python` with `pixi run python` across the four files. Verified zero remaining matches outside intentional evidence lines in `review_register.md` and `AGENT_SYNC.md`.
+- Resolution: bulk `sed` replaced all 12 occurrences (auditor undercounted at 10) of `PYTHONPATH=src python` with `pixi run python` across the four files.
 - Blocks merge: no
 - Destination: JOSS/new-user documentation cleanup before release
-- Notes: docs-snippet smoke test still open as future work — would catch the next bare-Python regression in CI.
+- Notes: round 20 found broader command-policy drift still open in other new-user troubleshooting snippets; see REVIEW-0010.
+
+### REVIEW-0010 — Round 20 new-user docs still contain non-policy commands
+
+- Status: **fixed (round 20 commit)**
+- Severity: medium
+- Category: documentation_reproducibility
+- Disposition: closed
+- Source: 2026-06-07 round-20 adversarial audit at commit 5cfe5c0
+- Evidence: `docs/troubleshooting.md:91-122,199-200` still teaches `PYTHONPATH=src pixi run python`; `docs/setup_and_first_run.md:343-359` recommends `pixi shell` and bare `python`; `docs/configuration_reference.md:335,362` uses bare `python -c`. These conflict with the Pixi-first setup promise and repo policy, and there is still no docs-snippet smoke test to catch command drift.
+- Affected files: `docs/troubleshooting.md`; `docs/setup_and_first_run.md`; `docs/configuration_reference.md`; `docs/DOCUMENTATION_IMPROVEMENT_PLAN.md`
+- Resolution: bulk-replaced `PYTHONPATH=src pixi run python` → `pixi run python` in troubleshooting (3 occurrences + cause/comment text); converted bare `python -c` → `pixi run python -c` in setup_and_first_run + configuration_reference (3 snippets); replaced `pixi shell` recommendation with explicit note that repo policy prefers `pixi run`; corrected `DOCUMENTATION_IMPROVEMENT_PLAN.md` troubleshooting bullet.
+- Blocks merge: no
+- Destination: JOSS/new-user documentation cleanup before release
+- Notes: docs-snippet smoke test still open as future work — would catch the next bare-python or `pixi shell` regression in CI.

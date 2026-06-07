@@ -98,11 +98,13 @@ class SparseSelectionStabilitySpec:
 
 ```yaml
 case_study:
-  case_study_name: bsm_manuscript
-  retained_components: 39  # ← Important for PCA
-  n_permutations: 1000     # ← Affects parallelism speedup
-  # ... more params ...
-  # NOTE: No "runtime" section here; injected programmatically
+  output_conditioning:
+    temporary_reduction:
+      retained_components: 20      # ← PCA component count (manuscript-frozen)
+  empirical_null_screen:
+    permutation_count_B: 200       # ← Null permutations (B = observed + B)
+  # ... see configs/manuscript_case_study.yml for the full frozen contract.
+  # NOTE: No "runtime" section here; injected programmatically.
 ```
 
 If you need to add a new runtime parameter in future, add it to the config YAML and update all 4 `spec_from_case_study_config()` functions.

@@ -23,6 +23,7 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from rfm_pipeline._chrome import find_chrome as _find_chrome  # noqa: E402
 from rfm_pipeline.manuscript_stages import (  # noqa: E402
     _SVG_COLOR_ACCENT_GREEN,
     _SVG_COLOR_ACCENT_ORANGE,
@@ -93,7 +94,7 @@ def _save_pdf(svg_path: Path) -> None:
         f"</style></head><body><img src='file://{svg_path.resolve()}' "
         f"width='{w}' height='{h}'/></body></html>"
     )
-    chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    chrome = _find_chrome()
     pdf_path = svg_path.with_suffix(".pdf")
     with tempfile.NamedTemporaryFile(suffix=".html", mode="w", delete=False) as f:
         f.write(html_content)

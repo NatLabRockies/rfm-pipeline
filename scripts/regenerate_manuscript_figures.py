@@ -30,6 +30,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "src"))
 
+from rfm_pipeline._chrome import find_chrome as _find_chrome  # noqa: E402
 from rfm_pipeline.manuscript_stages import regenerate_figures_from_committed_data  # noqa: E402
 
 
@@ -45,7 +46,7 @@ def _save_pdf(svg_path: Path) -> None:
         f"</style></head><body><img src='file://{svg_path.resolve()}' "
         f"width='{w}' height='{h}'/></body></html>"
     )
-    chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    chrome = _find_chrome()
     pdf_path = svg_path.with_suffix(".pdf")
     with tempfile.NamedTemporaryFile(suffix=".html", mode="w", delete=False) as f:
         f.write(html_content)

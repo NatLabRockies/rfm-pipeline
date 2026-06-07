@@ -79,5 +79,5 @@ For a deterministic end-to-end example that also writes and reloads the bundle, 
 `examples/end_to_end_reproducibility.py` from the repo source tree:
 
 ```bash
-PYTHONPATH=src python examples/end_to_end_reproducibility.py --output-dir artifacts/toy-reproducibility-example
+pixi run python examples/end_to_end_reproducibility.py --output-dir artifacts/toy-reproducibility-example
 ```

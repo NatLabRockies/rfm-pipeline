@@ -211,7 +211,7 @@ ______________________________________________________________________
 
 ```bash
 # Just run it—no config needed
-PYTHONPATH=src python examples/end_to_end_reproducibility.py \
+pixi run python examples/end_to_end_reproducibility.py \
   --output-dir artifacts/demo-run \
   --run-manuscript-chain \
   --manuscript-output-dir artifacts/demo-run/manuscript
@@ -397,7 +397,7 @@ ______________________________________________________________________
 No configuration needed. Just run:
 
 ```bash
-PYTHONPATH=src python examples/end_to_end_reproducibility.py \
+pixi run python examples/end_to_end_reproducibility.py \
   --output-dir artifacts/exact-demo --run-manuscript-chain \
   --manuscript-output-dir artifacts/exact-demo/manuscript
 ```
@@ -415,7 +415,7 @@ cp configs/manuscript_paths.template.yml configs/local/manuscript_paths.local.ym
 pixi run python -c "from rfm_pipeline import resolve_manuscript_runtime; from pathlib import Path; rt = resolve_manuscript_runtime(Path.cwd()); print(f'Mode: {rt.mode}; output_root: {rt.output_root}')"
 
 # 3. Run
-PYTHONPATH=src python examples/end_to_end_reproducibility.py \
+pixi run python examples/end_to_end_reproducibility.py \
   --output-dir artifacts/my-data --run-manuscript-chain \
   --manuscript-output-dir artifacts/my-data/manuscript
 ```
@@ -436,7 +436,7 @@ empirical_null_screen:
 EOF
 
 # 3. Run
-PYTHONPATH=src python << 'EOF'
+pixi run python << 'EOF'
 from rfm_pipeline import run_manuscript_reproduction_audit_stage, resolve_manuscript_runtime
 from pathlib import Path
 

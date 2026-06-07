@@ -13,14 +13,14 @@ Phase 3 notebook stages and writes every manuscript artifact family.
 ## Run from the repo source tree
 
 ```bash
-PYTHONPATH=src python examples/end_to_end_reproducibility.py \
+pixi run python examples/end_to_end_reproducibility.py \
   --output-dir artifacts/toy-reproducibility-example
 ```
 
 To run the canonical example and the complete demo manuscript-reproduction chain together:
 
 ```bash
-PYTHONPATH=src python examples/end_to_end_reproducibility.py \
+pixi run python examples/end_to_end_reproducibility.py \
   --output-dir artifacts/toy-reproducibility-example \
   --run-manuscript-chain \
   --manuscript-output-dir artifacts/toy-manuscript-reproduction-example

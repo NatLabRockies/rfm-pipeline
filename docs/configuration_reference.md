@@ -179,8 +179,8 @@ from pathlib import Path
 
 rt = resolve_manuscript_runtime(Path.cwd())
 print(f'Mode: {rt.mode}')
-print(f'X train shape: {rt.x_train.shape}')
-print(f'Artifact root: {rt.artifact_root}')
+print(f'Output root: {rt.output_root}')
+print(f'Artifacts available: {sorted(rt.artifact_paths)}')
 "
 ```
 
@@ -296,11 +296,13 @@ from pathlib import Path
 
 rt = resolve_manuscript_runtime(Path.cwd())
 print(f"Mode: {rt.mode}")
-print(f"X train: {rt.x_train.shape} {rt.x_train_path if rt.mode == 'real' else '(demo)'}")
-print(f"Y train: {rt.y_train.shape} {rt.y_train_path if rt.mode == 'real' else '(demo)'}")
-print(f"Holdout X: {rt.x_holdout.shape}")
-print(f"Holdout Y: {rt.y_holdout.shape}")
-print(f"Artifact root: {rt.artifact_root}")
+print(f"Output root: {rt.output_root}")
+print(f"Repo root: {rt.repo_root}")
+print(f"Local override used: {rt.local_override_used}")
+print(f"Unresolved placeholders: {rt.unresolved_placeholders}")
+print("Artifact paths:")
+for key in sorted(rt.artifact_paths):
+    print(f"  {key}: {rt.artifact_paths[key]}")
 EOF
 ```
 
@@ -410,7 +412,7 @@ cp configs/manuscript_paths.template.yml configs/local/manuscript_paths.local.ym
 # Edit configs/local/manuscript_paths.local.yml with your paths
 
 # 2. Verify
-pixi run python -c "from rfm_pipeline import resolve_manuscript_runtime; from pathlib import Path; rt = resolve_manuscript_runtime(Path.cwd()); print(f'Mode: {rt.mode}; X shape: {rt.x_train.shape}')"
+pixi run python -c "from rfm_pipeline import resolve_manuscript_runtime; from pathlib import Path; rt = resolve_manuscript_runtime(Path.cwd()); print(f'Mode: {rt.mode}; output_root: {rt.output_root}')"
 
 # 3. Run
 PYTHONPATH=src python examples/end_to_end_reproducibility.py \

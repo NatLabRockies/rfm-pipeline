@@ -162,3 +162,17 @@ Agents use this file to convert review findings into planned work instead of lea
 - Blocks merge: no
 - Destination: JOSS/new-user documentation cleanup before release
 - Notes: docs-snippet smoke test still open as future work — would catch the next bare-python or `pixi shell` regression in CI.
+
+### REVIEW-0011 — Round 21 setup doc retained non-policy shell guidance
+
+- Status: fixed
+- Severity: medium
+- Category: documentation_reproducibility
+- Disposition: closed
+- Source: 2026-06-07 round-21 adversarial audit at commit 72cde47
+- Evidence: after the round-20 cleanup, `docs/setup_and_first_run.md:336-348` still said to ensure `PYTHONPATH` was set and kept a discouraged `pixi shell && python ...` snippet in the ModuleNotFoundError troubleshooting section. This conflicted with Pixi-first onboarding and made command-policy drift easy to copy.
+- Affected files: `docs/setup_and_first_run.md`
+- Resolution: replaced the stale troubleshooting text with a single repo-root `pixi run python ...` instruction and removed the persistent-shell snippet.
+- Blocks merge: no
+- Destination: JOSS/new-user documentation cleanup before release
+- Notes: broader docs-snippet smoke coverage remains deferred; D1 SVG→PDF Chrome/tempfile helper rewrite remains open.

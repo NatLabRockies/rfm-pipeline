@@ -333,18 +333,10 @@ cd /path/to/rfm-pipeline
 
 ### Issue: "ModuleNotFoundError: No module named 'rfm_pipeline'"
 
-**Solution:** Ensure `PYTHONPATH` is set and Pixi environment is active:
+**Solution:** Run from the repository root through Pixi; no manual import-path tweaks or persistent shell is needed:
 
 ```bash
 cd /path/to/rfm-pipeline
-pixi run python examples/end_to_end_reproducibility.py ...
-```
-
-Or use Pixi's persistent shell (note: repo policy disallows `pixi shell` for project tooling — prefer `pixi run` for reproducibility):
-
-```bash
-# Discouraged — kept for reference only:
-# pixi shell && python examples/end_to_end_reproducibility.py ...
 pixi run python examples/end_to_end_reproducibility.py ...
 ```
 

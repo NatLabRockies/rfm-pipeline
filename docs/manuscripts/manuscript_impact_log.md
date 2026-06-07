@@ -29,6 +29,16 @@ ______________________________________________________________________
   derived from the input CSV stem (avoids overwriting wave12 pkl when
   fitting a future wave34 CSV).
 - **Manuscript impact (editor must fix in v22.tex before submission).**
+  - **R² investigation closed (2026-06-07):** manuscript 0.908 is not
+    reproducible. Wave1 at current methodology gives R²=0.860 (matches Jun-2
+    commit 7b159eb log "0.858"); wave12 gives 0.778. 0.908 has no provenance
+    in committed code — likely transient un-pinned variant during drafting,
+    or unblocked KFold mislabeled as group-blocked. **Accept 0.778; no code
+    repair needed.** Wave2 expansion (n_succ 2049→3014) genuinely added
+    harder DGP regions; cite as strengthening generalization claim.
+  - **Editor replacement values (group-blocked CV on wave12, n=3,014 succ):**
+    R²=0.778, RMSE=0.0657 γ, MAE=0.0279 γ (γ scale: mean −0.472, std 0.139,
+    range [−0.859, −0.186]).
   - **§6 line 647 / 751: RF quality $R^2 = 0.908$ → $R^2 = 0.778$.** The
     pre-cleanup wave1 R² of 0.908 is not reproducible on wave12 with
     cleaned data; the current 10-fold group-blocked CV (groups =

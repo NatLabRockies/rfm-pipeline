@@ -218,8 +218,9 @@ from pathlib import Path
 
 rt = resolve_manuscript_runtime(Path.cwd())
 print(f'Runtime mode: {rt.mode}')
-print(f'X train shape: {rt.x_train.shape}')
-print(f'Y train shape: {rt.y_train.shape}')
+print(f'Output root: {rt.output_root}')
+print(f'Local override used: {rt.local_override_used}')
+print(f'Artifact paths: {sorted(rt.artifact_paths)}')
 "
 ```
 
@@ -227,8 +228,9 @@ print(f'Y train shape: {rt.y_train.shape}')
 
 ```
 Runtime mode: real
-X train shape: (18000, 352)
-Y train shape: (18000, 23)
+Output root: /path/to/artifacts/manuscript-case-study
+Local override used: True
+Artifact paths: ['case_study_input_matrix', 'case_study_output_matrix', ...]
 ```
 
 If you still see demo data, check:

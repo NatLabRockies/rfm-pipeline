@@ -120,3 +120,17 @@ Agents use this file to convert review findings into planned work instead of lea
 - Blocks merge: no
 - Destination: manuscript edit pass plus future reproducibility-hardening slice
 - Notes: wave12 still has constant LASSO grid size 40; do not cite `(20, 40, 80, 160)` as observed variation for current wave12 results.
+
+### REVIEW-0008 — Round 18 runtime-doc examples call removed attributes
+
+- Status: **fixed (round 18 commit)**
+- Severity: medium
+- Category: documentation_reproducibility
+- Disposition: closed
+- Source: 2026-06-07 round-18 adversarial audit at commit 1ebc4d6
+- Evidence: `pixi run python` confirmed `resolve_manuscript_runtime(Path.cwd())` returns `ManuscriptRuntimeContext demo False` for `hasattr(rt, "x_train")`, then `AttributeError: 'ManuscriptRuntimeContext' object has no attribute 'x_train'`; docs still instruct new users to print `rt.x_train`, `rt.y_train`, `rt.x_train_path`, `rt.y_train_path`, `rt.x_holdout`, `rt.y_holdout`, and `rt.artifact_root`.
+- Affected files: `docs/configuration_reference.md`; `docs/setup_and_first_run.md`
+- Resolution: replaced all 4 broken snippets across the two files with supported `rt.mode`, `rt.output_root`, `rt.repo_root`, `rt.local_override_used`, `rt.unresolved_placeholders`, and `rt.artifact_paths` printouts. Expected-output block in setup_and_first_run.md updated to match.
+- Blocks merge: no
+- Destination: JOSS/new-user documentation cleanup before release
+- Notes: deferred snippet smoke test still open as future work (would catch the next ManuscriptRuntimeContext shape drift in CI).

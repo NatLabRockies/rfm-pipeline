@@ -363,6 +363,7 @@ def render_bsm_validation(results_path: Path) -> str:
     r_succ = df.loc[succ_mask, "nrmse_relative"].replace([np.inf, -np.inf], np.nan).dropna().values
     n_successful = int(len(r_succ))
     n_null_screened = int(df["null_screened"].notna().sum())
+    n_total = int(len(r_vals))
     median_successful = float(np.median(r_succ)) if n_successful else 0.0
 
     W, H = 1130, 370
@@ -393,7 +394,7 @@ def render_bsm_validation(results_path: Path) -> str:
         "Distribution of \u03b3 across sensitivity study runs</text>"
         f'<text x="{lp_x0 + 5}" y="38" font-family="{_FONT}" font-size="{_FS_TITLE}" '
         f'font-weight="700" fill="{_SVG_COLOR_TITLE}">'
-        f"(n\u00a0=\u00a0{n_successful:,})</text>"
+        f"(n\u00a0=\u00a0{n_total:,})</text>"
         f'<line x1="{lp_x0}" y1="46" x2="{lp_x0 + lp_w}" y2="46" '
         f'stroke="{_SVG_COLOR_EDGE}" stroke-width="0.8"/>'
     )

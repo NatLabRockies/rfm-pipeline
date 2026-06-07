@@ -49,10 +49,15 @@ ______________________________________________________________________
   - **§6 / Figure 9 panel ("BSM operating-point validation").** The
     γ-distribution histogram on the left panel is now drawn from
     wave12; new headline numbers:
-    - Successful sensitivity runs: **n = 3,014** (was 2,583)
-    - Null-screened runs: **n = 1,013** (was 534)
+    - **Total sensitivity runs in histogram: n = 4,027** (was 2,583;
+      this is the figure-title `(n = ...)` value; null-screened runs
+      contribute a γ = 0 spike at the right edge.)
+    - Successful sensitivity runs (medians + RF fit): **n = 3,014**
+      (was 2,049)
+    - Null-screened runs (right-edge spike): **n = 1,013** (was 534)
     - Median γ across successful fits: **−0.448** (was −0.462)
-    - q10 / q90 of γ: **(−0.655, −0.304)** (was approx. (−0.695, −0.301))
+    - q10 / q90 of γ across successful fits: **(−0.655, −0.304)**
+      (was approx. (−0.695, −0.301))
   - **§6.1 BSM validation prose (jds_bsm_v22.tex:696).** The "103 min,
     99–111 min PI, 1.6% of measured mean" runtime claim cites the
     pre-cleanup RF runtime model. After the wave12 refit, the runtime

@@ -630,13 +630,14 @@ class SparseSelectionStabilitySpec:
     """
 
     model_class: str
-    ebic_gamma: float
-    support_aggregation_rule: str
-    resampling_scheme: str
-    subsample_count: int
-    subsample_fraction: float
-    jaccard_threshold: float
-    spearman_threshold: float
+    ebic_gamma: float = 0.5
+    support_aggregation_rule: str = "union_nonzero_support_across_retained_components"
+    resampling_scheme: str = "20_subsamples_of_80_percent_rows_without_replacement_seed_123"
+    subsample_count: int = 20
+    subsample_fraction: float = 0.8
+    jaccard_threshold: float = 0.75
+    spearman_threshold: float = 0.90
+    lasso_alpha_grid_size: int = 40
     implementation_method: str = "ebic_l1_component_union_with_subsample_stability"
     implementation_status: str = "source_backed_public_surrogate"
     source_workflow_reference: str = "notebook_pca_debiased_lasso"
@@ -2751,6 +2752,7 @@ def sparse_selection_stability_spec_from_case_study_config(
         subsample_fraction=fraction,
         jaccard_threshold=float(stability.get("jaccard_threshold", 0.75)),
         spearman_threshold=float(stability.get("spearman_threshold", 0.90)),
+        lasso_alpha_grid_size=int(sparse.get("lasso_alpha_grid_size", 40)),
         implementation_method=str(
             sparse.get(
                 "public_implementation_method",
@@ -4911,7 +4913,8 @@ def _select_component_lasso_by_ebic(
     if alpha_max <= 0.0:
         return _zero_component_selection(n_features, y_scaled)
 
-    alphas = np.geomspace(alpha_max, max(alpha_max * 1.0e-4, 1.0e-8), num=40)
+    grid_size = int(spec.lasso_alpha_grid_size)
+    alphas = np.geomspace(alpha_max, max(alpha_max * 1.0e-4, 1.0e-8), num=grid_size)
     baseline_rss = float(np.sum((y_scaled - y_scaled.mean()) ** 2))
     best = _zero_component_selection(n_features, y_scaled)
     best["ebic"] = _extended_bic(

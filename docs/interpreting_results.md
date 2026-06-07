@@ -124,9 +124,10 @@ ______________________________________________________________________
 
 **Manuscript Benchmarks:**
 
-- **Interaction pairs retained:** 367
+- **Interaction pairs discovered:** 62
+- **Interaction pairs in final support:** 49
 - **Null threshold:** 99.5th percentile of permutation distribution
-- **Permutations:** 200
+- **Permutations:** 31
 
 **Your Results Should Show:**
 
@@ -152,9 +153,9 @@ ______________________________________________________________________
 
 **Manuscript Benchmarks:**
 
-- **Transformations identified:** 112
-- **Final support transformations:** 37
-- **Families:** quadratic, logarithmic, inverse, exponential
+- **Transformations identified:** 41
+- **Final support transformations:** 29
+- **Families:** quadratic, logarithmic, inverse, square-root
 
 **Your Results Should Show:**
 

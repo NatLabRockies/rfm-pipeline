@@ -139,7 +139,6 @@ from .regularized_screening import (
 from .sensitivity_study import SensitivityStudySpec, collect_study_results
 from .transforms import (
     DEFAULT_TRANSFORM_LIBRARY,
-    EXPONENTIAL,
     INVERSE,
     LOGARITHMIC,
     QUADRATIC,
@@ -158,15 +157,9 @@ from .workflow import (
     write_postfit_bundle,
 )
 
-# BSM case-study provenance helper — available but not a generic API
-from .workflow import (
-    canonical_case_study_numbers as _bsm_canonical_case_study_numbers,  # noqa: F401
-)
-
 __all__ = [
     "KNOWN_TRANSFORMATIONS",
     "DEFAULT_TRANSFORM_LIBRARY",
-    "EXPONENTIAL",
     "INVERSE",
     "LOGARITHMIC",
     "QUADRATIC",

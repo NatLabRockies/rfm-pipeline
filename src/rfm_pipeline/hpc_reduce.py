@@ -71,6 +71,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Reduce per-shard outputs into a consolidated artifact bundle (CLI entry point)."""
     args = _parse_args()
 
     from rfm_pipeline.distributed.checkpoint import CheckpointManager

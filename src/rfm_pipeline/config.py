@@ -154,8 +154,8 @@ class NonlinearStageConfig:
     )
     """Algebraic transform library; each entry is a :class:`~rfm_pipeline.transforms.TransformDef`
     with ``expr`` (SymPy expression in ``x``), ``label`` (column suffix), and optional ``name``.
-    When not specified in config, defaults to the five standard families: quadratic (sq),
-    logarithmic (log1p), inverse (inv), square-root (sqrt), and exponential (exp).
+    When not specified in config, defaults to the four manuscript families: quadratic (sq),
+    logarithmic (log1p), inverse (inv), and square-root (sqrt).
     """
 
 
@@ -172,8 +172,12 @@ class SparseStageConfig:
     """Number of stability resamples; manuscript baseline is 50."""
     subsample_fraction: float = 0.8
     """Fraction of data per resample; manuscript baseline is 0.80."""
-    lasso_alpha_percentile: int = 40
-    """LASSO alpha selection percentile; manuscript baseline is the 40th percentile."""
+    jaccard_threshold: float = 0.75
+    """Minimum Jaccard overlap between subsample supports; manuscript baseline 0.75."""
+    spearman_threshold: float = 0.90
+    """Minimum Spearman rank correlation of coefficient magnitudes; manuscript baseline 0.90."""
+    lasso_alpha_grid_size: int = 40
+    """EBIC alpha grid size (count of geomspaced candidate penalties); manuscript baseline 40."""
     max_candidate_terms: int | None = None
     """Optional deterministic top-K candidate cap before sparse stability."""
 

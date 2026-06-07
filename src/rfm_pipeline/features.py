@@ -18,12 +18,10 @@ KNOWN_TRANSFORMATIONS = {
     "reciprocal",
     "abs",
     "logarithmic",
-    "exponential",
     # Current labels from DEFAULT_TRANSFORM_LIBRARY (TransformDef.label values)
     "sq",  # quadratic  x**2
     "inv",  # inverse    1/x
     "sqrt",  # square root
-    "exp",  # exponential
 }
 
 

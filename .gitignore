@@ -1,5 +1,7 @@
 docs/final_scripts_from_hpc/
 *.zip
+*.bak
+tmp_*.txt
 
 # Pixi and Python environments
 .pixi/

@@ -147,7 +147,7 @@ _RF_FEATURES = [
     "stages.interaction_discovery.n_permutations",
     "stages.interaction_discovery.p_threshold",
     "stages.sparse_selection.n_stability_subsamples",
-    "stages.sparse_selection.lasso_alpha_percentile",
+    "stages.sparse_selection.lasso_alpha_grid_size",
     "variance_threshold",
 ]
 
@@ -628,7 +628,7 @@ def main() -> int:
         ),
         abs(
             analysis_frame.get(
-                "stages.sparse_selection.lasso_alpha_percentile", pd.Series(40, index=aidx)
+                "stages.sparse_selection.lasso_alpha_grid_size", pd.Series(40, index=aidx)
             ).corr(nrmse_rel)
         ),
         abs(

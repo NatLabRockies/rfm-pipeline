@@ -16,6 +16,13 @@ Thank you for your interest in contributing!
    ./test_repo.sh
    ```
 
+> **Note on optional tests.** Tests that exercise SLURM/HPC orchestration or
+> GPU code paths are skipped automatically when the relevant environment
+> variables or hardware are unavailable. Local `pytest` runs therefore
+> report fewer collected tests than the full HPC test matrix. To opt into
+> them, run the suite on a SLURM-enabled login node (sets `SLURM_*` env
+> vars) and/or on a host with a CUDA-capable GPU.
+
 ## Making changes
 
 - Write tests before implementing (TDD).

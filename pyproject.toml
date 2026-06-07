@@ -8,7 +8,7 @@ name = "rfm-pipeline"
 version = "0.1.0"
 description = "Regression-based reduced-form modeling pipeline for large-scale simulation surrogate workflows"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 authors = [{ name = "Dylan Hettinger", email = "dylan.hettinger@nrel.gov" }]
 license = "MIT"
 license-files = ["LICENSE"]
@@ -16,6 +16,7 @@ keywords = ["reduced-form-model", "surrogate-model", "regression", "workflow", "
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",

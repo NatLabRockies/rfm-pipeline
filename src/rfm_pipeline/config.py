@@ -148,7 +148,7 @@ class NonlinearStageConfig:
     """Nonlinear transformation discovery parameters."""
 
     edf_threshold: float = 2.5
-    """Empirical density function threshold."""
+    """Effective degrees-of-freedom threshold."""
     transform_library: list[TransformDef] = field(
         default_factory=lambda: list(DEFAULT_TRANSFORM_LIBRARY)
     )

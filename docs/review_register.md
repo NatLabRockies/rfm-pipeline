@@ -92,3 +92,17 @@ Agents use this file to convert review findings into planned work instead of lea
 - Blocks merge: no
 - Destination: manuscript edit pass plus future test-hardening slice
 - Notes: wave12 numeric replacements were recomputed from `artifacts/sensitivity/wave12_combined_clean.csv` during the audit.
+
+### REVIEW-0006 — Round 16 sensitivity interaction-threshold terminology drift
+
+- Status: deferred
+- Severity: medium
+- Category: manuscript_alignment
+- Disposition: required_follow_up
+- Source: 2026-06-07 round-16 adversarial audit at commit 40ffe3b
+- Evidence: external manuscript `jds_bsm_v22.tex:623` says `Interaction null-quantile threshold` baseline `0.995` / swept `[TBD]`, but `artifacts/sensitivity/wave12_combined_clean.csv` contains `stages.interaction_discovery.p_threshold` levels `(0.01, 0.05, 0.10, 0.20)` and sensitivity code models that p-threshold column.
+- Affected files: external manuscript `jds_bsm_v22.tex`; `docs/manuscripts/manuscript_impact_log.md`; `tests/test_sensitivity_study.py`
+- Required action: edit manuscript sensitivity-study parameter table to use `Interaction p-threshold` or explicitly split case-study null-quantile from synthetic sensitivity p-threshold.
+- Blocks merge: no
+- Destination: manuscript edit pass
+- Notes: mechanical guard added to pin the p-threshold sweep in the config-options regression test.

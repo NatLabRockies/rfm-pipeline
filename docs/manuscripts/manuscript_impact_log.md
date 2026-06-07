@@ -16,6 +16,18 @@ required.
 
 ______________________________________________________________________
 
+## 2026-06-07 — Round 16 adversarial audit: sensitivity-threshold terminology drift
+
+### 🟡 R9. Interaction threshold row describes the wrong sensitivity-study knob
+
+- **What changed (code).** Added a focused test assertion pinning the actual sensitivity-study sweep for `stages.interaction_discovery.p_threshold = (0.01, 0.05, 0.10, 0.20)`. Also fixed the `NonlinearStageConfig.edf_threshold` docstring expansion from "Empirical density function" to "Effective degrees-of-freedom".
+- **Manuscript impact (editor must fix in v22.tex before submission).** `jds_bsm_v22.tex:623` still lists `Interaction null-quantile threshold` with baseline `0.995` and swept `[TBD]` in the sensitivity-study table. That is the case-study/null-quantile terminology, not the wave12 sensitivity-study input recorded in `wave12_combined_clean.csv` and used by `fit_meta_regression.py` / `fit_sensitivity_rf.py`. Replace the row with `Interaction p-threshold` (baseline `0.05`; swept `0.01, 0.05, 0.10, 0.20`) or explicitly split case-study null-quantile vs synthetic-study p-threshold.
+- **Numeric verification.** Recomputed from `artifacts/sensitivity/wave12_combined_clean.csv`: 4,027 rows; 3,014 successful; 1,013 null-screened; p-threshold levels `(0.01, 0.05, 0.10, 0.20)`; successful-γ median −0.4483, q10/q90 (−0.6554, −0.3042); runtime median 22.0 min, q90 137.8 min, max 479.4 min.
+- **Deferred work.** External manuscript edit only; `jds_bsm_v22.tex` was not modified. The older open/pending note saying "code currently only uses the baseline; no sweep planned" is stale after the current sensitivity-study generator and should be removed during the manuscript-edit pass.
+- **Files touched.** `tests/test_sensitivity_study.py` (1 LoC test hardening); `src/rfm_pipeline/config.py` (1 LoC docstring correction).
+
+______________________________________________________________________
+
 ## 2026-06-07 — Round 15 adversarial audit: future-wave guard + guidance-table drift
 
 ### 🟡 R8. RF model fallback and practitioner-guidance stale parameter row

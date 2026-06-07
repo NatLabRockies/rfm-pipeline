@@ -214,7 +214,7 @@ Home
 - Out of memory → reduce candidate library size
 - Process hanging → check feature catalog size
 - Permission errors → check output directory
-- Import errors → PYTHONPATH=src
+- Import errors → run via `pixi run python` (do not bypass the Pixi-managed env)
 
 **Results Issues**
 

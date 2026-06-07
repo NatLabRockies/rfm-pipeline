@@ -332,7 +332,7 @@ ______________________________________________________________________
 **Diagnosis:**
 
 ```bash
-python -c "
+pixi run python -c "
 from pathlib import Path
 path = Path('/Users/you/data/X_train.parquet').expanduser()
 print(f'Path: {path}')
@@ -359,7 +359,7 @@ rm -rf ~/.cache/jupyter  # Clear notebook cache
 pkill jupyter            # Restart kernel
 
 # Verify config is found
-python -c "
+pixi run python -c "
 from pathlib import Path
 cfg_path = Path('configs/local/manuscript_paths.local.yml')
 print(f'Config exists: {cfg_path.exists()}')

@@ -340,11 +340,12 @@ cd /path/to/rfm-pipeline
 pixi run python examples/end_to_end_reproducibility.py ...
 ```
 
-Or activate the Pixi environment persistently:
+Or use Pixi's persistent shell (note: repo policy disallows `pixi shell` for project tooling — prefer `pixi run` for reproducibility):
 
 ```bash
-pixi shell
-python examples/end_to_end_reproducibility.py ...
+# Discouraged — kept for reference only:
+# pixi shell && python examples/end_to_end_reproducibility.py ...
+pixi run python examples/end_to_end_reproducibility.py ...
 ```
 
 ### Issue: "FileNotFoundError" when running with real data
@@ -356,7 +357,7 @@ python examples/end_to_end_reproducibility.py ...
 cat configs/local/manuscript_paths.local.yml
 
 # Test each path
-python -c "
+pixi run python -c "
 from pathlib import Path
 import yaml
 with open('configs/local/manuscript_paths.local.yml') as f:

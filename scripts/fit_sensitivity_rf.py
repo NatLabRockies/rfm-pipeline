@@ -10,7 +10,7 @@ RUNTIME_IMPORTANCE) and the manuscript section 6 text.
 Methodology mirrors the manuscript figure caption:
   - quality: all rows (null-screened gamma filled to 0), target = nrmse_relative
   - runtime: successful rows only, target = log(total_wall_seconds)
-  - RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
+  - RandomForestRegressor(n_estimators=500, random_state=42, n_jobs=-1)
   - features = the canonical _RF_FEATURES list from plot_sensitivity_results.py
 """
 
@@ -41,7 +41,7 @@ _RF_FEATURES: list[tuple[str, str]] = [
 
 
 def _fit(X: np.ndarray, y: np.ndarray) -> RandomForestRegressor:
-    return RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1).fit(X, y)
+    return RandomForestRegressor(n_estimators=500, random_state=42, n_jobs=-1).fit(X, y)
 
 
 def main() -> int:

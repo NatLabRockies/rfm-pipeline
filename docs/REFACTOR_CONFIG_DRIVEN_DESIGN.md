@@ -54,12 +54,12 @@ stages:
 
   nonlinear_discovery:
     edf_threshold: 2.5
-    transform_families: ["spline", "poly", "log"]
+    transform_library:  # list of {expr, label, name}
 
   sparse_selection:
     n_stability_subsamples: 100
     subsample_fraction: 1.0
-    lasso_alpha_percentile: 50
+    lasso_alpha_grid_size: 40
 
   final_artifacts:
     bootstrap_count: 100

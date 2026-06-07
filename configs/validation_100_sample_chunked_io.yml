@@ -27,7 +27,6 @@ stages:
     p_threshold: 0.05
   nonlinear_discovery:
     edf_threshold: 2.5
-    transform_families: ["spline"]
   sparse_selection:
     n_stability_subsamples: 10  # Fast
     subsample_fraction: 1.0

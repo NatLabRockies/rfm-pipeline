@@ -19,7 +19,6 @@ debiased_lasso_contract
 debiased_lasso_exactness_audit
 manuscript_runtime
 ENGINEERING_MANIFEST
-AGENT_SYNC
 CAVEMAN_CONTEXT
 decision_log
 manuscript_alignment_audit
@@ -29,6 +28,7 @@ api
 workflow_audit
 module_plan
 manuscripts/full_dataset_run_revision_notes
+manuscripts/manuscript_impact_log
 manuscript_summary_log
 3K_TEST_VALIDATION_REPORT
 CATALOG_GENERATION_GUIDE

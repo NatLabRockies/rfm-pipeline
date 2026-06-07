@@ -107,7 +107,13 @@ normalized root-mean-square error
 (NRMSE [@HyndmanKoehler2006]) and pipeline wall time as a function of
 configuration and dataset characteristics. Cross-validation of the
 pre-fitted models uses group blocking on DGP–configuration pairs to
-prevent replicate leakage [@KohaviBecker1995].
+prevent replicate leakage [@KohaviBecker1995]. Two pipeline knobs that are
+not part of the sensitivity LHS sweep
+(`n_tree_estimators` and `max_tree_depth` for the gradient-boosted SHAP
+interaction discovery stage) are held at a faster-than-manuscript baseline
+in the synthetic-DGP study configuration
+(`configs/sensitivity_study/base_synthetic.yml`) to keep the LHS budget
+tractable; the BSM case-study run uses the full manuscript baselines.
 
 The package uses [Pixi](https://pixi.sh) for reproducible environment
 management and ships with a `test_repo.sh` script that enforces code

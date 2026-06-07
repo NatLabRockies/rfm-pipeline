@@ -26,32 +26,40 @@ This allows you to customize parameters without modifying tracked files.
 
 **When to edit:** Only when changing the scientific workflow (rare). Usually read-only.
 
-**Key fields:**
+**Key fields** (sample — see the file for the full frozen contract):
 
 ```yaml
-output_conditioning:
-  variance_filter_threshold: 0.01    # Min train variance to retain output
-  pca_variance_retained: 0.90        # PCA dimensionality reduction target
+case_study:
+  output_conditioning:
+    variance_threshold_status: frozen_repo_decision_matching_live_code
+    pca_variance_target: 0.90              # PCA dimensionality reduction target
 
-empirical_null_screen:
-  method: "permutation"              # Null screening method
-  alpha: 0.05                        # BH FDR threshold (manuscript baseline)
-  n_permutations: 201                # B+1 = 201 (B=200 manuscript baseline)
+  empirical_null_screen:
+    statistic: coefficient_row_l2_norm
+    bh_q_screen: 0.05                      # BH FDR threshold (manuscript baseline)
+    permutation_count_B: 200               # null permutations; observed adds +1
 
-sparse_selection:
-  ebic_gamma: 0.5                    # EBIC penalty
-  l1_ratio: 1.0                      # Lasso (1.0) vs. Ridge (0.0)
+  sparse_selection:
+    ebic_gamma: 0.5                        # EBIC penalty
+    public_implementation_method: ebic_l1_component_union_with_subsample_stability
 
-final_ols:
-  hc3_alpha: 0.05                    # HC3 Wald inferential filter (95%)
+  final_inferential_filter:
+    interval_method: hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs
 ```
 
-**Example change:** To use a less strict p-value threshold:
+**Example change:** To loosen the BH FDR threshold:
 
 ```yaml
-empirical_null_screen:
-  alpha: 0.10  # Loosened from manuscript baseline 0.05
+case_study:
+  empirical_null_screen:
+    bh_q_screen: 0.10                      # Loosened from manuscript baseline 0.05
 ```
+
+> **Note.** The keys above are the contract-document field names consumed by
+> `case_study_config_from_workflow_config` and the per-stage `spec_from_case_study_config`
+> helpers in `src/rfm_pipeline/manuscript_stages.py`. They differ from the
+> `WorkflowConfig` dataclass field names (e.g. `bh_q_threshold`) used by the
+> generic non-case-study YAMLs under `configs/validation_*.yml`.
 
 ### `configs/manuscript_runtime.yml`
 

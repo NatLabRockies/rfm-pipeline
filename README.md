@@ -56,7 +56,7 @@ run = run_canonical_workflow(
     Y_holdout,
     dataset_tag="my-run",
 )
-print(f"Holdout nRMSE: {run.holdout_summary['point_estimate'].mean():.4f}")
+print(f"Holdout nRMSE: {run.holdout_summary['point_estimate'].iloc[0]:.4f}")
 ```
 
 For the full config-driven manuscript reproduction, use the script entry point:

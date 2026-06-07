@@ -16,6 +16,52 @@ required.
 
 ______________________________________________________________________
 
+## 2026-06-07 — Round 15 adversarial audit: future-wave guard + guidance-table drift
+
+### 🟡 R8. RF model fallback and practitioner-guidance stale parameter row
+
+- **What changed (code).** `scripts/plot_sensitivity_results.py` no longer
+  falls back from a missing `<input-prefix>_rf_quality.pkl` to
+  `wave1_rf_quality.pkl`. Future inputs such as `wave34_combined_clean.csv`
+  now use `<input-prefix>_rf_quality.pkl` when present; otherwise the
+  sample-size figure falls back to the raw observed mean curve instead of
+  silently mixing a stale RF model from another wave.
+- **Manuscript impact (editor must fix in v22.tex before submission).** Round
+  15 verified the wave12 basis directly from
+  `artifacts/sensitivity/wave12_combined_clean.csv`: 4,027 total rows, 3,014
+  successful rows, 1,013 null-screened rows, successful-γ median −0.4483,
+  q10/q90 (−0.6554, −0.3042), runtime median 22.0 min, q90 137.8 min,
+  max 479.4 min. These confirm R6/R7 replacement values. A drift not
+  explicitly enumerated before is **Table~\\ref{tab:practitioner-guidance}**:
+  the row `LASSO $\alpha$ percentile` at `jds_bsm_v22.tex:725` is a dead
+  parameter and must be removed or replaced with `LASSO EBIC grid size`
+  guidance only after a future wave varies `lasso_alpha_grid_size`. The same
+  table's `Expected runtime ... $\sim$110 min` cell is coupled to the deferred
+  BSM runtime-prediction block and should remain TODO until that block is
+  refit.
+- **Test gap / deferred work.** No focused regression test currently asserts
+  that `plot_sensitivity_results.py` refuses to reuse `wave1_rf_quality.pkl`
+  for a future-wave CSV with no matching RF pickle. Adding that test requires
+  a small helper extraction or CLI fixture and is deferred under the round-15
+  ≤5-LoC mechanical-fix cap.
+- **Reproducibility.**
+  ```bash
+  pixi run python - <<'PY'
+  import pandas as pd
+  df = pd.read_csv('artifacts/sensitivity/wave12_combined_clean.csv')
+  ns = df['null_screened'].fillna(False).astype(bool)
+  succ = df[~ns]
+  print(len(df), len(succ), int(ns.sum()))
+  print(succ['nrmse_relative'].median(), succ['nrmse_relative'].quantile(.1), succ['nrmse_relative'].quantile(.9))
+  print(succ['total_wall_seconds'].median()/60, succ['total_wall_seconds'].quantile(.9)/60, succ['total_wall_seconds'].max()/60)
+  PY
+  ```
+- **Files touched.**
+  - `scripts/plot_sensitivity_results.py` (remove stale wave1 RF fallback; 3
+    LoC net mechanical fix).
+
+______________________________________________________________________
+
 ## 2026-06-07 — Round 14 audit: enumerate §6 prose drift missed by R6
 
 ### 🟠 R7. RF importance, sample-size, and runtime-stratification prose drift

@@ -7,6 +7,10 @@ Emits the top-8 feature importances for the quality (gamma) and runtime
 ``scripts/plot_sensitivity_rf_figures.py`` (QUALITY_IMPORTANCE /
 RUNTIME_IMPORTANCE) and the manuscript section 6 text.
 
+Optionally dumps the fitted joblib models alongside the input CSV
+(``--dump-models``) so ``plot_sensitivity_results.py`` can load them for
+partial-dependence rendering.
+
 Methodology mirrors the manuscript figure caption:
   - quality: all rows (null-screened gamma filled to 0), target = nrmse_relative
   - runtime: successful rows only, target = log(total_wall_seconds)
@@ -19,6 +23,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
@@ -49,6 +54,15 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--results", type=Path, required=True)
     p.add_argument("--top-n", type=int, default=8)
+    p.add_argument(
+        "--dump-models",
+        type=Path,
+        default=None,
+        help=(
+            "If given, dump fitted models as wave12_rf_quality.pkl / "
+            "wave12_rf_runtime.pkl in this directory."
+        ),
+    )
     args = p.parse_args()
 
     df = pd.read_csv(args.results)
@@ -81,6 +95,12 @@ def main() -> int:
     for c, v in imp_r[: args.top_n]:
         print(f'    ("{labels[c]}", {v:.3f}),')
     print("]")
+
+    if args.dump_models is not None:
+        args.dump_models.mkdir(parents=True, exist_ok=True)
+        joblib.dump(rf_q, args.dump_models / "wave12_rf_quality.pkl")
+        joblib.dump(rf_r, args.dump_models / "wave12_rf_runtime.pkl")
+        print(f"# dumped models to {args.dump_models}")
     return 0
 
 

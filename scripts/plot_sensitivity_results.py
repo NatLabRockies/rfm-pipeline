@@ -228,7 +228,15 @@ def _partial_dependence_n_runs(
     if len(available) < len(_RF_FEATURES):
         return None
 
-    X_base = df[available].values.copy().astype(float)
+    # Marginalize over successful runs only — matches the docstring of
+    # ``_render_sample_size_curve`` and the raw-overlay band, which exclude
+    # null-screened rows. Including them dampens PDP toward γ = 0 by the
+    # null-screen fraction (~25% on wave12).
+    if "null_screened" in df.columns:
+        base_df = df.loc[df["null_screened"].isna()]
+    else:
+        base_df = df
+    X_base = base_df[available].values.copy().astype(float)
     try:
         n_runs_idx = available.index("n_runs")
     except ValueError:
@@ -572,8 +580,12 @@ def main() -> int:
     results = _expand_config_overrides(results)
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    # RF model path (alongside the results CSV).
-    rf_path = args.results.parent / "wave1_rf_quality.pkl"
+    # RF model path (alongside the results CSV). Prefer the wave12-trained
+    # model; fall back to the historical wave1 model for backwards
+    # compatibility with older artifact bundles.
+    rf_path = args.results.parent / "wave12_rf_quality.pkl"
+    if not rf_path.exists():
+        rf_path = args.results.parent / "wave1_rf_quality.pkl"
 
     # --- Sample-size curve (partial dependence if RF available) ---
     sample_curve = _render_sample_size_curve(results, rf_path=rf_path)

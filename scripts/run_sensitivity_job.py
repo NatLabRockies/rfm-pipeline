@@ -241,7 +241,9 @@ def main() -> int:
         )
         gen_elapsed = time.perf_counter() - t0
 
-        with tempfile.TemporaryDirectory(prefix=f"rfm_sens_{job_id}_") as tmpdir:
+        scratch_dir = artifact_dir / "_scratch"
+        scratch_dir.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=f"rfm_sens_{job_id}_", dir=scratch_dir) as tmpdir:
             data_dir = Path(tmpdir) / "data"
             data_dir.mkdir()
             dataset.input_matrix.to_parquet(data_dir / "X.parquet", index=False)

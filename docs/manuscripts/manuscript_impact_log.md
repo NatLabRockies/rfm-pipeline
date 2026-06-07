@@ -16,6 +16,18 @@ required.
 
 ______________________________________________________________________
 
+## 2026-06-07 — Round 17 adversarial audit: future-wave guard + manuscript typo
+
+### 🟡 R10. LASSO-grid sweep lacked a drift guard; sensitivity prose has a typo
+
+- **What changed (code).** Added the missing regression assertion for `stages.sparse_selection.lasso_alpha_grid_size = (20, 40, 80, 160)` in the sensitivity-study config sweep test. Also moved `run_sensitivity_job.py` temporary synthetic Parquet/config files under each job's `artifact_dir/_scratch` instead of the host default temp directory, avoiding non-repo-local scratch behavior on future waves.
+- **Manuscript impact (editor must fix in v22.tex before submission).** `jds_bsm_v22.tex:579` says `a two family]ies of synthetic data-generating processes`; replace with `two families of synthetic data-generating processes`. Table 4 may list LASSO EBIC grid swept values `(20, 40, 80, 160)` for **future fixed-code waves**, but current wave12 evidence remains constant `40` and should not be reported as varied for the existing refit.
+- **Numeric verification.** Recomputed from `artifacts/sensitivity/wave12_combined_clean.csv`: 4,027 rows; 3,014 successful; 1,013 null-screened; families `pure_synthetic=3914`, `bsm_structure=113`; null-screen rates `25.75%` and `4.42%`; p-threshold levels `(0.01, 0.05, 0.10, 0.20)`; LASSO grid levels `(40,)`; successful-γ median −0.4483, q10/q90 (−0.6554, −0.3042); runtime median 22.0 min, q90 137.8 min, max 479.4 min.
+- **Deferred work.** `scripts/{plot_sensitivity_results.py,plot_sensitivity_rf_figures.py,regenerate_manuscript_figures.py}` still use a macOS Chrome path plus default `tempfile.NamedTemporaryFile` for SVG→PDF conversion; fix requires a shared helper and tests, so it exceeds the round-17 ≤5-LoC mechanical-fix cap.
+- **Files touched.** `tests/test_sensitivity_study.py` (1 LoC test hardening); `scripts/run_sensitivity_job.py` (3 LoC repo-local scratch hardening).
+
+______________________________________________________________________
+
 ## 2026-06-07 — Round 16 adversarial audit: sensitivity-threshold terminology drift
 
 ### 🟡 R9. Interaction threshold row describes the wrong sensitivity-study knob

@@ -148,7 +148,8 @@ def _extract_metrics(artifact_dir: Path, job_id: str) -> dict[str, Any]:
                     metrics[f"{model}_{ci_col}"] = float(row[ci_col])
             feat_col = "n_features" if "n_features" in row.index else "n_selected"
             if feat_col in row.index:
-                metrics[f"{model}_n_features"] = row[feat_col]
+                value = row[feat_col]
+                metrics[f"{model}_n_features"] = None if pd.isna(value) else int(value)
 
         # Convenient top-level keys.
         final_row = ablation[ablation[name_col].str.lower().str.contains("ols|final", na=False)]

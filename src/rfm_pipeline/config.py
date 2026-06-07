@@ -274,12 +274,21 @@ def _nonlinear_stage_config_from_data(data: dict) -> NonlinearStageConfig:
     """Deserialize a :class:`NonlinearStageConfig` from a YAML-parsed dict.
 
     Handles the ``transform_library`` key as a list of dicts, each with
-    ``expr``, ``label``, and optional ``name`` fields.  Ignores the legacy
-    ``transform_families`` key if present.
+    ``expr``, ``label``, and optional ``name`` fields.  Raises ``ValueError``
+    on the legacy ``transform_families`` key (which was silently dropped
+    in prior releases and caused user-set families to have no effect).
     """
     raw = dict(data)
     library_data = raw.pop("transform_library", None)
-    raw.pop("transform_families", None)  # drop legacy key
+    if "transform_families" in raw:
+        raise ValueError(
+            "`stages.nonlinear_discovery.transform_families` is not a "
+            "recognised configuration key. The current API uses "
+            "`transform_library`, a list of "
+            "`{expr, label, name}` mappings (see docs/configuration_reference.md). "
+            "Remove the `transform_families` entry or convert it to "
+            "`transform_library`."
+        )
     cfg = NonlinearStageConfig(**raw)
     if library_data is not None:
         cfg.transform_library = [TransformDef.from_config(d) for d in library_data]

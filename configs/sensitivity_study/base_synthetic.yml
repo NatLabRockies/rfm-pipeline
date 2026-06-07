@@ -34,7 +34,6 @@ stages:
 
   nonlinear_discovery:
     edf_threshold: 2.5
-    transform_families: ["spline", "poly", "log", "sqrt", "exp"]
 
   sparse_selection:
     n_stability_subsamples: 50

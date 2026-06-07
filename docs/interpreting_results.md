@@ -573,4 +573,4 @@ ______________________________________________________________________
 
 - [Artifact Reference](artifact_reference.md) - Detailed file descriptions
 - [Configuration Reference](configuration_reference.md) - Config parameters
-- [Manuscript Contract](manuscript_contract.md) - Scientific specifications
+- [Manuscript Data Contract](manuscript_data_contract.md) - Scientific specifications

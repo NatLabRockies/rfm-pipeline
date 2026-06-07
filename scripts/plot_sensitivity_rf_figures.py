@@ -359,9 +359,11 @@ def render_bsm_validation(results_path: Path) -> str:
     """Render two-panel figure: γ histogram and BSM operating-point dot plot."""
     df = pd.read_csv(results_path)
     r_vals = df["nrmse_relative"].replace([np.inf, -np.inf], np.nan).dropna().values
-    n_successful = int(len(r_vals))
+    succ_mask = df["null_screened"].isna()
+    r_succ = df.loc[succ_mask, "nrmse_relative"].replace([np.inf, -np.inf], np.nan).dropna().values
+    n_successful = int(len(r_succ))
     n_null_screened = int(df["null_screened"].notna().sum())
-    median_successful = float(np.median(r_vals)) if n_successful else 0.0
+    median_successful = float(np.median(r_succ)) if n_successful else 0.0
 
     W, H = 1130, 370
 

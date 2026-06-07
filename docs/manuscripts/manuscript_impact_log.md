@@ -16,6 +16,58 @@ required.
 
 ______________________________________________________________________
 
+## 2026-06-07 — Round 13 audit: stale R² and runtime stats in manuscript §6
+
+### 🟡 R6. RF goodness-of-fit + runtime distribution drift (manuscript edits)
+
+- **What changed (code).** None — this is a manuscript-text drift entry
+  surfacing values that round 12's refits left out of the editor note.
+  The values cited in `jds_bsm_v22.tex:647,659,694,751` are from the
+  pre-cleanup wave1 fit; round-7 (linear meta-regression) and round-9
+  (RF) refits never propagated these specific statistics.
+  Also: `fit_sensitivity_rf.py` `--dump-models` filename prefix is now
+  derived from the input CSV stem (avoids overwriting wave12 pkl when
+  fitting a future wave34 CSV).
+- **Manuscript impact (editor must fix in v22.tex before submission).**
+  - **§6 line 647 / 751: RF quality $R^2 = 0.908$ → $R^2 = 0.778$.** The
+    pre-cleanup wave1 R² of 0.908 is not reproducible on wave12 with
+    cleaned data; the current 10-fold group-blocked CV (groups =
+    config_idx × dgp_idx) gives R² = 0.778 on 3,014 successful runs.
+    Also update the parenthetical "CV RMSE = 0.071" if recomputed.
+  - **§6 line 659 (Figure rf_validation caption): "2,049 successful
+    fits (CV $R^2 = 0.908$)" → "3,014 successful fits (CV $R^2 =
+    0.778$)".**
+  - **§6 line 694: RF runtime $R^2 = 0.965$ → $R^2 = 0.950$.** Wave12
+    group-blocked CV on log-wall-seconds for the 3,014 successful runs.
+    Also update inline runtime distribution stats:
+    - "median 18.6 min" → **22.0 min**
+    - "90th percentile 141 min" → **137.8 min**
+    - "maximum 234 min" → **479.4 min** (substantially larger; reflects
+      a few large-d / large-n stability-subsample-heavy runs in wave2)
+    - "BSM-structure averaged 2,558s vs 2,201s for pure-synthetic" —
+      stale; refit on wave12 strata if reporting this comparison.
+  - **§6 line 751: "predicts BSM nRMSE within 5.7%" — STALE.** Coupled
+    to the deferred BSM_RF_PRED block (analog-selection methodology
+    still missing from any committed script). Leave as TODO until the
+    BSM validation panel is refit end-to-end.
+  - **§6 line 647: median, q10/q90 already covered in R4** ("median
+    −0.448, q10/q90 (−0.655, −0.304)"; was −0.462 / (−0.695, −0.301)).
+    Sample size in §6 line 647 ("2,049 successful fits") → 3,014.
+- **Reproducibility.**
+  ```bash
+  pixi run python scripts/fit_sensitivity_rf.py \
+      --results artifacts/sensitivity/wave12_combined_clean.csv \
+      --dump-models artifacts/sensitivity/
+  # quality R²:   read from plot_sensitivity_results.py output
+  # runtime R²:   reproduce via GroupKFold(n_splits=10) on log(total_wall_seconds)
+  ```
+- **Files touched.**
+  - `scripts/fit_sensitivity_rf.py` (input-derived pkl filename prefix).
+  - `scripts/plot_sensitivity_results.py` (stale `wave1_rf_quality.pkl`
+    / `2049 successful rows` docstring fixed).
+
+______________________________________________________________________
+
 ## 2026-06-07 — Round 12 audit: PDP population fix + wave12 RF pickles
 
 ### 🟡 R5. `fig_sensitivity_sample_size_curve` PDP base population corrected

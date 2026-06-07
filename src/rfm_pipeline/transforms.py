@@ -8,7 +8,8 @@ raising; callers are responsible for detecting and reporting them.
 
 Typical usage
 -------------
->>> from rfm_pipeline.transforms import QUADRATIC, LOGARITHMIC
+>>> import numpy as np
+>>> from rfm_pipeline.transforms import QUADRATIC
 >>> col = QUADRATIC.column_name("income")  # "income_sq"
 >>> vals = QUADRATIC.apply(np.array([2.0, 3.0]))  # array([4., 9.])
 

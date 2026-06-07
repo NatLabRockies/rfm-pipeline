@@ -585,12 +585,10 @@ def main() -> int:
     # input CSV stem so a future ``wave34_combined_clean.csv`` picks up
     # ``wave34_rf_quality.pkl`` instead of silently reusing the wave12 model
     # (mirrors the ``scripts/fit_sensitivity_rf.py --dump-models`` prefix
-    # convention introduced in round 13). Fall back to the historical wave1
-    # model for backwards compatibility with older artifact bundles.
+    # convention introduced in round 13). Missing models fall back to the raw
+    # observed mean curve instead of silently reusing another wave's model.
     prefix = args.results.stem.split("_", 1)[0]
     rf_path = args.results.parent / f"{prefix}_rf_quality.pkl"
-    if not rf_path.exists():
-        rf_path = args.results.parent / "wave1_rf_quality.pkl"
 
     # --- Sample-size curve (partial dependence if RF available) ---
     sample_curve = _render_sample_size_curve(results, rf_path=rf_path)

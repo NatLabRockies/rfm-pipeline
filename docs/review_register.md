@@ -78,3 +78,17 @@ Agents use this file to convert review findings into planned work instead of lea
 - Blocks merge: no
 - Destination: resolved in the 2026-06-06 release-audit cleanup slice
 - Notes: `configs/local/manuscript_paths.local.yml` was checked and confirmed untracked, so H-13 required no additional repo mutation.
+
+### REVIEW-0005 — Round 15 future-wave RF fallback and guidance-table drift
+
+- Status: deferred
+- Severity: medium
+- Category: reproducibility
+- Disposition: required_follow_up
+- Source: 2026-06-07 round-15 adversarial audit at commit 4183b67
+- Evidence: `plot_sensitivity_results.py` reused `wave1_rf_quality.pkl` when a future `<prefix>_rf_quality.pkl` was absent; manuscript `jds_bsm_v22.tex:725-726` still lists dead `LASSO $\alpha$ percentile` guidance and stale BSM-coupled runtime guidance.
+- Affected files: `scripts/plot_sensitivity_results.py`; external manuscript `jds_bsm_v22.tex`; `docs/manuscripts/manuscript_impact_log.md`
+- Required action: code fallback fixed; add a regression test for missing future-wave RF pickles and edit the manuscript guidance table before submission.
+- Blocks merge: no
+- Destination: manuscript edit pass plus future test-hardening slice
+- Notes: wave12 numeric replacements were recomputed from `artifacts/sensitivity/wave12_combined_clean.csv` during the audit.

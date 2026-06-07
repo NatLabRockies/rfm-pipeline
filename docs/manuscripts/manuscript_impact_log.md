@@ -16,6 +16,17 @@ required.
 
 ______________________________________________________________________
 
+## 2026-06-07 — Round 19 adversarial audit: methods sample-count drift
+
+### 🟡 R11. Sensitivity-methods prose still cites pre-cleanup wave1 run count
+
+- **What changed (code).** None — audit-only entry. Round 19 found an additional stale manuscript occurrence not explicitly enumerated in R1–R10b.
+- **Manuscript impact (editor must fix in v22.tex before submission).** `jds_bsm_v22.tex:608` says the sensitivity study varied nine pipeline configuration parameters and completed `2,583` runs. For the current wave12 evidence, `artifacts/sensitivity/wave12_combined_clean.csv` contains **4,027** runs; only eight configuration parameters vary in the observed cleaned wave12 data because `stages.sparse_selection.lasso_alpha_grid_size` is constant at `40`. Replace the sentence with wave12 wording, or explicitly distinguish the future configured sweep from the already analyzed wave12 evidence.
+- **Numeric verification.** Recomputed from `artifacts/sensitivity/wave12_combined_clean.csv`: 4,027 rows; 3,014 successful; 1,013 null-screened; varied levels for holdout, variance threshold, screening permutations, BH q, interaction permutations, interaction p-threshold, stability subsamples, and delta threshold; LASSO grid levels `(40,)`.
+- **Deferred work.** External manuscript edit only; `jds_bsm_v22.tex` was not modified. Also fix the broader new-user docs command drift recorded in `docs/review_register.md` REVIEW-0009.
+
+______________________________________________________________________
+
 ## 2026-06-07 — Round 17 adversarial audit: future-wave guard + manuscript typo
 
 ### 🟡 R10. LASSO-grid sweep lacked a drift guard; sensitivity prose has a typo

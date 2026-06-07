@@ -100,7 +100,7 @@ This is the simplest possible entry point—runs the core workflow and writes re
 
 ```bash
 cd <repo-root>
-PYTHONPATH=src python examples/end_to_end_reproducibility.py \
+pixi run python examples/end_to_end_reproducibility.py \
   --output-dir artifacts/my-first-run
 ```
 
@@ -116,7 +116,7 @@ PYTHONPATH=src python examples/end_to_end_reproducibility.py \
 This runs all 9 notebook stages and produces final tables/figures:
 
 ```bash
-PYTHONPATH=src python examples/end_to_end_reproducibility.py \
+pixi run python examples/end_to_end_reproducibility.py \
   --output-dir artifacts/my-first-run \
   --run-manuscript-chain \
   --manuscript-output-dir artifacts/my-first-run/manuscript
@@ -243,7 +243,7 @@ If you still see demo data, check:
 
 ```bash
 # Run the canonical workflow
-PYTHONPATH=src python examples/end_to_end_reproducibility.py \
+pixi run python examples/end_to_end_reproducibility.py \
   --output-dir artifacts/my-real-data-run \
   --run-manuscript-chain \
   --manuscript-output-dir artifacts/my-real-data-run/manuscript
@@ -337,7 +337,7 @@ cd /path/to/rfm-pipeline
 
 ```bash
 cd /path/to/rfm-pipeline
-PYTHONPATH=src python examples/end_to_end_reproducibility.py ...
+pixi run python examples/end_to_end_reproducibility.py ...
 ```
 
 Or activate the Pixi environment persistently:

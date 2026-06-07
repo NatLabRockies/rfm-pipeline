@@ -134,3 +134,17 @@ Agents use this file to convert review findings into planned work instead of lea
 - Blocks merge: no
 - Destination: JOSS/new-user documentation cleanup before release
 - Notes: deferred snippet smoke test still open as future work (would catch the next ManuscriptRuntimeContext shape drift in CI).
+
+### REVIEW-0009 — Round 19 docs still bypass Pixi for demo runs
+
+- Status: **fixed (round 19 commit)**
+- Severity: medium
+- Category: documentation_reproducibility
+- Disposition: closed
+- Source: 2026-06-07 round-19 adversarial audit at commit 181bc83
+- Evidence: repo onboarding says users do not need pre-installed Python and repo policy requires Pixi, but 10 markdown snippets still run `PYTHONPATH=src python examples/end_to_end_reproducibility.py` instead of `pixi run python ...`.
+- Affected files: `docs/quickstart.md`; `docs/reproducibility_example.md`; `docs/setup_and_first_run.md`; `docs/configuration_reference.md`
+- Resolution: bulk `sed` replaced all 12 occurrences (auditor undercounted at 10) of `PYTHONPATH=src python` with `pixi run python` across the four files. Verified zero remaining matches outside intentional evidence lines in `review_register.md` and `AGENT_SYNC.md`.
+- Blocks merge: no
+- Destination: JOSS/new-user documentation cleanup before release
+- Notes: docs-snippet smoke test still open as future work — would catch the next bare-Python regression in CI.

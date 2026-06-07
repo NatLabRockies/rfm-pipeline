@@ -448,18 +448,33 @@ ______________________________________________________________________
 
 ## Reference: All Configuration Fields
 
-| Config     | Section               | Field                     | Type  | Default       | Purpose                                 |
-| ---------- | --------------------- | ------------------------- | ----- | ------------- | --------------------------------------- |
-| case_study | output_conditioning   | variance_filter_threshold | float | 0.01          | Minimum train variance to retain output |
-| case_study | output_conditioning   | pca_variance_retained     | float | 0.90          | PCA cumulative variance target          |
-| case_study | empirical_null_screen | method                    | str   | "permutation" | Null screening method                   |
-| case_study | empirical_null_screen | alpha                     | float | 0.05          | Benjamini-Hochberg FDR threshold        |
-| case_study | empirical_null_screen | n_permutations            | int   | 201           | Permutations for null distribution      |
-| case_study | sparse_selection      | ebic_gamma                | float | 0.5           | EBIC penalty weight                     |
-| case_study | sparse_selection      | l1_ratio                  | float | 1.0           | Elastic-net L1 ratio (1=Lasso)          |
-| case_study | final_ols             | hc3_alpha                 | float | 0.05          | HC3 Wald filter (1 - confidence level)  |
-| paths      | -                     | x_train                   | path  | demo          | Training feature matrix                 |
-| paths      | -                     | y_train                   | path  | demo          | Training output matrix                  |
-| paths      | -                     | x_holdout                 | path  | demo          | Holdout feature matrix                  |
-| paths      | -                     | y_holdout                 | path  | demo          | Holdout output matrix                   |
-| paths      | -                     | artifact_root             | path  | `temp`        | Output directory for results            |
+| Config     | Section                  | Field                                   | Type  | Value (manuscript)                                          | Purpose                             |
+| ---------- | ------------------------ | --------------------------------------- | ----- | ----------------------------------------------------------- | ----------------------------------- |
+| case_study | output_conditioning      | variance_filter.epsilon_var             | float | 1e-12                                                       | Min train variance to retain output |
+| case_study | output_conditioning      | snr_filter.epsilon_snr                  | float | 0.01                                                        | Minimum SNR for retention           |
+| case_study | output_conditioning      | temporary_reduction.retained_components | int   | 20                                                          | PCA component count                 |
+| case_study | empirical_null_screen    | bh_q_screen                             | float | 0.05                                                        | BH FDR threshold                    |
+| case_study | empirical_null_screen    | permutation_count_B                     | int   | 200                                                         | Null permutations (observed + B)    |
+| case_study | empirical_null_screen    | statistic                               | str   | coefficient_row_l2_norm                                     | Screening statistic                 |
+| case_study | sparse_selection         | ebic_gamma                              | float | 0.5                                                         | EBIC penalty weight                 |
+| case_study | stability                | jaccard_threshold                       | float | 0.75                                                        | Stability Jaccard cutoff            |
+| case_study | stability                | spearman_threshold                      | float | 0.9                                                         | Stability Spearman cutoff           |
+| case_study | final_inferential_filter | interval_method                         | str   | hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs | HC3 Wald rule                       |
+| case_study | interaction_discovery    | null_threshold_quantile                 | float | 0.995                                                       | SHAP-interaction null quantile      |
+| case_study | nonlinear_discovery      | curvature_rule                          | str   | edf_gt_1_and_smooth_pvalue_lt_0p01                          | GAM curvature acceptance            |
+
+> **Note.** The keys above are from the **case-study contract YAML**
+> (`configs/manuscript_case_study.yml`); they are frozen-from-manuscript
+> values consumed by `manuscript_runtime.load_manuscript_case_study_config`.
+> The `WorkflowConfig` dataclass YAMLs (`configs/validation_*.yml`, HPC
+> YAMLs) use different field names — e.g. `bh_q_threshold` (not
+> `bh_q_screen`), `n_permutations` (not `permutation_count_B`), `lasso_alpha_grid_size`,
+> `n_stability_subsamples`, `subsample_fraction` — and live under top-level
+> `stages:`. The earlier section in this document describes both forms; see
+> `src/rfm_pipeline/config.py` for the authoritative dataclass schema.
+
+| paths | - | x_train | path | demo | Training feature matrix |
+| paths | - | y_train | path | demo | Training output matrix |
+| paths | - | x_holdout | path | demo | Holdout feature matrix |
+| paths | - | y_holdout | path | demo | Holdout output matrix |
+| paths | - | artifact_root | path | `temp` | Output directory for results |

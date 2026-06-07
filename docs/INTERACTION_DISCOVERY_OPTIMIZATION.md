@@ -63,16 +63,22 @@ interaction_discovery:
 
 ### Comparison with Manuscript Configuration
 
-The manuscript (`configs/manuscript_case_study.yml`) specifies:
+The manuscript configuration (`configs/manuscript_case_study.yml`,
+`src/rfm_pipeline/config.py`) specifies:
 
-- **permutation_count_B: 200** (not 40)
-- **null_threshold_quantile: 0.995** (very strict)
-- **n_permutations: 201** vs ladder's 40–41
+- **Empirical-null screen:** `permutation_count_B: 200` (→ `n_permutations: 201`),
+  `null_threshold_quantile: 0.995` (very strict).
+- **Interaction discovery:** `n_permutations: 31` (B=30 null + 1 observed),
+  `n_tree_estimators: 250`, `max_tree_depth: 5` — **not** the empirical-null
+  value of 201. The interaction-discovery sweep documented here at 41 (40+1)
+  is the ladder/profiling configuration used for runtime characterization
+  only; the manuscript baseline is 31.
 
-If run with full manuscript parameters:
+If run with full manuscript interaction parameters:
 
-- 201 permutations × ~2 min/perm ≈ **6.7 hours** (observed would be much longer)
-- This aligns with pre-optimization HC3 estimate of ~10–12 hours for final stage cost
+- 31 permutations × ~5 min/perm (with 250 trees, depth 5) is the manuscript
+  baseline; the historical 201-permutation cost estimate below applies to
+  the empirical-null screen, not to interaction discovery.
 
 ______________________________________________________________________
 
@@ -119,7 +125,7 @@ ______________________________________________________________________
 
 ### 3. **Early Stopping or Adaptive Permutation Count** (Medium Risk, Requires Tuning)
 
-**Current:** Fixed `n_permutations=41` (ladder), 201 (manuscript)
+**Current:** Fixed `n_permutations=41` (ladder), 31 (manuscript baseline)
 
 **Issue:** Most of the null permutations may have scores far below the observed, making additional permutations redundant for p-value significance.
 

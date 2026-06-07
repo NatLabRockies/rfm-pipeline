@@ -34,8 +34,8 @@ nonlinear discovery using generalized additive model diagnostics
 [@HastieTibshirani1990], sparse selection with LASSO [@Tibshirani1996] and
 EBIC model selection [@ChenChen2008], stability filtering
 [@MeinshausenBuhlmann2010], and final table/figure generation with
-heteroscedasticity-robust OLS [@MacKinnonWhite1985], implemented through
-`statsmodels` [@SeaboldPerktold2010]. Each stage writes
+heteroscedasticity-robust (HC3) Wald inference [@MacKinnonWhite1985]
+computed directly in NumPy. Each stage writes
 deterministic artifact files so intermediate results can be inspected and the
 pipeline can be resumed from any checkpoint. The package supports both
 single-machine execution and distributed SLURM array job workflows for

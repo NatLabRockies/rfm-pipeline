@@ -51,6 +51,13 @@ case_study:
     holdout_fraction: 0.05
     holdout_random_seed: 123
     holdout_split_rule: afsc_uaeoro_stratified_else_scenario
+    holdout_split_rule_description: |
+      Stratified holdout split. Preferred label is the concatenation
+      of the AFSC and UAEORO binary scenario flags
+      (e.g. "1_0"), giving 4 strata. If those columns are missing,
+      fall back to stratifying on the scenario string. If neither is
+      available, fall back to unstratified random split. Implemented
+      by rfm_pipeline.data.stratified_holdout_split (seed 123).
     holdout_split_rule_status: frozen_repo_decision
     n_boolean_inputs: 2
     n_exogenous_inputs: 160

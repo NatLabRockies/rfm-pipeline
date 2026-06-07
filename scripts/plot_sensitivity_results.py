@@ -590,7 +590,7 @@ def main() -> int:
         "Interaction permutations",
         "Interaction p-threshold",
         "Stability subsamples",
-        "LASSO \u03b1 percentile",
+        "LASSO \u03b1 grid size",
         "\u03b4 threshold override",
     ]
     main_effects_values = [

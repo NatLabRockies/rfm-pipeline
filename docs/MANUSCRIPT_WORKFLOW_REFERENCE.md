@@ -107,7 +107,7 @@ case_study:
   # NOTE: No "runtime" section here; injected programmatically.
 ```
 
-If you need to add a new runtime parameter in future, add it to the config YAML and update all 4 `spec_from_case_study_config()` functions.
+If you need to add a new runtime parameter in future, add it to the config YAML and update all 6 `spec_from_case_study_config()` functions.
 
 ______________________________________________________________________
 

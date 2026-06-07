@@ -167,14 +167,15 @@ def _group_cv_rf_predictions(
     configuration never appear in both train and test.  Mirrors the actual
     training procedure: each fold trains on ALL rows (including null-screened)
     for the held-in groups, then predicts only successful rows in the test fold.
-    This matches how wave1_rf_quality.pkl was trained and avoids inflated R²
-    from restricting both training and evaluation to the successful-run subspace.
+    This matches how the persisted wave12 RF quality pickle was trained and
+    avoids inflated R² from restricting both training and evaluation to the
+    successful-run subspace.
 
     Returns (observed, predicted, cv_r2) on the successful rows only.
     """
     X_all, _ = _build_feature_matrix(df)
     y_all = df["nrmse_relative"].values
-    is_succ = df["null_screened"].isna().values  # True for 2049 successful rows
+    is_succ = df["null_screened"].isna().values  # True for the successful subset
 
     if "config_idx" in df.columns and "dgp_idx" in df.columns:
         pair_key = df["config_idx"].astype(str) + "_" + df["dgp_idx"].astype(str)

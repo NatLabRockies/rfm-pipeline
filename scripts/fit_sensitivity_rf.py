@@ -59,8 +59,10 @@ def main() -> int:
         type=Path,
         default=None,
         help=(
-            "If given, dump fitted models as wave12_rf_quality.pkl / "
-            "wave12_rf_runtime.pkl in this directory."
+            "If given, dump fitted models as <prefix>_rf_quality.pkl / "
+            "<prefix>_rf_runtime.pkl in this directory, where <prefix> is "
+            "the leading underscore-token of the input CSV stem (e.g. "
+            "wave12_combined_clean.csv -> wave12)."
         ),
     )
     args = p.parse_args()
@@ -98,9 +100,10 @@ def main() -> int:
 
     if args.dump_models is not None:
         args.dump_models.mkdir(parents=True, exist_ok=True)
-        joblib.dump(rf_q, args.dump_models / "wave12_rf_quality.pkl")
-        joblib.dump(rf_r, args.dump_models / "wave12_rf_runtime.pkl")
-        print(f"# dumped models to {args.dump_models}")
+        prefix = args.results.stem.split("_", 1)[0]
+        joblib.dump(rf_q, args.dump_models / f"{prefix}_rf_quality.pkl")
+        joblib.dump(rf_r, args.dump_models / f"{prefix}_rf_runtime.pkl")
+        print(f"# dumped models to {args.dump_models} (prefix={prefix})")
     return 0
 
 

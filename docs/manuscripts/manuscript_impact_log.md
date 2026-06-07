@@ -16,6 +16,63 @@ required.
 
 ______________________________________________________________________
 
+## 2026-06-07 — Round 12 audit: PDP population fix + wave12 RF pickles
+
+### 🟡 R5. `fig_sensitivity_sample_size_curve` PDP base population corrected
+
+- **What changed (code).**
+  - `_partial_dependence_n_runs` in `scripts/plot_sensitivity_results.py`
+    now restricts the PDP base matrix to **successful runs only**
+    (`df["null_screened"].isna()`). Previously it marginalised over the
+    full frame including the 1,013 null-screened rows (γ = 0 by
+    construction), which damped the PDP curve toward 0 by the
+    null-screen fraction (~25% on wave12) and contradicted the
+    `_render_sample_size_curve` docstring claim that null-screened runs
+    are excluded.
+  - The RF model loaded for PDP was `wave1_rf_quality.pkl`, a stale
+    pre-cleanup model trained on wave1 (n = 2,583) before the dead
+    `lasso_alpha_percentile` knob was removed. Updated path to prefer
+    `wave12_rf_quality.pkl` and fall back to the wave1 pkl for legacy
+    bundles.
+  - `scripts/fit_sensitivity_rf.py` now optionally dumps the fitted
+    quality + runtime models via `--dump-models DIR` so the wave12
+    PDP-source pickle is reproducible from a single command.
+- **Manuscript impact.**
+  - Figure 7 (`fig_sensitivity_sample_size_curve`, cited at
+    `jds_bsm_v22.tex:658`) is regenerated. The PDP curve no longer
+    contains the null-screen pull; the headline claim "the RF importance
+    for n is 2.9%, the lowest among DGP properties" still holds
+    qualitatively (n_runs sits at ~2-3% in both quality importance
+    tables), but the visual PDP magnitude will be slightly larger.
+  - Figures `fig_sensitivity_main_effects`, `fig_sensitivity_runtime_breakdown`,
+    `fig_sensitivity_rf_validation` regenerated incidentally from the
+    same script run. None of `main_effects` or `runtime_breakdown` is
+    cited in v22.tex — they ride along as supplementary artifacts.
+    `fig_sensitivity_rf_validation` is cited and was already wave12-clean
+    from round 7; re-regen is byte-for-byte stable apart from the new
+    PDP-driven sample_size_curve.
+- **Files touched.**
+  - `scripts/fit_sensitivity_rf.py` (added `--dump-models` + `joblib` import).
+  - `scripts/plot_sensitivity_results.py` (prefer wave12 pkl;
+    PDP base restricted to successful runs).
+  - `artifacts/sensitivity/wave12_rf_{quality,runtime}.pkl` (new,
+    gitignored — local artifact only).
+  - `docs/manuscripts/fig_sensitivity_{sample_size_curve,main_effects,runtime_breakdown,rf_validation}.svg`
+    (regenerated).
+- **Re-run recipe.**
+  ```bash
+  pixi run python scripts/fit_sensitivity_rf.py \
+      --results artifacts/sensitivity/wave12_combined_clean.csv \
+      --dump-models artifacts/sensitivity/
+  pixi run python scripts/plot_sensitivity_results.py \
+      --results artifacts/sensitivity/wave12_combined_clean.csv \
+      --output-dir artifacts/sensitivity/figures_wave12_clean
+  cp artifacts/sensitivity/figures_wave12_clean/fig_sensitivity_*.svg \
+     docs/manuscripts/
+  ```
+
+______________________________________________________________________
+
 ## 2026-06-07 — Round 9 audit: RF tree count, importance metric, BSM panel labels
 
 ### 🟡 R4. RandomForest configuration brought into line with manuscript

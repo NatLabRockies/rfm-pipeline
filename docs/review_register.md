@@ -219,3 +219,33 @@ ______________________________________________________________________
     designed for CPU/GPU scaling benchmarks (single-stage), not
     cascade runs. Comment added in round 24; no behavior change.
 - **Tests:** 473 pass / 11 skipped.
+
+______________________________________________________________________
+
+## 2026-06-07 — Round 25 follow-up: deferred items addressed at root
+
+- **Severity:** MED (lifted to closed).
+- **Evidence:** the round-25 register flagged two items as
+  "deferred by design"; per maintainer direction these are root-fix
+  candidates and were closed without leaving behavior surprises.
+- **CLOSED:**
+  - `hpc_workflow_config.build_status_command` /
+    `build_collect_command` no longer hardcode bash script paths.
+    Two new optional fields on `HpcPathConfig`
+    (`remote_status_script` = `scripts/kestrel/status_all_tests.sh`,
+    `local_collect_script` = `scripts/kestrel/pull_hpc_artifacts_bundle.sh`)
+    let consumer repos point at any script. `build_collect_command`
+    now raises `FileNotFoundError` with a clear maintainer message
+    when the configured script does not exist locally — earlier
+    behavior silently constructed a `bash <missing>` command that
+    only failed at execution time. Two new tests cover the
+    missing-script error and the custom-path override.
+  - `tools/hpc_bundle_manifest.py` summarizer is now cascade-aware.
+    New `_discover_stages_in_run_dir` enumerates
+    `hpc_shards_<stage>/` directories; `_summarize_target` accepts
+    `stage=`; the implicit-tier path emits one summary row per
+    discovered stage when the run is cascade (multi-stage). Legacy
+    single-stage benchmark runs retain identical behavior and row
+    labels. Four new tests cover discovery, per-stage isolation,
+    and the legacy fallback.
+- **Tests:** 479 pass / 11 skipped (was 473; +6 new tests).

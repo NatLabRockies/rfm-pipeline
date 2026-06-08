@@ -447,6 +447,28 @@ def _resolve_manifest_path(run_dir: Path, suite_fallback: Path | None) -> Path:
     return primary
 
 
+def _discover_stages_in_run_dir(run_dir: Path) -> list[str]:
+    """Return cascade stage names found as ``hpc_shards_<stage>`` dirs.
+
+    Cascade runs (rfm-pipeline ≥8ca839d) write per-stage shard roots
+    named ``hpc_shards_<stage>/`` directly under each target's
+    ``run_dir``. Returns the discovered stage list in a stable
+    alphabetical order. Returns an empty list when only the legacy
+    un-suffixed ``hpc_shards/`` directory exists (or no shards at
+    all); callers fall back to the legacy single-stage path.
+    """
+    if not run_dir.exists():
+        return []
+    stages: list[str] = []
+    for entry in sorted(run_dir.glob("hpc_shards_*")):
+        if not entry.is_dir():
+            continue
+        suffix = entry.name[len("hpc_shards_") :]
+        if suffix and suffix != "_merged":
+            stages.append(suffix)
+    return stages
+
+
 def _summarize_target(
     *,
     target: str,
@@ -454,6 +476,7 @@ def _summarize_target(
     log_dir: Path,
     suite_manifest_fallback: Path | None = None,
     gpu_mode: bool = False,
+    stage: str | None = None,
 ) -> TargetSummary:
     manifest_path = _resolve_manifest_path(run_dir, suite_manifest_fallback)
     manifest_shards = 0
@@ -461,9 +484,12 @@ def _summarize_target(
         manifest_lines = manifest_path.read_text(encoding="utf-8").splitlines()
         manifest_shards = len([line for line in manifest_lines if line.strip()])
     # Per-stage shard layout (rfm-pipeline ≥8ca839d): hpc_shards_<stage>.
-    # Fall through to the legacy un-suffixed hpc_shards/ for older runs
-    # so the summarizer remains backward compatible.
-    shards_root = run_dir / "hpc_shards_interaction_discovery"
+    # When the caller specifies a stage (cascade-aware summarization)
+    # use that; otherwise fall through to interaction_discovery
+    # (single-stage benchmark default) then legacy un-suffixed
+    # hpc_shards/ for older runs.
+    effective_stage = stage or "interaction_discovery"
+    shards_root = run_dir / f"hpc_shards_{effective_stage}"
     if not shards_root.exists():
         shards_root = run_dir / "hpc_shards"
     shard_results = 0
@@ -472,31 +498,40 @@ def _summarize_target(
     if shards_root.exists():
         shard_results, completed, failed, _ = _shard_status_counts(shards_root)
     merged_root = shards_root / "_merged"
-    merged_json = merged_root / "interaction_discovery_merged.json"
-    merged_retained = merged_root / "retained_interaction_pairs_merged.csv"
-    merged_scores = merged_root / "interaction_pair_scores_merged.csv"
-    merged_retained_rows = _count_csv_rows(merged_retained)
-    merged_score_rows = _count_csv_rows(merged_scores)
+    # Merged-artifact filenames are stage-specific; the canonical
+    # interaction_discovery artifacts (used for retained-pairs /
+    # pair-scores reporting) only exist when this row summarizes that
+    # stage. For other stages report 0 retained/score rows but still
+    # gate completion on the per-stage *_merged.json marker.
+    merged_json = merged_root / f"{effective_stage}_merged.json"
+    if effective_stage == "interaction_discovery":
+        merged_retained = merged_root / "retained_interaction_pairs_merged.csv"
+        merged_scores = merged_root / "interaction_pair_scores_merged.csv"
+        merged_retained_rows = _count_csv_rows(merged_retained)
+        merged_score_rows = _count_csv_rows(merged_scores)
+    else:
+        merged_retained_rows = 0
+        merged_score_rows = 0
 
     # SLURM job-name templates were renamed bsm_* → rfm_* when this
     # repository became the canonical rfm-pipeline package
     # (see rfm_pipeline.distributed.slurm_array_runner). Keep the
     # bsm_* glob as a fallback so summaries of older runs still work.
     if gpu_mode:
-        array_log = _latest_glob(str(log_dir / "rfm_gpu_interaction_discovery_*.out"))
+        array_log = _latest_glob(str(log_dir / f"rfm_gpu_{effective_stage}_*.out"))
         if not array_log:
-            array_log = _latest_glob(str(log_dir / "bsm_gpu_interaction_discovery_*.out"))
+            array_log = _latest_glob(str(log_dir / f"bsm_gpu_{effective_stage}_*.out"))
         if not array_log:
-            array_log = _latest_glob(str(log_dir / "rfm_interaction_discovery_*.out"))
+            array_log = _latest_glob(str(log_dir / f"rfm_{effective_stage}_*.out"))
         if not array_log:
-            array_log = _latest_glob(str(log_dir / "bsm_interaction_discovery_*.out"))
+            array_log = _latest_glob(str(log_dir / f"bsm_{effective_stage}_*.out"))
     else:
-        array_log = _latest_glob(str(log_dir / "rfm_interaction_discovery_*.out"))
+        array_log = _latest_glob(str(log_dir / f"rfm_{effective_stage}_*.out"))
         if not array_log:
-            array_log = _latest_glob(str(log_dir / "bsm_interaction_discovery_*.out"))
-    reduce_log = _latest_glob(str(log_dir / "rfm_reduce_interaction_discovery_*.out"))
+            array_log = _latest_glob(str(log_dir / f"bsm_{effective_stage}_*.out"))
+    reduce_log = _latest_glob(str(log_dir / f"rfm_reduce_{effective_stage}_*.out"))
     if not reduce_log:
-        reduce_log = _latest_glob(str(log_dir / "bsm_reduce_interaction_discovery_*.out"))
+        reduce_log = _latest_glob(str(log_dir / f"bsm_reduce_{effective_stage}_*.out"))
 
     if manifest_shards == 0 and shard_results == 0:
         status = "scripts_missing"
@@ -510,7 +545,7 @@ def _summarize_target(
         status = "queued_or_pending"
 
     return TargetSummary(
-        target=target,
+        target=target if stage is None else f"{target}:{stage}",
         run_dir=str(run_dir),
         manifest_path=str(manifest_path),
         manifest_shards=manifest_shards,
@@ -552,25 +587,43 @@ def create_run_manifest(args: argparse.Namespace) -> int:
             )
     else:
         for tier in (2, 10, 1000):
+            run_dir = artifacts_root / f"kestrel_cpu_scale_{tier}_run"
+            log_dir = logs_root / f"bsm_kestrel_cpu_scale_{tier}" / "logs"
+            suite_fallback = suite_root / f"cpu_nodes_{tier}" / "hpc_scripts" / "manifest.jsonl"
+            # Cascade-aware: when the run_dir contains per-stage
+            # hpc_shards_<stage>/ directories, emit one summary row per
+            # stage so failures in any cascade stage are visible. Falls
+            # back to single-stage interaction_discovery for legacy /
+            # benchmark runs that only have one stage's shards.
+            discovered = _discover_stages_in_run_dir(run_dir)
+            stages_to_summarize: list[str | None] = (
+                list(discovered) if len(discovered) > 1 else [None]
+            )
+            for stage in stages_to_summarize:
+                rows.append(
+                    _summarize_target(
+                        target=f"cpu_{tier}",
+                        run_dir=run_dir,
+                        suite_manifest_fallback=suite_fallback,
+                        log_dir=log_dir,
+                        gpu_mode=False,
+                        stage=stage,
+                    )
+                )
+        gpu_run_dir = artifacts_root / "kestrel_gpu_h100_run"
+        gpu_log_dir = logs_root / "bsm_kestrel_gpu_h100" / "logs"
+        gpu_discovered = _discover_stages_in_run_dir(gpu_run_dir)
+        gpu_stages: list[str | None] = list(gpu_discovered) if len(gpu_discovered) > 1 else [None]
+        for stage in gpu_stages:
             rows.append(
                 _summarize_target(
-                    target=f"cpu_{tier}",
-                    run_dir=artifacts_root / f"kestrel_cpu_scale_{tier}_run",
-                    suite_manifest_fallback=(
-                        suite_root / f"cpu_nodes_{tier}" / "hpc_scripts" / "manifest.jsonl"
-                    ),
-                    log_dir=logs_root / f"bsm_kestrel_cpu_scale_{tier}" / "logs",
-                    gpu_mode=False,
+                    target="gpu_h100",
+                    run_dir=gpu_run_dir,
+                    log_dir=gpu_log_dir,
+                    gpu_mode=True,
+                    stage=stage,
                 )
             )
-        rows.append(
-            _summarize_target(
-                target="gpu_h100",
-                run_dir=artifacts_root / "kestrel_gpu_h100_run",
-                log_dir=logs_root / "bsm_kestrel_gpu_h100" / "logs",
-                gpu_mode=True,
-            )
-        )
 
     payload = {
         "manifest_version": "1",

@@ -197,16 +197,19 @@ cp configs/manuscript_paths.template.yml configs/local/manuscript_paths.local.ym
 
 ### Step 3: Edit the Local Configuration
 
-Open `configs/local/manuscript_paths.local.yml` and update file paths:
+Open `configs/local/manuscript_paths.local.yml` and update file paths. The
+loader expects the flat artifact keys defined in
+`configs/manuscript_paths.template.yml`:
 
 ```yaml
 # Example (adjust paths for your machine):
-paths:
-  x_train: "/path/to/my-data/X_train.parquet"
-  y_train: "/path/to/my-data/Y_train.parquet"
-  x_holdout: "/path/to/my-data/X_holdout.parquet"
-  y_holdout: "/path/to/my-data/Y_holdout.parquet"
-  artifact_root: "<repo-root>/artifacts/real-data-output"
+input_metadata: "/path/to/my-data/input_metadata.parquet"
+output_metadata: "/path/to/my-data/output_metadata.parquet"
+case_study_input_matrix: "/path/to/my-data/case_study_input_matrix.parquet"
+case_study_output_matrix: "/path/to/my-data/case_study_output_matrix.parquet"
+manuscript_feature_catalog: "/path/to/my-data/manuscript_feature_catalog.parquet"
+fixed_holdout_assignments: "/path/to/my-data/fixed_holdout_assignments.parquet"
+output_root: "<repo-root>/artifacts/real-data-output"
 ```
 
 ### Step 4: Validate the Configuration
@@ -306,8 +309,8 @@ result = run_canonical_workflow(
 written = write_postfit_bundle(result.artifacts, Path("artifacts/my-custom-data"))
 
 # Print metrics
-print(f"Holdout nRMSE: {result.holdout_summary['point_estimate']:.4f}")
-print(f"Final support size: {len(result.final_ols_result.retained_features)}")
+print(f"Holdout nRMSE: {result.holdout_summary.loc[0, 'point_estimate']:.4f}")
+print(f"Final support size: {len(result.final_ols_result.feature_names)}")
 ```
 
 See `docs/quickstart.md` for full API documentation.

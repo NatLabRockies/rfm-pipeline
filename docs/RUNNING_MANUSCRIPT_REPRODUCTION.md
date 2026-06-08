@@ -181,10 +181,12 @@ pixi run manuscript-reproduce  # Already sets threads=1 by default
 
 ### Parallel Processing
 
-If your system has sufficient memory, you can try more threads:
+Thread pool size is controlled via standard environment variables before
+launching the reproduction script:
 
 ```bash
-pixi run python scripts/run_manuscript_reproduction.py --threads 4
+OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MKL_NUM_THREADS=4 \
+  pixi run python scripts/run_manuscript_reproduction.py --config your-config.yml
 ```
 
 ## Troubleshooting

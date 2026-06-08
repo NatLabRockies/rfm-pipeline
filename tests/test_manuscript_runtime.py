@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from rfm_pipeline import (
     build_manuscript_notebook_context,
@@ -84,7 +85,7 @@ def test_manuscript_notebook_files_exist_in_frozen_order() -> None:
         assert (notebook_root / notebook_name).exists()
 
 
-def test_build_notebook_context_falls_back_to_demo_for_incompatible_real_sample_ids(
+def test_build_notebook_context_raises_loud_for_incompatible_real_sample_ids(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -106,8 +107,29 @@ def test_build_notebook_context_falls_back_to_demo_for_incompatible_real_sample_
         "rfm_pipeline.manuscript_runtime.resolve_manuscript_runtime", lambda _: runtime
     )
 
-    context = build_manuscript_notebook_context(Path.cwd(), manuscript_notebook_order()[0])
+    with pytest.raises(RuntimeError, match="sample-id alignment"):
+        build_manuscript_notebook_context(Path.cwd(), manuscript_notebook_order()[0])
 
-    assert context.runtime.mode == "demo"
-    assert context.runtime.runtime_dir is not None
-    assert len(context.tables["case_study_input_matrix"]) == 80
+
+def test_build_notebook_context_raises_loud_for_missing_real_artifact(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bad_paths = write_demo_manuscript_artifacts(tmp_path / "missing-real")
+    bad_paths["fixed_holdout_assignments"].unlink()
+
+    runtime = ManuscriptRuntimeContext(
+        mode="real",
+        repo_root=Path.cwd(),
+        artifact_paths=bad_paths,
+        output_root=tmp_path / "missing-real-output",
+        unresolved_placeholders=(),
+        local_override_used=True,
+        runtime_dir=None,
+    )
+    monkeypatch.setattr(
+        "rfm_pipeline.manuscript_runtime.resolve_manuscript_runtime", lambda _: runtime
+    )
+
+    with pytest.raises(RuntimeError, match="real mode"):
+        build_manuscript_notebook_context(Path.cwd(), manuscript_notebook_order()[0])

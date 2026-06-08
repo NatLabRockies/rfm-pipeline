@@ -65,12 +65,14 @@ def resolve_repo_root() -> Path:
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
+    """Return parsed JSON or ``None`` if the file is missing.
+
+    Raises :class:`json.JSONDecodeError` (or :class:`OSError`) for malformed
+    or unreadable files so silent data corruption is not masked.
+    """
     if not path.exists():
         return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _read_csv(path: Path):

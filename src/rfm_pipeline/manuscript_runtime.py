@@ -341,46 +341,36 @@ def build_manuscript_notebook_context(
     repo_root: Path,
     notebook_name: str,
 ) -> ManuscriptNotebookContext:
-    """Resolve runtime inputs and loaded tables for one manuscript notebook."""
+    """Resolve runtime inputs and loaded tables for one manuscript notebook.
+
+    When the resolved runtime is in ``real`` mode (i.e. a local override is
+    configured and all expected artifact files exist), loader/alignment
+    failures are surfaced as errors rather than masked with a silent demo
+    fallback. The demo fallback only applies when the resolver itself
+    chooses demo mode (no override / placeholder paths).
+    """
     repo_root = normalize_manuscript_repo_root(repo_root)
     runtime = resolve_manuscript_runtime(repo_root)
     if notebook_name not in manuscript_notebook_order():
         raise ValueError(f"Unknown manuscript notebook: {notebook_name}")
     try:
         tables = load_manuscript_artifact_tables(runtime.artifact_paths)
-    except (ImportError, OSError, ValueError):
-        if runtime.mode != "real":
-            raise
-        runtime_dir = Path(tempfile.mkdtemp(prefix="rfm_pipeline_demo_"))
-        artifact_paths = write_demo_manuscript_artifacts(runtime_dir / "data")
-        output_root = runtime_dir / "artifacts"
-        output_root.mkdir(parents=True, exist_ok=True)
-        runtime = ManuscriptRuntimeContext(
-            mode="demo",
-            repo_root=runtime.repo_root,
-            artifact_paths=artifact_paths,
-            output_root=output_root,
-            unresolved_placeholders=runtime.unresolved_placeholders,
-            local_override_used=runtime.local_override_used,
-            runtime_dir=runtime_dir,
-        )
-        tables = load_manuscript_artifact_tables(runtime.artifact_paths)
+    except (ImportError, OSError, ValueError) as exc:
+        if runtime.mode == "real":
+            raise RuntimeError(
+                "Failed to load manuscript artifact tables in real mode. "
+                "Check that the local override paths point to valid files: "
+                f"{sorted(runtime.artifact_paths)}. Original error: {exc}"
+            ) from exc
+        raise
     alignment_issues = _runtime_sample_alignment_issues(tables)
     if runtime.mode == "real" and alignment_issues:
-        runtime_dir = Path(tempfile.mkdtemp(prefix="rfm_pipeline_demo_"))
-        artifact_paths = write_demo_manuscript_artifacts(runtime_dir / "data")
-        output_root = runtime_dir / "artifacts"
-        output_root.mkdir(parents=True, exist_ok=True)
-        runtime = ManuscriptRuntimeContext(
-            mode="demo",
-            repo_root=runtime.repo_root,
-            artifact_paths=artifact_paths,
-            output_root=output_root,
-            unresolved_placeholders=runtime.unresolved_placeholders,
-            local_override_used=runtime.local_override_used,
-            runtime_dir=runtime_dir,
+        raise RuntimeError(
+            "Manuscript artifact tables loaded in real mode but failed "
+            "sample-id alignment checks. Fix the upstream artifacts or "
+            "remove the local override to fall back to demo mode. "
+            f"Issues: {alignment_issues}"
         )
-        tables = load_manuscript_artifact_tables(runtime.artifact_paths)
     return ManuscriptNotebookContext(
         notebook_name=notebook_name,
         runtime=runtime,

@@ -176,3 +176,46 @@ Agents use this file to convert review findings into planned work instead of lea
 - Blocks merge: no
 - Destination: JOSS/new-user documentation cleanup before release
 - Notes: broader docs-snippet smoke coverage remains deferred; D1 SVG→PDF Chrome/tempfile helper rewrite remains open.
+
+______________________________________________________________________
+
+## 2026-06-07 — Round 25: orchestrator parity + provenance labels
+
+- **Severity:** HIGH (rfm).
+- **Evidence:**
+  - rfm `tools/run_hpc_workflow.py` did not honor the
+    `--dry-run --generate-only` SSH-skip contract that the sibling
+    bsm orchestrator now enforces (round 24 MED#9). Local validation
+    against the rfm entrypoint still required SSH credentials.
+  - rfm `docs/RUNNING_MANUSCRIPT_REPRODUCTION.md` lines 40-58
+    documented `pixi run hpc-workflow -- --config configs/hpc/kestrel_workflow_orchestration.yml` and
+    `kestrel_cpu_scale_2_smoke.yml`, but no such configs are
+    committed to this repo (the canonical examples live in
+    `bsm-public-rf/configs/hpc/`). A new user following the doc
+    would fail at first command.
+  - rfm `src/rfm_pipeline/distributed/slurm_array_runner.py:81`
+    SLURM script template still labels itself "BSM Manuscript
+    Pipeline" even though the package was renamed rfm-pipeline.
+- **CLOSED (round 25, rfm-pipeline pending commit):**
+  - `tools/run_hpc_workflow.py` short-circuits on
+    `--dry-run --generate-only`: prints `>>> [skip ssh: ...] <cmd>`
+    and continues without invoking SSH, mirroring bsm.
+  - `docs/RUNNING_MANUSCRIPT_REPRODUCTION.md` HPC section now
+    documents that orchestration configs and kestrel scripts are
+    repo-specific, points at `bsm-public-rf` as the canonical
+    reference, and uses `--generate-only --dry-run` as the smoke
+    path (no nonexistent smoke config required).
+  - `slurm_array_runner.py` SLURM script banner changed from
+    "BSM Manuscript Pipeline" to "rfm-pipeline".
+- **Deferred (round 25 audit, not implemented):**
+  - hpc_workflow_config.build_status_command /
+    build_collect_command point at bash scripts that live only in
+    the consuming repo (bsm-public-rf). This is by design — the
+    rfm-pipeline package is generic and expects the consumer to
+    supply orchestration shell scripts — and is now documented in
+    RUNNING_MANUSCRIPT_REPRODUCTION.md. No code change.
+  - tools/hpc_bundle_manifest.py:466 hardcodes
+    `hpc_shards_interaction_discovery` because the summarizer is
+    designed for CPU/GPU scaling benchmarks (single-stage), not
+    cascade runs. Comment added in round 24; no behavior change.
+- **Tests:** 473 pass / 11 skipped.

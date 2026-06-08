@@ -400,3 +400,48 @@ def test_invalid_stage_in_stages_list_rejected(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="not_a_real_stage"):
         load_hpc_workflow_config(config_path)
+
+
+def test_submit_command_groups_separates_prep_diagnostic_and_per_stage(
+    tmp_path: Path,
+) -> None:
+    """build_remote_submit_command_groups returns labeled cascade groups so
+    orchestrators can capture each stage's reduce job id and chain the
+    next stage with --depends-on-job-id."""
+    from rfm_pipeline.hpc_workflow_config import build_remote_submit_command_groups
+
+    config_path = tmp_path / "hpc.yml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "cluster": {"host": "kl1.hpc.nrel.gov", "user": "alice"},
+                "execution": {
+                    "stages": ["output_conditioning", "interaction_discovery"],
+                    "run_diagnostic": True,
+                    "prepare_interaction_inputs": True,
+                    "cpu_tiers": [
+                        {"nodes": 2, "config_path": "configs/hpc/kestrel_cpu_scale_2.yml"},
+                    ],
+                },
+                "gpu": {"enabled": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_hpc_workflow_config(config_path)
+    groups = build_remote_submit_command_groups(cfg, submit=True, dry_run=False)
+
+    stage_groups = [(s, c) for s, c in groups if s is not None]
+    none_groups = [c for s, c in groups if s is None]
+
+    # prep + diagnostic appear in None-marked groups
+    assert any(any("run_manuscript_pipeline" in c for c in g) for g in none_groups)
+    assert any(any("--diagnostic-only" in c for c in g) for g in none_groups)
+
+    # Two stage groups in cascade order
+    assert [s for s, _ in stage_groups] == [
+        "output_conditioning",
+        "interaction_discovery",
+    ]
+    for stage_name, cmds in stage_groups:
+        assert all(f"--stage {stage_name}" in c for c in cmds)

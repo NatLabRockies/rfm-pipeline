@@ -34,36 +34,48 @@ For full details, see `docs/RUNTIME_INVESTIGATION_WORKFLOW.md`.
 
 ### Unified HPC Workflow Driver (single local command)
 
-For HPC submissions and artifact collection without manual SSH/scp choreography:
+The `hpc-workflow` pixi task drives remote SLURM submission and local
+artifact pullback from a single command. It is dataset/site agnostic:
+you supply the orchestration YAML and (for `collect`/`status`) the
+companion bash scripts (`pull_hpc_artifacts_bundle.sh`,
+`status_all_tests.sh`) that the config points at.
+
+The canonical reference orchestration configs and kestrel scripts live
+in the manuscript companion repo
+[`bsm-public-rf`](https://github.com/NatLabRockies/bsm-public-rf) under
+`configs/hpc/` and `scripts/kestrel/`. Copy and adapt them for your
+HPC site, or invoke `hpc-workflow` from a checkout of `bsm-public-rf`
+directly (its `pixi.toml` pins this `rfm-pipeline` package).
 
 ```bash
+# from a bsm-public-rf checkout (or any repo providing the configs/scripts):
 pixi run hpc-workflow -- \
-  --config configs/hpc/kestrel_workflow_orchestration.yml \
+  --config configs/hpc/kestrel_publication_orchestration.yml \
   --action submit
 ```
 
 Then use:
 
 ```bash
-pixi run hpc-workflow -- --config configs/hpc/kestrel_workflow_orchestration.yml --action status
-pixi run hpc-workflow -- --config configs/hpc/kestrel_workflow_orchestration.yml --action collect
+pixi run hpc-workflow -- --config configs/hpc/kestrel_publication_orchestration.yml --action status
+pixi run hpc-workflow -- --config configs/hpc/kestrel_publication_orchestration.yml --action collect
 ```
 
 Set `pullback.mode` in the orchestration config to `manifest_only`, `reporting_bundle`, or `full` depending on local storage constraints.
 
-Quick smoke path (2-node distributed test):
+Quick smoke path (local validation, no SSH, no submission):
 
 ```bash
 pixi run hpc-workflow -- \
-  --config configs/hpc/kestrel_cpu_scale_2_smoke.yml \
+  --config configs/hpc/kestrel_publication_orchestration.yml \
   --action submit --generate-only --dry-run
 ```
 
-This uses the lightweight `kestrel_cpu_scale_2_smoke.yml` orchestration
-config (30-minute walltime target) to validate command plumbing without
-submitting real jobs. For `interaction_discovery`, the small workflow
-also pre-materializes prerequisite `output_conditioning` and
-`empirical_null_screen` artifacts before SLURM submission when
+The `--generate-only --dry-run` pair short-circuits before any SSH and
+prints the per-stage commands the orchestrator would have run; use it
+to validate config plumbing on a laptop. For `interaction_discovery`,
+the workflow also pre-materializes prerequisite `output_conditioning`
+and `empirical_null_screen` artifacts before SLURM submission when
 `prepare_interaction_inputs: true` is set in the config.
 
 ### Run with Custom Output Directory

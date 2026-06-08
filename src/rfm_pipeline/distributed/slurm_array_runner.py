@@ -78,7 +78,7 @@ _STAGE_SBATCH_TEMPLATE = """\
 {requeue_line}
 {array_dependency_line}
 # ---------------------------------------------------------------------------
-# BSM Manuscript Pipeline — SLURM Array Stage Runner
+# rfm-pipeline — SLURM Array Stage Runner
 # Stage : {stage}
 # Run ID: {run_id}
 # Shards: {n_shards}

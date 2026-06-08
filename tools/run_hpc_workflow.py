@@ -325,6 +325,13 @@ def main() -> int:
             captured_for_stage: list[str] = []
             for c in chained_cmds:
                 capture = stage_name is not None and should_submit and not args.dry_run
+                # When the user asked for --dry-run + --generate-only
+                # together they want a fully local validation: no SSH,
+                # no remote rfm-hpc-submit. Skip the remote shell
+                # entirely (mirrors bsm-public-rf/scripts/hpc_workflow.py).
+                if args.dry_run and args.generate_only:
+                    print(f">>> [skip ssh: --dry-run --generate-only] {c}")
+                    continue
                 stdout = _run_remote_shell(
                     ssh_dest,
                     config.paths.remote_repo_root,

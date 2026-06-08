@@ -64,6 +64,15 @@ class HpcPathConfig:
     remote_snapshot_root: str = "/scratch/${USER}/rfm-pipeline/snapshots"
     local_bundle_dir: str = "./artifacts/kestrel_collected_bundles"
     cpu_suite_output_root: str | None = None
+    # Orchestration helper scripts. The rfm-pipeline package itself is
+    # generic and does not ship cluster-specific bash drivers; the
+    # consumer (e.g. bsm-public-rf) provides them at the paths below.
+    # Override these in the orchestration YAML if your scripts live
+    # elsewhere. ``remote_status_script`` is invoked on the HPC head
+    # node via ssh; ``local_collect_script`` runs locally and pulls
+    # artifacts via scp/rsync.
+    remote_status_script: str = "scripts/kestrel/status_all_tests.sh"
+    local_collect_script: str = "scripts/kestrel/pull_hpc_artifacts_bundle.sh"
 
 
 @dataclass
@@ -515,17 +524,34 @@ def build_remote_status_command(config: HpcWorkflowConfig) -> str:
         f"STATUS_INCLUDE_GPU={shlex.quote(include_gpu)} "
         f"STATUS_GPU_SHARDS={shlex.quote(gpu_shards)} "
         f"STATUS_TIER_SHARD_DIRS={shlex.quote(tier_shard_dirs_str)} "
-        "bash scripts/kestrel/status_all_tests.sh"
+        f"bash {shlex.quote(config.paths.remote_status_script)}"
     )
 
 
 def build_collect_command(config: HpcWorkflowConfig, *, repo_root: Path) -> list[str]:
-    """Build local artifact pull command from config."""
+    """Build local artifact pull command from config.
+
+    Raises ``FileNotFoundError`` when ``config.paths.local_collect_script``
+    (resolved against ``repo_root`` when relative) does not exist on
+    the local filesystem — the orchestration package is generic and
+    expects the consumer repo to ship its own kestrel collect script.
+    """
     cpu_tier_specs = ",".join(
         f"{tier.nodes}={tier.config_path}" for tier in config.execution.cpu_tiers
     )
     include_gpu = "1" if config.gpu.enabled else "0"
-    script_path = repo_root / "scripts" / "kestrel" / "pull_hpc_artifacts_bundle.sh"
+    raw_script = config.paths.local_collect_script
+    script_path = Path(raw_script)
+    if not script_path.is_absolute():
+        script_path = repo_root / script_path
+    if not script_path.exists():
+        raise FileNotFoundError(
+            f"HPC collect script not found: {script_path}. The rfm-pipeline "
+            "package does not ship cluster-specific bash drivers; set "
+            "paths.local_collect_script in the orchestration YAML to a "
+            "script that exists in this checkout (see the bsm-public-rf "
+            "repository for a reference implementation)."
+        )
     cmd = [
         "bash",
         str(script_path),

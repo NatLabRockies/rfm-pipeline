@@ -238,7 +238,14 @@ def test_status_and_collect_commands_bind_configured_paths(tmp_path: Path) -> No
     assert "STATUS_GPU_SHARDS=10" in status_cmd
     assert "status_all_tests.sh" in status_cmd
 
-    collect_cmd = build_collect_command(cfg, repo_root=Path.cwd())
+    # build_collect_command now requires the configured collect script
+    # to exist locally. Materialize a stub so this test covers only the
+    # CLI-binding contract (a separate test covers the missing-script
+    # FileNotFoundError path).
+    stub_script = tmp_path / "scripts" / "kestrel" / "pull_hpc_artifacts_bundle.sh"
+    stub_script.parent.mkdir(parents=True, exist_ok=True)
+    stub_script.write_text("#!/bin/bash\n:\n", encoding="utf-8")
+    collect_cmd = build_collect_command(cfg, repo_root=tmp_path)
     collect_str = " ".join(collect_cmd)
     assert "--hpc-host alice@kl1.hpc.nrel.gov" in collect_str
     assert "--hpc-repo-root /projects/bsm/bsm-public-rf" in collect_str
@@ -445,3 +452,69 @@ def test_submit_command_groups_separates_prep_diagnostic_and_per_stage(
     ]
     for stage_name, cmds in stage_groups:
         assert all(f"--stage {stage_name}" in c for c in cmds)
+
+
+def test_build_collect_command_raises_when_script_missing(tmp_path: Path) -> None:
+    config_path = tmp_path / "hpc.yml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "cluster": {"host": "kl1.hpc.nrel.gov", "user": "alice"},
+                "paths": {
+                    "remote_repo_root": "/projects/bsm/bsm-public-rf",
+                    "remote_artifacts_root": "/scratch/alice/artifacts",
+                    "remote_logs_root": "/scratch/alice",
+                    "remote_snapshot_root": "/scratch/alice/snap",
+                    "local_bundle_dir": "./artifacts/collected",
+                },
+                "execution": {
+                    "cpu_tiers": [
+                        {"nodes": 2, "config_path": "configs/hpc/kestrel_cpu_scale_2.yml"},
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_hpc_workflow_config(config_path)
+    # Empty tmp_path repo root => default script path does not exist.
+    with pytest.raises(FileNotFoundError, match="HPC collect script not found"):
+        build_collect_command(cfg, repo_root=tmp_path)
+
+
+def test_build_status_and_collect_honor_custom_script_paths(tmp_path: Path) -> None:
+    custom_status = "ops/hpc/status_custom.sh"
+    custom_collect = "ops/hpc/collect_custom.sh"
+    config_path = tmp_path / "hpc.yml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "cluster": {"host": "kl1.hpc.nrel.gov", "user": "alice"},
+                "paths": {
+                    "remote_repo_root": "/projects/x",
+                    "remote_artifacts_root": "/scratch/alice/artifacts",
+                    "remote_logs_root": "/scratch/alice",
+                    "remote_snapshot_root": "/scratch/alice/snap",
+                    "local_bundle_dir": "./artifacts/collected",
+                    "remote_status_script": custom_status,
+                    "local_collect_script": custom_collect,
+                },
+                "execution": {
+                    "cpu_tiers": [
+                        {"nodes": 2, "config_path": "configs/hpc/kestrel_cpu_scale_2.yml"},
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_hpc_workflow_config(config_path)
+    status_cmd = build_remote_status_command(cfg)
+    assert custom_status in status_cmd
+    assert "status_all_tests.sh" not in status_cmd
+
+    stub = tmp_path / custom_collect
+    stub.parent.mkdir(parents=True, exist_ok=True)
+    stub.write_text("#!/bin/bash\n:\n", encoding="utf-8")
+    collect_cmd = build_collect_command(cfg, repo_root=tmp_path)
+    assert str(stub) in collect_cmd

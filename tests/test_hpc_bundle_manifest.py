@@ -199,3 +199,71 @@ def test_write_study_metadata_writes_manifest_and_inventory(tmp_path: Path) -> N
     recipe_text = out_recipe.read_text(encoding="utf-8")
     assert "manifest/environment/pixi.lock" in recipe_text
     assert "Target `cpu_2`" in recipe_text
+
+
+def test_discover_stages_in_run_dir_finds_cascade_layout(tmp_path: Path) -> None:
+    from tools.hpc_bundle_manifest import _discover_stages_in_run_dir
+
+    (tmp_path / "hpc_shards_output_conditioning").mkdir()
+    (tmp_path / "hpc_shards_interaction_discovery").mkdir()
+    (tmp_path / "hpc_shards").mkdir()  # legacy un-suffixed; ignored
+    stages = _discover_stages_in_run_dir(tmp_path)
+    assert stages == ["interaction_discovery", "output_conditioning"]
+
+
+def test_discover_stages_empty_when_no_cascade_dirs(tmp_path: Path) -> None:
+    from tools.hpc_bundle_manifest import _discover_stages_in_run_dir
+
+    (tmp_path / "hpc_shards").mkdir()
+    assert _discover_stages_in_run_dir(tmp_path) == []
+
+
+def test_summarize_target_per_stage_isolates_paths(tmp_path: Path) -> None:
+    from tools.hpc_bundle_manifest import _summarize_target
+
+    run_dir = tmp_path / "run"
+    log_dir = tmp_path / "logs"
+    (run_dir / "hpc_shards_output_conditioning").mkdir(parents=True)
+    (run_dir / "hpc_shards_interaction_discovery").mkdir()
+    log_dir.mkdir()
+    (log_dir / "rfm_reduce_output_conditioning_1.out").write_text("ok")
+    (log_dir / "rfm_reduce_interaction_discovery_2.out").write_text("ok")
+
+    oc = _summarize_target(
+        target="cpu_2",
+        run_dir=run_dir,
+        log_dir=log_dir,
+        gpu_mode=False,
+        stage="output_conditioning",
+    )
+    idisc = _summarize_target(
+        target="cpu_2",
+        run_dir=run_dir,
+        log_dir=log_dir,
+        gpu_mode=False,
+        stage="interaction_discovery",
+    )
+    assert oc.target == "cpu_2:output_conditioning"
+    assert idisc.target == "cpu_2:interaction_discovery"
+    assert oc.latest_reduce_log.endswith("rfm_reduce_output_conditioning_1.out")
+    assert idisc.latest_reduce_log.endswith("rfm_reduce_interaction_discovery_2.out")
+    # Non-interaction stages report 0 retained/score rows because the
+    # interaction-specific merged CSV filenames don't apply.
+    assert oc.merged_retained_pairs == 0
+
+
+def test_summarize_target_legacy_single_stage_label_unchanged(tmp_path: Path) -> None:
+    from tools.hpc_bundle_manifest import _summarize_target
+
+    run_dir = tmp_path / "run"
+    log_dir = tmp_path / "logs"
+    (run_dir / "hpc_shards").mkdir(parents=True)
+    log_dir.mkdir()
+    row = _summarize_target(
+        target="cpu_2",
+        run_dir=run_dir,
+        log_dir=log_dir,
+        gpu_mode=False,
+        stage=None,
+    )
+    assert row.target == "cpu_2"

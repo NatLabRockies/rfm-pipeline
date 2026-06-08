@@ -460,7 +460,12 @@ def _summarize_target(
     if manifest_path.exists():
         manifest_lines = manifest_path.read_text(encoding="utf-8").splitlines()
         manifest_shards = len([line for line in manifest_lines if line.strip()])
-    shards_root = run_dir / "hpc_shards"
+    # Per-stage shard layout (rfm-pipeline ≥8ca839d): hpc_shards_<stage>.
+    # Fall through to the legacy un-suffixed hpc_shards/ for older runs
+    # so the summarizer remains backward compatible.
+    shards_root = run_dir / "hpc_shards_interaction_discovery"
+    if not shards_root.exists():
+        shards_root = run_dir / "hpc_shards"
     shard_results = 0
     completed = 0
     failed = 0
@@ -473,13 +478,25 @@ def _summarize_target(
     merged_retained_rows = _count_csv_rows(merged_retained)
     merged_score_rows = _count_csv_rows(merged_scores)
 
+    # SLURM job-name templates were renamed bsm_* → rfm_* when this
+    # repository became the canonical rfm-pipeline package
+    # (see rfm_pipeline.distributed.slurm_array_runner). Keep the
+    # bsm_* glob as a fallback so summaries of older runs still work.
     if gpu_mode:
-        array_log = _latest_glob(str(log_dir / "bsm_gpu_interaction_discovery_*.out"))
+        array_log = _latest_glob(str(log_dir / "rfm_gpu_interaction_discovery_*.out"))
+        if not array_log:
+            array_log = _latest_glob(str(log_dir / "bsm_gpu_interaction_discovery_*.out"))
+        if not array_log:
+            array_log = _latest_glob(str(log_dir / "rfm_interaction_discovery_*.out"))
         if not array_log:
             array_log = _latest_glob(str(log_dir / "bsm_interaction_discovery_*.out"))
     else:
-        array_log = _latest_glob(str(log_dir / "bsm_interaction_discovery_*.out"))
-    reduce_log = _latest_glob(str(log_dir / "bsm_reduce_interaction_discovery_*.out"))
+        array_log = _latest_glob(str(log_dir / "rfm_interaction_discovery_*.out"))
+        if not array_log:
+            array_log = _latest_glob(str(log_dir / "bsm_interaction_discovery_*.out"))
+    reduce_log = _latest_glob(str(log_dir / "rfm_reduce_interaction_discovery_*.out"))
+    if not reduce_log:
+        reduce_log = _latest_glob(str(log_dir / "bsm_reduce_interaction_discovery_*.out"))
 
     if manifest_shards == 0 and shard_results == 0:
         status = "scripts_missing"

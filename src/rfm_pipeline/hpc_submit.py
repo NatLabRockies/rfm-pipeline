@@ -340,7 +340,7 @@ def _build_fresh_manifest(args, artifact_dir: Path, n_shards: int, workflow) -> 
     return build_manifest(
         stage=args.stage,
         input_paths=input_paths,
-        output_root=str(artifact_dir / "hpc_shards"),
+        output_root=str(artifact_dir / f"hpc_shards_{args.stage}"),
         n_shards=n_shards,
         expected_columns=expected_columns,
     )

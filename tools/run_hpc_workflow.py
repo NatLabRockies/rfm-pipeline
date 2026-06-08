@@ -16,10 +16,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from rfm_pipeline.hpc_cascade import (  # noqa: E402
+    CascadeChainError,
+    inject_dependency_flag,
+    parse_reduce_job_id,
+)
 from rfm_pipeline.hpc_workflow_config import (  # noqa: E402
     build_collect_command,
     build_remote_status_command,
-    build_remote_submit_commands,
+    build_remote_submit_command_groups,
     load_hpc_workflow_config,
     resolved_remote_artifacts_root,
     resolved_remote_logs_root,
@@ -74,7 +79,14 @@ def _run_remote_shell(
     remote_command: str,
     *,
     dry_run: bool,
-) -> None:
+    capture_output: bool = False,
+) -> str:
+    """Run a shell command on the remote host via SSH.
+
+    When ``capture_output=True``, stdout is tee'd locally (operator
+    still sees it) and returned so cascade chaining can parse the
+    ``RFM_HPC_SUBMIT_REDUCE_JOB_ID`` marker.
+    """
     remote_shell = f"cd {shlex.quote(remote_repo_root)} && {remote_command}"
     command = [
         "ssh",
@@ -82,7 +94,20 @@ def _run_remote_shell(
         ssh_dest,
         f"bash -lc {shlex.quote(remote_shell)}",
     ]
+    if capture_output:
+        print(f">>> {' '.join(shlex.quote(part) for part in command)}")
+        if dry_run:
+            return ""
+        proc = subprocess.run(command, check=True, capture_output=True, text=True)
+        if proc.stdout:
+            sys.stdout.write(proc.stdout)
+        if proc.stderr:
+            sys.stderr.write(proc.stderr)
+        return proc.stdout
+    # Non-capturing path delegates to _run_command for consistent dry-run
+    # logging and to keep existing tests patching _run_command happy.
     _run_command(command, dry_run=dry_run)
+    return ""
 
 
 def _load_yaml(path: Path) -> dict:
@@ -281,18 +306,57 @@ def main() -> int:
                 cpu_tier_configs=cpu_tier_configs,
                 dry_run=args.dry_run,
             )
-        submit_cmds = build_remote_submit_commands(
+        # Cascade-aware submission. See rfm_pipeline.hpc_cascade docstring
+        # for the chaining contract; bsm-public-rf/scripts/hpc_workflow.py
+        # is the sibling orchestrator that uses the same helpers.
+        groups = build_remote_submit_command_groups(
             config,
             submit=should_submit,
             dry_run=args.dry_run,
         )
-        for remote_cmd in submit_cmds:
-            _run_remote_shell(
-                ssh_dest,
-                config.paths.remote_repo_root,
-                remote_cmd,
-                dry_run=args.dry_run,
-            )
+        prev_reduce_job_id: int | None = None
+        for stage_name, group_cmds in groups:
+            chained_cmds = [
+                inject_dependency_flag(c, prev_reduce_job_id)
+                if (stage_name is not None and prev_reduce_job_id is not None)
+                else c
+                for c in group_cmds
+            ]
+            captured_for_stage: list[str] = []
+            for c in chained_cmds:
+                capture = stage_name is not None and should_submit and not args.dry_run
+                stdout = _run_remote_shell(
+                    ssh_dest,
+                    config.paths.remote_repo_root,
+                    c,
+                    # Remote command carries --dry-run already when
+                    # args.dry_run; SSH itself must execute so the
+                    # remote rfm-hpc-submit produces SLURM scripts.
+                    dry_run=False,
+                    capture_output=capture,
+                )
+                if capture:
+                    captured_for_stage.append(stdout)
+
+            if stage_name is not None and captured_for_stage:
+                # The terminal (last) command in a stage group is the
+                # cascade barrier — use its captured marker as the next
+                # stage's upstream dependency.
+                last_id = parse_reduce_job_id(captured_for_stage[-1])
+                if last_id is None:
+                    raise CascadeChainError(
+                        f"Cascade stage {stage_name!r} submitted but no "
+                        "RFM_HPC_SUBMIT_REDUCE_JOB_ID=<id> marker was "
+                        "captured from rfm-hpc-submit stdout. Refusing "
+                        "to chain the next stage with a stale upstream "
+                        "id (would let it race ahead of this stage)."
+                    )
+                prev_reduce_job_id = last_id
+                print(
+                    f"[cascade] captured reduce job {last_id} for stage "
+                    f"{stage_name}; chaining next stage with "
+                    "--depends-on-job-id"
+                )
 
     if args.action in {"status", "full"}:
         status_cmd = build_remote_status_command(config)

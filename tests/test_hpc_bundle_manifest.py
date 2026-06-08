@@ -267,3 +267,50 @@ def test_summarize_target_legacy_single_stage_label_unchanged(tmp_path: Path) ->
         stage=None,
     )
     assert row.target == "cpu_2"
+
+
+def test_stages_to_summarize_empty_returns_legacy_none(tmp_path: Path) -> None:
+    from tools.hpc_bundle_manifest import _stages_to_summarize
+
+    assert _stages_to_summarize([]) == [None]
+
+
+def test_stages_to_summarize_single_non_interaction_expands_per_stage() -> None:
+    from tools.hpc_bundle_manifest import _stages_to_summarize
+
+    # Even with one discovered stage, expand when it's not
+    # interaction_discovery (a mid-cascade run that has only emitted
+    # output_conditioning shards so far must not be reported against
+    # interaction_discovery via the legacy [None] path).
+    assert _stages_to_summarize(["output_conditioning"]) == ["output_conditioning"]
+
+
+def test_stage_suffixed_manifest_swaps_cpu_nodes_segment(tmp_path: Path) -> None:
+    from tools.hpc_bundle_manifest import _stage_suffixed_manifest
+
+    base = tmp_path / "suite" / "cpu_nodes_2" / "hpc_scripts" / "manifest.jsonl"
+    suffixed = (
+        tmp_path / "suite" / "cpu_nodes_2_output_conditioning" / "hpc_scripts" / "manifest.jsonl"
+    )
+    suffixed.parent.mkdir(parents=True)
+    suffixed.write_text("ok\n")
+    out = _stage_suffixed_manifest(base, "output_conditioning")
+    assert out == suffixed
+
+
+def test_stage_suffixed_manifest_falls_back_when_sibling_missing(tmp_path: Path) -> None:
+    from tools.hpc_bundle_manifest import _stage_suffixed_manifest
+
+    base = tmp_path / "suite" / "cpu_nodes_2" / "hpc_scripts" / "manifest.jsonl"
+    base.parent.mkdir(parents=True)
+    base.write_text("legacy\n")
+    out = _stage_suffixed_manifest(base, "nonlinear_discovery")
+    assert out == base
+
+
+def test_stage_suffixed_manifest_passthrough_when_stage_or_base_none(tmp_path: Path) -> None:
+    from tools.hpc_bundle_manifest import _stage_suffixed_manifest
+
+    base = tmp_path / "x" / "manifest.jsonl"
+    assert _stage_suffixed_manifest(base, None) == base
+    assert _stage_suffixed_manifest(None, "output_conditioning") is None

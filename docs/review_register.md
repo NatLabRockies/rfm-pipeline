@@ -249,3 +249,60 @@ ______________________________________________________________________
     labels. Four new tests cover discovery, per-stage isolation,
     and the legacy fallback.
 - **Tests:** 479 pass / 11 skipped (was 473; +6 new tests).
+
+______________________________________________________________________
+
+## 2026-06-07 — Round 26: multi-tier cascade chaining + summarizer hardening
+
+- **Severity:** HIGH (chaining bug).
+- **Evidence:**
+  - `tools/run_hpc_workflow.py` cascade chained the NEXT stage only
+    to the LAST tier's reduce job id. When a stage group contained
+    multiple tier invocations (CPU 2/10/1000 + optional GPU) each
+    submitted its own reduce, but only the last id was captured and
+    threaded into the next stage's `--depends-on-job-id`. Earlier
+    tiers' reduces could still be running while the next stage's
+    arrays started, racing on missing upstream artifacts.
+  - `tools/hpc_bundle_manifest.py`: the `--target-specs-json` path
+    skipped cascade stage discovery entirely, so study-package
+    summaries hid non-interaction stage failures.
+  - The implicit-tier path's suite_manifest fallback always pointed
+    at `cpu_nodes_<tier>/hpc_scripts/manifest.jsonl` (legacy
+    un-suffixed); cascade runs that wrote
+    `cpu_nodes_<tier>_<stage>/hpc_scripts/manifest.jsonl`
+    therefore reported `manifest_shards=0`.
+  - Single-stage discovery fell back to the legacy `None` label —
+    a mid-cascade run that had only emitted
+    `hpc_shards_output_conditioning/` was summarized as
+    `scripts_missing` against the wrong (interaction_discovery)
+    stage.
+  - `build_collect_command`'s new `FileNotFoundError` bubbled as a
+    raw traceback in the CLI.
+- **CLOSED (round 26, rfm-pipeline pending commit):**
+  - New `parse_all_reduce_job_ids` helper in `hpc_cascade.py`.
+    `inject_dependency_flag` now accepts `int | str | Sequence[int]`
+    and renders multi-id upstreams as the SLURM `afterok` colon
+    grammar (`123:456:789`). Empty sequence and mixed-type sequence
+    raise (failing closed rather than silently dropping ids).
+  - `hpc_submit.py` `--depends-on-job-id` parser accepts both bare
+    ints and colon-separated lists, validating every segment.
+  - `slurm_array_runner.write_scripts` / `generate_*_script` type
+    hints widened to `int | str | None` (the existing f-string
+    interpolation already handled str).
+  - `tools/run_hpc_workflow.py` cascade loop captures one id per
+    per-tier invocation (via `parse_reduce_job_id` on each captured
+    stdout chunk) and chains the FULL id list into the next stage.
+    `CascadeChainError` now fires if ANY tier in a stage group
+    failed to emit a marker — partial chaining is unsafe.
+  - `build_collect_command` `FileNotFoundError` caught at the CLI
+    boundary and printed as `ERROR: ...` to stderr with exit code 2.
+  - `tools/hpc_bundle_manifest.py`: new `_stages_to_summarize`
+    (single-stage cascade now expands; only no-cascade falls to
+    `[None]`); new `_stage_suffixed_manifest` (swaps
+    `cpu_nodes_<tier>` → `cpu_nodes_<tier>_<stage>` when sibling
+    exists, falls back otherwise). Both the `target-specs-json`
+    and implicit-tier branches use the new helpers; the GPU
+    summary follows the same expansion rule.
+- **Tests:** 488 pass / 11 skipped (was 479; +9 new tests covering
+  multi-id chain, empty/bad-type rejection, single-stage cascade
+  expansion, stage-suffixed manifest lookup, and idempotency).

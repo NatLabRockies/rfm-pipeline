@@ -469,6 +469,58 @@ def _discover_stages_in_run_dir(run_dir: Path) -> list[str]:
     return stages
 
 
+def _stages_to_summarize(discovered: list[str]) -> list[str | None]:
+    """Decide which stages to emit summary rows for.
+
+    Returns ``[None]`` (legacy single-row label, no stage qualifier)
+    only when no cascade ``hpc_shards_<stage>/`` dirs were discovered.
+    Returns the discovered stage list otherwise — including the
+    single-stage case where the lone discovered stage is something
+    other than ``interaction_discovery`` (so a mid-cascade run that
+    only completed e.g. ``output_conditioning`` does not get reported
+    as ``scripts_missing`` against the wrong stage).
+    """
+    if not discovered:
+        return [None]
+    return list(discovered)
+
+
+def _stage_suffixed_manifest(base_manifest: Path | None, stage: str | None) -> Path | None:
+    """Adapt a cpu_nodes_<tier> manifest path to its cascade-stage sibling.
+
+    Cascade runs write each stage's SLURM scripts to
+    ``cpu_nodes_<tier>_<stage>/hpc_scripts/manifest.jsonl``. Given the
+    legacy un-suffixed base path
+    (``cpu_nodes_<tier>/hpc_scripts/manifest.jsonl``) and a stage,
+    return the stage-suffixed sibling when it exists on disk; fall
+    back to the base path otherwise (single-stage / legacy layout).
+    Returns ``None`` when ``base_manifest`` is ``None``.
+    """
+    if base_manifest is None:
+        return None
+    if stage is None:
+        return base_manifest
+    parts = base_manifest.parts
+    # Walk the path to find a `cpu_nodes_<tier>` segment and append
+    # the stage suffix to it. If no such segment exists, leave the
+    # path untouched (caller path conventions outside the suite_root
+    # layout are not adapted).
+    new_parts: list[str] = []
+    swapped = False
+    for part in parts:
+        if not swapped and part.startswith("cpu_nodes_") and "_" not in part[len("cpu_nodes_") :]:
+            new_parts.append(f"{part}_{stage}")
+            swapped = True
+        else:
+            new_parts.append(part)
+    if not swapped:
+        return base_manifest
+    candidate = Path(*new_parts)
+    if candidate.exists():
+        return candidate
+    return base_manifest
+
+
 def _summarize_target(
     *,
     target: str,
@@ -574,37 +626,42 @@ def create_run_manifest(args: argparse.Namespace) -> int:
     if target_specs_json:
         target_specs = _load_target_specs(Path(target_specs_json))
         for spec in target_specs:
-            rows.append(
-                _summarize_target(
-                    target=spec.target,
-                    run_dir=Path(spec.run_dir),
-                    suite_manifest_fallback=(
-                        Path(spec.suite_manifest_path) if spec.suite_manifest_path else None
-                    ),
-                    log_dir=Path(spec.log_dir),
-                    gpu_mode=spec.gpu_mode,
+            # Cascade-aware: target-specs callers (study-package
+            # builders) get one row per discovered cascade stage so
+            # non-interaction stage failures stay visible. Same
+            # expansion rule as the implicit-tier branch below.
+            spec_run_dir = Path(spec.run_dir)
+            discovered = _discover_stages_in_run_dir(spec_run_dir)
+            stages_for_spec = _stages_to_summarize(discovered)
+            suite_base = Path(spec.suite_manifest_path) if spec.suite_manifest_path else None
+            for stage in stages_for_spec:
+                rows.append(
+                    _summarize_target(
+                        target=spec.target,
+                        run_dir=spec_run_dir,
+                        suite_manifest_fallback=_stage_suffixed_manifest(suite_base, stage),
+                        log_dir=Path(spec.log_dir),
+                        gpu_mode=spec.gpu_mode,
+                        stage=stage,
+                    )
                 )
-            )
     else:
         for tier in (2, 10, 1000):
             run_dir = artifacts_root / f"kestrel_cpu_scale_{tier}_run"
             log_dir = logs_root / f"bsm_kestrel_cpu_scale_{tier}" / "logs"
             suite_fallback = suite_root / f"cpu_nodes_{tier}" / "hpc_scripts" / "manifest.jsonl"
-            # Cascade-aware: when the run_dir contains per-stage
-            # hpc_shards_<stage>/ directories, emit one summary row per
-            # stage so failures in any cascade stage are visible. Falls
-            # back to single-stage interaction_discovery for legacy /
-            # benchmark runs that only have one stage's shards.
+            # Cascade-aware: emit one summary row per discovered stage
+            # (including single non-interaction stages) so mid-cascade
+            # failures are visible. Falls back to a legacy single-row
+            # label only when no cascade dirs exist at all.
             discovered = _discover_stages_in_run_dir(run_dir)
-            stages_to_summarize: list[str | None] = (
-                list(discovered) if len(discovered) > 1 else [None]
-            )
+            stages_to_summarize = _stages_to_summarize(discovered)
             for stage in stages_to_summarize:
                 rows.append(
                     _summarize_target(
                         target=f"cpu_{tier}",
                         run_dir=run_dir,
-                        suite_manifest_fallback=suite_fallback,
+                        suite_manifest_fallback=_stage_suffixed_manifest(suite_fallback, stage),
                         log_dir=log_dir,
                         gpu_mode=False,
                         stage=stage,
@@ -613,7 +670,7 @@ def create_run_manifest(args: argparse.Namespace) -> int:
         gpu_run_dir = artifacts_root / "kestrel_gpu_h100_run"
         gpu_log_dir = logs_root / "bsm_kestrel_gpu_h100" / "logs"
         gpu_discovered = _discover_stages_in_run_dir(gpu_run_dir)
-        gpu_stages: list[str | None] = list(gpu_discovered) if len(gpu_discovered) > 1 else [None]
+        gpu_stages = _stages_to_summarize(gpu_discovered)
         for stage in gpu_stages:
             rows.append(
                 _summarize_target(

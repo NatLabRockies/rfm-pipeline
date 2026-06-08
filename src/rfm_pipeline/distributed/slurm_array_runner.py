@@ -454,7 +454,7 @@ class SlurmArrayRunner:
         self,
         stage: str,
         task_ids: list[int] | None = None,
-        array_after_job_id: int | None = None,
+        array_after_job_id: int | str | None = None,
     ) -> str:
         """Generate a SLURM array sbatch script for a pipeline stage.
 
@@ -538,7 +538,7 @@ class SlurmArrayRunner:
         self,
         stage: str,
         task_ids: list[int] | None = None,
-        array_after_job_id: int | None = None,
+        array_after_job_id: int | str | None = None,
     ) -> str:
         """Generate a GPU-accelerated SLURM array sbatch script.
 
@@ -591,7 +591,7 @@ class SlurmArrayRunner:
         reduce_walltime: str = "02:00:00",
         reduce_memory_gb: int = 32,
         task_ids: list[int] | None = None,
-        array_after_job_id: int | None = None,
+        array_after_job_id: int | str | None = None,
     ) -> dict[str, Path]:
         """Write all sbatch scripts to output_dir and make them executable.
 

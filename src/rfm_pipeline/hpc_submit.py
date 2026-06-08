@@ -265,8 +265,33 @@ def main() -> None:
         _print_summary(scripts, args.stage, dist_cfg.run_id, args.submit, args.dry_run)
         return
 
-    # incomplete_ids=[] → reduce-only (no stage script); otherwise sparse or full array
-    upstream_job_id = int(args.depends_on_job_id) if args.depends_on_job_id else None
+    # incomplete_ids=[] → reduce-only (no stage script); otherwise sparse or full array.
+    # --depends-on-job-id may be either a bare integer SLURM job id
+    # (single-tier upstream) or a colon-separated list like "123:456"
+    # (multi-tier upstream cascade — all previous tiers' reduce jobs
+    # must complete before this stage's array can start). Pass the raw
+    # token straight to the runner; SLURM's afterok accepts the same
+    # colon-list grammar.
+    raw_dep = args.depends_on_job_id
+    upstream_job_id: int | str | None
+    if not raw_dep:
+        upstream_job_id = None
+    elif ":" in raw_dep:
+        # Validate every segment so a typo'd id is caught here, not
+        # silently propagated into the SBATCH script.
+        segments = [seg for seg in raw_dep.split(":") if seg]
+        for seg in segments:
+            try:
+                int(seg)
+            except ValueError as exc:
+                raise SystemExit(
+                    f"--depends-on-job-id segment {seg!r} is not an integer "
+                    f"(full value: {raw_dep!r}); expected one int or "
+                    "colon-separated ints (e.g. '123:456')."
+                ) from exc
+        upstream_job_id = raw_dep
+    else:
+        upstream_job_id = int(raw_dep)
     scripts = runner.write_scripts(
         output_dir=script_dir,
         stage=args.stage,

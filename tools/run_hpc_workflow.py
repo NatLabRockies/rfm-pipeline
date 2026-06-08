@@ -314,11 +314,11 @@ def main() -> int:
             submit=should_submit,
             dry_run=args.dry_run,
         )
-        prev_reduce_job_id: int | None = None
+        prev_reduce_job_ids: list[int] = []
         for stage_name, group_cmds in groups:
             chained_cmds = [
-                inject_dependency_flag(c, prev_reduce_job_id)
-                if (stage_name is not None and prev_reduce_job_id is not None)
+                inject_dependency_flag(c, prev_reduce_job_ids)
+                if (stage_name is not None and prev_reduce_job_ids)
                 else c
                 for c in group_cmds
             ]
@@ -346,23 +346,33 @@ def main() -> int:
                     captured_for_stage.append(stdout)
 
             if stage_name is not None and captured_for_stage:
-                # The terminal (last) command in a stage group is the
-                # cascade barrier — use its captured marker as the next
-                # stage's upstream dependency.
-                last_id = parse_reduce_job_id(captured_for_stage[-1])
-                if last_id is None:
-                    raise CascadeChainError(
-                        f"Cascade stage {stage_name!r} submitted but no "
-                        "RFM_HPC_SUBMIT_REDUCE_JOB_ID=<id> marker was "
-                        "captured from rfm-hpc-submit stdout. Refusing "
-                        "to chain the next stage with a stale upstream "
-                        "id (would let it race ahead of this stage)."
-                    )
-                prev_reduce_job_id = last_id
+                # Each per-tier rfm-hpc-submit invocation in this stage
+                # group emits its own RFM_HPC_SUBMIT_REDUCE_JOB_ID
+                # marker; take the LAST marker from each invocation
+                # (parse_reduce_job_id) and chain ALL ids into the next
+                # stage's --depends-on-job-id (colon-list →
+                # SLURM afterok). Chaining only the last tier's reduce
+                # would let earlier tiers' reduces race ahead of the
+                # next stage.
+                tier_ids: list[int] = []
+                for stdout in captured_for_stage:
+                    tid = parse_reduce_job_id(stdout)
+                    if tid is None:
+                        raise CascadeChainError(
+                            f"Cascade stage {stage_name!r} submitted but "
+                            "one of its per-tier rfm-hpc-submit invocations "
+                            "produced no RFM_HPC_SUBMIT_REDUCE_JOB_ID=<id> "
+                            "marker. Refusing to chain the next stage with "
+                            "a partial upstream id set (would let the "
+                            "unmarked tier race ahead of this stage)."
+                        )
+                    tier_ids.append(tid)
+                prev_reduce_job_ids = tier_ids
+                joined = ":".join(str(i) for i in tier_ids)
                 print(
-                    f"[cascade] captured reduce job {last_id} for stage "
+                    f"[cascade] captured reduce jobs {joined} for stage "
                     f"{stage_name}; chaining next stage with "
-                    "--depends-on-job-id"
+                    f"--depends-on-job-id {joined}"
                 )
 
     if args.action in {"status", "full"}:
@@ -375,7 +385,14 @@ def main() -> int:
         )
 
     if args.action in {"collect", "full"}:
-        collect_cmd = build_collect_command(config, repo_root=REPO_ROOT)
+        try:
+            collect_cmd = build_collect_command(config, repo_root=REPO_ROOT)
+        except FileNotFoundError as exc:
+            # Surface as a clean CLI error rather than a Python
+            # traceback — the message already names the missing path
+            # and points at bsm-public-rf as a reference impl.
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
         _run_command(collect_cmd, dry_run=args.dry_run, env=local_env)
 
     print(

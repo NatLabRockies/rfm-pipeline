@@ -77,10 +77,13 @@ workflow that:
    data-generating processes (DGPs);
 4. supports HPC-scale execution via SLURM array jobs with built-in
    checkpointing and artifact collection;
-5. ships a pre-fitted Random Forest meta-regression model
-   [@Breiman2001; @PedregosaEtAl2011] (in `artifacts/sensitivity/`) for
-   predicting pipeline runtime and holdout NRMSE given dataset and
-   configuration characteristics.
+5. includes a fully reproducible workflow for fitting a Random Forest
+   meta-regression model [@Breiman2001; @PedregosaEtAl2011] that predicts
+   pipeline runtime and holdout NRMSE from dataset and configuration
+   characteristics; the model is regenerated from collected sensitivity
+   runs via `pixi run python scripts/plot_sensitivity_rf_figures.py`
+   (raw artifacts under `artifacts/sensitivity/` are not committed; see
+   the sensitivity study documentation for collection instructions).
 
 The pipeline builds on established machine learning tools implemented in
 scikit-learn [@PedregosaEtAl2011], composing them into a reproducible staged

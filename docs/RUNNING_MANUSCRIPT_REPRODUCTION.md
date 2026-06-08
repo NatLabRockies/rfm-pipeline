@@ -54,11 +54,17 @@ Set `pullback.mode` in the orchestration config to `manifest_only`, `reporting_b
 Quick smoke path (2-node distributed test):
 
 ```bash
-bash scripts/kestrel/run_small_distributed_test_local.sh
+pixi run hpc-workflow -- \
+  --config configs/hpc/kestrel_cpu_scale_2_smoke.yml \
+  --action submit --generate-only --dry-run
 ```
 
-The smoke workflow uses `configs/hpc/kestrel_cpu_scale_2_smoke.yml` (lightweight params, 30-minute walltime target) to validate command plumbing quickly.
-For `interaction_discovery`, the small workflow also pre-materializes prerequisite `output_conditioning` and `empirical_null_screen` artifacts before SLURM submission.
+This uses the lightweight `kestrel_cpu_scale_2_smoke.yml` orchestration
+config (30-minute walltime target) to validate command plumbing without
+submitting real jobs. For `interaction_discovery`, the small workflow
+also pre-materializes prerequisite `output_conditioning` and
+`empirical_null_screen` artifacts before SLURM submission when
+`prepare_interaction_inputs: true` is set in the config.
 
 ### Run with Custom Output Directory
 

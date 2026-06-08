@@ -752,12 +752,24 @@ def _make_submit_all_script(scripts: dict[str, Path], stage: str) -> str:
             "",
         ]
     if reduce_path:
+        if primary_stage_path:
+            # Normal path: reduce waits on the array job we just submitted.
+            lines += [
+                f"REDUCE_JOB_ID=$(sbatch --parsable --dependency=afterany:$ARRAY_JOB_ID {reduce_path.name})",  # noqa: E501
+                'echo "Submitted reduce job: $REDUCE_JOB_ID (depends on $ARRAY_JOB_ID)"',
+            ]
+        else:
+            # Reduce-only path: all shards already complete (task_ids=[]).
+            # No array job was generated; submit reduce directly without
+            # a stale ARRAY_JOB_ID reference (would be unbound here).
+            lines += [
+                f"REDUCE_JOB_ID=$(sbatch --parsable {reduce_path.name})",
+                'echo "Submitted reduce job: $REDUCE_JOB_ID (reduce-only: all shards already complete)"',  # noqa: E501
+            ]
         lines += [
-            f"REDUCE_JOB_ID=$(sbatch --parsable --dependency=afterany:$ARRAY_JOB_ID {reduce_path.name})",  # noqa: E501
-            'echo "Submitted reduce job: $REDUCE_JOB_ID (depends on $ARRAY_JOB_ID)"',
             "",
             "echo 'Monitor progress:'",
             "echo '  squeue -u $USER'",
-            "echo '  tail -f logs/bsm_" + stage + "_*.out'",
+            "echo '  tail -f logs/rfm_" + stage + "_*.out'",
         ]
     return "\n".join(lines) + "\n"

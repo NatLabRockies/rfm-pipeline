@@ -321,6 +321,155 @@ def build_remote_submit_commands(
     return commands
 
 
+def build_remote_submit_command_groups(
+    config: HpcWorkflowConfig,
+    *,
+    submit: bool,
+    dry_run: bool,
+) -> list[tuple[str | None, list[str]]]:
+    """Return remote submit commands grouped by cascade stage.
+
+    Each element is ``(stage_name | None, [cmds])``:
+
+    - ``stage_name=None``: prep + diagnostic groups (no SLURM job ID to
+      capture for dependency chaining)
+    - ``stage_name=<stage>``: all per-tier (and optional GPU)
+      ``rfm-hpc-submit`` commands for that stage, in submission order
+
+    Orchestrators chain cascade stages by capturing
+    ``RFM_HPC_SUBMIT_REDUCE_JOB_ID=<id>`` from the last command of each
+    stage group and passing ``--depends-on-job-id <id>`` to the next
+    stage's commands. The single flat ``build_remote_submit_commands``
+    keeps backward compatibility for callers that don't chain.
+    """
+    suite_root = resolved_cpu_suite_output_root(config)
+    common_flags: list[str] = []
+    if submit:
+        common_flags.append("--submit")
+    if dry_run:
+        common_flags.append("--dry-run")
+
+    groups: list[tuple[str | None, list[str]]] = []
+    stages_to_submit = config.execution.effective_stages()
+
+    # Prep group (None marker): tied to interaction_discovery presence
+    prep_cmds: list[str] = []
+    if "interaction_discovery" in stages_to_submit:
+        prep_configs: list[str] = []
+        seen_configs: set[str] = set()
+        for tier in config.execution.cpu_tiers:
+            if tier.config_path in seen_configs:
+                continue
+            seen_configs.add(tier.config_path)
+            prep_configs.append(tier.config_path)
+        if config.execution.prepare_full_pipeline_artifacts:
+            for prep_cfg in prep_configs:
+                prep_cmds.append(
+                    _shell_join(
+                        [
+                            "pixi",
+                            "run",
+                            "python",
+                            "tools/run_manuscript_pipeline.py",
+                            prep_cfg,
+                            "--start-stage",
+                            "output_conditioning",
+                            "--stop-stage",
+                            "final_manuscript_artifacts",
+                        ]
+                    )
+                )
+        elif config.execution.prepare_interaction_inputs:
+            for prep_cfg in prep_configs:
+                prep_cmds.append(
+                    _shell_join(
+                        [
+                            "pixi",
+                            "run",
+                            "python",
+                            "tools/run_manuscript_pipeline.py",
+                            prep_cfg,
+                            "--start-stage",
+                            "output_conditioning",
+                            "--stop-stage",
+                            "empirical_null_screen",
+                        ]
+                    )
+                )
+    if prep_cmds:
+        groups.append((None, prep_cmds))
+
+    # Diagnostic group (None marker)
+    if config.execution.run_diagnostic:
+        first_tier_cfg = config.execution.cpu_tiers[0].config_path
+        groups.append(
+            (
+                None,
+                [
+                    _shell_join(
+                        [
+                            "pixi",
+                            "run",
+                            "rfm-hpc-submit",
+                            "--config",
+                            first_tier_cfg,
+                            "--diagnostic-only",
+                            "--output-dir",
+                            f"{suite_root}/diagnostic/hpc_scripts",
+                            *common_flags,
+                        ]
+                    )
+                ],
+            )
+        )
+
+    # Per-stage groups
+    for stage_name in stages_to_submit:
+        stage_suffix = f"_{stage_name}" if len(stages_to_submit) > 1 else ""
+        stage_cmds: list[str] = []
+        for tier in config.execution.cpu_tiers:
+            stage_cmds.append(
+                _shell_join(
+                    [
+                        "pixi",
+                        "run",
+                        "rfm-hpc-submit",
+                        "--config",
+                        tier.config_path,
+                        "--stage",
+                        stage_name,
+                        "--n-shards",
+                        str(tier.nodes),
+                        "--output-dir",
+                        f"{suite_root}/cpu_nodes_{tier.nodes}{stage_suffix}/hpc_scripts",
+                        *common_flags,
+                    ]
+                )
+            )
+        if config.gpu.enabled:
+            stage_cmds.append(
+                _shell_join(
+                    [
+                        "pixi",
+                        "run",
+                        "rfm-hpc-submit",
+                        "--config",
+                        config.gpu.config_path,
+                        "--stage",
+                        stage_name,
+                        "--n-shards",
+                        str(config.gpu.n_shards),
+                        "--output-dir",
+                        f"{resolved_remote_artifacts_root(config)}/kestrel_gpu_h100_run{stage_suffix}/hpc_scripts",
+                        *common_flags,
+                    ]
+                )
+            )
+        groups.append((stage_name, stage_cmds))
+
+    return groups
+
+
 def build_remote_status_command(config: HpcWorkflowConfig) -> str:
     """Build one-shot remote status command using configured artifact/log roots."""
     cpu_tiers: list[str] = []
@@ -333,7 +482,7 @@ def build_remote_status_command(config: HpcWorkflowConfig) -> str:
         seen_tiers.add(tier.nodes)
         cpu_tiers.append(str(tier.nodes))
 
-        # Resolve actual shard output dir from the tier's workflow config so the
+        # Resolve actual shard output dir(s) from the tier's workflow config so the
         # status script checks the right path (not just the ARTIFACTS_ROOT pattern).
         try:
             from rfm_pipeline.config import load_config as _load_wf
@@ -345,8 +494,12 @@ def build_remote_status_command(config: HpcWorkflowConfig) -> str:
                 artifact_dir = (
                     config.paths.remote_repo_root.rstrip("/") + "/" + artifact_dir.lstrip("./")
                 )
-            shard_dir = artifact_dir.rstrip("/") + "/hpc_shards"
-            tier_shard_dirs.append(f"{tier.nodes}:{shard_dir}:{tier.nodes}")
+            # Emit one shard-dir entry per cascade stage so the status
+            # script tallies per-stage progress correctly. Stage-suffixed
+            # hpc_shards_<stage> matches hpc_submit.py's per-stage layout.
+            for st in config.execution.effective_stages():
+                shard_dir = artifact_dir.rstrip("/") + f"/hpc_shards_{st}"
+                tier_shard_dirs.append(f"{tier.nodes}:{shard_dir}:{tier.nodes}")
         except Exception:
             pass  # status script falls back to derived path
 

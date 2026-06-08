@@ -68,14 +68,33 @@ class HpcPathConfig:
 
 @dataclass
 class HpcExecutionConfig:
-    """Execution scale and stage controls."""
+    """Execution scale and stage controls.
+
+    Either ``stage`` (single stage, legacy) or ``stages`` (ordered list of
+    stages for a full cascade) may be set. When ``stages`` is non-empty it
+    takes precedence and ``build_remote_submit_commands`` emits a
+    ``rfm-hpc-submit`` invocation per stage so the entire pipeline runs end
+    to end on the cluster. The single ``stage`` form is retained for
+    diagnostic / single-stage benchmark runs.
+    """
 
     stage: str = "interaction_discovery"
+    stages: list[str] = field(default_factory=list)
     local_cores: int = 1
     run_diagnostic: bool = True
     prepare_interaction_inputs: bool = False
     prepare_full_pipeline_artifacts: bool = False
     cpu_tiers: list[CpuTierConfig] = field(default_factory=_default_cpu_tiers)
+
+    def effective_stages(self) -> list[str]:
+        """Return the ordered stage list this execution will submit.
+
+        Returns ``self.stages`` when set (preserving order), else a
+        single-element list containing ``self.stage``.
+        """
+        if self.stages:
+            return list(self.stages)
+        return [self.stage]
 
 
 @dataclass
@@ -104,6 +123,12 @@ class HpcWorkflowConfig:
             errors.append("cluster.host must be non-empty")
         if self.execution.stage not in _VALID_STAGES:
             errors.append("execution.stage must be one of: " + ", ".join(sorted(_VALID_STAGES)))
+        for st in self.execution.stages:
+            if st not in _VALID_STAGES:
+                errors.append(
+                    f"execution.stages contains invalid stage {st!r}; "
+                    "must be one of: " + ", ".join(sorted(_VALID_STAGES))
+                )
         if self.execution.local_cores < 1:
             errors.append("execution.local_cores must be >= 1")
         if not self.execution.cpu_tiers:
@@ -249,39 +274,44 @@ def build_remote_submit_commands(
         ]
         commands.append(_shell_join(cmd))
 
-    for tier in config.execution.cpu_tiers:
-        cmd = [
-            "pixi",
-            "run",
-            "rfm-hpc-submit",
-            "--config",
-            tier.config_path,
-            "--stage",
-            config.execution.stage,
-            "--n-shards",
-            str(tier.nodes),
-            "--output-dir",
-            f"{suite_root}/cpu_nodes_{tier.nodes}/hpc_scripts",
-            *common_flags,
-        ]
-        commands.append(_shell_join(cmd))
+    stages_to_submit = config.execution.effective_stages()
+    for stage_name in stages_to_submit:
+        # Per-stage output dir suffix keeps SLURM scripts and shard outputs
+        # from different stages from clobbering each other.
+        stage_suffix = f"_{stage_name}" if len(stages_to_submit) > 1 else ""
+        for tier in config.execution.cpu_tiers:
+            cmd = [
+                "pixi",
+                "run",
+                "rfm-hpc-submit",
+                "--config",
+                tier.config_path,
+                "--stage",
+                stage_name,
+                "--n-shards",
+                str(tier.nodes),
+                "--output-dir",
+                f"{suite_root}/cpu_nodes_{tier.nodes}{stage_suffix}/hpc_scripts",
+                *common_flags,
+            ]
+            commands.append(_shell_join(cmd))
 
-    if config.gpu.enabled:
-        cmd = [
-            "pixi",
-            "run",
-            "rfm-hpc-submit",
-            "--config",
-            config.gpu.config_path,
-            "--stage",
-            config.execution.stage,
-            "--n-shards",
-            str(config.gpu.n_shards),
-            "--output-dir",
-            f"{resolved_remote_artifacts_root(config)}/kestrel_gpu_h100_run/hpc_scripts",
-            *common_flags,
-        ]
-        commands.append(_shell_join(cmd))
+        if config.gpu.enabled:
+            cmd = [
+                "pixi",
+                "run",
+                "rfm-hpc-submit",
+                "--config",
+                config.gpu.config_path,
+                "--stage",
+                stage_name,
+                "--n-shards",
+                str(config.gpu.n_shards),
+                "--output-dir",
+                f"{resolved_remote_artifacts_root(config)}/kestrel_gpu_h100_run{stage_suffix}/hpc_scripts",
+                *common_flags,
+            ]
+            commands.append(_shell_join(cmd))
 
     return commands
 

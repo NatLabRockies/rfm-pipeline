@@ -304,3 +304,99 @@ def test_config_rejects_home_scoped_runtime_paths(tmp_path: Path) -> None:
     except ValueError as exc:
         message = str(exc)
         assert "cannot point under /home/alice" in message
+
+
+def test_submit_commands_cascade_over_stages_list(tmp_path: Path) -> None:
+    """When execution.stages is set, one rfm-hpc-submit per stage per tier."""
+    config_path = tmp_path / "hpc.yml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "cluster": {"host": "kl1.hpc.nrel.gov", "user": "alice"},
+                "execution": {
+                    "stages": [
+                        "output_conditioning",
+                        "empirical_null_screening",
+                        "interaction_discovery",
+                        "nonlinear_discovery",
+                        "sparse_selection",
+                        "final_manuscript_artifacts",
+                    ],
+                    "run_diagnostic": False,
+                    "cpu_tiers": [
+                        {"nodes": 2, "config_path": "configs/hpc/kestrel_cpu_scale_2.yml"},
+                    ],
+                },
+                "gpu": {"enabled": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_hpc_workflow_config(config_path)
+    assert cfg.execution.effective_stages() == [
+        "output_conditioning",
+        "empirical_null_screening",
+        "interaction_discovery",
+        "nonlinear_discovery",
+        "sparse_selection",
+        "final_manuscript_artifacts",
+    ]
+
+    commands = build_remote_submit_commands(cfg, submit=True, dry_run=False)
+    for stage in cfg.execution.effective_stages():
+        assert any(f"--stage {stage}" in c for c in commands), (
+            f"missing submit command for stage {stage}: {commands}"
+        )
+        # Per-stage output dirs avoid clobbering between stages.
+        assert any(f"/cpu_nodes_2_{stage}/hpc_scripts" in c for c in commands)
+
+
+def test_submit_commands_dry_run_propagates_to_rfm_hpc_submit(tmp_path: Path) -> None:
+    """--dry-run on the orchestrator must reach the per-stage rfm-hpc-submit calls
+    so the remote command actually generates SLURM scripts for validation."""
+    config_path = tmp_path / "hpc.yml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "cluster": {"host": "kl1.hpc.nrel.gov", "user": "alice"},
+                "execution": {
+                    "stages": ["output_conditioning", "interaction_discovery"],
+                    "run_diagnostic": False,
+                    "cpu_tiers": [
+                        {"nodes": 2, "config_path": "configs/hpc/kestrel_cpu_scale_2.yml"},
+                    ],
+                },
+                "gpu": {"enabled": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_hpc_workflow_config(config_path)
+
+    commands = build_remote_submit_commands(cfg, submit=False, dry_run=True)
+    assert commands
+    for c in commands:
+        assert "--dry-run" in c
+        assert "--submit" not in c
+
+
+def test_invalid_stage_in_stages_list_rejected(tmp_path: Path) -> None:
+    config_path = tmp_path / "hpc.yml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "cluster": {"host": "kl1.hpc.nrel.gov", "user": "alice"},
+                "execution": {
+                    "stages": ["output_conditioning", "not_a_real_stage"],
+                    "run_diagnostic": False,
+                    "cpu_tiers": [
+                        {"nodes": 2, "config_path": "configs/hpc/kestrel_cpu_scale_2.yml"},
+                    ],
+                },
+                "gpu": {"enabled": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="not_a_real_stage"):
+        load_hpc_workflow_config(config_path)

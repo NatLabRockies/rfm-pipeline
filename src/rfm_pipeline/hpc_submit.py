@@ -126,6 +126,13 @@ def _parse_args() -> argparse.Namespace:
         help="Rebuild manifest from scratch even if one already exists "
         "(ignores any previously-completed shard state)",
     )
+    p.add_argument(
+        "--depends-on-job-id",
+        default=None,
+        help="If set, inject '#SBATCH --dependency=afterok:<JOBID>' into the "
+        "array job so this stage only runs after the upstream reduce job "
+        "completes successfully. Used by orchestrators to chain stages.",
+    )
     return p.parse_args()
 
 
@@ -160,7 +167,10 @@ def main() -> None:
     script_dir.mkdir(parents=True, exist_ok=True)
 
     manifest_path = script_dir / "manifest.jsonl"
-    output_root = artifact_dir / "hpc_shards"
+    # Stage-specific shard output dir so cascade runs do not share
+    # _SUCCESS.json markers across stages (which would otherwise let a
+    # later stage's submit think every shard was already complete).
+    output_root = artifact_dir / f"hpc_shards_{args.stage}"
 
     # Build shard manifest
     n_shards = args.n_shards
@@ -256,14 +266,17 @@ def main() -> None:
         return
 
     # incomplete_ids=[] → reduce-only (no stage script); otherwise sparse or full array
+    upstream_job_id = int(args.depends_on_job_id) if args.depends_on_job_id else None
     scripts = runner.write_scripts(
         output_dir=script_dir,
         stage=args.stage,
         reduce_walltime=args.reduce_walltime,
         reduce_memory_gb=args.reduce_memory_gb,
         task_ids=incomplete_ids,
+        array_after_job_id=upstream_job_id,
     )
 
+    final_job_id: int | None = None
     if args.submit:
         if incomplete_ids:
             # Submit sparse array for incomplete shards only
@@ -277,16 +290,26 @@ def main() -> None:
                     reduce_memory_gb=args.reduce_memory_gb,
                 )
                 scripts["reduce"].write_text(reduce_content)
-            _submit(runner, scripts["reduce"], args.dry_run)
+            final_job_id = _submit(runner, scripts["reduce"], args.dry_run)
         else:
-            # All shards done — submit reduce directly with no dependency
+            # All shards done — submit reduce directly. If the orchestrator
+            # passed an upstream job ID, chain the reduce on it so the next
+            # cascade stage still respects ordering.
             logger.info(
                 "[hpc-submit] all %d shards already complete; submitting reduce directly",
                 n_shards,
             )
-            _submit(runner, scripts["reduce"], args.dry_run)
+            if upstream_job_id and not args.dry_run:
+                reduce_content = runner.generate_reduce_script(
+                    args.stage,
+                    after_job_id=upstream_job_id,
+                    reduce_walltime=args.reduce_walltime,
+                    reduce_memory_gb=args.reduce_memory_gb,
+                )
+                scripts["reduce"].write_text(reduce_content)
+            final_job_id = _submit(runner, scripts["reduce"], args.dry_run)
 
-    _print_summary(scripts, args.stage, dist_cfg.run_id, args.submit, args.dry_run)
+    _print_summary(scripts, args.stage, dist_cfg.run_id, args.submit, args.dry_run, final_job_id)
 
 
 def _build_fresh_manifest(args, artifact_dir: Path, n_shards: int, workflow) -> list:
@@ -410,7 +433,14 @@ def _make_executable(path: Path) -> None:
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def _print_summary(scripts: dict, stage: str, run_id: str, submitted: bool, dry_run: bool) -> None:
+def _print_summary(
+    scripts: dict,
+    stage: str,
+    run_id: str,
+    submitted: bool,
+    dry_run: bool,
+    final_job_id: int | None = None,
+) -> None:
     print()
     print("=" * 60)
     print(f"rfm-pipeline HPC scripts — stage={stage}  run_id={run_id}")
@@ -418,6 +448,11 @@ def _print_summary(scripts: dict, stage: str, run_id: str, submitted: bool, dry_
     for name, path in scripts.items():
         print(f"  {name:15s}: {path}")
     print()
+    if submitted and final_job_id is not None and not dry_run:
+        # Machine-parseable marker so orchestrators chaining cascade stages
+        # can capture the terminal reduce job ID and pass it to the next
+        # stage's `rfm-hpc-submit --depends-on-job-id <ID>`.
+        print(f"RFM_HPC_SUBMIT_REDUCE_JOB_ID={final_job_id}")
     if not submitted:
         print("To submit jobs:")
         if "submit_all" in scripts:

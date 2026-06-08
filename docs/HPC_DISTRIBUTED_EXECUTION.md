@@ -2,7 +2,7 @@
 
 The `rfm-pipeline` package itself does not ship cluster-specific HPC
 orchestration. It provides the building blocks (`rfm-hpc-submit`,
-`rfm-hpc-shard`, `rfm-hpc-reduce` console entry points) that downstream
+`rfm-hpc-worker`, `rfm-hpc-reduce` console entry points) that downstream
 projects can wire into their own SLURM / cluster workflows.
 
 ## Console entry points
@@ -12,7 +12,7 @@ After `pixi install`, the following commands are available:
 | Command          | Purpose                                                 |
 | ---------------- | ------------------------------------------------------- |
 | `rfm-hpc-submit` | Generate SLURM array job scripts for a configured stage |
-| `rfm-hpc-shard`  | Execute one shard of work on a compute node             |
+| `rfm-hpc-worker` | Execute one shard of work on a compute node             |
 | `rfm-hpc-reduce` | Aggregate shard outputs into canonical stage artifacts  |
 
 Run any command with `--help` for full usage.

@@ -400,6 +400,25 @@ class TestSlurmArrayRunner:
         script = runner.generate_stage_script("interaction_discovery", task_ids=[0, 1, 2, 5, 6])
         assert "#SBATCH --array=0-2,5-6%2" in script
 
+    def test_generate_stage_script_with_array_dependency(self, tmp_path):
+        runner = self._make_runner(tmp_path)
+        script = runner.generate_stage_script("interaction_discovery", array_after_job_id=98765)
+        assert "#SBATCH --dependency=afterok:98765" in script
+
+    def test_generate_stage_script_no_array_dependency_default(self, tmp_path):
+        runner = self._make_runner(tmp_path)
+        script = runner.generate_stage_script("interaction_discovery")
+        assert "--dependency=afterok:" not in script
+        assert "No upstream dependency" in script
+
+    def test_write_scripts_threads_array_after_job_id(self, tmp_path):
+        runner = self._make_runner(tmp_path)
+        script_dir = tmp_path / "scripts"
+        scripts = runner.write_scripts(
+            script_dir, stage="interaction_discovery", array_after_job_id=42
+        )
+        assert "#SBATCH --dependency=afterok:42" in scripts["stage"].read_text()
+
     def test_generate_reduce_script_uses_afterany(self, tmp_path):
         runner = self._make_runner(tmp_path)
         script = runner.generate_reduce_script("interaction_discovery", after_job_id=12345)

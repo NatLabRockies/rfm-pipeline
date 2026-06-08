@@ -320,6 +320,11 @@ def resolve_manuscript_runtime(repo_root: Path) -> ManuscriptRuntimeContext:
         mode = "real"
         runtime_dir = None
     else:
+        # Silent demo fallback by design: dev machines commonly have a
+        # local override pointing at remote scratch paths that do not
+        # exist locally. Strict real-mode callers
+        # (`build_manuscript_notebook_context(real_required=True)`) raise
+        # loud separately when this resolves to demo.
         runtime_dir = Path(tempfile.mkdtemp(prefix="rfm_pipeline_demo_"))
         artifact_paths = write_demo_manuscript_artifacts(runtime_dir / "data")
         output_root = runtime_dir / "artifacts"

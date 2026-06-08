@@ -76,6 +76,7 @@ _STAGE_SBATCH_TEMPLATE = """\
 #SBATCH --output={log_dir}/rfm_{stage}_%A_%a.out
 #SBATCH --error={log_dir}/rfm_{stage}_%A_%a.err
 {requeue_line}
+{array_dependency_line}
 # ---------------------------------------------------------------------------
 # BSM Manuscript Pipeline — SLURM Array Stage Runner
 # Stage : {stage}
@@ -227,6 +228,7 @@ _GPU_STAGE_SBATCH_TEMPLATE = """\
 #SBATCH --output={log_dir}/rfm_gpu_{stage}_%A_%a.out
 #SBATCH --error={log_dir}/rfm_gpu_{stage}_%A_%a.err
 {requeue_line}
+{array_dependency_line}
 # ---------------------------------------------------------------------------
 # BSM Manuscript Pipeline — SLURM GPU Array Stage Runner
 # Stage : {stage}
@@ -431,6 +433,7 @@ class SlurmArrayRunner:
                 if slurm.requeue
                 else "# --requeue disabled (Kestrel PreemptMode=OFF)"
             ),
+            "array_dependency_line": ("# No upstream dependency (independent array)"),
             "pixi_env_path": cfg.pixi_env_path,
             "pixi_cache_dir": kestrel.pixi_cache_dir,
             "manifest_path": str(self.manifest_path.resolve()),
@@ -447,7 +450,12 @@ class SlurmArrayRunner:
             "xgboost_tree_method": gpu.xgboost_tree_method,
         }
 
-    def generate_stage_script(self, stage: str, task_ids: list[int] | None = None) -> str:
+    def generate_stage_script(
+        self,
+        stage: str,
+        task_ids: list[int] | None = None,
+        array_after_job_id: int | None = None,
+    ) -> str:
         """Generate a SLURM array sbatch script for a pipeline stage.
 
         Parameters
@@ -458,6 +466,11 @@ class SlurmArrayRunner:
             Optional explicit list of task IDs to include in the array spec.
             If provided, only those IDs are submitted (sparse restart spec).
             If None, all shards (0 … n_shards-1) are included.
+        array_after_job_id
+            Optional upstream SLURM job ID. When set, injects
+            ``#SBATCH --dependency=afterok:<job_id>`` so the array job only
+            starts after the upstream (reduce) job succeeds. Used by
+            orchestrators chaining cascade stages.
 
         Returns
         -------
@@ -471,6 +484,8 @@ class SlurmArrayRunner:
             vars_["array_spec"] = _task_ids_to_array_spec(
                 task_ids, self.config.slurm.max_concurrent_array_tasks
             )
+        if array_after_job_id:
+            vars_["array_dependency_line"] = f"#SBATCH --dependency=afterok:{array_after_job_id}"
         return _STAGE_SBATCH_TEMPLATE.format(**vars_)
 
     def generate_reduce_script(
@@ -519,7 +534,12 @@ class SlurmArrayRunner:
         """Generate a smoke-test diagnostic sbatch script."""
         return _DIAGNOSTIC_SBATCH_TEMPLATE.format(**self._common_vars("diagnostic"))
 
-    def generate_gpu_stage_script(self, stage: str, task_ids: list[int] | None = None) -> str:
+    def generate_gpu_stage_script(
+        self,
+        stage: str,
+        task_ids: list[int] | None = None,
+        array_after_job_id: int | None = None,
+    ) -> str:
         """Generate a GPU-accelerated SLURM array sbatch script.
 
         Targets the GPU partition (gpu-h100s on Kestrel) and sets
@@ -534,6 +554,10 @@ class SlurmArrayRunner:
         task_ids
             Optional explicit list of task IDs (sparse restart). If None,
             all shards are included.
+        array_after_job_id
+            Optional upstream SLURM job ID. When set, injects
+            ``#SBATCH --dependency=afterok:<job_id>`` so the GPU array job
+            only starts after the upstream (reduce) job succeeds.
 
         Returns
         -------
@@ -552,6 +576,8 @@ class SlurmArrayRunner:
             vars_["array_spec"] = _task_ids_to_array_spec(
                 task_ids, self.config.slurm.max_concurrent_array_tasks
             )
+        if array_after_job_id:
+            vars_["array_dependency_line"] = f"#SBATCH --dependency=afterok:{array_after_job_id}"
         return _GPU_STAGE_SBATCH_TEMPLATE.format(**vars_)
 
     def generate_gpu_diagnostic_script(self) -> str:
@@ -565,6 +591,7 @@ class SlurmArrayRunner:
         reduce_walltime: str = "02:00:00",
         reduce_memory_gb: int = 32,
         task_ids: list[int] | None = None,
+        array_after_job_id: int | None = None,
     ) -> dict[str, Path]:
         """Write all sbatch scripts to output_dir and make them executable.
 
@@ -601,7 +628,13 @@ class SlurmArrayRunner:
         if self.n_shards > 0:
             if write_array:
                 stage_script = out / f"submit_{stage}_array.sh"
-                stage_script.write_text(self.generate_stage_script(stage, task_ids=task_ids))
+                stage_script.write_text(
+                    self.generate_stage_script(
+                        stage,
+                        task_ids=task_ids,
+                        array_after_job_id=array_after_job_id,
+                    )
+                )
                 _make_executable(stage_script)
                 scripts["stage"] = stage_script
 
@@ -619,7 +652,13 @@ class SlurmArrayRunner:
             # GPU scripts (when GPU is enabled in config)
             if self.config.gpu.enabled and write_array:
                 gpu_script = out / f"submit_{stage}_gpu_array.sh"
-                gpu_script.write_text(self.generate_gpu_stage_script(stage, task_ids=task_ids))
+                gpu_script.write_text(
+                    self.generate_gpu_stage_script(
+                        stage,
+                        task_ids=task_ids,
+                        array_after_job_id=array_after_job_id,
+                    )
+                )
                 _make_executable(gpu_script)
                 scripts["gpu_stage"] = gpu_script
 

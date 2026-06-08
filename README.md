@@ -85,14 +85,14 @@ See `configs/datasets/template.yml` for a fully-annotated template.
 
 ## Pipeline stages
 
-| Stage                                 | Description                                         |
-| ------------------------------------- | --------------------------------------------------- |
-| `output_conditioning`                 | Normalize and validate inputs/outputs               |
-| `empirical_null_screening`            | Permutation-based null screening with BH correction |
-| `interaction_discovery`               | Tree-SHAP interaction scoring                       |
-| `nonlinear_discovery`                 | GAM-based nonlinear term detection                  |
-| `sparse_selection_and_stability`      | EBIC-selected L1 models with subsample stability    |
-| `final_manuscript_tables_and_figures` | HC3 Wald filter, OLS refit, holdout nRMSE, figures  |
+| Stage                        | Description                                         |
+| ---------------------------- | --------------------------------------------------- |
+| `output_conditioning`        | Normalize and validate inputs/outputs               |
+| `empirical_null_screening`   | Permutation-based null screening with BH correction |
+| `interaction_discovery`      | Tree-SHAP interaction scoring                       |
+| `nonlinear_discovery`        | GAM-based nonlinear term detection                  |
+| `sparse_selection`           | EBIC-selected L1 models with subsample stability    |
+| `final_manuscript_artifacts` | HC3 Wald filter, OLS refit, holdout nRMSE, figures  |
 
 ## HPC / distributed execution
 

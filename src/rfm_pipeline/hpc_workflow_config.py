@@ -121,14 +121,19 @@ class HpcWorkflowConfig:
         remote_user = _resolve_remote_user(self)
         if not self.cluster.host.strip():
             errors.append("cluster.host must be non-empty")
-        if self.execution.stage not in _VALID_STAGES:
-            errors.append("execution.stage must be one of: " + ", ".join(sorted(_VALID_STAGES)))
-        for st in self.execution.stages:
-            if st not in _VALID_STAGES:
-                errors.append(
-                    f"execution.stages contains invalid stage {st!r}; "
-                    "must be one of: " + ", ".join(sorted(_VALID_STAGES))
-                )
+        if self.execution.stages:
+            # Cascade mode: validate each stage in the list; the singular
+            # `execution.stage` is ignored (effective_stages prefers stages).
+            for st in self.execution.stages:
+                if st not in _VALID_STAGES:
+                    errors.append(
+                        f"execution.stages contains invalid stage {st!r}; "
+                        "must be one of: " + ", ".join(sorted(_VALID_STAGES))
+                    )
+        else:
+            # Single-stage mode: validate the singular field.
+            if self.execution.stage not in _VALID_STAGES:
+                errors.append("execution.stage must be one of: " + ", ".join(sorted(_VALID_STAGES)))
         if self.execution.local_cores < 1:
             errors.append("execution.local_cores must be >= 1")
         if not self.execution.cpu_tiers:
@@ -222,7 +227,8 @@ def build_remote_submit_commands(
         common_flags.append("--dry-run")
 
     commands: list[str] = []
-    if config.execution.stage == "interaction_discovery":
+    stages_to_submit = config.execution.effective_stages()
+    if "interaction_discovery" in stages_to_submit:
         prep_configs: list[str] = []
         seen_configs: set[str] = set()
         for tier in config.execution.cpu_tiers:
@@ -274,7 +280,6 @@ def build_remote_submit_commands(
         ]
         commands.append(_shell_join(cmd))
 
-    stages_to_submit = config.execution.effective_stages()
     for stage_name in stages_to_submit:
         # Per-stage output dir suffix keeps SLURM scripts and shard outputs
         # from different stages from clobbering each other.

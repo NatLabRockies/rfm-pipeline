@@ -104,8 +104,11 @@ two complementary meta-regression analyses of the recorded results:
 (i) a polynomial response-surface fit
 (`scripts/fit_meta_regression.py`) using OLS (degree two) or
 LASSO-then-OLS [@Tibshirani1996; @PedregosaEtAl2011] (degree three) for
-interpretable coefficients, and (ii) pre-fitted Random Forest models
-[@Breiman2001] shipped under `artifacts/sensitivity/` that predict
+interpretable coefficients, and (ii) Random Forest models
+[@Breiman2001] regenerated from collected sensitivity runs via
+`pixi run python scripts/plot_sensitivity_rf_figures.py` (raw artifacts
+under `artifacts/sensitivity/` are not committed; the script rebuilds
+them from collected results) that predict
 normalized root-mean-square error
 (NRMSE [@HyndmanKoehler2006]) and pipeline wall time as a function of
 configuration and dataset characteristics. Cross-validation of the

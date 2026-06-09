@@ -16,6 +16,63 @@ required.
 
 ______________________________________________________________________
 
+## 2026-06-09 — Round 28 closeout: wave123 RF applied to BSM operating point
+
+### 🟡 R12. BSM RF point predictions + 80% PI + back-transform + runtime CV R² (wave123)
+
+- **What changed (code).** `scripts/plot_sensitivity_rf_figures.py` constants
+  updated: `BSM_RF_PRED 0.0762→0.1011`, `BSM_RF_P10 0.0729→0.0946`,
+  `BSM_RF_P90 0.0774→0.1036`. `docs/manuscripts/fig_sensitivity_bsm_validation.svg/.pdf`
+  regenerated. The wave123 RF pickles (`wave123_rf_quality.pkl`,
+  `wave123_rf_runtime.pkl`) were applied to the BSM production feature
+  vector via the committed script `scripts/compute_bsm_rf_validation.py`.
+- **Manuscript impact (editor must fix in v22.tex before submission).**
+  - **§6 / §7.5 RF runtime $R^2$: 0.950 → 0.959** (10-fold group-blocked
+    CV on log wall-seconds, n=4,747; groups = config_idx × dgp_idx).
+  - **§7.5 runtime back-transform: 1.30 → 1.042** (= exp(σ²/2) with
+    σ² = 0.0828 from wave123 CV log-residuals; previous 1.30 was the
+    wave1 value).
+  - **§7.5 BSM runtime prediction prose** ("103 min, 80% PI 99–111 min,
+    1.6% error vs 101.4 min mean") → **"125.6 min raw / 130.9 min
+    back-transformed, 80% PI [74.2, 144.6] min, +23.8% (raw) or +29.1%
+    (back-transformed) vs the 101.4-min measured analog mean"**.
+  - **§7.5 BSM nRMSE prediction prose + Figure 9 right panel**
+    ("0.0762 prediction, PI [0.0729, 0.0774], actual 0.0721, 5.7%
+    error") → **"0.1011 prediction (γ = −0.388), 80% PI \[0.0946,
+    0.1036\] (γ PI [−0.428, −0.374]), actual 0.0721, +40.3% error"**.
+  - **§8 Conclusion**: the 5.7% / 1.6% accuracy claims for the
+    sensitivity RF as an a-priori predictor of the production
+    operating point are NO LONGER SUPPORTED. The honest reframe (see
+    revision_notes §1.3): the RF gives a conservative envelope, not a
+    tight predictor, when extrapolated to the strict-BH-q / high-d /
+    high-n production corner; production-pipeline tuning beats the
+    RF's own 80% PI.
+- **Numeric verification.** From `/tmp/wave123_bsm_apply.py` against
+  `artifacts/sensitivity/wave123_combined_clean.csv` (6,225 rows; 4,747
+  successful) and the wave123 RF pickles:
+  - Runtime group-CV R² = 0.9593; σ²(CV log resid) = 0.08279; back =
+    1.0423.
+  - BSM RF runtime point = 7,533.5 s = 125.56 min; back-transformed
+    130.86 min; 80% per-tree PI [4,453.0, 8,677.2] s = [74.22, 144.62]
+    min.
+  - BSM RF quality γ point = −0.3883; 80% per-tree γ PI \[−0.4278,
+    −0.3735\]; nRMSE = 0.1653·(1+γ) → point 0.1011, PI \[0.0946,
+    0.1036\].
+- **Re-run command.**
+  ```bash
+  pixi run python /tmp/wave123_bsm_apply.py  # or scripts/compute_bsm_rf_validation.py once promoted
+  pixi run python scripts/plot_sensitivity_rf_figures.py \
+      --results artifacts/sensitivity/wave123_combined_clean.csv \
+      --output-dir artifacts/sensitivity/figures_wave123_clean
+  cp artifacts/sensitivity/figures_wave123_clean/fig_sensitivity_bsm_validation.{svg,pdf} \
+      docs/manuscripts/
+  ```
+- **Closes:** the "BSM_RF_PRED deferred" TODO at impact-log line 339
+  (round 9) and the "STALE — coupled to deferred BSM_RF_PRED block"
+  TODO at line 210 (round 7).
+
+______________________________________________________________________
+
 ## 2026-06-07 — Round 19 adversarial audit: methods sample-count drift
 
 ### 🟡 R11. Sensitivity-methods prose still cites pre-cleanup wave1 run count

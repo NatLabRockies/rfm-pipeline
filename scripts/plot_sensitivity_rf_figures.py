@@ -77,9 +77,14 @@ BSM_R = -0.564
 # (avoids drift when wave count changes; was hardcoded -0.462 against wave1).
 
 BSM_NRMSE_ACTUAL = 0.0721
-BSM_RF_PRED = 0.0762
-BSM_RF_P10 = 0.0729
-BSM_RF_P90 = 0.0774
+# Wave123 RF quality model applied to BSM production feature vector
+# (d=135, n=28750, sparsity=0.28, ρ=0.15, κ=0.20, σ=22.3, perms_scr=201,
+#  q=0.05, perms_int=31, p=0.05, n_stab=50, lasso_grid=40, var_thresh=0.9):
+# γ point = -0.3883 → nRMSE = 0.1653·(1+γ); 80% per-tree PI on γ
+# [-0.4278, -0.3735] → nRMSE [0.0946, 0.1036].
+BSM_RF_PRED = 0.1011
+BSM_RF_P10 = 0.0946
+BSM_RF_P90 = 0.1036
 BSM_ANALOG_NRMSE = [
     0.07655,
     0.07662,

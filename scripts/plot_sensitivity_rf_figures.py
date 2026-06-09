@@ -46,22 +46,22 @@ from rfm_pipeline.manuscript_stages import (  # noqa: E402
 # ── Hardcoded sensitivity results ───────────────────────────────────────────
 
 QUALITY_IMPORTANCE = [
-    ("BH threshold (q)", 0.454),
+    ("BH threshold (q)", 0.452),
     ("Sparsity (s)", 0.141),
     ("Screening permutations", 0.102),
     ("Input count (d)", 0.077),
-    ("Interaction density (\u03c1)", 0.073),
-    ("Nonlinearity strength (\u03ba)", 0.053),
+    ("Interaction density (\u03c1)", 0.072),
+    ("Nonlinearity strength (\u03ba)", 0.054),
     ("Signal-to-noise ratio (\u03c3)", 0.047),
-    ("Interaction p-threshold", 0.020),
+    ("Interaction p-threshold", 0.021),
 ]
 
 RUNTIME_IMPORTANCE = [
-    ("Sparsity (s)", 0.404),
-    ("Input count (d)", 0.363),
-    ("Run count (n)", 0.076),
+    ("Sparsity (s)", 0.400),
+    ("Input count (d)", 0.365),
+    ("Run count (n)", 0.077),
     ("Interaction permutations", 0.053),
-    ("Stability subsamples", 0.050),
+    ("Stability subsamples", 0.049),
     ("Interaction density (\u03c1)", 0.016),
     ("Signal-to-noise ratio (\u03c3)", 0.013),
     ("Nonlinearity strength (\u03ba)", 0.012),
@@ -77,14 +77,18 @@ BSM_R = -0.564
 # (avoids drift when wave count changes; was hardcoded -0.462 against wave1).
 
 BSM_NRMSE_ACTUAL = 0.0721
-# Wave123 RF quality model applied to BSM production feature vector
+# Wave1234 RF quality model applied to BSM production feature vector
 # (d=135, n=28750, sparsity=0.28, ρ=0.15, κ=0.20, σ=22.3, perms_scr=201,
-#  q=0.05, perms_int=31, p=0.05, n_stab=50, lasso_grid=40, var_thresh=0.9):
-# γ point = -0.3883 → nRMSE = 0.1653·(1+γ); 80% per-tree PI on γ
-# [-0.4278, -0.3735] → nRMSE [0.0946, 0.1036].
-BSM_RF_PRED = 0.1011
-BSM_RF_P10 = 0.0946
-BSM_RF_P90 = 0.1036
+#  q=0.05, perms_int=31, p=0.05, n_stab=50, lasso_grid=40, var_thresh=0.9).
+# Wave4 added 30 calibrated rows at the production override corner, which
+# tightened the RF PI and shifted γ slightly toward 0 (−0.371 vs −0.388).
+# The PI now fully EXCLUDES the actual production value 0.0721 — confirming
+# the gap is sensitivity-harness vs production-pipeline, not training
+# coverage. γ point = -0.3710 → nRMSE = 0.1653·(1+γ); 80% per-tree PI on γ
+# [-0.3815, -0.3458] → nRMSE [0.1022, 0.1081].
+BSM_RF_PRED = 0.1040
+BSM_RF_P10 = 0.1022
+BSM_RF_P90 = 0.1081
 BSM_ANALOG_NRMSE = [
     0.07655,
     0.07662,

@@ -16,6 +16,74 @@ required.
 
 ______________________________________________________________________
 
+## 2026-06-09 — Round 29 closeout: wave4 production-replica corner sweep + wave1234 refit
+
+### 🟡 R13. Wave4 verification rules out training-coverage as cause of BSM RF discrepancy
+
+- **What changed (code + data).** `src/rfm_pipeline/sensitivity_study.py`:
+  added `SensitivityStudySpec.fixed_overrides` field (commit cd33219) so
+  the LHS config sweep can be locked to a single override mapping while
+  the DGP block varies d/n. `configs/sensitivity_study/study_spec_wave4.yml`:
+  10 calibrated_structure DGPs × 1 config × 3 reps + 3 pure throwaways =
+  33 jobs at the BSM production override set
+  (var=0.9, bh_q=0.05, scr_perms=201, n_stab=50, lasso_grid=40,
+  int_perms=31, int_p=0.05, delta=0.002). Subsample levels=1 (full n).
+  Kestrel job array **14139138** (2026-06-09, all 33 COMPLETED in 38-44
+  min). `scripts/build_wave1234_and_refit.py`: merges wave123 + wave4 into
+  `wave1234_combined_clean.csv` (6,258 rows; 343 bsm rows), refits both
+  RFs → `wave1234_rf_quality.pkl`, `wave1234_rf_runtime.pkl`.
+  `scripts/compute_bsm_rf_validation.py`: added `--prefix` argument.
+  `scripts/plot_sensitivity_rf_figures.py`: BSM constants updated to
+  wave1234 values + RF importance constants nudged to wave1234.
+  `docs/manuscripts/fig_sensitivity_*.svg/.pdf` regenerated against
+  wave1234.
+- **Manuscript impact (editor must fix in v22.tex before submission).**
+  All R12 edits below are SUPERSEDED by wave1234 numbers. The headline
+  numeric changes from wave123 → wave1234:
+  - **BSM nRMSE prediction: 0.1011 → 0.1040** (PI [0.0946, 0.1036] →
+    [0.1022, 0.1081]).
+  - **BSM runtime prediction: 125.6 min → 134.3 min** (PI [74.2, 144.6]
+    → [131.6, 142.8] min).
+  - **Both 80% PIs now FULLY EXCLUDE the production values** (0.0721
+    nRMSE, 101.4 min runtime).
+  - **Runtime RF group-CV R²: 0.959 → 0.956** (n=4,747 → 4,780).
+  - **Back-transform exp(σ²/2): 1.042 → 1.046**.
+  - **n (cleaned rows): 6,225 → 6,258**.
+  - **Successful rows: 4,747 → 4,780**.
+  - **bsm_structure rows: 313 → 343**.
+- **Manuscript reframing required (REPLACES R12 framing).** Wave4
+  ruled out "training coverage is thin" as the explanation for the
+  RF-vs-production gap. The actual cause is the sensitivity-harness
+  vs production-pipeline mismatch:
+  1. The sensitivity harness runs per-DGP single-output regression
+     with override settings applied.
+  1. The production pipeline runs full multi-output joint fitting
+     across 9,954 outputs with production-tuned holdout and
+     delta-threshold logic.
+  1. These produce systematically different γ for the same DGP +
+     override pair. The harness γ ≈ −0.37 ± 0.02 (50 strict-corner
+     rows: 20 wave123 + 30 wave4), production γ = −0.564 — outside
+     the harness empirical envelope.
+- **Action: replace §7.5 / §8 BSM-validation prose per the editor
+  reframe block in `full_dataset_run_revision_notes.md` §1.3.**
+- **Re-run recipe.**
+  ```bash
+  pixi run python scripts/build_wave1234_and_refit.py
+  pixi run python scripts/compute_bsm_rf_validation.py --prefix wave1234
+  pixi run python scripts/plot_sensitivity_results.py \
+      --results artifacts/sensitivity/wave1234_combined_clean.csv \
+      --output-dir artifacts/sensitivity/figures_wave1234_clean/
+  pixi run python scripts/plot_sensitivity_rf_figures.py \
+      --results artifacts/sensitivity/wave1234_combined_clean.csv \
+      --output-dir artifacts/sensitivity/figures_wave1234_clean/
+  cp artifacts/sensitivity/figures_wave1234_clean/fig_sensitivity_*.{svg,pdf} \
+      docs/manuscripts/
+  ```
+- **Closes:** the open question from R12 ("is the gap training
+  coverage or harness?") with definitive evidence for harness.
+
+______________________________________________________________________
+
 ## 2026-06-09 — Round 28 closeout: wave123 RF applied to BSM operating point
 
 ### 🟡 R12. BSM RF point predictions + 80% PI + back-transform + runtime CV R² (wave123)

@@ -26,6 +26,7 @@ Re-run via:
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -37,7 +38,6 @@ from sklearn.model_selection import GroupKFold
 
 ROOT = Path(__file__).resolve().parents[1]
 ART = ROOT / "artifacts/sensitivity"
-CSV = ART / "wave123_combined_clean.csv"
 
 _FEATS = [
     "n_inputs",
@@ -80,10 +80,23 @@ def per_tree_predictions(rf: RandomForestRegressor, X: np.ndarray) -> np.ndarray
 
 
 def main() -> int:
-    """Run the wave123 RF BSM-validation pipeline and print all four numbers."""
-    df = pd.read_csv(CSV)
-    rf_q: RandomForestRegressor = joblib.load(ART / "wave123_rf_quality.pkl")
-    rf_r: RandomForestRegressor = joblib.load(ART / "wave123_rf_runtime.pkl")
+    """Run the wave-N RF BSM-validation pipeline and print all four numbers."""
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument(
+        "--prefix",
+        default="wave123",
+        help="Filename prefix for the cleaned CSV and the two RF pickles "
+        "(default: wave123 -> wave123_combined_clean.csv + "
+        "wave123_rf_quality.pkl + wave123_rf_runtime.pkl).",
+    )
+    args = p.parse_args()
+    csv = ART / f"{args.prefix}_combined_clean.csv"
+    rf_q_path = ART / f"{args.prefix}_rf_quality.pkl"
+    rf_r_path = ART / f"{args.prefix}_rf_runtime.pkl"
+    print(f"# prefix={args.prefix}  csv={csv.name}")
+    df = pd.read_csv(csv)
+    rf_q: RandomForestRegressor = joblib.load(rf_q_path)
+    rf_r: RandomForestRegressor = joblib.load(rf_r_path)
 
     print(f"# rows={len(df)}  features={_FEATS}\n")
 

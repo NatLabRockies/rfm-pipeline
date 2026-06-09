@@ -231,6 +231,17 @@ def main() -> int:
             seed=int(dgp_section.get("seed", 0)) + int(study_meta.get("replicate", 0)),
             factor_model_rank=int(dgp_section.get("factor_model_rank", 20)),
             input_correlation_strength=float(dgp_section.get("input_correlation_strength", 0.3)),
+            factor_signal_weight=float(dgp_section.get("factor_signal_weight", 1.0)),
+            output_scale_heterogeneity=float(dgp_section.get("output_scale_heterogeneity", 0.0)),
+            output_nonlinearity_strength=float(
+                dgp_section.get("output_nonlinearity_strength", 0.0)
+            ),
+            per_output_snr_heterogeneity=float(
+                dgp_section.get("per_output_snr_heterogeneity", 0.0)
+            ),
+            active_input_beta_concentration=float(
+                dgp_section.get("active_input_beta_concentration", 0.0)
+            ),
         )
 
         t0 = time.perf_counter()

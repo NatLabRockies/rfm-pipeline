@@ -1,0 +1,51 @@
+# Copyright (c) 2026 Dylan Hettinger
+# Sensitivity study — Wave 5 (expanded DGP for measurement-based meta-model).
+#
+# Purpose: span a wide region of dataset-structure space so the meta-model
+# predicts pipeline performance from MEASURED dataset properties rather than
+# from raw DGP-knob settings. Real-world datasets (BSM, future case studies)
+# are then handled as additional points whose measurements lie inside the
+# convex hull spanned by wave 5 synthetic measurements.
+#
+# Design:
+#   - expanded_structure block (use_expanded_dgp: true) with 14-dim LHS over
+#     existing DGP dims + 5 new structural knobs:
+#       * factor_signal_weight ∈ [0.5, 20] log -- factor-vs-input dominance
+#       * output_scale_heterogeneity ∈ [0, 2.5] -- per-output scale spread
+#       * output_nonlinearity_strength ∈ [0, 2.0] -- asymmetric tail shaping
+#       * per_output_snr_heterogeneity ∈ [0, 3.0] -- per-output noise jitter
+#       * active_input_beta_concentration ∈ [0, 3.0] -- Pareto signal weighting
+#     plus wider ranges on factor_model_rank ∈ [1, 50] log and noise_snr ∈ [5,80]
+#   - 80 LHS DGPs to span 14-D space (~6× dims, beyond conventional 10× heuristic
+#     for the most informative dims; balanced against compute budget)
+#   - 3 configs per DGP (production strict-quality + two variations on BH q and
+#     screening perms) for partial sensitivity on key knobs
+#   - 2 replicates per DGP/config for variance estimation
+#   - subsample levels = 1 (full n)
+#   - pure_synthetic block disabled (0 dgps -- focus compute on expanded space)
+# Total: 80 expanded × 3 configs × 2 reps = 480 jobs.
+#
+# Wave 5 = seeds 5000.
+study:
+  pure_synthetic_n_dgps: 0
+  calibrated_n_dgps: 80
+  n_configs_per_dgp_pure: 0
+  n_configs_per_dgp_calibrated: 3
+  n_replicates: 2
+  pure_synthetic_n_subsample_levels: 0
+  calibrated_n_subsample_levels: 1
+  config_lhs_seed: 5000
+  dgp_lhs_seed: 5000
+  use_expanded_dgp: true
+
+output:
+  study_dir: "/scratch/dhetting/bsm/sensitivity_study_wave5"
+  n_jobs: 480
+
+slurm:
+  account: "${SLURM_ACCOUNT:-rfm}"
+  partition: shared
+  walltime: "08:00:00"
+  memory_gb: 220
+  cpus_per_task: 104
+  max_concurrent: 60

@@ -32,6 +32,11 @@ class SyntheticDGPSpec:
     seed: int
     factor_model_rank: int = 20
     input_correlation_strength: float = 0.3
+    factor_signal_weight: float = 1.0
+    output_scale_heterogeneity: float = 0.0
+    output_nonlinearity_strength: float = 0.0
+    per_output_snr_heterogeneity: float = 0.0
+    active_input_beta_concentration: float = 0.0
 
     def __post_init__(self) -> None:
         """Validate all spec fields at construction time."""
@@ -54,6 +59,31 @@ class SyntheticDGPSpec:
             "input_correlation_strength",
             0.0,
             0.95,
+        )
+        _validate_range(self.factor_signal_weight, "factor_signal_weight", 0.0, 100.0)
+        _validate_range(
+            self.output_scale_heterogeneity,
+            "output_scale_heterogeneity",
+            0.0,
+            3.0,
+        )
+        _validate_range(
+            self.output_nonlinearity_strength,
+            "output_nonlinearity_strength",
+            0.0,
+            2.0,
+        )
+        _validate_range(
+            self.per_output_snr_heterogeneity,
+            "per_output_snr_heterogeneity",
+            0.0,
+            3.0,
+        )
+        _validate_range(
+            self.active_input_beta_concentration,
+            "active_input_beta_concentration",
+            0.0,
+            3.0,
         )
 
 
@@ -118,6 +148,8 @@ def generate_calibrated_structure_synthetic(spec: SyntheticDGPSpec) -> Synthetic
     factor_scale = factor_signal.std(axis=0, ddof=1)
     factor_scale[factor_scale == 0.0] = 1.0
     factor_signal = factor_signal / factor_scale
+    if spec.factor_signal_weight != 1.0:
+        factor_signal = factor_signal * spec.factor_signal_weight
     return _assemble_dataset(spec=spec, inputs=inputs, rng=rng, factor_signal=factor_signal)
 
 
@@ -135,8 +167,42 @@ def _assemble_dataset(
 
     signal_var = total_signal.var(axis=0, ddof=1)
     signal_var = np.maximum(signal_var, 1e-12)
-    noise_std = np.sqrt(signal_var / spec.noise_snr)
+
+    # Optional per-output SNR heterogeneity: noise floor varies output-to-output. Drives the
+    # std/range RATIO (which is otherwise scale-invariant) and creates per-output heterogeneity
+    # that the scalar SNR cannot reproduce. Real datasets typically have outputs with very
+    # different noise characteristics.
+    if spec.per_output_snr_heterogeneity > 0.0:
+        log_snr_jitter = rng.normal(
+            loc=0.0, scale=spec.per_output_snr_heterogeneity, size=spec.n_outputs
+        )
+        per_output_snr = spec.noise_snr * np.exp(log_snr_jitter)
+        noise_std = np.sqrt(signal_var / per_output_snr)
+    else:
+        noise_std = np.sqrt(signal_var / spec.noise_snr)
     outputs = total_signal + rng.normal(scale=noise_std, size=total_signal.shape)
+
+    # Optional output-scale heterogeneity: per-output multiplicative scale ~ LogNormal(0, sigma).
+    # Drives PCA top-1 share (a few large-scale outputs dominate the centered SVD spectrum).
+    if spec.output_scale_heterogeneity > 0.0:
+        scale_factors = np.exp(
+            rng.normal(loc=0.0, scale=spec.output_scale_heterogeneity, size=spec.n_outputs)
+        )
+        outputs = outputs * scale_factors
+
+    # Optional monotonic asymmetric post-nonlinearity. Per-output strength sampled from
+    # Uniform(0, s_max) so MOST outputs are near-identity while a SUBSET is strongly transformed.
+    # This produces datasets where skewness can be high in aggregate while median kurtosis stays
+    # moderate -- a regime that covers many real-world bounded/log-like output families.
+    if spec.output_nonlinearity_strength > 0.0:
+        s_per_output = rng.uniform(0.0, spec.output_nonlinearity_strength, size=spec.n_outputs)
+        scale = outputs.std(axis=0, ddof=1)
+        scale = np.where(scale > 1e-12, scale, 1.0)
+        active = s_per_output > 0.01
+        if np.any(active):
+            s_row = np.where(active, s_per_output, 1.0)[None, :]
+            transformed = np.expm1(s_row * outputs / scale[None, :]) / s_row
+            outputs = np.where(active[None, :], transformed, outputs)
 
     sample_ids = np.array([f"s{i:06d}" for i in range(spec.n_runs)], dtype=object)
     input_columns = [f"x{i}" for i in range(spec.n_inputs)]
@@ -183,9 +249,20 @@ def _generate_sparse_signals(
     active_nonlinear: set[str] = set()
 
     interaction_pairs = list(combinations(active_inputs, 2))
+    n_active = len(active_inputs)
+    beta_alpha = spec.active_input_beta_concentration
+    # Per-active-input geometric weighting. At alpha=0 (default), weights are uniform 1.0
+    # (current behavior). At alpha>0, first active input gets dominant beta, rest fall off as
+    # i^(-alpha) -- produces Pareto-like signal concentration where a few inputs dominate
+    # marginal X_j-Y correlations.
+    if beta_alpha > 0.0:
+        beta_weights = np.power(np.arange(1, n_active + 1, dtype=np.float64), -beta_alpha)
+    else:
+        beta_weights = np.ones(n_active, dtype=np.float64)
+
     for output_idx in range(spec.n_outputs):
         signal = np.zeros(spec.n_runs, dtype=np.float64)
-        betas = rng.normal(size=len(active_inputs))
+        betas = rng.normal(size=n_active) * beta_weights
         signal += centered[:, active_inputs] @ betas
 
         for left_idx, right_idx in interaction_pairs:

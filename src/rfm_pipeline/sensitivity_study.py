@@ -42,21 +42,28 @@ class SensitivityStudySpec:
     config_lhs_seed: int = 42
     dgp_lhs_seed: int = 0
     fixed_overrides: dict[str, Any] | None = None
+    use_expanded_dgp: bool = False
 
     def __post_init__(self) -> None:
-        """Validate that all count fields are positive integers."""
+        """Validate count fields and override field types."""
         for field_name in (
-            "pure_synthetic_n_dgps",
             "calibrated_n_dgps",
-            "n_configs_per_dgp_pure",
             "n_configs_per_dgp_calibrated",
             "n_replicates",
-            "pure_synthetic_n_subsample_levels",
             "calibrated_n_subsample_levels",
         ):
             value = getattr(self, field_name)
             if not isinstance(value, int) or value <= 0:
                 raise ValueError(f"{field_name} must be a positive integer; got {value!r}")
+        # pure_synthetic_* fields may be 0 to disable the pure-synthetic block; otherwise positive.
+        for field_name in (
+            "pure_synthetic_n_dgps",
+            "n_configs_per_dgp_pure",
+            "pure_synthetic_n_subsample_levels",
+        ):
+            value = getattr(self, field_name)
+            if not isinstance(value, int) or value < 0:
+                raise ValueError(f"{field_name} must be a non-negative integer; got {value!r}")
         if self.fixed_overrides is not None and not isinstance(self.fixed_overrides, dict):
             raise ValueError(
                 f"fixed_overrides must be a dict or None; got {type(self.fixed_overrides).__name__}"
@@ -164,6 +171,46 @@ def generate_calibrated_structure_dgps(spec: SensitivityStudySpec) -> list[Synth
     return dgps
 
 
+def generate_expanded_structure_dgps(spec: SensitivityStudySpec) -> list[SyntheticDGPSpec]:
+    """Generate LHS-sampled DGPs spanning the expanded calibrated-structure parameter space.
+
+    Adds five structural knobs (factor_signal_weight, output_scale_heterogeneity,
+    output_nonlinearity_strength, per_output_snr_heterogeneity,
+    active_input_beta_concentration) to the original nine, widens ranges on
+    factor_model_rank and noise_snr, and produces a 13-dimensional LHS design that
+    spans regimes from rank-1 factor-dominated outputs with skewed bounded marginals to
+    rank-50 diffuse Gaussian-like outputs. Used by the measurement-based meta-model:
+    real datasets such as BSM lie at specific (high top-1 PCA share, low effective
+    rank) corners of this space, and the meta-model learns the mapping from measured
+    structure to pipeline performance across the full hull.
+    """
+    lhs = generate_lhs_points(spec.calibrated_n_dgps, 14, spec.dgp_lhs_seed + 20_000)
+    dgps: list[SyntheticDGPSpec] = []
+    for idx, row in enumerate(lhs):
+        dgps.append(
+            SyntheticDGPSpec(
+                n_inputs=_scale_int(row[0], 100, 250),
+                n_runs=_scale_int(row[1], 5000, 30000),
+                n_outputs=_scale_int(row[2], 3000, 20000, log_scale=True),
+                sparsity=_scale_float(row[3], 0.1, 0.5),
+                interaction_density=_scale_float(row[4], 0.05, 0.3),
+                nonlinearity_strength=_scale_float(row[5], 0.0, 0.5),
+                noise_snr=_scale_float(row[6], 5.0, 80.0, log_scale=True),
+                holdout_fraction=0.05,
+                dgp_family="calibrated_structure",
+                seed=spec.dgp_lhs_seed + 200_000 + idx,
+                factor_model_rank=_scale_int(row[7], 1, 50, log_scale=True),
+                input_correlation_strength=_scale_float(row[8], 0.05, 0.6),
+                factor_signal_weight=_scale_float(row[9], 0.5, 20.0, log_scale=True),
+                output_scale_heterogeneity=_scale_float(row[10], 0.0, 2.5),
+                output_nonlinearity_strength=_scale_float(row[11], 0.0, 2.0),
+                per_output_snr_heterogeneity=_scale_float(row[12], 0.0, 3.0),
+                active_input_beta_concentration=_scale_float(row[13], 0.0, 3.0),
+            )
+        )
+    return dgps
+
+
 def generate_config_lhs(spec: SensitivityStudySpec, n_configs: int) -> list[dict[str, Any]]:
     """Generate hyperparameter overrides from a Latin hypercube design.
 
@@ -187,26 +234,41 @@ def generate_config_lhs(spec: SensitivityStudySpec, n_configs: int) -> list[dict
 def generate_study_jobs(spec: SensitivityStudySpec) -> list[SensitivityStudyJob]:
     """Enumerate all sensitivity-study jobs."""
     jobs: list[SensitivityStudyJob] = []
-    pure_configs = generate_config_lhs(spec, spec.n_configs_per_dgp_pure)
+    pure_configs = (
+        generate_config_lhs(spec, spec.n_configs_per_dgp_pure)
+        if spec.n_configs_per_dgp_pure > 0
+        else []
+    )
     calibrated_configs = generate_config_lhs(
         replace(spec, config_lhs_seed=spec.config_lhs_seed + 1),
         spec.n_configs_per_dgp_calibrated,
     )
 
-    for block, dgps, configs, n_levels in (
+    blocks: list[tuple[str, list[SyntheticDGPSpec], list[dict[str, Any]], int]] = []
+    if spec.pure_synthetic_n_dgps > 0 and pure_configs:
+        blocks.append(
+            (
+                "pure_synthetic",
+                generate_pure_synthetic_dgps(spec),
+                pure_configs,
+                spec.pure_synthetic_n_subsample_levels,
+            )
+        )
+    calibrated_dgps = (
+        generate_expanded_structure_dgps(spec)
+        if spec.use_expanded_dgp
+        else generate_calibrated_structure_dgps(spec)
+    )
+    blocks.append(
         (
-            "pure_synthetic",
-            generate_pure_synthetic_dgps(spec),
-            pure_configs,
-            spec.pure_synthetic_n_subsample_levels,
-        ),
-        (
-            "calibrated_structure",
-            generate_calibrated_structure_dgps(spec),
+            "expanded_structure" if spec.use_expanded_dgp else "calibrated_structure",
+            calibrated_dgps,
             calibrated_configs,
             spec.calibrated_n_subsample_levels,
-        ),
-    ):
+        )
+    )
+
+    for block, dgps, configs, n_levels in blocks:
         for dgp_idx, dgp_spec in enumerate(dgps):
             subsample_levels = _compute_subsample_levels(dgp_spec.n_runs, n_levels)
             for config_idx, config_overrides in enumerate(configs):
@@ -344,6 +406,7 @@ __all__ = [
     "collect_study_results",
     "generate_calibrated_structure_dgps",
     "generate_config_lhs",
+    "generate_expanded_structure_dgps",
     "generate_lhs_points",
     "generate_pure_synthetic_dgps",
     "generate_study_jobs",

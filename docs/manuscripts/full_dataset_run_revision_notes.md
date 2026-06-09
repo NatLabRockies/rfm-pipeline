@@ -67,71 +67,106 @@ configurations, confirm the numbers match `controller_publication_full_dataset_d
 (STAGES, N_SHARDS, N_JOBS, CPUS_PER_TASK, MEMORY_GB, WALLTIME, MAX_CONCURRENT,
 REDUCE_WALLTIME, REDUCE_MEMORY_GB, PARTITIONS, RUN_ID_SUFFIX arrays).
 
-### 1.3 Sensitivity meta-regression: dropped `lasso_alpha_percentile`, refit on cleaned wave1+wave2
+### 1.3 Sensitivity meta-regression: dropped `lasso_alpha_percentile`, refit on cleaned wave1+wave2+wave3
 
-The `lasso_alpha_percentile` parameter was found to be a constant (all rows =
-40\) in observed wave1+wave2 results, contributing zero variance and zero RF
-importance. **Dropped** from the meta-regression design and re-fit:
+The `lasso_alpha_percentile` parameter was found to be a non-significant
+predictor in observed wave1+wave2 results. **Dropped** from the
+meta-regression design. After cancellation of the broken wave-2 resubmit
+job (14106277/14106278), **wave 3 was collected and combined into a wave123
+cleaned set** as of 2026-06-08. Wave123 supersedes wave12; cite wave123
+values in the manuscript.
 
-- Cleaned input: `~/src/rfm-pipeline/artifacts/sensitivity/wave12_combined_clean.csv`
-  (4,027 rows × 61 cols; 3,014 successful, 1,013 null-screened; gitignored).
-- Refit coefficients: `wave12_formula_d2_clean.csv` (136 terms, degree 2).
-- Scaler metadata: `wave12_scaler_d2.json`.
+- Cleaned input: `~/src/rfm-pipeline/artifacts/sensitivity/wave123_combined_clean.csv`
+  (6,225 rows × 61 cols; 4,747 successful, 1,478 null-screened; gitignored).
+- Refit coefficients: `wave123_formula_d2_clean.csv` (136 terms, degree 2).
+- Scaler metadata: `wave123_scaler_d2.json`.
+- RF models: `wave123_rf_quality.pkl`, `wave123_rf_runtime.pkl`.
+- Superseded inputs (kept for reproducibility, do NOT cite in current
+  manuscript): `wave12_combined_clean.csv`, `wave12_formula_d2_clean.csv`,
+  `wave12_scaler_d2.json`, `wave12_rf_quality.pkl`.
 
-**Refit fit statistics (FINAL, cite verbatim in Table 5 / §6.1):**
+**Refit fit statistics (FINAL wave123, cite verbatim in Table 5 / §6.1):**
 
-| Metric                        | Value  |
-| ----------------------------- | ------ |
-| In-sample R²                  | 0.840  |
-| 10-fold CV R²                 | 0.831  |
-| Group-blocked CV R²           | 0.776  |
-| γ-scale held-out R²           | 0.778  |
-| n (cleaned rows)              | 4,027  |
-| Predictors (post-drop)        | 11     |
-| Polynomial degree             | 2      |
-| Successful rows               | 3,014  |
-| Null-screened rows            | 1,013  |
-| Family `pure_synthetic`       | 3,914  |
-| Family `bsm_structure`        | 113    |
-| Null-screen rate (pure_syn)   | 25.75% |
-| Null-screen rate (bsm_struct) | 4.42%  |
+| Metric                        | wave123 (FINAL) | wave12 (superseded) |
+| ----------------------------- | --------------- | ------------------- |
+| In-sample R²                  | 0.786           | 0.840               |
+| CV R² (10-fold)               | 0.777           | 0.831               |
+| Group-blocked CV R²           | 0.787           | 0.776               |
+| γ-scale held-out R²           | (see group-CV)  | 0.778               |
+| n (cleaned rows)              | 6,225           | 4,027               |
+| Predictors (post-drop)        | 11              | 11                  |
+| Polynomial degree             | 2               | 2                   |
+| Successful rows               | 4,747           | 3,014               |
+| Null-screened rows            | 1,478           | 1,013               |
+| Family `pure_synthetic`       | 5,912           | 3,914               |
+| Family `bsm_structure`        | 313             | 113                 |
+| Null-screen rate (pure_syn)   | 24.92%          | 25.75%              |
+| Null-screen rate (bsm_struct) | 1.60%           | 4.42%               |
 
-**γ summary on successful rows:** median −0.4483; q10/q90 (−0.6554, −0.3042).
-**Runtime on successful rows (minutes):** median 22.0; q90 137.8; max 479.4.
+**γ summary on successful rows (wave123):** median −0.4398; q10/q90
+(−0.6357, −0.3042).
+**Runtime on successful rows (wave123, minutes):** median 26.1; q90 161.9;
+max 479.4.
 
-**Swept levels observed in wave12 (cite as ACTUAL observed sweep, not as
-planned future sweep):**
+**Swept levels observed in wave123 (cite as ACTUAL observed sweep, not as
+planned future sweep) — identical levels to wave12:**
 
-| Parameter                | Observed levels                |
-| ------------------------ | ------------------------------ |
-| Holdout fraction         | (0.05, 0.10, 0.15, 0.20)       |
-| Variance threshold       | (0.80, 0.85, 0.90, 0.95)       |
-| Screening permutations   | (51, 101, 201, 401)            |
-| BH q                     | (0.01, 0.05, 0.10, 0.20)       |
-| Interaction permutations | (11, 21, 31, 51, 101)          |
-| Interaction p-threshold  | (0.01, 0.05, 0.10, 0.20)       |
-| Stability subsamples     | (10, 25, 50, 100)              |
-| Delta threshold          | (0.001, 0.002, 0.005, 0.010)   |
-| LASSO α grid size        | (40,) — **constant in wave12** |
+| Parameter                | Observed levels                 |
+| ------------------------ | ------------------------------- |
+| Holdout fraction         | (0.05, 0.10, 0.15, 0.20)        |
+| Variance threshold       | (0.80, 0.85, 0.90, 0.95)        |
+| Screening permutations   | (51, 101, 201, 401)             |
+| BH q                     | (0.01, 0.05, 0.10, 0.20)        |
+| Interaction permutations | (11, 21, 31, 51, 101)           |
+| Interaction p-threshold  | (0.01, 0.05, 0.10, 0.20)        |
+| Stability subsamples     | (10, 25, 50, 100)               |
+| Delta threshold          | (0.001, 0.002, 0.005, 0.010)    |
+| LASSO α grid size        | (40,) — **constant in wave123** |
 
-**RF importance correlations for Figure 7 (cite verbatim):**
+**Figure 7 main-effect |correlations| with γ (wave123, cite verbatim):**
 
-| Predictor                | RF importance |
-| ------------------------ | ------------- |
-| Holdout fraction         | 0.2553        |
-| Variance threshold       | 0.0948        |
-| Screening permutations   | 0.4035        |
-| BH q                     | 0.5189        |
-| Interaction permutations | 0.3487        |
-| Interaction p-threshold  | 0.0623        |
-| Stability subsamples     | 0.2022        |
-| LASSO α grid size        | 0.0000        |
-| Delta threshold          | 0.3836        |
+| Predictor                | wave123 \|corr\| | wave12 \|corr\| (superseded) |
+| ------------------------ | ---------------- | ---------------------------- |
+| Holdout fraction         | 0.2144           | 0.2553                       |
+| Variance threshold       | 0.0992           | 0.0948                       |
+| Screening permutations   | 0.3454           | 0.4035                       |
+| BH q                     | 0.4797           | 0.5189                       |
+| Interaction permutations | 0.3290           | 0.3487                       |
+| Interaction p-threshold  | 0.1864           | 0.0623                       |
+| Stability subsamples     | 0.1507           | 0.2022                       |
+| LASSO α grid size        | 0.0000           | 0.0000                       |
+| Delta threshold          | 0.2490           | 0.3836                       |
+
+**RF feature importances (wave123, from `fit_sensitivity_rf.py`):**
+
+| Quality (γ) — top 9       | Importance |
+| ------------------------- | ---------- |
+| BH threshold (q)          | 0.454      |
+| Sparsity (s)              | 0.141      |
+| Screening permutations    | 0.102      |
+| Input count (d)           | 0.077      |
+| Interaction density (ρ)   | 0.073      |
+| Nonlinearity strength (κ) | 0.053      |
+| Signal-to-noise ratio (σ) | 0.047      |
+| Interaction p-threshold   | 0.020      |
+| Run count (n)             | 0.016      |
+
+| Runtime (log wall-sec) — top 9 | Importance |
+| ------------------------------ | ---------- |
+| Sparsity (s)                   | 0.404      |
+| Input count (d)                | 0.363      |
+| Run count (n)                  | 0.076      |
+| Interaction permutations       | 0.053      |
+| Stability subsamples           | 0.050      |
+| Interaction density (ρ)        | 0.016      |
+| Signal-to-noise ratio (σ)      | 0.013      |
+| Nonlinearity strength (κ)      | 0.012      |
+| Variance threshold             | 0.006      |
 
 **Manuscript impact:** Table 4 column for `lasso_alpha_percentile` must be
 removed/replaced with `lasso_alpha_grid_size` (constant 40 — note this is
-not a swept parameter in observed wave12); methods §6 should add a caveat
-about LHS non-orthogonality on observed wave12.
+not a swept parameter in observed wave123); methods §6 should add a caveat
+about LHS non-orthogonality on observed wave123.
 
 ### 1.4 Holdout split rule made explicit
 
@@ -290,29 +325,40 @@ figure cleanup): publication-readable, color-blind friendly (high contrast
 Legacy notebook (style reference only, not regenerated):
 `docs/final_scripts_from_hpc/influential_factors_analysis_visualizations.ipynb`.
 
-### 6.2 Sensitivity / Figure 7 figures (wave12 cleaned)
+### 6.2 Sensitivity / Figure 7 figures (wave123 cleaned, FINAL)
 
-| File                                    | What it shows                       | Source script                  |
-| --------------------------------------- | ----------------------------------- | ------------------------------ |
-| `fig_sensitivity_main_effects.svg`      | Main-effect coefficients (degree 2) | plot_sensitivity_results.py    |
-| `fig_sensitivity_rf_importance.svg`     | RF importance bars                  | plot_sensitivity_rf_figures.py |
-| `fig_sensitivity_rf_validation.svg`     | RF validation R²                    | plot_sensitivity_rf_figures.py |
-| `fig_sensitivity_runtime_breakdown.svg` | Runtime breakdown by predictor      | plot_sensitivity_results.py    |
-| `fig_sensitivity_sample_size_curve.svg` | Sample-size convergence curve       | plot_sensitivity_results.py    |
+| File                                    | What it shows                          | Source script                  |
+| --------------------------------------- | -------------------------------------- | ------------------------------ |
+| `fig_sensitivity_main_effects.svg`      | Main-effect \|correlations\| with γ    | plot_sensitivity_results.py    |
+| `fig_sensitivity_rf_importance.svg`     | RF importance bars (quality + runtime) | plot_sensitivity_rf_figures.py |
+| `fig_sensitivity_rf_validation.svg`     | RF validation R²                       | plot_sensitivity_results.py    |
+| `fig_sensitivity_runtime_breakdown.svg` | Runtime breakdown by predictor         | plot_sensitivity_results.py    |
+| `fig_sensitivity_sample_size_curve.svg` | Sample-size convergence curve          | plot_sensitivity_results.py    |
+| `fig_sensitivity_bsm_validation.svg`    | γ histogram + BSM validation dot plot  | plot_sensitivity_rf_figures.py |
 
 **Regeneration recipe (deterministic from wave CSVs):**
 
 ```bash
-pixi run python <combine wave1+wave2: dropna delta + drop dead col + add lasso_alpha_grid_size=40>
+# Combine waves: concat wave1+wave2+wave3, drop NaN delta + NaN final_ols_nrmse,
+# drop lasso_alpha_percentile column, add lasso_alpha_grid_size=40 constant,
+# reorder columns to match the persisted wave12_combined_clean.csv schema.
+pixi run python <combine wave1+wave2+wave3: drop NaN delta + drop NaN final_ols_nrmse + drop lasso_alpha_percentile col + add lasso_alpha_grid_size=40>
 pixi run python scripts/fit_meta_regression.py \
-  --results artifacts/sensitivity/wave12_combined_clean.csv \
-  --output  artifacts/sensitivity/wave12_formula_d2_clean.csv \
+  --results artifacts/sensitivity/wave123_combined_clean.csv \
+  --output  artifacts/sensitivity/wave123_formula_d2_clean.csv \
   --degree 2 \
-  --save-scaler artifacts/sensitivity/wave12_scaler_d2.json
+  --save-scaler artifacts/sensitivity/wave123_scaler_d2.json
+pixi run python scripts/fit_sensitivity_rf.py \
+  --results artifacts/sensitivity/wave123_combined_clean.csv \
+  --top-n 9 \
+  --dump-models artifacts/sensitivity/
 pixi run python scripts/plot_sensitivity_results.py \
-  --results artifacts/sensitivity/wave12_combined_clean.csv \
-  --output-dir artifacts/sensitivity/figures_wave12_clean/
-cp artifacts/sensitivity/figures_wave12_clean/fig_sensitivity_*.svg docs/manuscripts/
+  --results artifacts/sensitivity/wave123_combined_clean.csv \
+  --output-dir artifacts/sensitivity/figures_wave123_clean/
+pixi run python scripts/plot_sensitivity_rf_figures.py \
+  --results artifacts/sensitivity/wave123_combined_clean.csv \
+  --output-dir artifacts/sensitivity/figures_wave123_clean/
+cp artifacts/sensitivity/figures_wave123_clean/fig_sensitivity_*.svg docs/manuscripts/
 ```
 
 ### 6.3 Static raster comparators (kept for reference, not regenerated)
@@ -330,23 +376,23 @@ ______________________________________________________________________
 required edits. Entries newest-first:
 
 - **R11** (round 19): `jds_bsm_v22.tex:608` cites pre-cleanup wave1 run
-  count `2,583`; replace with **4,027** (or distinguish observed-wave12
-  evidence from planned future sweep). Also: "nine pipeline configuration
-  parameters" should read **eight observed**, because `lasso_alpha_grid_size`
-  is constant in wave12.
+  count `2,583`; replace with **6,225** (wave1+wave2+wave3 cleaned). Also:
+  "nine pipeline configuration parameters" should read **eight observed**,
+  because `lasso_alpha_grid_size` is constant in wave123.
 - **R10b** (round 17): `jds_bsm_v22.tex:579` typo `two family]ies` →
   `two families`.
-- **R10** (round 17): do not cite `(20, 40, 80, 160)` as observed wave12
-  LASSO grid sweep; wave12 has constant grid size 40.
+- **R10** (round 17): do not cite `(20, 40, 80, 160)` as observed wave123
+  LASSO grid sweep; wave123 has constant grid size 40.
 - **R8** (round 15): practitioner-guidance table still says `LASSO α percentile`; rename to `LASSO α grid size`.
 - **R1–R7** (earlier rounds, 2026-06-07): sensitivity-meta-regression
   refit triggers Table 4 column changes, Table 5 coefficient replacement,
   Figure 7 RF correlations replacement, §6 LHS-non-orthogonality caveat.
-  See impact log for verbatim values.
+  **Cite wave123 numbers from §1.3 of this doc, NOT the older wave12
+  numbers that appear in the impact log.**
 
 **Editor MUST verify (do not assume from impact log):** all numeric values
 in §3 (data), §5 (final model), and §7 (sensitivity) tables match this
-revision doc and the cleaned wave12 CSV.
+revision doc and the cleaned wave123 CSV.
 
 ______________________________________________________________________
 
@@ -363,12 +409,14 @@ ______________________________________________________________________
   `bsm-public-rf/README.md`.
 - **[PLACEHOLDER — user-blocked]** Acknowledgments + DOE disclaimer text.
 - **[PLACEHOLDER — user-blocked]** Steve Peterson affiliation.
-- **[IN FLIGHT]** Sensitivity wave 3 (job 14069433): 2,750 tasks, seeds
-  3000, queued on Kestrel shared partition at session start. If complete
-  at editor handoff, wave3 results should be combined with wave12 cleaned
-  CSV and the meta-regression refit / Figure 7 regeneration repeated.
-  Status check command:
-  `bash scripts/kestrel/status_publication_full_dataset_distributed.sh \   --study-id <wave3-study-id> \   --study-root /scratch/dhetting/bsm/sensitivity_study/`
+- **[DONE 2026-06-08]** Sensitivity wave 3 (job 14069433, COMPLETED
+  2026-06-01, 2,750 artifacts on Kestrel) was collected on 2026-06-08 and
+  combined with waves 1+2 into `wave123_combined_clean.csv` (6,225 rows).
+  Meta-regression refit and Figure 7 regeneration done; new numbers in
+  §1.3 above. Broken wave-2 resubmit jobs (14106277, 14106278) were
+  cancelled — they were referencing a config path that does not exist on
+  the HPC clone (`/scratch/dhetting/bsm/bsm-public-rf/configs/sensitivity_study/study_spec_wave2.yml`).
+  Wave 2 already has its full 2,750 artifacts; no further resubmit needed.
 - **[PENDING — investigation deferred to editor]** Worst three outputs
   (`OI.OHC output by product[TransEster, P, diesel]` 2023–2025, nRMSE
   0.476–0.495). Decide before submission whether to (a) cite as-is, (b)

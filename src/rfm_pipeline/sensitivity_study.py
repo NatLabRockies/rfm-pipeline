@@ -41,6 +41,7 @@ class SensitivityStudySpec:
     calibrated_n_subsample_levels: int = 8
     config_lhs_seed: int = 42
     dgp_lhs_seed: int = 0
+    fixed_overrides: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         """Validate that all count fields are positive integers."""
@@ -56,6 +57,10 @@ class SensitivityStudySpec:
             value = getattr(self, field_name)
             if not isinstance(value, int) or value <= 0:
                 raise ValueError(f"{field_name} must be a positive integer; got {value!r}")
+        if self.fixed_overrides is not None and not isinstance(self.fixed_overrides, dict):
+            raise ValueError(
+                f"fixed_overrides must be a dict or None; got {type(self.fixed_overrides).__name__}"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,7 +165,14 @@ def generate_calibrated_structure_dgps(spec: SensitivityStudySpec) -> list[Synth
 
 
 def generate_config_lhs(spec: SensitivityStudySpec, n_configs: int) -> list[dict[str, Any]]:
-    """Generate hyperparameter overrides from a Latin hypercube design."""
+    """Generate hyperparameter overrides from a Latin hypercube design.
+
+    If ``spec.fixed_overrides`` is set, every config in the returned list is a
+    copy of that mapping (used for "production-replica" sweeps where d/n vary
+    via the DGP block while the pipeline override set is held constant).
+    """
+    if spec.fixed_overrides is not None:
+        return [dict(spec.fixed_overrides) for _ in range(n_configs)]
     lhs = generate_lhs_points(n_configs, len(_CONFIG_OPTIONS), spec.config_lhs_seed)
     configs: list[dict[str, Any]] = []
     for row in lhs:

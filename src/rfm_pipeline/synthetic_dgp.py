@@ -142,7 +142,14 @@ def generate_calibrated_structure_synthetic(spec: SyntheticDGPSpec) -> Synthetic
     gaussian = rng.normal(size=(spec.n_runs, spec.n_inputs)) @ chol.T
     inputs = np.clip(ndtr(gaussian), 1e-9, 1.0 - 1e-9)
 
-    latent = rng.normal(size=(spec.n_runs, spec.factor_model_rank))
+    # Factor signal is driven by the inputs: each latent factor is a random linear
+    # combination of input columns. This produces low-rank output structure that IS
+    # predictable from X (matches real systems like BSM where a few input combinations
+    # drive most output variance). Amplifying factor_signal_weight then strengthens an
+    # input-driven low-rank mode, not exogenous noise.
+    input_projection = rng.normal(size=(spec.n_inputs, spec.factor_model_rank))
+    input_projection /= np.sqrt(spec.n_inputs)
+    latent = inputs @ input_projection
     loadings = rng.normal(size=(spec.factor_model_rank, spec.n_outputs))
     factor_signal = latent @ loadings
     factor_scale = factor_signal.std(axis=0, ddof=1)

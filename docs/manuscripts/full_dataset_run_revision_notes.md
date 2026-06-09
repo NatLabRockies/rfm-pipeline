@@ -225,6 +225,35 @@ residuals, and applies per-tree prediction with quantile PIs to the BSM
 production feature vector. Re-run:
 `pixi run python scripts/compute_bsm_rf_validation.py`.
 
+**Wave 4 production-replica corner sweep (IN FLIGHT, submitted 2026-06-09):**
+Wave123 only has 20 BSM rows in the strict-quality corner
+(BH q ≤ 0.05, screening perms ≥ 201, n_stab ≥ 50) and the RF prediction
+at the BSM production point matches that corner's training central
+tendency (γ ≈ −0.35 to −0.39) almost exactly. The actual production γ
+is −0.564 — outside the empirical envelope of every BSM training row at
+the strict-quality corner. To distinguish "training coverage thin" from
+"sensitivity-harness vs production-pipeline gap", wave4 adds 30
+calibrated_structure runs (10 LHS DGPs × 3 replicates × 1 config) at
+exactly the production override set (BH q=0.05, scr_perms=201, n_stab=50,
+var=0.9, int_perms=31, int_p=0.05, lasso_grid=40, delta=0.002), with
+subsample levels=1 (full n only). Plus 3 pure_synthetic throwaway jobs
+(generator requires at least one).
+
+- Spec: `configs/sensitivity_study/study_spec_wave4.yml` (seeds=4000).
+- Code change: `SensitivityStudySpec.fixed_overrides` field +
+  `generate_config_lhs` honors it (commit cd33219).
+- Kestrel submission: job array **14139138** (2026-06-09 11:54 UTC, 33
+  tasks, partition=shared, 8h walltime, 220G/104 CPU, account=bsm).
+- Study dir: `/scratch/dhetting/bsm/sensitivity_study_wave4`.
+- Expected runtime: dominant cost is the calibrated jobs at full n
+  (5,000-30,000 runs × stability subsamples 50). Wave3 calibrated jobs
+  averaged 30-60 min; wave4 at strict-quality settings may run 45-90
+  min each. Concurrency 33/33 → wall clock 1-2h.
+- On completion: collect wave4 results, append to
+  `wave123_combined_clean.csv` → `wave1234_combined_clean.csv`, refit
+  both RFs, re-run `scripts/compute_bsm_rf_validation.py`, regenerate
+  `fig_sensitivity_bsm_validation`, update this doc + impact-log R12.
+
 ### 1.4 Holdout split rule made explicit
 
 The case-study holdout split rule was previously documented implicitly via

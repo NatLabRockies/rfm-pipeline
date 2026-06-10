@@ -242,15 +242,114 @@ If Track A produces a meta-model with $|R^2 - R^2\_{\\text{Track B}}| < 0.05$, t
 
 ______________________________________________________________________
 
-## 5. Reproducibility
+## 6. Extended Track B work (2026-06-09, while wave5 v2 ran)
+
+Three additional analyses pursued on the existing wave1234 data, no Kestrel needed. Implementation: `scripts/analytic_baselines_extended.py`. Outputs:
+
+- `artifacts/sensitivity/wave1234_stage_decomposition.csv`
+- `artifacts/sensitivity/wave1234_hybrid_predictor.csv`
+- `artifacts/sensitivity/track_b_extended_summary.json`
+
+### 6.1 Stage-by-stage efficiency decomposition
+
+**Overview.** Decompose the pipeline's total efficiency η into the contribution of each stage. Wave1234 records the held-out nRMSE after each major stage (main-effects OLS, screening cull, sparse selection, final debias), so we can attribute the (nrmse_null − nrmse_oracle) "gap" closure to individual stages.
+
+**Method.** Define per-stage closure as:
+
+$$\\eta\_{\\text{stage}} = \\frac{\\text{nRMSE}_{\\text{stage-input}} - \\text{nRMSE}_{\\text{stage-output}}}{\\text{nRMSE}_{\\text{null}} - \\text{nRMSE}_{\\text{oracle}}}$$
+
+The four stage closures sum to the total η.
+
+**Conclusion (mean over 4,780 successful wave1234 rows):**
+
+| Stage            | Mean η    | Median η | What it does                                              |
+| ---------------- | --------- | -------- | --------------------------------------------------------- |
+| Main-effects OLS | **0.572** | 0.562    | Fits a linear OLS over ALL inputs after PCA dim reduction |
+| Screening cull   | 0.002     | 0.001    | Drops features that fail BH q < 0.05 vs empirical null    |
+| Sparse selection | -0.043    | 0.071    | Stability-selected LASSO refit                            |
+| Final debias     | 0.061     | -0.052   | Bootstrap-debiased OLS on selected features               |
+| **Total η**      | **0.593** | 0.569    | Pipeline overall                                          |
+
+**Interpretation.** The main-effects OLS stage does **96% of all the work** (0.572 / 0.593). The other three stages — screening, sparse selection, final debias — each contribute < 10 % of the closure on average, and screening contributes essentially zero (0.2 %). This is a striking result with three implications:
+
+1. **The screening stage is not earning its compute cost** on the synthetic distribution. At BH q = 0.05 with 201 permutations the stage rejects very few features that were going to matter to OLS anyway. Either q is too conservative, the empirical null is too wide, or the OLS stage is already implicitly handling the selection via the variance threshold + PCA.
+
+1. **Sparse selection sometimes hurts** (mean η = −0.04; the median is positive but the mean is dragged down by a long left tail). Stability-selected LASSO occasionally drops useful features, then debiased OLS has to recover.
+
+1. **Final debias is a small positive corrector on average**, but high-variance (large σ + opposite-sign mean and median) — useful in some cases, neutral in others.
+
+For the manuscript, this strongly supports rewriting §6 to acknowledge that on synthetic data the bulk of pipeline performance comes from the first OLS stage; the discovery + selection stages add interpretability (recovering which features matter) more than they add predictive power.
+
+### 6.2 Hybrid analytic + learned predictor
+
+**Overview.** Use the analytic oracle γ as a structural anchor and learn ONLY the dimensionless efficiency η from features. Compare against a direct RF that learns γ from features unconstrained.
+
+**Method.** Three predictors, all evaluated under 10-fold GroupKFold CV with `dgp_idx` as the group:
+
+1. **Hybrid (Ridge η):** γ_pred = γ_oracle(snr) × clip(Ridge(features).predict, 0, 1.2)
+1. **Hybrid (RF η):** same but RandomForestRegressor for η
+1. **Direct RF:** γ_pred = RandomForestRegressor(features).predict (no constraint)
+
+**Conclusion (group-blocked 10-fold CV on wave1234):**
+
+| Predictor                  | R²        | RMSE       | MAE        |
+| -------------------------- | --------- | ---------- | ---------- |
+| Hybrid (oracle × Ridge η)  | 0.685     | 0.0753     | 0.0580     |
+| **Hybrid (oracle × RF η)** | **0.738** | **0.0687** | **0.0501** |
+| Direct RF (γ ~ features)   | 0.569     | 0.0881     | 0.0636     |
+
+**The physics constraint adds 0.169 R²** (24 % RMSE improvement) over the unconstrained RF. The same feature set, the same number of training rows, the same algorithm — only the output transform differs (γ vs η). The win is interpretable: by forcing the model to factor through γ_oracle(snr), we let it specialize on the *easier* problem of learning a dimensionless efficiency rather than the *harder* problem of learning γ across a wide SNR range.
+
+### 6.3 BSM head-to-head: out-of-distribution test
+
+**Overview.** All four predictors above are trained on the synthetic wave1234 distribution. BSM is OUTSIDE that distribution (Track B §1 + the structural gap audit from 2026-06-09). Predict BSM's actual γ = −0.564 (nRMSE = 0.0721) and compare.
+
+**Method.** Refit each predictor on all 4,780 successful rows. Apply to the BSM operating-point feature vector (n_inputs = 135, n_runs = 28,750, n_outputs = 9,954, sparsity = 0.28, ρ = 0.15, κ = 0.20, snr = 22.3, holdout = 0.05, screening perms = 201, BH q = 0.05, interaction perms = 31, p = 0.05, stability subs = 50, δ = 0.002).
+
+**Conclusion:**
+
+| Predictor               | Predicted nRMSE | % Error vs 0.0721 |
+| ----------------------- | --------------- | ----------------- |
+| **Hybrid (Ridge η)**    | **0.0908**      | **+25.9 %**       |
+| Hybrid (RF η)           | 0.0995          | +38.0 %           |
+| Wave123 RF (handoff)    | 0.1009          | +40.0 %           |
+| Direct RF (this script) | 0.1047          | +45.2 %           |
+
+Two findings:
+
+1. **The simplest predictor wins.** Ridge regression on 14 features, scaled by an analytic γ_oracle, beats every RF including the handoff bundle's wave123 RF and beats it by 14 percentage points. The hybrid Ridge predictor uses no nonlinear interactions and no high-capacity model, but its functional form is correct (η in [0, 1], γ = η × γ_oracle is the natural decomposition).
+
+1. **All purely synthetic-trained predictors are biased high on BSM.** They predict η ≈ 0.50 − 0.57; the true BSM η is 0.71. This is the coverage-gap signature: BSM is in a more-efficient regime than the median synthetic row (because BSM is effectively rank-1, the OLS stage compresses very well), but the synthetic distribution does not include enough rank-1-like rows for the model to extrapolate to that regime. Track A's measurement-based meta-model with wave5 v2 data should close this gap by giving the model access to the structural statistics (output PCA top-1 share, spectrum decay α) that distinguish BSM-like rows.
+
+**Manuscript implication.** Even the strongest existing-data predictor leaves 26 % error on BSM. The expected publication strategy is: (a) report Track B Ridge-η hybrid as the *interpretable baseline*; (b) report the Track A measurement-based meta-model as the *improved predictor*; (c) make the methodological point that **physics-constrained low-capacity models beat unconstrained high-capacity models on out-of-distribution scientific prediction tasks**. The 40 % → 26 % improvement from purely re-parameterizing γ as η × γ_oracle is the rescue narrative for the manuscript regardless of whether Track A succeeds.
+
+______________________________________________________________________
+
+## 7. Status of derivation #4–#5 (BH retention rate, OLS variance reduction, SURE)
+
+Deferred (not blocking the manuscript at current scope). If Track A also stalls, return to these. Section 4 in this document still describes them and explains the math sketch.
+
+______________________________________________________________________
+
+## 8. Reproducibility
 
 ```bash
+# Core baselines (Section 1-3)
 pixi run python scripts/analytic_baselines.py
-# Inputs:  artifacts/sensitivity/wave1234_combined_clean.csv
-# Outputs: artifacts/sensitivity/wave1234_analytic_baselines.csv
-#          artifacts/sensitivity/wave1234_analytic_baselines_summary.json
+
+# Extended baselines (Section 6)
+pixi run python scripts/analytic_baselines_extended.py
 ```
 
-The script is deterministic: it reads only the rows in the input CSV and emits one prediction per row. No random sampling, no fitting.
+Inputs: `artifacts/sensitivity/wave1234_combined_clean.csv` (6,258 rows).
 
-Source: `scripts/analytic_baselines.py` (commit `54c0a70`).
+Outputs:
+
+- `wave1234_analytic_baselines.csv`, `wave1234_analytic_baselines_summary.json` (Section 1-3).
+- `wave1234_stage_decomposition.csv` (Section 6.1).
+- `wave1234_hybrid_predictor.csv` (Section 6.2-6.3).
+- `track_b_extended_summary.json` (Section 6 aggregate).
+
+Both scripts are deterministic except the RF / hybrid-RF fits which use `random_state=0`.
+
+Sources: `scripts/analytic_baselines.py` (commit `54c0a70`), `scripts/analytic_baselines_extended.py` (current commit).

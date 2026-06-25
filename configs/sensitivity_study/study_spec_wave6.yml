@@ -1,0 +1,40 @@
+# Copyright (c) 2026 Dylan Hettinger
+# Sensitivity study — Wave 6 (denser coverage for Track A/B follow-up).
+#
+# Purpose: reuse the expanded-structure hull from wave 5 with denser sampling
+# so the measurement-based meta-model has more interpolation support around the
+# BSM-like corners that wave 5 exposed.
+#
+# Design:
+#   - expanded_structure block (use_expanded_dgp: true)
+#   - 120 LHS DGPs across the expanded 14-D structural space
+#   - 4 configs per DGP to sample the most sensitive pipeline knobs more densely
+#   - 2 replicates per DGP/config for variance estimation
+#   - subsample levels = 1 (full n)
+#   - pure_synthetic block disabled
+# Total: 120 expanded × 4 configs × 2 reps = 960 jobs.
+#
+# Wave 6 = seeds 6000.
+study:
+  pure_synthetic_n_dgps: 0
+  calibrated_n_dgps: 120
+  n_configs_per_dgp_pure: 0
+  n_configs_per_dgp_calibrated: 4
+  n_replicates: 2
+  pure_synthetic_n_subsample_levels: 0
+  calibrated_n_subsample_levels: 1
+  config_lhs_seed: 6000
+  dgp_lhs_seed: 6000
+  use_expanded_dgp: true
+
+output:
+  study_dir: "/scratch/dhetting/bsm/sensitivity_study_wave6"
+  n_jobs: 960
+
+slurm:
+  account: "${SLURM_ACCOUNT:-rfm}"
+  partition: shared
+  walltime: "08:00:00"
+  memory_gb: 220
+  cpus_per_task: 104
+  max_concurrent: 60

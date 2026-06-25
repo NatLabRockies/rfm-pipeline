@@ -292,3 +292,10 @@ class TestLegacyConfigMapping:
         assert section["dask_workers"] == 7
         assert section["dask_cores_per_worker"] == 3
         assert section["dask_memory_per_worker"] == "6 GB"
+
+    def test_validation_full_dataset_final_cost_04_bakes_in_pruning_override(self):
+        """The full-cost rung config should pin the manuscript pruning threshold explicitly."""
+        config_path = Path("configs/validation_full_dataset_final_cost_04.yml")
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+
+        assert data["stages"]["final_artifacts"]["delta_threshold_override"] == pytest.approx(0.002)

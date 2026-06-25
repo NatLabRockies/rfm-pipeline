@@ -7,12 +7,35 @@ branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: JOSS review cadence — 6-month weekly slices beginning 2026-06-29. Track A + Track B complete; BSM hybrid predictor documented; repo clean.
-current_slice: CLOSED — 2026-06-25: committed Wave5 Track A module (`src/rfm_pipeline/wave5_track_a.py`, `scripts/fit_wave5_track_a.py`, `tests/test_wave5_track_a.py`, `configs/sensitivity_study/study_spec_wave6.yml`) and delta_threshold_override config pin + manifest JOSS cadence table. Repo is clean. Next slice: 2026-06-29 Week 1 — docs-snippet smoke coverage for command-policy drift.
-last_validation: `pixi run python -m pytest -q tests/test_wave5_track_a.py tests/test_config_loader.py::TestLegacyConfigMapping::test_validation_full_dataset_final_cost_04_bakes_in_pruning_override` → 4/4 pass. `pixi run ruff check src/rfm_pipeline/wave5_track_a.py scripts/fit_wave5_track_a.py tests/test_wave5_track_a.py` → pass.
-last_commit: rfm-pipeline f652e0c (fix(config): pin delta_threshold_override + JOSS cadence table).
+current_milestone: BSM RF predictor accuracy fix — Track A v2 HPC fit in progress. v1 Track A (proxy_n_outputs_cap=1000, direct RF) poor R²=0.575. v2 submitted to HPC with 3 improvements.
+current_slice: IN FLIGHT — 2026-06-25: Track A v2 fit running on Kestrel job 14619504 (shared, 220G, 104 CPU, 4h, node x1008c1s6b0n0). Script: `scripts/fit_track_a_v2.py`. Three improvements: (1) proxy_n_outputs_cap=9000 for accurate output spectrum stats; (2) hybrid oracle Ridge as primary model (eta × gamma_oracle); (3) GP-ARD with optimizer enabled. Outputs to `artifacts/sensitivity/wave5_measurement_models/`.
+last_validation: `pixi run ruff check scripts/fit_track_a_v2.py` → pass. Commit cf36616 pushed.
+last_commit: rfm-pipeline cf36616 (feat(track-a): v2 fit script + Slurm submission script (3 improvements)).
 
-HPC follow-up: remote clone `/home/dhetting/src/bsm-public-rf` does not yet have the wave5_track_a commits. Push `e266d3b` + `f652e0c` to HPC clone when scheduling wave6 batch job. Use a scheduled batch job / detached run for the uncapped or larger proxy-cap measurement pass.
+## HPC job monitoring
+
+### Job 14619504 — Track A v2 fit (2026-06-25, IN FLIGHT)
+
+```bash
+# Status
+ssh kl1.hpc.nrel.gov "squeue -j 14619504 --noheader -o '%i %j %T %l %m'"
+# Tail live output
+ssh kl1.hpc.nrel.gov "tail -50 /home/dhetting/src/bsm-public-rf/logs/track_a_v2_14619504.out"
+# After completion: read summary
+ssh kl1.hpc.nrel.gov "cat /home/dhetting/src/bsm-public-rf/artifacts/sensitivity/wave5_measurement_models/wave5_track_a_v2_summary.json"
+# Rsync results back
+rsync -av kl1.hpc.nrel.gov:/home/dhetting/src/bsm-public-rf/artifacts/sensitivity/wave5_measurement_models/ \
+  ~/src/rfm-pipeline/artifacts/sensitivity/wave5_measurement_models/
+```
+
+### Next step after job completes
+
+1. Rsync `wave5_measurement_models/` to local.
+1. Read `wave5_track_a_v2_summary.json` — compare `hybrid_ridge_nrmse_cv.r2` vs v1 `nrmse_from_eta_rf.r2=0.575`.
+1. Check `bsm_prediction.pct_err` — goal < 10%.
+1. If BSM error < 10%: manuscript §7.5 can cite hybrid measurement-based model. Update MEMORY.
+1. If BSM error still > 10%: submit wave6 HPC run (spec: `configs/sensitivity_study/study_spec_wave6.yml`, 960 jobs in BSM-like corners).
+1. ARD length scales in `gp_ard_length_scales.json` → identify key measurement features for Figure 7 revision.
 
 ## JOSS cadence draft — 2026-06-24
 

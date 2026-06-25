@@ -50,6 +50,35 @@ Run `SELECT * FROM todos` to see current task breakdown.
 - ✅ Phase 3: Integration and testing
 - ✅ Phase 4: Validation (300-sample full-chain run + full gate pass)
 
+## JOSS review cadence (6 months, Monday slices)
+
+Goal: keep a steady, review-friendly git history without jumping ahead of schedule.
+
+- Rule: one bounded slice per Monday.
+- If a slice is blocked by owner-supplied data, swap to the next unblocked item from `docs/review_register.md` or `docs/scope_backlog.md`.
+- Do not start later slices early; keep commits small and attributable to the Monday slice.
+
+### First 12 Mondays
+
+| Week | Target Monday | Slice                                                                                        |
+| ---- | ------------- | -------------------------------------------------------------------------------------------- |
+| 1    | 2026-06-29    | Add docs-snippet smoke coverage for command-policy drift.                                    |
+| 2    | 2026-07-06    | Replace the remaining Chrome/tempfile SVG→PDF helpers with one repo-local helper.            |
+| 3    | 2026-07-13    | Apply manuscript edit pass for the first third of R1–R11.                                    |
+| 4    | 2026-07-20    | Apply manuscript edit pass for the middle third of R1–R11.                                   |
+| 5    | 2026-07-27    | Apply manuscript edit pass for the final third of R1–R11 and sync impact log.                |
+| 6    | 2026-08-03    | Clean the repo-hygiene whitespace blockers that still fail `./test_repo.sh --check`.         |
+| 7    | 2026-08-10    | Reconcile the final-cost ladder pruning threshold and document the resulting support impact. |
+| 8    | 2026-08-17    | Tighten the interaction-retention audit and add a regression for threshold drift.            |
+| 9    | 2026-08-24    | Prepare release-surface docs for JOSS review wording and citation consistency.               |
+| 10   | 2026-08-31    | Refresh manuscript-facing examples and command snippets after the review pass.               |
+| 11   | 2026-09-07    | Run a release-candidate validation slice and fix any gate regressions.                       |
+| 12   | 2026-09-14    | Package the review-ready snapshot and confirm the branch history is clean.                   |
+
+### Weeks 13-26
+
+Repeat the same pattern through 2026-12-21: one Monday slice per week, alternating between code fixes, docs/review cleanup, and validation-only commits. Keep any blocked work parked until the required input arrives.
+
 ### Phase 3 source-backed stage chain
 
 - Stage execution chain is implemented and wired end-to-end across output conditioning,

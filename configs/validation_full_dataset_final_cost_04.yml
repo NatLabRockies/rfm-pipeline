@@ -33,6 +33,7 @@ stages:
   final_artifacts:
     bootstrap_count: 10
     bootstrap_alpha: 0.05
+    delta_threshold_override: 0.002
 
 validation:
   fast_mode: false

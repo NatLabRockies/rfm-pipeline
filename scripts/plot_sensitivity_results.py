@@ -437,7 +437,9 @@ def _render_sample_size_curve(results: pd.DataFrame, rf_path: Path | None = None
         f'font-size="{_SVG_FS_AXIS}" fill="{_SVG_COLOR_TEXT}">Number of training runs</text>',
         f'<text x="28" y="265" transform="rotate(-90 28 265)" text-anchor="middle" '
         f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_AXIS}" '
-        f'fill="{_SVG_COLOR_TEXT}">\u03b3 = (nRMSE \u2013 nRMSE\u2080) / nRMSE\u2080</text>',
+        f'fill="{_SVG_COLOR_TEXT}">\u03b3 = (nRMSE \u2212 nRMSE'
+        '<tspan baseline-shift="sub" font-size="75%">null</tspan>) / nRMSE'
+        '<tspan baseline-shift="sub" font-size="75%">null</tspan></text>',
         # RF importance annotation
         f'<text x="{left + 12}" y="{top + plot_h - 10}" font-family="{_SVG_FONT_FAMILY}" '
         f'font-size="{_SVG_FS_SMALL}" fill="{_SVG_COLOR_TEXT_MUTED}">'

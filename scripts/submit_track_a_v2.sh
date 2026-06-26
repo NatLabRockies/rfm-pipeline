@@ -2,7 +2,7 @@
 #SBATCH --job-name=rfm_track_a_v2
 #SBATCH --account=bsm
 #SBATCH --partition=shared
-#SBATCH --time=04:00:00
+#SBATCH --time=24:00:00
 #SBATCH --mem=220G
 #SBATCH --cpus-per-task=104
 #SBATCH --output=/home/dhetting/src/bsm-public-rf/logs/track_a_v2_%j.out
@@ -34,6 +34,7 @@ export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
+export PYTHONUNBUFFERED=1
 
 cd "${REPO}"
 
@@ -42,7 +43,7 @@ echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Checking pixi environment..."
 pixi install --locked 2>&1 | tail -3
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Running fit_track_a_v2.py ..."
-pixi run python scripts/fit_track_a_v2.py \
+pixi run python -u scripts/fit_track_a_v2.py \
     --input  artifacts/sensitivity/wave5_results.csv \
     --output-dir artifacts/sensitivity/wave5_measurement_models \
     --proxy-n-runs-cap 10000 \

@@ -266,19 +266,20 @@ def main() -> None:
 
     # --- Runtime: hybrid analytic + Ridge ---
     print("[v2] Fitting runtime model (analytic baseline + Ridge)...")
-    n_runs = aggregated["n_runs"].to_numpy(dtype=float)
-    n_inputs = aggregated["n_inputs"].to_numpy(dtype=float)
+    knob_frame = results.drop_duplicates(["dgp_idx", "config_idx"]).copy()
+    n_runs = knob_frame["n_runs"].to_numpy(dtype=float)
+    n_inputs = knob_frame["n_inputs"].to_numpy(dtype=float)
     _empty = pd.Series(dtype=float)
-    p_screen = aggregated.get("stages.empirical_null_screening.n_permutations", _empty).to_numpy(
+    p_screen = knob_frame.get("stages.empirical_null_screening.n_permutations", _empty).to_numpy(
         dtype=float
     )
-    p_int = aggregated.get("stages.interaction_discovery.n_permutations", _empty).to_numpy(
+    p_int = knob_frame.get("stages.interaction_discovery.n_permutations", _empty).to_numpy(
         dtype=float
     )
-    n_stab = aggregated.get("stages.sparse_selection.n_stability_subsamples", _empty).to_numpy(
+    n_stab = knob_frame.get("stages.sparse_selection.n_stability_subsamples", _empty).to_numpy(
         dtype=float
     )
-    lasso = aggregated.get("stages.sparse_selection.lasso_alpha_grid_size", _empty).to_numpy(
+    lasso = knob_frame.get("stages.sparse_selection.lasso_alpha_grid_size", _empty).to_numpy(
         dtype=float
     )
     runtime_oracle = (

@@ -28,6 +28,7 @@ api
 workflow_audit
 module_plan
 manuscripts/full_dataset_run_revision_notes
+manuscripts/track_b_analytic_baselines
 manuscripts/manuscript_impact_log
 manuscript_summary_log
 3K_TEST_VALIDATION_REPORT

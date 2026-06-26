@@ -68,20 +68,20 @@ _SVG_COLOR_ACCENT_SKY = "#56B4E9"  # Okabe-Ito sky blue
 _SVG_COLOR_ACCENT_PURPLE = "#CC79A7"  # Okabe-Ito reddish purple
 
 # Typography scale — shared across all SVG figure renderers.
-# Sized for legibility on an 8.5×11 in printed page (96 px/in screen; ~13.3 px/pt).
-_SVG_FS_TITLE = 20  # main figure / panel title
-_SVG_FS_PANEL = 18  # section sub-title (multi-panel figures)
-_SVG_FS_AXIS = 14  # axis labels
-_SVG_FS_TICK = 13  # tick labels
-_SVG_FS_LABEL = 13  # bar value labels, annotations
-_SVG_FS_LEGEND = 12  # legend entries, inline captions
-_SVG_FS_SMALL = 11  # constrained-space text (heatmap cells, tight annotations)
+# Increased ~10% for print legibility (workflow + case-study figure set).
+_SVG_FS_TITLE = 22  # main figure / panel title
+_SVG_FS_PANEL = 20  # section sub-title (multi-panel figures)
+_SVG_FS_AXIS = 15  # axis labels
+_SVG_FS_TICK = 14  # tick labels
+_SVG_FS_LABEL = 14  # bar value labels, annotations
+_SVG_FS_LEGEND = 13  # legend entries, inline captions
+_SVG_FS_SMALL = 12  # constrained-space text (heatmap cells, tight annotations)
 
 # Label layout constants — shared across all chart types so the gap between the
 # longest label's right edge and the plot content (bars, cells) is uniform.
-_LABEL_CHAR_WIDTH_PX = 7.5  # estimated px per character at 13 px Helvetica
-_HEATMAP_CHAR_WIDTH_PX = 6.0  # estimated px per character at 11 px Helvetica (heatmap)
-_LABEL_CONTENT_GAP_PX = 20  # fixed gap from longest label right-edge to content
+_LABEL_CHAR_WIDTH_PX = 8.3  # estimated px per character at 14 px Helvetica
+_HEATMAP_CHAR_WIDTH_PX = 6.6  # estimated px per character at 12 px Helvetica (heatmap)
+_LABEL_CONTENT_GAP_PX = 22  # fixed gap from longest label right-edge to content
 
 
 def configure_progress_telemetry(path: Path | None) -> None:
@@ -3884,7 +3884,7 @@ def regenerate_final_manuscript_artifacts(
             figure_selected_by_module_data,
             label_column="module",
             value_column="n_selected_inputs",
-            title="Selected inputs by module (count)",
+            title="Selected inputs by module",
         ),
         "figure_selected_by_module_share": _render_horizontal_bar_svg(
             figure_selected_by_module_data,
@@ -8450,7 +8450,9 @@ def _render_per_output_nrmse_distribution_svg(per_output_nrmse: pd.DataFrame) ->
                 'stroke="#ffffff" stroke-width="0.9"/>',
                 f'<text x="{xp:.1f}" y="{axis_y_bot + 32}" '
                 f'font-family="{_SVG_FONT_FAMILY}" font-size="{_SVG_FS_SMALL}" '
-                f'text-anchor="middle" fill="{_SVG_COLOR_TEXT}">{label}={qval:.3f}</text>',
+                f'text-anchor="middle" fill="{_SVG_COLOR_TEXT}">p'
+                f'<tspan baseline-shift="sub" font-size="75%">{label[1:]}</tspan>'
+                f"={qval:.3f}</text>",
             ]
         )
 
@@ -8721,7 +8723,7 @@ def regenerate_figures_from_committed_data(
             mod_data,
             label_column="module",
             value_column="n_selected_inputs",
-            title="Selected inputs by module (count)",
+            title="Selected inputs by module",
         ),
         "figure_selected_by_module_share": _render_horizontal_bar_svg(
             mod_data,

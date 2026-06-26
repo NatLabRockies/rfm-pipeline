@@ -302,10 +302,10 @@ def _render_importance_panel(
 
 def render_rf_importance() -> str:
     """Render two-panel RF feature importance horizontal bar chart."""
-    W, H = 1120, 420
+    W, H = 1120, 450
     bar_h, bar_gap = 24, 12
     n = 8
-    y_top = 65
+    y_top = 72
     y_ax = y_top + n * (bar_h + bar_gap) + 4
 
     # Panel 1 (quality, blue) — x: 0..545
@@ -320,7 +320,7 @@ def render_rf_importance() -> str:
 
     # Panel divider
     body.append(
-        f'<line x1="557" y1="20" x2="557" y2="{H - 20}" '
+        f'<line x1="557" y1="24" x2="557" y2="{H - 24}" '
         f'stroke="{_SVG_COLOR_LIGHT}" stroke-width="1"/>'
     )
 
@@ -376,12 +376,12 @@ def render_bsm_validation(results_path: Path) -> str:
     n_total = int(len(r_vals))
     median_successful = float(np.median(r_succ)) if n_successful else 0.0
 
-    W, H = 1130, 370
+    W, H = 1130, 410
 
     # ── Left panel: histogram ────────────────────────────────────────────────
-    # Plot area x=25..535, y=60..295 → 510 × 235; matches right panel ax_y_r=295
-    lp_x0, lp_y0 = 25, 60
-    lp_w, lp_h = 510, 235
+    # Plot area x=25..535, y=74..312 → 510 × 238; matches right panel ax_y_r=312
+    lp_x0, lp_y0 = 25, 74
+    lp_w, lp_h = 510, 238
 
     bins = np.arange(-0.90, 0.021, 0.02)
     counts, edges = np.histogram(r_vals, bins=bins)
@@ -399,13 +399,13 @@ def render_bsm_validation(results_path: Path) -> str:
 
     # Title + rule — two lines, both starting at the same y as the right panel title
     body.append(
-        f'<text x="{lp_x0 + 5}" y="17" font-family="{_FONT}" font-size="{_FS_TITLE}" '
+        f'<text x="{lp_x0 + 5}" y="24" font-family="{_FONT}" font-size="{_FS_TITLE}" '
         f'font-weight="700" fill="{_SVG_COLOR_TITLE}">'
         "Distribution of \u03b3 across sensitivity study runs</text>"
-        f'<text x="{lp_x0 + 5}" y="38" font-family="{_FONT}" font-size="{_FS_TITLE}" '
+        f'<text x="{lp_x0 + 5}" y="50" font-family="{_FONT}" font-size="{_FS_TITLE}" '
         f'font-weight="700" fill="{_SVG_COLOR_TITLE}">'
         f"(n\u00a0=\u00a0{n_total:,})</text>"
-        f'<line x1="{lp_x0}" y1="46" x2="{lp_x0 + lp_w}" y2="46" '
+        f'<line x1="{lp_x0}" y1="58" x2="{lp_x0 + lp_w}" y2="58" '
         f'stroke="{_SVG_COLOR_EDGE}" stroke-width="0.8"/>'
     )
 
@@ -452,11 +452,14 @@ def render_bsm_validation(results_path: Path) -> str:
 
     # Axis labels
     body.append(
-        _ax_label(
-            "\u03b3 = (nRMSE_final \u2212 nRMSE_null) / nRMSE_null",
-            lp_x0 + lp_w // 2,
-            lp_y0 + lp_h + 30,
-        )
+        f'<text x="{lp_x0 + lp_w // 2}" y="{lp_y0 + lp_h + 30}" text-anchor="middle" '
+        f'font-family="{_FONT}" font-size="{_FS_AXIS}" fill="{_SVG_COLOR_TEXT}">'
+        "\u03b3 = (nRMSE"
+        '<tspan baseline-shift="sub" font-size="75%">final</tspan>'
+        " \u2212 nRMSE"
+        '<tspan baseline-shift="sub" font-size="75%">null</tspan>) / nRMSE'
+        '<tspan baseline-shift="sub" font-size="75%">null</tspan>'
+        "</text>"
     )
     body.append(
         f'<text x="{lp_x0 - 35}" y="{lp_y0 + lp_h // 2}" '
@@ -479,7 +482,7 @@ def render_bsm_validation(results_path: Path) -> str:
     )
 
     # Legend — placed below the x-axis to avoid overlapping bars
-    leg_y = lp_y0 + lp_h + 38
+    leg_y = lp_y0 + lp_h + 40
     body.append(
         f'<line x1="{lp_x0 + 10}" y1="{leg_y}" x2="{lp_x0 + 34}" y2="{leg_y}" '
         f'stroke="{_SVG_COLOR_DANGER}" stroke-width="1.8" stroke-dasharray="7 4"/>'
@@ -513,9 +516,9 @@ def render_bsm_validation(results_path: Path) -> str:
     rp_left, rp_right = 580, 1120
     pp_x0 = rp_left + 58
     pp_w = rp_right - pp_x0 - 20
-    pp_yc = 230  # center y for main row
-    pp_ya = 185  # y for analog dots row
-    ax_y_r = 295  # x-axis line y
+    pp_yc = 246  # center y for main row
+    pp_ya = 198  # y for analog dots row
+    ax_y_r = 312  # x-axis line y
 
     x_nrmse_min, x_nrmse_max = 0.067, 0.083
     nrmse_span = x_nrmse_max - x_nrmse_min
@@ -528,7 +531,7 @@ def render_bsm_validation(results_path: Path) -> str:
         _panel_title(
             "BSM operating-point validation",
             rp_left + 5,
-            17,
+            24,
             rp_left,
             rp_right - 10,
         )

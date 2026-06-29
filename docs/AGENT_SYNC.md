@@ -7,14 +7,28 @@ branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: BSM RF predictor accuracy fix — Track A v2 HPC fit in progress. v1 Track A (proxy_n_outputs_cap=1000, direct RF) poor R²=0.575. v2 submitted to HPC with 3 improvements.
-current_slice: IN FLIGHT — 2026-06-25: Track A v2 fit running on Kestrel job 14619504 (shared, 220G, 104 CPU, 4h, node x1008c1s6b0n0). Script: `scripts/fit_track_a_v2.py`. Three improvements: (1) proxy_n_outputs_cap=9000 for accurate output spectrum stats; (2) hybrid oracle Ridge as primary model (eta × gamma_oracle); (3) GP-ARD with optimizer enabled. Outputs to `artifacts/sensitivity/wave5_measurement_models/`.
-last_validation: `pixi run ruff check scripts/fit_track_a_v2.py` → pass. Commit cf36616 pushed.
-last_commit: rfm-pipeline cf36616 (feat(track-a): v2 fit script + Slurm submission script (3 improvements)).
+current_milestone: BSM RF predictor accuracy fix — Track A v3 HPC fit in progress. v2 completed but BSM prediction error remained high (+26.4%), so v3 adds BSM-neighbor transfer features and runtime robustness.
+current_slice: IN FLIGHT — 2026-06-28: Track A v3 submitted on Kestrel as job 14801489 (shared, 220G, 104 CPU, 24h). Scripts: `scripts/fit_track_a_v3.py`, `scripts/submit_track_a_v3.sh`. Improvements: (1) kNN measurement imputation for BSM, (2) near-BSM sample weighting + optional wave6 merge input, (3) OOD diagnostics + uncertainty interval, (4) runtime log-residual model with large-output regime term.
+last_validation: `pixi run ruff check src/rfm_pipeline/track_a_v3.py scripts/fit_track_a_v3.py tests/test_track_a_v3.py && pixi run python -m pytest -q tests/test_track_a_v3.py tests/test_wave5_track_a.py` → pass.
+last_commit: rfm-pipeline 78ae9fc (feat(track-a): add v3 transfer-improved fit workflow).
 
 ## HPC job monitoring
 
-### Job 14619504 — Track A v2 fit (2026-06-25, IN FLIGHT)
+### Job 14801489 — Track A v3 fit (2026-06-28, IN FLIGHT)
+
+```bash
+# Status
+ssh kl1.hpc.nrel.gov "squeue -j 14801489 --noheader -o '%i %j %T %l %m'"
+# Tail live output
+ssh kl1.hpc.nrel.gov "tail -50 /home/dhetting/src/bsm-public-rf/logs/track_a_v3_14801489.out"
+# After completion: read summary
+ssh kl1.hpc.nrel.gov "cat /home/dhetting/src/bsm-public-rf/artifacts/sensitivity/wave5_measurement_models_v3/wave5_track_a_v3_summary.json"
+# Rsync results back
+rsync -av kl1.hpc.nrel.gov:/home/dhetting/src/bsm-public-rf/artifacts/sensitivity/wave5_measurement_models_v3/ \
+  ~/src/rfm-pipeline/artifacts/sensitivity/wave5_measurement_models_v3/
+```
+
+### Job 14619504 — Track A v2 fit (historical)
 
 ```bash
 # Status

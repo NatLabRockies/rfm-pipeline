@@ -180,7 +180,7 @@ ______________________________________________________________________
 1. **Validate artifact counts** (vs PARALLEL_RUN_VALIDATION_CHECKLIST.md)
 
    ```bash
-   cat artifacts/validation_300_sample_no_caps/stage_summaries.json | python -m json.tool
+   cat artifacts/validation_300_sample_no_caps/stage_summaries.json | pixi run python -m json.tool
    ```
 
 1. **If all pass**: Start refactor milestone

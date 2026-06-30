@@ -143,10 +143,10 @@ Once run finishes:
 
 ```bash
 # 1. Examine stage summaries
-cat artifacts/validation_300_sample_no_caps/stage_summaries.json | python -m json.tool
+cat artifacts/validation_300_sample_no_caps/stage_summaries.json | pixi run python -m json.tool
 
 # 2. Check QA audit
-cat artifacts/validation_300_sample_no_caps/qa_audit_summary.json | python -m json.tool
+cat artifacts/validation_300_sample_no_caps/qa_audit_summary.json | pixi run python -m json.tool
 
 # 3. Verify reproducibility with seed=0
 pixi run python tools/run_300_sample_validation.py --no-caps --seed 0

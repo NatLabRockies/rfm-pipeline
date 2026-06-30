@@ -12,6 +12,16 @@ current_slice: IN FLIGHT — 2026-06-28: Track A v3 submitted on Kestrel as job 
 last_validation: `pixi run ruff check src/rfm_pipeline/track_a_v3.py scripts/fit_track_a_v3.py tests/test_track_a_v3.py && pixi run python -m pytest -q tests/test_track_a_v3.py tests/test_wave5_track_a.py` → pass.
 last_commit: rfm-pipeline 78ae9fc (feat(track-a): add v3 transfer-improved fit workflow).
 
+## SESSION STATE — 2026-06-30 — Monday slice W1 complete: docs-snippet smoke coverage
+
+- Objective (bounded): add regression coverage for command-policy drift in critical docs snippets, without changing workflow code.
+- Scope in: `tests/test_docs_snippets_smoke.py`, command snippets in `docs/PARALLEL_RUN_VALIDATION_CHECKLIST.md` and `docs/SESSION_SUMMARY_2026_05_09.md`.
+- Scope out: Track A v3 model/HPC logic; manuscript content edits; SVG→PDF helper consolidation.
+- TDD red: `pixi run python -m pytest -q tests/test_docs_snippets_smoke.py::test_docs_snippets_follow_pixi_command_policy` failed on 3 bare `| python -m json.tool` snippets.
+- Fix: added `test_docs_snippets_follow_pixi_command_policy` (targeted file allowlist + prohibited command regex checks) and converted those 3 snippets to `| pixi run python -m json.tool`.
+- Targeted green: `pixi run python -m pytest -q tests/test_docs_snippets_smoke.py` and `pixi run python -m pytest -q tests/test_docs_snippets_smoke.py tests/test_markdown_formatting_contract.py` passed.
+- Full gate checkpoint: `./test_repo.sh --check` failed at pre-existing `repo-hygiene` trailing-whitespace findings under `artifacts/dsj_manuscript_update_package_20260520*/DSJ_manuscript_update_plan.md` (outside this bounded slice; tracked as hygiene blocker class).
+
 ## HPC job monitoring
 
 ### Job 14801489 — Track A v3 fit (2026-06-28, IN FLIGHT)

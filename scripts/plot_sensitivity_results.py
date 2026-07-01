@@ -23,7 +23,7 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from rfm_pipeline._chrome import find_chrome as _find_chrome  # noqa: E402
+from rfm_pipeline._svg_pdf import save_svg_as_pdf  # noqa: E402
 from rfm_pipeline.manuscript_stages import (  # noqa: E402
     _SVG_COLOR_ACCENT_GREEN,
     _SVG_COLOR_ACCENT_ORANGE,
@@ -79,42 +79,8 @@ def _save_svg(path: Path, content: str) -> None:
 
 
 def _save_pdf(svg_path: Path) -> None:
-    """Convert SVG to PDF using Chrome headless with proper page sizing."""
-    import re
-    import subprocess
-    import tempfile
-
-    svg_text = svg_path.read_text(encoding="utf-8")
-    m = re.search(r'<svg[^>]+width="(\d+(?:\.\d+)?)"[^>]+height="(\d+(?:\.\d+)?)"', svg_text)
-    w, h = (int(float(m.group(1))), int(float(m.group(2)))) if m else (1200, 600)
-    html_content = (
-        f"<!DOCTYPE html><html><head><style>"
-        f"@page{{size:{w}px {h}px;margin:0}}"
-        f"html,body{{margin:0;padding:0;width:{w}px;height:{h}px;overflow:hidden}}"
-        f"</style></head><body><img src='file://{svg_path.resolve()}' "
-        f"width='{w}' height='{h}'/></body></html>"
-    )
-    chrome = _find_chrome()
-    pdf_path = svg_path.with_suffix(".pdf")
-    with tempfile.NamedTemporaryFile(suffix=".html", mode="w", delete=False) as f:
-        f.write(html_content)
-        tmp_html = f.name
-    try:
-        subprocess.run(
-            [
-                chrome,
-                "--headless=new",
-                "--no-sandbox",
-                "--disable-gpu",
-                f"--print-to-pdf={pdf_path}",
-                "--print-to-pdf-no-header",
-                f"file://{tmp_html}",
-            ],
-            check=True,
-            capture_output=True,
-        )
-    finally:
-        Path(tmp_html).unlink(missing_ok=True)
+    """Convert SVG to PDF using the shared Chrome-based helper."""
+    save_svg_as_pdf(svg_path)
 
 
 def _expand_config_overrides(df: pd.DataFrame) -> pd.DataFrame:

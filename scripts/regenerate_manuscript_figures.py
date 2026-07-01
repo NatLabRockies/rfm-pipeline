@@ -19,10 +19,7 @@ and prints a summary of what was written.
 from __future__ import annotations
 
 import argparse
-import re
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 # Ensure repo src is on the path when run directly
@@ -30,43 +27,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "src"))
 
-from rfm_pipeline._chrome import find_chrome as _find_chrome  # noqa: E402
+from rfm_pipeline._svg_pdf import save_svg_as_pdf  # noqa: E402
 from rfm_pipeline.manuscript_stages import regenerate_figures_from_committed_data  # noqa: E402
 
 
 def _save_pdf(svg_path: Path) -> None:
-    """Convert SVG to PDF using Chrome headless."""
-    svg_text = svg_path.read_text(encoding="utf-8")
-    m = re.search(r'<svg[^>]+width="(\d+(?:\.\d+)?)"[^>]+height="(\d+(?:\.\d+)?)"', svg_text)
-    w, h = (int(float(m.group(1))), int(float(m.group(2)))) if m else (1200, 600)
-    html_content = (
-        f"<!DOCTYPE html><html><head><style>"
-        f"@page{{size:{w}px {h}px;margin:0}}"
-        f"html,body{{margin:0;padding:0;width:{w}px;height:{h}px;overflow:hidden}}"
-        f"</style></head><body><img src='file://{svg_path.resolve()}' "
-        f"width='{w}' height='{h}'/></body></html>"
-    )
-    chrome = _find_chrome()
-    pdf_path = svg_path.with_suffix(".pdf")
-    with tempfile.NamedTemporaryFile(suffix=".html", mode="w", delete=False) as f:
-        f.write(html_content)
-        tmp_html = f.name
-    try:
-        subprocess.run(
-            [
-                chrome,
-                "--headless=new",
-                "--no-sandbox",
-                "--disable-gpu",
-                f"--print-to-pdf={pdf_path}",
-                "--print-to-pdf-no-header",
-                f"file://{tmp_html}",
-            ],
-            check=True,
-            capture_output=True,
-        )
-    finally:
-        Path(tmp_html).unlink(missing_ok=True)
+    """Convert SVG to PDF using the shared Chrome-based helper."""
+    save_svg_as_pdf(svg_path)
 
 
 def regenerate(artifacts_root: Path) -> dict[str, Path]:

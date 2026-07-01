@@ -22,6 +22,16 @@ last_commit: rfm-pipeline 78ae9fc (feat(track-a): add v3 transfer-improved fit w
 - Targeted green: `pixi run python -m pytest -q tests/test_docs_snippets_smoke.py` and `pixi run python -m pytest -q tests/test_docs_snippets_smoke.py tests/test_markdown_formatting_contract.py` passed.
 - Full gate checkpoint: `./test_repo.sh --check` failed at pre-existing `repo-hygiene` trailing-whitespace findings under `artifacts/dsj_manuscript_update_package_20260520*/DSJ_manuscript_update_plan.md` (outside this bounded slice; tracked as hygiene blocker class).
 
+## SESSION STATE — 2026-06-30 — Bounded slice complete: D1 shared SVG→PDF helper rewrite
+
+- Objective (bounded): replace remaining duplicated Chrome/tempfile SVG→PDF helpers in the documented D1 target scripts with one repo-local helper.
+- Scope in: `src/rfm_pipeline/_svg_pdf.py` (new shared helper), `scripts/plot_sensitivity_results.py`, `scripts/plot_sensitivity_rf_figures.py`, `scripts/regenerate_manuscript_figures.py`, `tests/test_svg_pdf_helper.py`.
+- Scope out: Track A v3 modeling/HPC logic; manuscript text edits; any additional SVG/PDF scripts outside the three D1 targets.
+- TDD red: `pixi run python -m pytest -q tests/test_svg_pdf_helper.py` failed at collection (`ModuleNotFoundError: No module named 'rfm_pipeline._svg_pdf'`).
+- Fix: added `save_svg_as_pdf(svg_path: Path)` shared helper (single Chrome invocation path + shared SVG size parsing + temporary HTML under the SVG parent directory), and rewired the three D1 target scripts to call it.
+- Targeted green: `pixi run ruff check src/rfm_pipeline/_svg_pdf.py scripts/plot_sensitivity_results.py scripts/plot_sensitivity_rf_figures.py scripts/regenerate_manuscript_figures.py tests/test_svg_pdf_helper.py && pixi run python -m pytest -q tests/test_svg_pdf_helper.py` passed.
+- Broader relevant green: `pixi run python -m pytest -q tests/test_docs_snippets_smoke.py tests/test_import_smoke.py` passed.
+
 ## HPC job monitoring
 
 ### Job 14801489 — Track A v3 fit (2026-06-28, IN FLIGHT)

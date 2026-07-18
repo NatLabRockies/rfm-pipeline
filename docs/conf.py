@@ -50,6 +50,7 @@ exclude_patterns = [
     ".DS_Store",
     "MEMORY.md",
     "AGENT_SYNC.md",
+    "WORKFLOW_MANUSCRIPT_ALIGNMENT_PLAN.md",
     "final_scripts_from_hpc/*",
 ]
 html_theme = "alabaster"

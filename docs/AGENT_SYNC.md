@@ -7,10 +7,11 @@ branch: main
 base_branch: main
 autonomy_tier: 3
 profile: autonomous
-current_milestone: BSM RF predictor accuracy fix — Track A v3 HPC fit in progress. v2 completed but BSM prediction error remained high (+26.4%), so v3 adds BSM-neighbor transfer features and runtime robustness.
-current_slice: IN FLIGHT — 2026-06-28: Track A v3 submitted on Kestrel as job 14801489 (shared, 220G, 104 CPU, 24h). Scripts: `scripts/fit_track_a_v3.py`, `scripts/submit_track_a_v3.sh`. Improvements: (1) kNN measurement imputation for BSM, (2) near-BSM sample weighting + optional wave6 merge input, (3) OOD diagnostics + uncertainty interval, (4) runtime log-residual model with large-output regime term.
-last_validation: `pixi run ruff check src/rfm_pipeline/track_a_v3.py scripts/fit_track_a_v3.py tests/test_track_a_v3.py && pixi run python -m pytest -q tests/test_track_a_v3.py tests/test_wave5_track_a.py` → pass.
-last_commit: rfm-pipeline 78ae9fc (feat(track-a): add v3 transfer-improved fit workflow).
+current_milestone: Workflow↔Manuscript alignment (JDS review F1-F7/M1-M9). Make the generic pipeline honestly implement the manuscript methodology. Driven via ~/src/slice-runner (docs/WORKFLOW_MANUSCRIPT_ALIGNMENT_PLAN.md). Case-study code (track_a_v3/wave5) removed to keep src/ generic.
+current_slice: DONE — R3 review-remediation phase (R3-S01..S05): wired multiplicity_controlled_interaction_selection + nonlinear corrected alpha into production discovery, honest no-case-study denylist test, persisted categorical levels at fit, NaN ElasticNet provenance. Follow-on P0 gate fix: removed orphaned track_a/wave5 execution scripts that imported round-1-deleted modules and broke `pixi run lint`.
+last_validation: `pixi run ruff check . --no-cache` → clean; `pixi run python -m pytest -q` → pass; independent code-review of a48c5b8 → no significant issues.
+last_commit: rfm-pipeline a48c5b8 (feat(alignment): wire multiplicity correction into production discovery) + follow-on orphaned-script removal.
+next_slice: Full AFSC/UAEORO generalization of src/rfm_pipeline/data.py scenario handling (see docs/scope_backlog.md). Downstream (needs HPC/data): case-study end-to-end rerun to regenerate manuscript numbers, M1/M2/M7 sensitivity, M8 provenance/licensing, F7 public releases/DOIs, M9 prose.
 
 ## SESSION STATE — 2026-06-30 — Monday slice W1 complete: docs-snippet smoke coverage
 

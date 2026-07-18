@@ -147,7 +147,7 @@ class OutOfCoreConfig:
 class ScreeningStageConfig:
     """Empirical null screening parameters.
 
-    Defaults match the BSM publication run reported in the JDS manuscript
+    Defaults match the validated publication run
     (``n_permutations=201`` corresponds to ``B=200`` null draws plus one
     observed statistic; ``bh_q_threshold=0.05`` is the manuscript value).
     """
@@ -164,7 +164,7 @@ class ScreeningStageConfig:
 class InteractionStageConfig:
     """Interaction discovery parameters.
 
-    Defaults match the BSM publication run: ``n_permutations=31`` (B=30
+    Defaults match the validated publication run: ``n_permutations=31`` (B=30
     permutation null draws plus the observed statistic), ``n_tree_estimators=250``,
     and ``max_tree_depth=5`` are the manuscript baseline values.
     """
@@ -207,7 +207,7 @@ class NonlinearStageConfig:
 class SparseStageConfig:
     """Sparse selection/stability parameters.
 
-    Defaults match the BSM publication run: ``n_stability_subsamples=50``
+    Defaults match the validated publication run: ``n_stability_subsamples=50``
     resamples at ``subsample_fraction=0.8`` (80% of training rows per
     subsample) are the manuscript baseline values.
     """
@@ -230,7 +230,7 @@ class SparseStageConfig:
 class FinalArtifactsStageConfig:
     """Final OLS and artifact parameters.
 
-    Defaults match the BSM publication run: ``bootstrap_count=100`` replicates
+    Defaults match the validated publication run: ``bootstrap_count=100`` replicates
     at ``bootstrap_alpha=0.05`` and ``delta_threshold_override=0.002`` for
     feature pruning are the manuscript baseline values.
     """

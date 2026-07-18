@@ -39,26 +39,26 @@ def test_apply_feature_expansion_materializes_expected_columns_and_values():
         {
             "x1": [2.0, 3.0],
             "x2": [4.0, 5.0],
-            "AFSC": [0, 1],
-            "UAEORO": [1, 0],
+            "cat_a": [0, 1],
+            "cat_b": [1, 0],
         }
     )
     spec = default_feature_expansion_spec(
         base_features=["x1", "x2"],
         add_transforms={"x1": [QUADRATIC], "x2": [INVERSE]},
-        interaction_pairs=(("x1", "AFSC"), ("x1", "x2")),
+        interaction_pairs=(("x1", "cat_a"), ("x1", "x2")),
     )
     result = apply_feature_expansion(frame, spec)
     assert result.ordered_columns == ordered_expanded_feature_names(spec)
     assert result.expanded_frame.columns.tolist() == list(result.ordered_columns)
     assert result.expanded_frame["x1_sq"].tolist() == [4.0, 9.0]
     assert result.expanded_frame["x2_inv"].round(4).tolist() == [0.25, 0.2]
-    assert result.expanded_frame["x1*AFSC"].tolist() == [0.0, 3.0]
+    assert result.expanded_frame["x1*cat_a"].tolist() == [0.0, 3.0]
     assert result.expanded_frame["x1*x2"].tolist() == [8.0, 15.0]
 
 
 def test_apply_feature_expansion_requires_all_referenced_columns():
-    frame = pd.DataFrame({"x1": [1.0], "AFSC": [0], "UAEORO": [1]})
+    frame = pd.DataFrame({"x1": [1.0], "cat_a": [0], "cat_b": [1]})
     spec = default_feature_expansion_spec(
         base_features=["x1", "x2"],
         interaction_pairs=(("x1", "x2"),),
@@ -68,7 +68,7 @@ def test_apply_feature_expansion_requires_all_referenced_columns():
 
 
 def test_apply_feature_expansion_inverse_of_zero_warns_and_returns_nan():
-    frame = pd.DataFrame({"x1": [0.0], "AFSC": [0], "UAEORO": [1]})
+    frame = pd.DataFrame({"x1": [0.0], "cat_a": [0], "cat_b": [1]})
     spec = default_feature_expansion_spec(
         base_features=["x1"],
         add_transforms={"x1": [INVERSE]},

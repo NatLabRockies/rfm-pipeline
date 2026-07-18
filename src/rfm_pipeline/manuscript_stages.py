@@ -8436,10 +8436,6 @@ def _build_feature_pruning_diagnostics(
 def _legacy_normalize_factor_token(name: str) -> str:
     """Normalize legacy scenario-control shorthand tokens."""
     normalized = str(name).strip()
-    if normalized == "UAEORO":
-        return "OI.Use AEO Reference Oil"
-    if normalized == "AFSC":
-        return "FM.Use Agnostic FS Conversion"
     return normalized
 
 

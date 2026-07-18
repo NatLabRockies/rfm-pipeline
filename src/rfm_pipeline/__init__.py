@@ -13,13 +13,12 @@ from .artifacts import (
 )
 from .data import (
     StandardizationBundle,
-    add_scenario_flags,
     align_xy,
+    combination_labels,
     ensure_id_columns,
     fit_standardizers,
-    make_boolean_combination_labels,
     stratified_holdout_split,
-    stratified_subset_by_boolean_combination,
+    stratified_subset_by_combination,
 )
 from .feature_expansion import (
     FeatureExpansionResult,
@@ -199,7 +198,6 @@ __all__ = [
     "SparseSelectionStabilityStageResult",
     "SparseSelectionStabilitySpec",
     "SparseSelectionStabilityResult",
-    "add_scenario_flags",
     "align_xy",
     "apply_feature_expansion",
     "audit_manuscript_reproduction_outputs",
@@ -216,6 +214,7 @@ __all__ = [
     "canonical_workflow_stages",
     "case_study_number_table",
     "collect_study_results",
+    "combination_labels",
     "condition_manuscript_outputs",
     "default_feature_expansion_spec",
     "discover_manuscript_interactions",
@@ -237,7 +236,6 @@ __all__ = [
     "load_source_module",
     "macro_nrmse_with_ref",
     "nonlinear_discovery_spec_from_case_study_config",
-    "make_boolean_combination_labels",
     "make_coefficient_matrix_frame",
     "make_holdout_nrmse_summary",
     "make_metadata_frame",
@@ -274,7 +272,7 @@ __all__ = [
     "screen_manuscript_empirical_null_terms",
     "screening_selection_table",
     "stratified_holdout_split",
-    "stratified_subset_by_boolean_combination",
+    "stratified_subset_by_combination",
     "unresolved_manuscript_placeholders",
     "validate_manuscript_artifact_tables",
     "workflow_scope_boundary_table",

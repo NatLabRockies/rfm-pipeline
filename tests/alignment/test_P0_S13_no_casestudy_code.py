@@ -5,14 +5,6 @@ Covers:
 - `import rfm_pipeline` still succeeds.
 - Removed symbols are absent from rfm_pipeline.__all__.
 - No denylisted removed-case-study tokens reappear in src/rfm_pipeline/.
-
-Known pre-existing exceptions (NOT checked by the denylist scan):
-  - ``AFSC`` / ``UAEORO`` default column-name strings and ``add_scenario_flags``
-    in ``src/rfm_pipeline/data.py`` are scenario-helper residuals that require a
-    separate generalisation milestone.  Tracked in ``docs/scope_backlog.md``.
-    They are intentionally excluded from the denylist below so the test remains
-    green until that work is done, while still blocking re-introduction of the
-    *removed* planning-add-on code.
 """
 
 from __future__ import annotations
@@ -28,6 +20,8 @@ import pytest
 # ---------------------------------------------------------------------------
 _DENYLIST: frozenset[str] = frozenset(
     [
+        "AFSC",
+        "UAEORO",
         "track_a_v3",
         "wave5_track_a",
         "wave5",

@@ -153,12 +153,10 @@ def canonical_module_from_factor_name(name: str) -> str:
     Returns
     -------
     str
-        ``Scenario`` for special scenario flags, the left-hand scope before the first
-        dot for scoped names, or ``Unscoped`` otherwise.
+        The left-hand scope before the first dot for scoped names, or ``Unscoped``
+        otherwise.
     """
     name = str(name)
-    if name in {"AFSC", "UAEORO"}:
-        return "Scenario"
     if "." not in name:
         return "Unscoped"
     return name.split(".", 1)[0].strip() or "Unscoped"

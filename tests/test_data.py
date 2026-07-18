@@ -1,107 +1,108 @@
-"""Tests for test data."""
+"""Tests for the generic data preparation helpers."""
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from rfm_pipeline.data import (
-    add_scenario_flags,
     align_xy,
+    combination_labels,
     ensure_id_columns,
     fit_standardizers,
-    make_boolean_combination_labels,
     stratified_holdout_split,
-    stratified_subset_by_boolean_combination,
+    stratified_subset_by_combination,
 )
-
-SCENARIOS = [
-    "AFSCoff_UAEOROoff",
-    "AFSCon_UAEOROoff",
-    "AFSCoff_UAEOROon",
-    "AFSCon_UAEOROon",
-]
 
 
 def make_demo_xy() -> tuple[pd.DataFrame, pd.DataFrame]:
-    rows = []
-    outputs = []
+    """Build a small synthetic (X, Y) pair with two boolean strata columns."""
+    rows: list[dict[str, object]] = []
+    outputs: list[dict[str, object]] = []
     run_id = 0
-    for scenario in SCENARIOS:
-        for _ in range(5):
-            rows.append(
-                {
-                    "run_id": run_id,
-                    "scenario": scenario,
-                    "x1": float(run_id),
-                    "x2": float(run_id + 10),
-                }
-            )
-            outputs.append(
-                {
-                    "run_id": run_id,
-                    "scenario": scenario,
-                    "y1": float(run_id * 2),
-                    "y2": float(run_id * 3),
-                }
-            )
-            run_id += 1
+    for a in (0, 1):
+        for b in (0, 1):
+            for _ in range(5):
+                rows.append(
+                    {
+                        "run_id": run_id,
+                        "stratum_a": a,
+                        "stratum_b": b,
+                        "x1": float(run_id),
+                        "x2": float(run_id + 10),
+                    }
+                )
+                outputs.append(
+                    {
+                        "run_id": run_id,
+                        "stratum_a": a,
+                        "stratum_b": b,
+                        "y1": float(run_id * 2),
+                        "y2": float(run_id * 3),
+                    }
+                )
+                run_id += 1
     return pd.DataFrame(rows), pd.DataFrame(outputs)
 
 
-def test_add_scenario_flags_from_column():
-    X, _ = make_demo_xy()
-    flagged = add_scenario_flags(X)
-    assert flagged["AFSC"].tolist()[:4] == [0, 0, 0, 0]
-    assert flagged["UAEORO"].tolist()[:4] == [0, 0, 0, 0]
-    assert flagged["AFSC"].iloc[-1] == 1
-    assert flagged["UAEORO"].iloc[-1] == 1
-
-
-def test_make_boolean_combination_labels_uses_indicator_columns():
-    frame = pd.DataFrame({"AFSC": [0, 0, 1, 1], "UAEORO": [0, 1, 0, 1]})
-    labels = make_boolean_combination_labels(frame)
+def test_combination_labels_joins_columns_in_order():
+    frame = pd.DataFrame(
+        {
+            "stratum_a": [0, 0, 1, 1],
+            "stratum_b": [0, 1, 0, 1],
+        }
+    )
+    labels = combination_labels(frame, columns=["stratum_a", "stratum_b"])
     assert labels.tolist() == [
-        "AFSC0_UAEORO0",
-        "AFSC0_UAEORO1",
-        "AFSC1_UAEORO0",
-        "AFSC1_UAEORO1",
+        "stratum_a=0|stratum_b=0",
+        "stratum_a=0|stratum_b=1",
+        "stratum_a=1|stratum_b=0",
+        "stratum_a=1|stratum_b=1",
     ]
+
+
+def test_combination_labels_missing_column_raises():
+    frame = pd.DataFrame({"a": [1, 2]})
+    with pytest.raises(ValueError, match="Missing columns"):
+        combination_labels(frame, columns=["a", "missing"])
 
 
 def test_ensure_id_columns_promotes_index_names():
     X, _ = make_demo_xy()
-    indexed = X.set_index(["run_id", "scenario"])
-    exposed = ensure_id_columns(indexed, ["run_id", "scenario"])
-    assert ["run_id", "scenario"] == exposed.columns[:2].tolist()
+    indexed = X.set_index(["run_id", "stratum_a"])
+    exposed = ensure_id_columns(indexed, ["run_id", "stratum_a"])
+    assert ["run_id", "stratum_a"] == exposed.columns[:2].tolist()
 
 
 def test_align_xy_inner_aligns_row_index():
     X, Y = make_demo_xy()
-    X = X.set_index(["run_id", "scenario"])
-    Y = Y.iloc[2:].set_index(["run_id", "scenario"])
+    X = X.set_index(["run_id"])
+    Y = Y.iloc[2:].set_index(["run_id"])
     X_aligned, Y_aligned = align_xy(X, Y)
     assert list(X_aligned.index) == list(Y_aligned.index)
     assert len(X_aligned) == len(Y)
 
 
-def test_stratified_holdout_split_preserves_four_scenarios():
+def test_stratified_holdout_split_preserves_four_strata():
     X, Y = make_demo_xy()
-    X = add_scenario_flags(X).set_index(["run_id", "scenario"])
-    Y = Y.set_index(["run_id", "scenario"])
+    X = X.set_index(["run_id"])
+    Y = Y.set_index(["run_id"])
     X_train, X_holdout, Y_train, Y_holdout = stratified_holdout_split(
         X,
         Y,
         holdout_fraction=0.20,
         random_state=7,
+        stratify_columns=["stratum_a", "stratum_b"],
     )
     assert len(X_train) == 16
     assert len(X_holdout) == 4
-    assert set(X_holdout["AFSC"].astype(str) + X_holdout["UAEORO"].astype(str)) == {
-        "00",
-        "01",
-        "10",
-        "11",
+    combos = combination_labels(X_holdout, columns=["stratum_a", "stratum_b"])
+    assert set(combos.tolist()) == {
+        "stratum_a=0|stratum_b=0",
+        "stratum_a=0|stratum_b=1",
+        "stratum_a=1|stratum_b=0",
+        "stratum_a=1|stratum_b=1",
     }
     assert X_train.index.equals(Y_train.index)
     assert X_holdout.index.equals(Y_holdout.index)
@@ -109,16 +110,15 @@ def test_stratified_holdout_split_preserves_four_scenarios():
 
 def test_fit_standardizers_uses_training_statistics_only():
     X, Y = make_demo_xy()
-    X = add_scenario_flags(X)
-    X_train = X.iloc[:12].set_index(["run_id", "scenario"])
-    X_holdout = X.iloc[12:].set_index(["run_id", "scenario"])
-    Y_train = Y.iloc[:12].set_index(["run_id", "scenario"])
-    Y_holdout = Y.iloc[12:].set_index(["run_id", "scenario"])
+    X_train = X.iloc[:12].set_index(["run_id"])
+    X_holdout = X.iloc[12:].set_index(["run_id"])
+    Y_train = Y.iloc[:12].set_index(["run_id"])
+    Y_holdout = Y.iloc[12:].set_index(["run_id"])
     bundle = fit_standardizers(
-        X_train[["x1", "x2", "AFSC", "UAEORO"]],
-        X_holdout[["x1", "x2", "AFSC", "UAEORO"]],
-        Y_train,
-        Y_holdout,
+        X_train[["x1", "x2", "stratum_a", "stratum_b"]],
+        X_holdout[["x1", "x2", "stratum_a", "stratum_b"]],
+        Y_train[["y1", "y2"]],
+        Y_holdout[["y1", "y2"]],
     )
     assert bundle.x_train_scaled.shape == (12, 4)
     assert bundle.x_holdout_scaled.shape == (8, 4)
@@ -126,41 +126,79 @@ def test_fit_standardizers_uses_training_statistics_only():
     assert bundle.y_holdout_scaled.shape == (8, 2)
 
 
-def test_stratified_subset_by_boolean_combination_draws_equal_counts_per_scenario():
-    rows = []
-    scenario_order = [
-        "AFSCoff_UAEOROoff",
-        "AFSCoff_UAEOROon",
-        "AFSCon_UAEOROoff",
-        "AFSCon_UAEOROon",
-    ]
-    for scenario in scenario_order:
-        for run_id in range(6000):
+def test_stratified_subset_by_combination_draws_equal_counts_per_stratum():
+    rows: list[dict[str, object]] = []
+    strata = [(a, b, c) for a in (0, 1) for b in (0, 1) for c in ("x", "y")]
+    for a, b, c in strata:
+        for run_id in range(60):
             rows.append(
                 {
-                    "scenario": scenario,
-                    "run_id": f"{scenario}-{run_id}",
+                    "stratum_a": a,
+                    "stratum_b": b,
+                    "stratum_c": c,
+                    "run_id": f"{a}-{b}-{c}-{run_id}",
                     "x": run_id,
                 }
             )
-    frame = add_scenario_flags(pd.DataFrame(rows))
-    subset = stratified_subset_by_boolean_combination(
+    frame = pd.DataFrame(rows)
+    subset = stratified_subset_by_combination(
         frame,
-        n_per_combination=5000,
+        columns=["stratum_a", "stratum_b", "stratum_c"],
+        n_per_combination=50,
         random_state=19,
     )
-    counts = make_boolean_combination_labels(subset).value_counts().to_dict()
-    assert counts == {
-        "AFSC0_UAEORO0": 5000,
-        "AFSC0_UAEORO1": 5000,
-        "AFSC1_UAEORO0": 5000,
-        "AFSC1_UAEORO1": 5000,
-    }
-    assert len(subset) == 20000
+    counts = (
+        combination_labels(subset, columns=["stratum_a", "stratum_b", "stratum_c"])
+        .value_counts()
+        .to_dict()
+    )
+    assert len(counts) == 8
+    assert set(counts.values()) == {50}
+    assert len(subset) == 400
     assert subset["run_id"].is_unique
 
 
-def test_stratified_subset_by_boolean_combination_requires_large_enough_strata():
-    frame = pd.DataFrame({"AFSC": [0, 0, 1], "UAEORO": [0, 1, 1], "x": [1, 2, 3]})
-    with pytest.raises(ValueError, match="Expected all four boolean combinations|cannot draw"):
-        stratified_subset_by_boolean_combination(frame, n_per_combination=2)
+def test_stratified_subset_by_combination_requires_large_enough_strata():
+    frame = pd.DataFrame(
+        {
+            "stratum_a": [0, 0, 1],
+            "stratum_b": [0, 1, 1],
+            "x": [1, 2, 3],
+        }
+    )
+    with pytest.raises(ValueError, match="cannot draw"):
+        stratified_subset_by_combination(
+            frame,
+            columns=["stratum_a", "stratum_b"],
+            n_per_combination=2,
+        )
+
+
+def test_stratified_subset_by_combination_is_deterministic_under_fixed_seed():
+    rng = np.random.RandomState(0)
+    rows = []
+    for a in (0, 1):
+        for b in (0, 1):
+            for run_id in range(200):
+                rows.append(
+                    {
+                        "stratum_a": a,
+                        "stratum_b": b,
+                        "run_id": f"{a}-{b}-{run_id}",
+                        "x": float(rng.rand()),
+                    }
+                )
+    frame = pd.DataFrame(rows)
+    first = stratified_subset_by_combination(
+        frame,
+        columns=["stratum_a", "stratum_b"],
+        n_per_combination=25,
+        random_state=42,
+    )
+    second = stratified_subset_by_combination(
+        frame,
+        columns=["stratum_a", "stratum_b"],
+        n_per_combination=25,
+        random_state=42,
+    )
+    pd.testing.assert_frame_equal(first, second)

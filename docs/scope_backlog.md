@@ -50,3 +50,16 @@ ______________________________________________________________________
   generic categorical mechanism), then delete the AFSC/UAEORO helpers.
 - Not started as a bounded slice here (large, higher-risk refactor). Recommended as its own
   milestone after R3. Tracked so the P0-S13 honesty fix (R3-S03) documents the exception.
+
+## Next generalization milestone (after PHASE G): remove BSM fuel-pathway taxonomy
+
+- `src/rfm_pipeline/manuscript_stages.py::_legacy_module_from_factor_name` (and its
+  `_legacy_partner_modules_from_feature_name` callers) hardcode the BSM fuel-pathway
+  module taxonomy: token map AHC/CHC/OHC/OI/SE/WW/FM -> "Algal Hydrocarbons",
+  "Cellulosic Hydrocarbons", "Oil Industry", "Starch Ethanol ...", plus
+  "Use AEO Reference Oil"/"Use Agnostic FS Conversion" and "to jet"/"atj" -> "Starch
+  Ethanol to Jet". Used by `_build_selected_by_module_figure_data` (manuscript figure).
+- This is case-study-specific domain knowledge embedded in the generic figure stage.
+- Target: make the feature->module grouping config-driven (e.g., a mapping supplied in
+  the run config) so the generic pipeline carries no case-study taxonomy. Requires
+  manuscript-figure validation. Distinct from PHASE G (AFSC/UAEORO scenario scheme).

@@ -40,6 +40,13 @@ opus   = "claude-opus-4.7"
 pattern = "^R3-S0[12]"
 start_tier = "opus"
 
+# G1-S01 (public data.py API + test_data.py 43-ref migration) and G1-S04
+# (manuscript-reproduction fixture rename) are the high-blast-radius generalization
+# slices; start at opus.
+[[models.elevated]]
+pattern = "^G1-S0[14]"
+start_tier = "opus"
+
 [retries]
 default_per_tier = 3
 

@@ -910,3 +910,224 @@ would be misled into treating them as significant permutation results.
 **Fixture requirements:**
 
 - Synthetic interaction inputs exercising the `elasticnet_interactions` method.
+
+## PHASE G — Generalize scenario/categorical handling (remove BSM AFSC/UAEORO from generic src)
+
+Goal: the generic pipeline must not encode any case study's scenario scheme.
+Replace the hardcoded two-binary `AFSC`/`UAEORO` mechanism with generic,
+parameter-driven categorical handling and remove all AFSC/UAEORO literals + the
+BSM composite-label parser. See docs/decision_log.md (2026-07-18) for the design.
+
+Cross-cutting rules for every G1 slice:
+
+- No new case-study literals. Keep behavior deterministic.
+- The per-slice validator only runs `tests/alignment/`; you MUST also update the
+  existing tests named in each slice so the FULL suite stays green — do not delete
+  or weaken them, migrate their assertions to the generic API with correct expected
+  values.
+- Run `pixi run ruff check <changed files>` (clean) as part of each slice.
+
+### Slice G1-S01: Generic combination labels + stratified subset in data.py
+
+**Phase:** G1
+**Depends on:** none
+**Estimated size:** large
+**Files to create/modify:**
+
+- src/rfm_pipeline/data.py
+- src/rfm_pipeline/__init__.py
+- tests/test_data.py
+- tests/alignment/test_G1_S01_generic_combination.py
+
+**Context.** `add_scenario_flags` + `_parse_on_off_flag` parse the BSM composite
+label `AFSC{0|1}_UAEORO{0|1}` at fixed character offsets — case-study data ingest
+that must not live in the generic pipeline. `make_boolean_combination_labels` and
+`stratified_subset_by_boolean_combination` hardcode the two columns AFSC/UAEORO and
+the four expected combinations.
+
+**Requirements:**
+
+- REMOVE `add_scenario_flags` and `_parse_on_off_flag` entirely (and their
+  `__init__.py` import + `__all__` entry for `add_scenario_flags`).
+- Rename `make_boolean_combination_labels` ->
+  `combination_labels(frame, *, columns: Sequence[str], output_column: str = "combination") -> pd.Series`
+  producing deterministic labels by joining `f"{col}={value}"` for each column in
+  the given order with `"|"`. Update the `__init__.py` export accordingly.
+- Rename `stratified_subset_by_boolean_combination` ->
+  `stratified_subset_by_combination(frame, *, columns: Sequence[str], n_per_combination: int = 5000, random_state: int = 123, require_all_combinations: bool = True) -> pd.DataFrame`.
+  Drop the hardcoded four-element `expected` list: the strata are the observed
+  combinations (sorted deterministically); when `require_all_combinations` is True,
+  every observed combination must have >= `n_per_combination` rows. Update the
+  `__init__.py` export accordingly.
+- Preserve deterministic RNG behavior (per-combination `rng.choice`, sorted stratum
+  order).
+
+**Acceptance criteria:**
+
+- `test_G1_S01_*` builds a frame with 3 categorical columns (not two, not named
+  AFSC/UAEORO) and asserts: `combination_labels` yields the expected `col=val|...`
+  labels; `stratified_subset_by_combination` returns `n_per_combination` rows per
+  observed combination, is deterministic under a fixed seed, and raises when a
+  combination is too small.
+- No AFSC/UAEORO/`add_scenario_flags` token remains in data.py.
+- `tests/test_data.py` is migrated to the generic API (no calls to removed
+  functions; combination/subset assertions use generic column names) and passes.
+- `pixi run ruff check src/rfm_pipeline/data.py src/rfm_pipeline/__init__.py tests/test_data.py tests/alignment/test_G1_S01_generic_combination.py` is clean.
+
+**Fixture requirements:**
+
+- Synthetic frame with >=3 categorical columns and enough rows per combination.
+
+### Slice G1-S02: Generic stratification columns in stratified_holdout_split
+
+**Phase:** G1
+**Depends on:** G1-S01
+**Estimated size:** medium
+**Files to create/modify:**
+
+- src/rfm_pipeline/data.py
+- tests/test_data.py
+- tests/alignment/test_G1_S02_generic_holdout.py
+
+**Context.** `stratified_holdout_split` hardcodes `afsc_column="AFSC"`,
+`uaeoro_column="UAEORO"` and builds the stratify label from those two columns.
+
+**Requirements:**
+
+- Replace the `afsc_column`/`uaeoro_column` parameters with
+  `stratify_columns: Sequence[str] = ()`. Build the stratify label by joining
+  `astype(str)` of each column in `stratify_columns` with `"_"` when all are present
+  in `X_aligned`; otherwise fall back to `scenario_column` (column or MultiIndex
+  level) exactly as today. Preserve the single-unique-value guard and the
+  `train_test_split` determinism.
+
+**Acceptance criteria:**
+
+- `test_G1_S02_*` asserts stratification on an arbitrary list of columns (generic
+  names) reproduces the expected deterministic split and preserves stratum
+  proportions; and that the `scenario_column` fallback still works when
+  `stratify_columns` is empty/absent.
+- No AFSC/UAEORO token remains in `stratified_holdout_split`.
+- `tests/test_data.py` holdout tests migrated to `stratify_columns=` and pass.
+- `pixi run ruff check src/rfm_pipeline/data.py tests/test_data.py tests/alignment/test_G1_S02_generic_holdout.py` is clean.
+
+**Fixture requirements:**
+
+- Synthetic X/Y with generic categorical stratification columns.
+
+### Slice G1-S03: Remove AFSC/UAEORO literal special-cases in features.py and manuscript_stages.py
+
+**Phase:** G1
+**Depends on:** none
+**Estimated size:** small
+**Files to create/modify:**
+
+- src/rfm_pipeline/features.py
+- src/rfm_pipeline/manuscript_stages.py
+- tests/test_features.py
+- tests/alignment/test_G1_S03_no_scenario_specialcase.py
+
+**Context.** `canonical_module_from_factor_name` special-cases
+`name in {"AFSC","UAEORO"}` -> `"Scenario"`. `_legacy_normalize_factor_token`
+maps `"UAEORO"`/`"AFSC"` to BSM factor names.
+
+**Requirements:**
+
+- Remove the `{"AFSC","UAEORO"}` special-case from
+  `canonical_module_from_factor_name` (dot-scoped -> prefix, else "Unscoped").
+- Remove the `"UAEORO"`/`"AFSC"` branches from `_legacy_normalize_factor_token`
+  (return the normalized/stripped token unchanged for those inputs). Do NOT touch
+  the separate BSM fuel-pathway taxonomy in `_legacy_module_from_factor_name`
+  (out of scope — backlogged).
+
+**Acceptance criteria:**
+
+- `test_G1_S03_*` asserts `canonical_module_from_factor_name` no longer returns
+  "Scenario" for the literal strings "AFSC"/"UAEORO" (they are treated as generic
+  unscoped names), and that scoped names ("X.y") still map to their prefix.
+- No AFSC/UAEORO token remains in features.py or in `_legacy_normalize_factor_token`.
+- `tests/test_features.py` migrated (drop assertions asserting the AFSC/UAEORO
+  scenario special-case; keep/upgrade generic module-prefix assertions) and passes.
+- `pixi run ruff check src/rfm_pipeline/features.py src/rfm_pipeline/manuscript_stages.py tests/test_features.py tests/alignment/test_G1_S03_no_scenario_specialcase.py` is clean.
+
+**Fixture requirements:**
+
+- None beyond literal factor-name inputs.
+
+### Slice G1-S04: Generic demo manuscript fixtures (rename AFSC/UAEORO)
+
+**Phase:** G1
+**Depends on:** none
+**Estimated size:** medium
+**Files to create/modify:**
+
+- src/rfm_pipeline/manuscript_runtime.py
+- tests/test_pipeline_smoke.py
+- tests/test_feature_expansion.py
+- tests/alignment/test_G1_S04_generic_demo_fixtures.py
+
+**Context.** `write_demo_manuscript_artifacts` builds a toy dataset whose two
+boolean categorical columns are literally named `AFSC`/`UAEORO`, propagated into
+input_metadata and feature_catalog and used in the y2/y3 formulas. The
+manuscript-reproduction-smoke check consumes these artifacts.
+
+**Requirements:**
+
+- Rename the two boolean demo columns from `AFSC`/`UAEORO` to generic names
+  `cat_a`/`cat_b` throughout `write_demo_manuscript_artifacts` (data frame,
+  input_metadata `input_name`, feature_catalog `feature_name` entries and any
+  derived interaction/feature names) and update the y2/y3 formula variable
+  references accordingly.
+- Keep the dataset deterministic and self-consistent (feature_catalog names must
+  match producible design-matrix columns).
+
+**Acceptance criteria:**
+
+- `test_G1_S04_*` asserts the demo artifacts contain `cat_a`/`cat_b` (not
+  AFSC/UAEORO) and remain internally consistent (metadata/catalog names align with
+  the input matrix columns).
+- `pixi run manuscript-reproduction-smoke` (or the equivalent pytest exercising it)
+  passes with the renamed fixtures.
+- `tests/test_pipeline_smoke.py` and `tests/test_feature_expansion.py` migrated to
+  the generic names and pass.
+- No AFSC/UAEORO token remains in manuscript_runtime.py.
+- `pixi run ruff check src/rfm_pipeline/manuscript_runtime.py tests/test_pipeline_smoke.py tests/test_feature_expansion.py tests/alignment/test_G1_S04_generic_demo_fixtures.py` is clean.
+
+**Fixture requirements:**
+
+- Uses the in-repo demo-artifact writer.
+
+### Slice G1-S05: Enforce AFSC/UAEORO absence + de-BSM config docstrings
+
+**Phase:** G1
+**Depends on:** G1-S01, G1-S02, G1-S03, G1-S04
+**Estimated size:** small
+**Files to create/modify:**
+
+- src/rfm_pipeline/config.py
+- tests/alignment/test_P0_S13_no_casestudy_code.py
+- tests/alignment/test_G1_S05_enforce_scenario_generic.py
+
+**Context.** After G1-S01..S04 no AFSC/UAEORO literal remains in src. The
+P0-S13/R3-S03 denylist previously documented AFSC/UAEORO as pre-existing
+exceptions; that exception is now obsolete. config.py docstrings tie defaults to
+the BSM/JDS publication run.
+
+**Requirements:**
+
+- Remove `AFSC`/`UAEORO` from the documented exceptions in
+  `test_P0_S13_no_casestudy_code.py` and ADD them to the enforced denylist tokens
+  (the src scan must now fail if either reappears).
+- Strip BSM/JDS-specific phrasing from config.py docstrings (make them generic),
+  without changing any config field names, defaults, or behavior.
+
+**Acceptance criteria:**
+
+- `test_G1_S05_*` (or the updated P0-S13 scan) fails if `AFSC`/`UAEORO` appears
+  anywhere under src/rfm_pipeline and passes on the current tree.
+- No behavioral change to config schema/defaults (existing config tests still pass).
+- `pixi run ruff check src/rfm_pipeline/config.py tests/alignment/test_P0_S13_no_casestudy_code.py tests/alignment/test_G1_S05_enforce_scenario_generic.py` is clean.
+
+**Fixture requirements:**
+
+- None (filesystem denylist scan of src/rfm_pipeline).

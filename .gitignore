@@ -65,3 +65,6 @@ ai_context/api_docs/runtime_api_bundle_*.md
 MEMORY.md
 docs/AGENT_SYNC.md
 docs/MEMORY.md
+
+# slice-runner local state
+.slice-runner/

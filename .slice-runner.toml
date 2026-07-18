@@ -1,0 +1,54 @@
+# slice-runner config for the workflow↔manuscript alignment milestone.
+# Plan: docs/WORKFLOW_MANUSCRIPT_ALIGNMENT_PLAN.md
+# Each slice is a bounded, generic-code capability validated by a dedicated
+# pytest under tests/alignment/ whose test names contain the slice id in
+# underscore form (P0-S01 -> P0_S01). The wrapper script bridges the hyphen/
+# underscore mismatch between the DAG id and the pytest -k expression.
+
+[plan]
+path = "docs/WORKFLOW_MANUSCRIPT_ALIGNMENT_PLAN.md"
+slice_header_re = "^### Slice ([\\w\\-]+)"
+deps_field_re   = "\\*\\*Depends on:\\*\\* (.+)"
+phase_field_re  = "\\*\\*Phase:\\*\\* (\\S+)"
+
+[validation]
+command = "bash scripts/slice_validate.sh {slice_id}"
+timeout_seconds = 3000
+
+[timeout]
+auto = true
+base_seconds = 900
+per_file_seconds = 300
+per_criterion_seconds = 120
+per_fixture_seconds = 60
+min_seconds = 900
+max_seconds = 3600
+
+[models]
+# Methodology implementation is non-trivial; start at sonnet, escalate to opus.
+default_tier = "sonnet"
+escalation_chain = ["sonnet", "opus"]
+
+[models.model_ids]
+haiku  = "claude-haiku-4.5"
+sonnet = "claude-sonnet-4.6"
+opus   = "claude-opus-4.7"
+
+[retries]
+default_per_tier = 3
+
+[retries.per_tier]
+sonnet = 3
+opus   = 2
+
+[parallel]
+# Serial: many slices edit the same large modules (manuscript_stages.py,
+# metrics.py, final_ols.py); serial execution avoids write conflicts.
+max_concurrent = 1
+
+[state]
+dir = ".slice-runner"
+
+[copilot]
+max_autopilot_continues = 60
+extra_args = []

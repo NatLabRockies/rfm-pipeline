@@ -34,6 +34,12 @@ haiku  = "claude-haiku-4.5"
 sonnet = "claude-sonnet-4.6"
 opus   = "claude-opus-4.7"
 
+# Delicate production-wiring slices start at opus (change default selection
+# semantics; must update integration tests correctly without weakening them).
+[[models.elevated]]
+pattern = "^R3-S0[12]"
+start_tier = "opus"
+
 [retries]
 default_per_tier = 3
 

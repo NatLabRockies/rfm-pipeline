@@ -306,3 +306,23 @@ ______________________________________________________________________
 - **Tests:** 488 pass / 11 skipped (was 479; +9 new tests covering
   multi-id chain, empty/bad-type rejection, single-stage cascade
   expansion, stage-suffixed manifest lookup, and idempotency).
+
+## Independent review of alignment diff b96442b..e31fb15 (round 3 remediation)
+
+- REVIEW-R3-01 \[BLOCKING, fixed-by R3-S01\]: multiplicity_controlled_interaction_selection
+  implemented+tested (P0-S08) but never called by production discover_manuscript_interactions
+  (manuscript_stages.py:2529 still uses uncorrected per-pair quantile rule). F5 defect still shipped.
+- REVIEW-R3-02 \[BLOCKING, fixed-by R3-S02\]: nonlinear_discovery_with_multiplicity_correction
+  (P0-S10) not wired into production discover_manuscript_nonlinear_transformations; production
+  \_score_one_nonlinear_feature uses uncorrected p-threshold + same-data transform choice.
+- REVIEW-R3-03 \[MAJOR, fixed-by R3-S01\]: permutation-adequacy guard family_size=n_pairs is
+  inconsistent with the per-pair retention it guards; unrunnable when ON or disabled in tests.
+- REVIEW-R3-04 \[MAJOR, fixed-by R3-S03 + backlog\]: test_P0_S13 does not scan src for case-study
+  literals; pre-existing AFSC/UAEORO scenario helpers remain in data.py (generalization backlog).
+- REVIEW-R3-05 \[MINOR, fixed-by R3-S02\]: best_edf/best_p joint update -> best_p not min p-value.
+- REVIEW-R3-06 \[MINOR, fixed-by R3-S04\]: categorical levels=None not persisted at fit -> predict
+  round-trip breaks on small scenario-contrast batches (F1).
+- REVIEW-R3-07 \[MINOR, fixed-by R3-S05\]: elasticnet_interactions fabricates p=0/1 + zero null
+  summary instead of NaN/None.
+- Verified-correct (no action): S07 adequacy math, S08 bh_fdr/fwer standalone, S04/S05/S11 sealed
+  guard + leakage-free support selection, S09 provenance retained-set, M3 stratified bootstrap.

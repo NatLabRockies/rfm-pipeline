@@ -19,7 +19,7 @@ from tqdm import tqdm
 
 from .artifacts import PipelineManifest, make_metadata_frame
 from .data import SealedSplitResult, align_xy
-from .features import DesignMatrixSpec, build_design_matrix
+from .features import DesignMatrixSpec, build_design_matrix, resolve_spec_levels
 from .metrics import bootstrap_macro_nrmse_ci
 
 
@@ -407,7 +407,8 @@ def fit_final_ols_with_design(
     FinalOLSFitResult
         Fitted result with ``design_spec`` and ``categorical_feature_columns`` set.
     """
-    dm = build_design_matrix(X, spec)
+    resolved_spec = resolve_spec_levels(X, spec)
+    dm = build_design_matrix(X, resolved_spec)
     base = fit_final_ols(dm.matrix, Y, output_batch_size=output_batch_size)
     return FinalOLSFitResult(
         feature_names=base.feature_names,
@@ -421,7 +422,7 @@ def fit_final_ols_with_design(
         y_means=base.y_means,
         y_scales=base.y_scales,
         n_training_rows=base.n_training_rows,
-        design_spec=spec,
+        design_spec=resolved_spec,
         categorical_feature_columns=dm.categorical_columns,
     )
 

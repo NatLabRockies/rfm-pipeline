@@ -33,16 +33,12 @@ class SealedSplitResult:
     strata_balance
         DataFrame showing row counts per stratum for each partition.
 
-    Methods
-    -------
-    test
-        Property that returns the sealed-test partition. Raises
-        ``SealedTestAccessError`` if the partition has not been unsealed.
-    unseal(reason)
-        Unlock the test partition for the single final evaluation.
-        Records a timestamped entry in ``unseal_log``.
-    unseal_log
-        List of dicts recording each unseal event.
+    Notes
+    -----
+    The sealed-test partition is not a public attribute. Access it through the
+    :attr:`test` property, which raises :class:`SealedTestAccessError` until
+    :meth:`unseal` is called once for the single final evaluation; each unseal
+    event is recorded in :attr:`unseal_log`.
     """
 
     def __init__(

@@ -149,6 +149,7 @@ def test_interaction_discovery_generates_all_pairs_from_retained_first_order_ter
         retained_pairs_reference=367,
         permutation_count_B=19,
         random_seed=123,
+        enforce_permutation_adequacy=False,
     )
 
     result = discover_manuscript_interactions(
@@ -193,6 +194,7 @@ def test_interaction_discovery_respects_candidate_pair_range(monkeypatch) -> Non
         permutation_count_B=2,
         random_seed=123,
         n_jobs=1,
+        enforce_permutation_adequacy=False,
     )
 
     def _fake_score_interaction_permutation(
@@ -257,6 +259,7 @@ def test_interaction_discovery_rejects_empty_candidate_pair_range() -> None:
         permutation_count_B=2,
         random_seed=123,
         n_jobs=1,
+        enforce_permutation_adequacy=False,
     )
 
     with pytest.raises(ValueError, match="candidate range is empty"):
@@ -314,6 +317,7 @@ def test_interaction_discovery_rejects_invalid_parallel_backend() -> None:
         random_seed=123,
         n_jobs=2,
         parallel_backend="invalid_backend",
+        enforce_permutation_adequacy=False,
     )
 
     with pytest.raises(ValueError, match="parallel_backend"):
@@ -352,6 +356,7 @@ def test_interaction_discovery_uses_configured_parallel_backend_without_fallback
         n_jobs=2,
         parallel_batch_timeout_seconds=1,
         parallel_backend="threading",
+        enforce_permutation_adequacy=False,
     )
 
     calls: list[tuple[int, str]] = []
@@ -442,6 +447,7 @@ def test_interaction_discovery_accepts_dask_backend_with_executor(
         random_seed=123,
         n_jobs=2,
         parallel_backend="dask",
+        enforce_permutation_adequacy=False,
     )
 
     class FakeExecutor:
@@ -519,6 +525,7 @@ def test_interaction_discovery_falls_back_to_joblib_when_dask_executor_fails(
         random_seed=123,
         n_jobs=2,
         parallel_backend="dask",
+        enforce_permutation_adequacy=False,
     )
 
     class FakeParallel:
@@ -607,6 +614,7 @@ def test_interaction_discovery_resumes_from_checkpointed_permutation_scores(
         random_seed=123,
         n_jobs=1,
         parallel_backend="threading",
+        enforce_permutation_adequacy=False,
     )
     checkpoint_root = tmp_path / "interaction_checkpoints"
     monkeypatch.setenv("RFM_PROGRESS_BATCH_SIZE", "2")

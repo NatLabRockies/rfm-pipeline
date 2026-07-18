@@ -5,12 +5,56 @@ Replaces dataset-specific script hardcoding with config-driven parameterization.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
 
 from rfm_pipeline.transforms import DEFAULT_TRANSFORM_LIBRARY, TransformDef
+
+_VALID_INPUT_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _validate_categorical_inputs(decls: list[CategoricalInputDecl]) -> None:
+    """Validate categorical input declarations; raise ValueError on bad entries."""
+    for decl in decls:
+        if not _VALID_INPUT_NAME_RE.match(decl.name):
+            raise ValueError(
+                f"categorical_inputs: invalid predictor name {decl.name!r}. "
+                "Names must be non-empty and match [A-Za-z_][A-Za-z0-9_]*."
+            )
+        if decl.levels is not None:
+            if not decl.levels:
+                raise ValueError(
+                    f"categorical_inputs: levels for {decl.name!r} must be a "
+                    "non-empty list when provided."
+                )
+            for lvl in decl.levels:
+                if not isinstance(lvl, str) or not lvl.strip():
+                    raise ValueError(
+                        f"categorical_inputs: each level for {decl.name!r} must be "
+                        f"a non-empty string; got {lvl!r}."
+                    )
+
+
+@dataclass
+class CategoricalInputDecl:
+    """Declaration of a single categorical/block predictor input.
+
+    Attributes
+    ----------
+    name:
+        Column name of the predictor in the design matrix. Must match
+        ``[A-Za-z_][A-Za-z0-9_]*``.
+    levels:
+        Optional explicit level list. When provided, must be a non-empty list
+        of non-empty strings. Downstream code may use levels for dummy-coding
+        or contrast encoding; the config layer only validates the structure.
+    """
+
+    name: str
+    levels: list[str] | None = None
 
 
 @dataclass
@@ -268,6 +312,17 @@ class WorkflowConfig:
     stages: StagesConfig = field(default_factory=StagesConfig)
     validation: ValidationConfig = field(default_factory=ValidationConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
+    categorical_inputs: list[CategoricalInputDecl] = field(default_factory=list)
+    """Categorical/block predictor declarations.
+
+    Each entry names a predictor column that must be treated as a categorical
+    block variable (e.g. a scenario switch, a site indicator). An optional
+    ``levels`` list provides explicit level ordering for downstream encoding.
+
+    Default is an empty list, which preserves all existing behaviour.
+    Names are validated on load; unknown or malformed entries raise
+    :class:`ValueError`.
+    """
 
 
 def _nonlinear_stage_config_from_data(data: dict) -> NonlinearStageConfig:
@@ -374,6 +429,25 @@ def load_config(config_path: str | Path) -> WorkflowConfig:
     # Parse output config
     output = OutputConfig(**data.get("output", {}))
 
+    # Parse categorical input declarations
+    raw_cat = data.get("categorical_inputs", []) or []
+    categorical_inputs: list[CategoricalInputDecl] = []
+    for entry in raw_cat:
+        if isinstance(entry, str):
+            categorical_inputs.append(CategoricalInputDecl(name=entry))
+        elif isinstance(entry, dict):
+            categorical_inputs.append(
+                CategoricalInputDecl(
+                    name=entry["name"],
+                    levels=entry.get("levels"),
+                )
+            )
+        else:
+            raise ValueError(
+                f"categorical_inputs: each entry must be a string or mapping; got {entry!r}."
+            )
+    _validate_categorical_inputs(categorical_inputs)
+
     return WorkflowConfig(
         dataset=dataset,
         algorithm=algorithm,
@@ -381,6 +455,7 @@ def load_config(config_path: str | Path) -> WorkflowConfig:
         stages=stages,
         validation=validation,
         output=output,
+        categorical_inputs=categorical_inputs,
     )
 
 

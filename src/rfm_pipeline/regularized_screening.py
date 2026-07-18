@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import MultiTaskElasticNetCV
+from sklearn.linear_model import LinearRegression, MultiTaskElasticNetCV
 from sklearn.preprocessing import StandardScaler
 
 from .data import align_xy
@@ -416,4 +416,79 @@ def screening_selection_table(result: ScreeningSelectionResult) -> pd.DataFrame:
             "nonzero_output_count": nonzero_output_count.astype(int),
             "max_abs_standardized_coef": max_abs_coef.astype(float),
         }
+    )
+
+
+@dataclass(frozen=True)
+class ScreeningImportanceResult:
+    """Feature importance scores from an OLS refit on the enriched candidate set.
+
+    Provides a simple, interpretable ranking of enriched candidates by their
+    mean absolute standardized OLS coefficient magnitude across responses.
+    Suitable as initial importance scores for the support-selection rule in
+    :func:`~rfm_pipeline.final_ols.select_support_via_refit`.
+
+    Parameters
+    ----------
+    feature_names
+        Original-order enriched candidate feature names.
+    coef_magnitudes
+        Mean absolute standardized OLS coefficient across responses, one value
+        per feature. Larger values indicate stronger linear association with the
+        response set under standardization.
+    """
+
+    feature_names: tuple[str, ...]
+    coef_magnitudes: np.ndarray
+
+
+def compute_enriched_coef_magnitudes(
+    X: pd.DataFrame,
+    Y: pd.DataFrame,
+) -> ScreeningImportanceResult:
+    """Compute standardized OLS coefficient magnitudes for enriched candidates.
+
+    Fits OLS on the provided (X, Y) training data and returns the mean absolute
+    standardized coefficient across responses as a feature-importance ranking.
+    This ranking is suitable as the initial importance signal for the refit-based
+    support-selection rule in :func:`~rfm_pipeline.final_ols.select_support_via_refit`.
+
+    Parameters
+    ----------
+    X
+        Enriched candidate feature matrix (training data).
+    Y
+        Response matrix (training data) aligned to ``X``.
+
+    Returns
+    -------
+    ScreeningImportanceResult
+        Feature names with corresponding mean absolute standardized OLS
+        coefficient magnitudes.
+
+    Raises
+    ------
+    ValueError
+        Raised when the inputs are empty or contain non-finite numeric values.
+    """
+    X_numeric = _coerce_numeric_frame(X, name="X")
+    Y_numeric = _coerce_numeric_frame(Y, name="Y")
+
+    X_values = X_numeric.to_numpy(dtype=float)
+    Y_values = Y_numeric.to_numpy(dtype=float)
+
+    x_scaler = StandardScaler().fit(X_values)
+    y_scaler = StandardScaler().fit(Y_values)
+    X_scaled = x_scaler.transform(X_values)
+    Y_scaled = y_scaler.transform(Y_values)
+
+    model = LinearRegression(fit_intercept=True).fit(X_scaled, Y_scaled)
+    coef = np.asarray(model.coef_, dtype=float)
+    if coef.ndim == 1:
+        coef = coef[np.newaxis, :]  # → (1, n_features) for single-output case
+    coef_magnitudes = np.mean(np.abs(coef), axis=0)
+
+    return ScreeningImportanceResult(
+        feature_names=tuple(str(c) for c in X_numeric.columns),
+        coef_magnitudes=coef_magnitudes.copy(),
     )

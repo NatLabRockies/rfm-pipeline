@@ -19,6 +19,7 @@ import subprocess
 import tempfile
 import time
 import warnings
+from collections.abc import Collection
 from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
@@ -408,6 +409,265 @@ class EmpiricalNullScreeningStageResult:
     artifact_paths: dict[str, Path]
 
 
+# ---------------------------------------------------------------------------
+# Permutation-adequacy guard (F5)
+# ---------------------------------------------------------------------------
+
+
+class PermutationAdequacyError(ValueError):
+    """Raised when the permutation count is too small to resolve the requested tail quantile.
+
+    With *B* permutations the finest resolvable per-pair p-value is ``1/(B+1)``.
+    When the Bonferroni-corrected per-pair alpha ``(1 - quantile) / family_size``
+    is smaller than ``1/(B+1)``, the empirical null cannot distinguish signal from
+    noise at the requested quantile, so the stage refuses to proceed.
+    """
+
+
+def min_permutations_required(quantile: float, family_size: int = 1) -> int:
+    """Return the minimum permutation count *B*.
+
+    The count resolves *quantile* over *family_size* tests.
+
+    With *B* permutations the smallest achievable per-pair p-value is ``1/(B+1)``.
+    After Bonferroni correction across *family_size* simultaneous tests the
+    per-pair alpha is ``(1 - quantile) / family_size``.  The minimum *B* is
+    therefore::
+
+        B_min = ceil(family_size / (1 - quantile)) - 1
+
+    Parameters
+    ----------
+    quantile:
+        Upper-tail quantile used as the null-threshold (e.g. 0.995).  Must be
+        in the open interval (0, 1).
+    family_size:
+        Number of simultaneous hypothesis tests (pairs) in the family.  Must
+        be a positive integer.  Defaults to 1 (no correction).
+
+    Returns
+    -------
+    int
+        Minimum number of permutations required.
+
+    Raises
+    ------
+    ValueError
+        If *quantile* is not in (0, 1) or *family_size* is not positive.
+    """
+    if not (0.0 < quantile < 1.0):
+        raise ValueError(f"quantile must be in (0, 1); got {quantile!r}")
+    if family_size < 1:
+        raise ValueError(f"family_size must be a positive integer; got {family_size!r}")
+    alpha_per_pair = (1.0 - quantile) / family_size
+    raw = 1.0 / alpha_per_pair
+    # Guard against floating-point representation error: if raw is within 1e-9 of
+    # an integer (e.g. 1/0.1 yields 10.000000000000002 in IEEE 754), treat it as
+    # that integer rather than rounding up to the next integer.
+    rounded = round(raw)
+    needed = rounded if abs(raw - rounded) < 1e-9 else math.ceil(raw)
+    return needed - 1
+
+
+def check_permutation_adequacy(
+    permutation_count_B: int,
+    quantile: float,
+    family_size: int = 1,
+) -> None:
+    """Raise :class:`PermutationAdequacyError` if *permutation_count_B* is insufficient.
+
+    Parameters
+    ----------
+    permutation_count_B:
+        Configured number of null permutations.
+    quantile:
+        Upper-tail quantile used as the null-threshold (e.g. 0.995).
+    family_size:
+        Number of simultaneous hypothesis tests (pairs) in the family.
+
+    Raises
+    ------
+    PermutationAdequacyError
+        When *permutation_count_B* is less than the minimum required.
+    """
+    min_B = min_permutations_required(quantile, family_size)
+    if permutation_count_B < min_B:
+        alpha_per_pair = (1.0 - quantile) / family_size
+        smallest_p = 1.0 / (permutation_count_B + 1)
+        raise PermutationAdequacyError(
+            f"Permutation count B={permutation_count_B} is insufficient to resolve the "
+            f"requested null-threshold quantile={quantile} with family_size={family_size}. "
+            f"The Bonferroni-corrected per-pair alpha is {alpha_per_pair:.6g}, but the "
+            f"smallest achievable p-value with B={permutation_count_B} permutations is "
+            f"1/(B+1)={smallest_p:.6g}. "
+            f"Increase permutation_count_B to at least {min_B}."
+        )
+
+
+def fwer_max_stat_threshold(
+    null_statistics: np.ndarray,
+    alpha: float,
+) -> float:
+    """Compute the single-step max-statistic FWER threshold.
+
+    Under the global null, the maximum score across all candidate pairs is drawn
+    from a common null distribution for each shared-response permutation.  The
+    ``(1 - alpha)`` quantile of this max-null distribution is a threshold that
+    controls the family-wise error rate at *alpha*.
+
+    Parameters
+    ----------
+    null_statistics
+        Array of shape ``(B, n_pairs)`` of per-pair permutation-null statistics.
+        Each row is one shared-response permutation; each column is one candidate
+        pair.
+    alpha
+        Family-wise error rate target, e.g. ``0.05``.
+
+    Returns
+    -------
+    float
+        The ``(1 - alpha)`` quantile of the cross-pair max-null distribution.
+
+    Raises
+    ------
+    ValueError
+        If *null_statistics* is not 2-D with at least one row, or *alpha* is
+        not in the open interval (0, 1).
+    """
+    if null_statistics.ndim != 2 or null_statistics.shape[0] == 0:
+        raise ValueError("null_statistics must be a 2-D array with at least one row (B >= 1).")
+    if not (0.0 < alpha < 1.0):
+        raise ValueError(f"alpha must be in the open interval (0, 1); got {alpha!r}")
+    max_null = null_statistics.max(axis=1)  # shape (B,)
+    return float(np.quantile(max_null, 1.0 - alpha))
+
+
+def bh_fdr_selected(
+    p_values: np.ndarray,
+    alpha: float,
+) -> np.ndarray:
+    """Return a boolean selection mask via Benjamini-Hochberg FDR correction.
+
+    Applies the step-up BH procedure: sort p-values ascending, find the largest
+    rank *k* such that ``p_(k) <= k/m * alpha``, then select all hypotheses with
+    rank up to *k*.
+
+    Parameters
+    ----------
+    p_values
+        Array of shape ``(n_pairs,)`` of per-pair empirical p-values in [0, 1].
+    alpha
+        False discovery rate target, e.g. ``0.05``.
+
+    Returns
+    -------
+    np.ndarray
+        Boolean array of shape ``(n_pairs,)``; ``True`` where the pair is
+        selected after FDR correction.
+
+    Raises
+    ------
+    ValueError
+        If *p_values* is not 1-D, or *alpha* is not in (0, 1).
+    """
+    if p_values.ndim != 1:
+        raise ValueError("p_values must be a 1-D array.")
+    if not (0.0 < alpha < 1.0):
+        raise ValueError(f"alpha must be in the open interval (0, 1); got {alpha!r}")
+    m = len(p_values)
+    if m == 0:
+        return np.zeros(0, dtype=bool)
+    order = np.argsort(p_values, kind="stable")
+    sorted_p = p_values[order]
+    bh_critical = (np.arange(1, m + 1, dtype=float) / m) * alpha
+    below = sorted_p <= bh_critical
+    if not below.any():
+        selected = np.zeros(m, dtype=bool)
+        return selected
+    cutoff = int(np.max(np.where(below)[0]))
+    selected_sorted = np.zeros(m, dtype=bool)
+    selected_sorted[: cutoff + 1] = True
+    selected = np.zeros(m, dtype=bool)
+    selected[order] = selected_sorted
+    return selected
+
+
+def multiplicity_controlled_interaction_selection(
+    observed_scores: np.ndarray,
+    null_statistics: np.ndarray,
+    alpha: float,
+    method: str = "fwer_max_stat",
+) -> tuple[np.ndarray, np.ndarray, float | None]:
+    """Select interaction pairs with multiplicity control over the full candidate family.
+
+    Applies either the FWER max-statistic (single-step, shared-response permutations)
+    or Benjamini-Hochberg FDR correction to the observed interaction scores.
+
+    Parameters
+    ----------
+    observed_scores
+        Array of shape ``(n_pairs,)`` of observed interaction scores for each
+        candidate pair.
+    null_statistics
+        Array of shape ``(B, n_pairs)`` of permutation-null statistics obtained
+        from *shared-response* permutations (the same permuted response is used
+        for all pairs in a single draw).
+    alpha
+        Error rate target.  Interpreted as the FWER level for
+        ``method='fwer_max_stat'`` and as the FDR level for
+        ``method='bh_fdr'``.
+    method
+        Multiplicity-correction procedure.  One of:
+
+        ``'fwer_max_stat'``
+            Single-step max-statistic FWER control via
+            :func:`fwer_max_stat_threshold`.
+        ``'bh_fdr'``
+            Benjamini-Hochberg FDR control via :func:`bh_fdr_selected`.
+
+    Returns
+    -------
+    selected : np.ndarray
+        Boolean array of shape ``(n_pairs,)``; ``True`` for selected pairs.
+    p_values : np.ndarray
+        Empirical per-pair p-values of shape ``(n_pairs,)``.  Computed as
+        ``(1 + #{b : null_b >= obs}) / (B + 1)``.
+    threshold : float or None
+        The scalar FWER threshold when *method* is ``'fwer_max_stat'``;
+        ``None`` for ``'bh_fdr'``.
+
+    Raises
+    ------
+    ValueError
+        If *method* is not one of the supported strings, or if shape constraints
+        on *observed_scores* / *null_statistics* are violated.
+    """
+    if method not in {"fwer_max_stat", "bh_fdr"}:
+        raise ValueError(
+            f"Unknown multiplicity correction method: {method!r}. "
+            "Expected 'fwer_max_stat' or 'bh_fdr'."
+        )
+    if observed_scores.ndim != 1:
+        raise ValueError("observed_scores must be a 1-D array.")
+    if null_statistics.ndim != 2:
+        raise ValueError("null_statistics must be a 2-D array of shape (B, n_pairs).")
+    if null_statistics.shape[1] != len(observed_scores):
+        raise ValueError(
+            f"null_statistics column count ({null_statistics.shape[1]}) must match "
+            f"len(observed_scores) ({len(observed_scores)})."
+        )
+    B = null_statistics.shape[0]
+    p_values = (1.0 + (null_statistics >= observed_scores[None, :]).sum(axis=0)) / (B + 1.0)
+    if method == "fwer_max_stat":
+        threshold: float | None = fwer_max_stat_threshold(null_statistics, alpha)
+        selected = observed_scores > threshold
+        return selected, p_values, threshold
+    # bh_fdr
+    selected = bh_fdr_selected(p_values, alpha)
+    return selected, p_values, None
+
+
 @dataclass(frozen=True)
 class InteractionDiscoverySpec:
     """Frozen interaction-discovery settings from the manuscript contract.
@@ -459,6 +719,7 @@ class InteractionDiscoverySpec:
     dask_workers: int | None = None
     dask_cores_per_worker: int = 1
     dask_memory_per_worker: str = "4 GB"
+    enforce_permutation_adequacy: bool = True
 
 
 @dataclass(frozen=True)
@@ -934,6 +1195,136 @@ class ManuscriptReproductionAuditStageResult:
     reproduction: ManuscriptReproductionStageChainResult
     audit: ManuscriptReproductionAuditResult
     artifact_paths: dict[str, Path]
+
+
+# ---------------------------------------------------------------------------
+# Per-stage support-composition provenance (F6)
+# ---------------------------------------------------------------------------
+
+STAGE_NAMES = ("screen", "lasso", "stability", "hc3", "final_selection")
+
+
+@dataclass(frozen=True)
+class StageSupportRecord:
+    """Per-stage support-composition provenance record.
+
+    Tracks which terms entered a selection stage, which survived, and which
+    were removed.  A ``removed_terms`` of empty set means the stage was a no-op
+    for support composition — explicit and machine-checkable.
+
+    Parameters
+    ----------
+    stage
+        Canonical stage name: one of ``screen``, ``lasso``, ``stability``,
+        ``hc3``, ``final_selection``.
+    n_in
+        Number of candidate terms entering this stage.
+    n_out
+        Number of candidate terms leaving this stage (surviving).
+    removed_terms
+        Frozenset of term names removed by this stage.  Empty set → no-op.
+    """
+
+    stage: str
+    n_in: int
+    n_out: int
+    removed_terms: frozenset[str]
+
+    def __post_init__(self) -> None:
+        """Validate stage-count consistency after dataclass initialization."""
+        if self.n_in < 0:
+            raise ValueError(f"n_in must be non-negative, got {self.n_in}")
+        if self.n_out < 0:
+            raise ValueError(f"n_out must be non-negative, got {self.n_out}")
+        if self.n_out > self.n_in:
+            raise ValueError(
+                f"n_out ({self.n_out}) cannot exceed n_in ({self.n_in}) for stage {self.stage!r}"
+            )
+        if len(self.removed_terms) != self.n_in - self.n_out:
+            raise ValueError(
+                f"removed_terms size ({len(self.removed_terms)}) must equal "
+                f"n_in - n_out ({self.n_in - self.n_out}) for stage {self.stage!r}"
+            )
+
+    @property
+    def n_removed(self) -> int:
+        """Number of terms removed by this stage."""
+        return len(self.removed_terms)
+
+    @property
+    def is_noop(self) -> bool:
+        """True when this stage removed zero terms from the candidate set."""
+        return len(self.removed_terms) == 0
+
+
+def build_stage_support_provenance(
+    *,
+    candidates_before_screen: Collection[str],
+    candidates_after_screen: Collection[str],
+    candidates_after_lasso: Collection[str],
+    candidates_after_stability: Collection[str],
+    candidates_after_hc3: Collection[str],
+    candidates_after_final_selection: Collection[str],
+) -> list[StageSupportRecord]:
+    """Build a per-stage support-composition provenance record for one pipeline run.
+
+    Each returned ``StageSupportRecord`` captures how many candidates entered
+    and exited a given selection stage, plus the exact set removed.  A stage
+    that removed nothing produces an ``is_noop == True`` record — this makes
+    "zero removals" explicit and machine-checkable rather than silently absent.
+
+    Parameters
+    ----------
+    candidates_before_screen
+        Full candidate set entering the empirical-null screening stage.
+    candidates_after_screen
+        Candidate set surviving empirical-null screening.
+    candidates_after_lasso
+        Candidate set surviving LASSO sparse selection.
+    candidates_after_stability
+        Candidate set surviving stability resampling.
+    candidates_after_hc3
+        Candidate set surviving the HC3 inferential filter.
+    candidates_after_final_selection
+        Candidate set surviving final selection / feature pruning.
+
+    Returns
+    -------
+    list[StageSupportRecord]
+        Five records in pipeline order: screen → lasso → stability → hc3 →
+        final_selection.
+
+    Raises
+    ------
+    ValueError
+        If any stage's output is not a subset of its input.
+    """
+    boundaries = [
+        ("screen", candidates_before_screen, candidates_after_screen),
+        ("lasso", candidates_after_screen, candidates_after_lasso),
+        ("stability", candidates_after_lasso, candidates_after_stability),
+        ("hc3", candidates_after_stability, candidates_after_hc3),
+        ("final_selection", candidates_after_hc3, candidates_after_final_selection),
+    ]
+    records: list[StageSupportRecord] = []
+    for stage, raw_in, raw_out in boundaries:
+        set_in = frozenset(raw_in)
+        set_out = frozenset(raw_out)
+        extra = set_out - set_in
+        if extra:
+            raise ValueError(
+                f"Stage {stage!r} output contains terms not in its input: {sorted(extra)}"
+            )
+        removed = set_in - set_out
+        records.append(
+            StageSupportRecord(
+                stage=stage,
+                n_in=len(set_in),
+                n_out=len(set_out),
+                removed_terms=removed,
+            )
+        )
+    return records
 
 
 def output_conditioning_spec_from_case_study_config(
@@ -1853,6 +2244,12 @@ def discover_manuscript_interactions(
     if not candidates:
         raise ValueError("feature_catalog does not contain any two-factor interaction candidates.")
     total_candidate_pairs = len(candidates)
+    if spec.enforce_permutation_adequacy:
+        check_permutation_adequacy(
+            spec.permutation_count_B,
+            spec.null_threshold_quantile,
+            family_size=total_candidate_pairs,
+        )
     if pair_start_idx is not None or pair_end_idx is not None:
         start = int(pair_start_idx) if pair_start_idx is not None else 0
         end = int(pair_end_idx) if pair_end_idx is not None else total_candidate_pairs
@@ -2130,7 +2527,9 @@ def discover_manuscript_interactions(
         spec.permutation_count_B + 1.0
     )
     retained = observed_scores > thresholds
-    retained_term_names = {pair_name for pair_name, _, _ in candidates}
+    retained_term_names = {
+        pair_name for (pair_name, _, _), r in zip(candidates, retained, strict=True) if r
+    }
     pair_scores = _build_interaction_pair_scores(
         candidates=candidates,
         observed_scores=observed_scores,
@@ -2560,8 +2959,6 @@ def discover_manuscript_nonlinear_transformations(
         for component_name in component_names:
             gam_cache.setdefault((base_feat, component_name), (2.0, 1.0))
 
-    nonlinear_bases = {b for b, fr in feature_results.items() if fr["nonlinear"]}
-
     # Build transformation_scores table (all domain-valid candidates with GAM diagnostics).
     rows = []
     for feat_name, base_feat, td in candidates:
@@ -2578,7 +2975,7 @@ def discover_manuscript_nonlinear_transformations(
                 "best_component": fr["best_comp_name"],
                 "replacement_training_rmse": fr["best_rmse"] if is_best else float("nan"),
                 "active_transform": True,
-                "empirical_null_retained": base_feat in nonlinear_bases,
+                "empirical_null_retained": retained,
                 "retained": retained,
                 "curvature_rule": spec.curvature_rule,
                 "replacement_selection_rule": spec.replacement_selection_rule,
@@ -2667,6 +3064,303 @@ def write_nonlinear_discovery_artifacts(
         table.to_csv(path, index=False)
         written[name] = path
     return written
+
+
+def nonlinear_multiplicity_corrected_alpha(
+    alpha: float,
+    n_inputs: int,
+    n_components: int,
+) -> float:
+    """Return the Bonferroni-corrected per-test alpha for nonlinear discovery.
+
+    The full search family for nonlinear discovery contains one GAM test per
+    (input feature, PCA component) pair, giving a family size of
+    ``n_inputs × n_components``.  Bonferroni correction divides *alpha* by
+    this family size so that the probability of any false discovery across
+    all simultaneous tests is bounded by *alpha*.
+
+    Parameters
+    ----------
+    alpha
+        Family-wise type-I error rate target, e.g. ``0.05``.  Must be in the
+        open interval (0, 1).
+    n_inputs
+        Number of candidate base input features.  Must be >= 1.
+    n_components
+        Number of active PCA components tested.  Must be >= 1.
+
+    Returns
+    -------
+    float
+        Bonferroni-corrected per-test alpha = ``alpha / (n_inputs * n_components)``.
+
+    Raises
+    ------
+    ValueError
+        If *alpha* is not in (0, 1), or *n_inputs* / *n_components* are not
+        positive integers.
+    """
+    if not (0.0 < alpha < 1.0):
+        raise ValueError(f"alpha must be in the open interval (0, 1); got {alpha!r}")
+    if n_inputs < 1:
+        raise ValueError(f"n_inputs must be a positive integer; got {n_inputs!r}")
+    if n_components < 1:
+        raise ValueError(f"n_components must be a positive integer; got {n_components!r}")
+    return alpha / (n_inputs * n_components)
+
+
+def choose_transform_by_cv(
+    x_vals: np.ndarray,
+    y_vals: np.ndarray,
+    candidates: list[tuple[str, TransformDef]],
+    *,
+    n_splits: int = 5,
+    seed: int = 0,
+) -> tuple[str, float]:
+    """Select the best transform family for one feature by k-fold cross-validation.
+
+    Separates transform *choice* from nonlinearity *discovery*: discovery is based on a
+    GAM test (curvature test), while this function selects among candidate algebraic
+    families using held-out folds, providing independent validation of the choice.
+
+    For each candidate ``(name, TransformDef)``:
+
+    1. Apply the transform to obtain ``T(x)``.
+    2. Standardise ``T(x)`` to zero mean and unit scale.
+    3. Fit an intercept-plus-slope OLS model ``y ~ T(x)`` on each training fold.
+    4. Predict on the corresponding held-out fold and compute RMSE.
+    5. Average the per-fold RMSE values.
+
+    The candidate with minimum average CV RMSE is returned.
+
+    Parameters
+    ----------
+    x_vals
+        1-D array of raw feature values for all training samples.
+    y_vals
+        1-D or 2-D array of response values.  Shape ``(n,)`` or ``(n, k)``.
+        When 2-D the per-fold RMSE is averaged across outputs.
+    candidates
+        Ordered list of ``(feature_name, TransformDef)`` tuples to evaluate.
+        Must be non-empty.
+    n_splits
+        Number of CV folds (``k``).  Must be >= 2 and <= ``n_samples``.
+    seed
+        Integer seed for the fold-assignment RNG.  Fixes the evaluation to be
+        deterministic.
+
+    Returns
+    -------
+    best_name : str
+        The ``feature_name`` of the candidate with minimum average CV RMSE.
+    best_cv_rmse : float
+        The minimum average CV RMSE achieved (``nan`` when all candidates fail).
+
+    Raises
+    ------
+    ValueError
+        If *x_vals* is not 1-D, *candidates* is empty, or *n_splits* is < 2.
+    """
+    if x_vals.ndim != 1:
+        raise ValueError("x_vals must be a 1-D array.")
+    if not candidates:
+        raise ValueError("candidates must be non-empty.")
+    if n_splits < 2:
+        raise ValueError(f"n_splits must be >= 2; got {n_splits!r}")
+
+    n = len(x_vals)
+    if n < n_splits * 2:
+        raise ValueError(
+            f"n_samples={n} is too small for n_splits={n_splits}; "
+            f"need at least {n_splits * 2} samples."
+        )
+
+    y = y_vals.reshape(n, -1) if y_vals.ndim == 1 else np.asarray(y_vals, dtype=float)
+    if len(y) != n:
+        raise ValueError("x_vals and y_vals must have the same number of rows.")
+
+    rng = np.random.default_rng(seed)
+    indices = rng.permutation(n)
+    fold_arrays = np.array_split(indices, n_splits)
+
+    best_name: str = candidates[0][0]
+    best_cv_rmse: float = float("inf")
+
+    for cand_name, td in candidates:
+        t_raw = _apply_transform_family(x_vals, td)
+        if t_raw is None:
+            continue
+        t_std = _standardize_vector(t_raw)
+
+        total_sq_err: float = 0.0
+        total_count: int = 0
+        valid_cv = True
+
+        for k in range(n_splits):
+            test_idx = fold_arrays[k]
+            train_idx = np.concatenate([fold_arrays[j] for j in range(n_splits) if j != k])
+            if len(train_idx) < 2:
+                valid_cv = False
+                break
+
+            x_tr = np.column_stack([np.ones(len(train_idx)), t_std[train_idx]])
+            y_tr = y[train_idx]
+            x_te = np.column_stack([np.ones(len(test_idx)), t_std[test_idx]])
+            y_te = y[test_idx]
+
+            coef, _, _, _ = np.linalg.lstsq(x_tr, y_tr, rcond=None)
+            y_hat = x_te @ coef
+            sq_err = float(np.sum((y_te - y_hat) ** 2))
+            total_sq_err += sq_err
+            total_count += y_te.size
+
+        if not valid_cv or total_count == 0:
+            continue
+        cv_rmse = float(np.sqrt(total_sq_err / total_count))
+        if cv_rmse < best_cv_rmse:
+            best_cv_rmse = cv_rmse
+            best_name = cand_name
+
+    if best_cv_rmse == float("inf"):
+        best_cv_rmse = float("nan")
+    return best_name, best_cv_rmse
+
+
+def nonlinear_discovery_with_multiplicity_correction(
+    x_by_base: dict[str, np.ndarray],
+    y_scaled: np.ndarray,
+    candidates_by_base: dict[str, list[tuple[str, str, TransformDef]]],
+    component_names: list[str],
+    active_comp_indices: list[int],
+    *,
+    alpha: float = 0.05,
+    edf_threshold: float = 2.0,
+    n_cv_splits: int = 5,
+    seed: int = 0,
+) -> dict[str, dict]:
+    """Detect nonlinear features with corrected discovery and CV transform choice.
+
+    Two-stage procedure that separates *discovery* from *choice*:
+
+    **Stage 1 — Discovery (multiplicity-corrected).**
+    For each base feature, GAM curvature tests are run across all active PCA components.
+    The minimum p-value over components is compared against a Bonferroni-corrected alpha
+    that accounts for the full search family size
+    ``n_inputs × n_components``.  A feature is declared nonlinear only when
+    ``best_edf > edf_threshold`` *and* ``best_p < corrected_alpha``.
+
+    **Stage 2 — Choice (nested CV).**
+    For features declared nonlinear, the best algebraic transform family is selected by
+    k-fold cross-validation on the training data, independent of the GAM test.  This
+    separates the discovery decision from the choice decision and prevents over-fitting
+    to the training GAM smooth.
+
+    Parameters
+    ----------
+    x_by_base
+        Mapping ``base_feature → (n_train,)`` raw input values.
+    y_scaled
+        ``(n_train, n_components)`` array of standardised PCA component scores.
+    candidates_by_base
+        Mapping ``base_feature → [(feature_name, base_feature, TransformDef), ...]``.
+    component_names
+        Names of all PCA components (length = ``y_scaled.shape[1]``).
+    active_comp_indices
+        Indices of active (non-zero-variance) component columns in *y_scaled*.
+    alpha
+        Family-wise type-I error rate target for discovery.  Default 0.05.
+    edf_threshold
+        Minimum smooth EDF to qualify as evidence of curvature (``best_edf > edf_threshold``).
+        Default 2.0.
+    n_cv_splits
+        Number of CV folds for transform selection.  Default 5.
+    seed
+        RNG seed for CV fold assignment.  Default 0.
+
+    Returns
+    -------
+    dict[str, dict]
+        Mapping ``base_feature → result_dict`` with keys:
+
+        ``nonlinear`` : bool
+            Whether the feature was declared nonlinear after multiplicity correction.
+        ``best_transform_name`` : str
+            Selected transform feature name (CV-chosen when nonlinear, default otherwise).
+        ``best_edf`` : float
+            Best smooth EDF observed across active components.
+        ``best_p`` : float
+            Minimum GAM p-value observed across active components.
+        ``best_comp_name`` : str
+            Name of the component giving the best (lowest p-value) GAM result.
+        ``best_cv_rmse`` : float
+            CV RMSE of the selected transform (``nan`` when not nonlinear).
+        ``corrected_alpha`` : float
+            The Bonferroni-corrected per-test alpha used for this run.
+        ``family_size`` : int
+            The multiplicity family size = ``n_inputs × n_components``.
+
+    Notes
+    -----
+    The documented multiplicity correction is:
+    ``alpha_corrected = alpha / (n_inputs × n_components)``.
+    For the manuscript case study (276 transforms × 20 components), the uncorrected search
+    inflates false-positive rates; this correction bounds the family-wise error rate at *alpha*.
+    """
+    n_inputs = len(x_by_base)
+    n_active_comps = len(active_comp_indices)
+    if n_inputs == 0 or n_active_comps == 0:
+        return {}
+
+    corrected_alpha = nonlinear_multiplicity_corrected_alpha(alpha, n_inputs, n_active_comps)
+    family_size = n_inputs * n_active_comps
+
+    results: dict[str, dict] = {}
+
+    for base_feat, x_vals in x_by_base.items():
+        base_candidates = candidates_by_base.get(base_feat, [])
+        if not base_candidates:
+            continue
+
+        best_edf: float = 2.0
+        best_p: float = 1.0
+        best_comp_idx: int = active_comp_indices[0]
+
+        for comp_idx in active_comp_indices:
+            y_comp = y_scaled[:, comp_idx]
+            edf, p, _ = _gam_test_and_smooth(x_vals, y_comp)
+            if edf > best_edf or (edf > edf_threshold and p < best_p):
+                best_edf = edf
+                best_p = p
+                best_comp_idx = comp_idx
+
+        is_nonlinear = (best_edf > edf_threshold) and (best_p < corrected_alpha)
+
+        best_transform_name: str = base_candidates[0][0]
+        best_cv_rmse: float = float("nan")
+
+        if is_nonlinear:
+            y_best = y_scaled[:, best_comp_idx]
+            cv_candidates = [(feat_name, td) for feat_name, _, td in base_candidates]
+            best_transform_name, best_cv_rmse = choose_transform_by_cv(
+                x_vals,
+                y_best,
+                cv_candidates,
+                n_splits=n_cv_splits,
+                seed=seed,
+            )
+
+        results[base_feat] = {
+            "nonlinear": is_nonlinear,
+            "best_transform_name": best_transform_name,
+            "best_edf": best_edf,
+            "best_p": best_p,
+            "best_comp_name": component_names[best_comp_idx],
+            "best_cv_rmse": best_cv_rmse,
+            "corrected_alpha": corrected_alpha,
+            "family_size": family_size,
+        }
+
+    return results
 
 
 def run_nonlinear_discovery_stage(context: Any) -> NonlinearDiscoveryStageResult:

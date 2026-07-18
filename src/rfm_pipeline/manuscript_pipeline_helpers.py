@@ -17,10 +17,15 @@ from __future__ import annotations
 import copy
 import json
 import os
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+import pandas as pd
+
 from rfm_pipeline.config import OutOfCoreConfig, WorkflowConfig
+from rfm_pipeline.data import SealedSplitResult, SealedTestAccessError
 from rfm_pipeline.manuscript_runtime import load_manuscript_case_study_config
 from rfm_pipeline.manuscript_stages import (
     EmpiricalNullScreeningResult,
@@ -49,6 +54,7 @@ __all__ = [
     "_load_nonlinear_discovery_result",
     "_load_sparse_selection_result",
     "config_to_legacy_case_study",
+    "select_threshold_on_internal_validation",
 ]
 
 
@@ -433,3 +439,80 @@ def config_to_legacy_case_study(workflow_config: WorkflowConfig) -> dict[str, An
     runtime["n_jobs"] = workflow_config.runtime.n_jobs
     config["random_seed"] = workflow_config.output.seed
     return config
+
+
+# ---------------------------------------------------------------------------
+# Internal-validation threshold selection (P0-S05)
+# ---------------------------------------------------------------------------
+
+
+def select_threshold_on_internal_validation(
+    split: SealedSplitResult,
+    thresholds: Sequence[float],
+    scorer: Callable[[float, pd.DataFrame, pd.DataFrame], float],
+    *,
+    seed: int | None = None,
+) -> float:
+    """Select the best threshold using only internal-validation data.
+
+    The function reads ``split.train`` and ``split.val`` exclusively.  If the
+    split has already been unsealed (i.e. the sealed test partition is
+    accessible), a :class:`~rfm_pipeline.data.SealedTestAccessError` is raised
+    immediately to prevent test-data leakage into the selection process.
+
+    Parameters
+    ----------
+    split:
+        Three-way sealed split.  Must still be sealed when this function is
+        called.
+    thresholds:
+        Candidate threshold values to evaluate.
+    scorer:
+        Callable ``scorer(threshold, train_df, val_df) -> float``.  Lower
+        return values indicate better performance (e.g. nRMSE).  Called with
+        the training and internal-validation partitions only; the scorer must
+        not access the sealed test partition.
+    seed:
+        Integer seed used for deterministic tie-breaking when multiple
+        thresholds achieve the same best score.
+
+    Returns
+    -------
+    float
+        The threshold from *thresholds* that minimises the internal-validation
+        score.  Ties are broken deterministically using *seed*.
+
+    Raises
+    ------
+    SealedTestAccessError
+        If *split* has already been unsealed, indicating that the test
+        partition is exposed and could contaminate threshold selection.
+    ValueError
+        If *thresholds* is empty.
+    """
+    if not split._sealed:
+        raise SealedTestAccessError(
+            "select_threshold_on_internal_validation: the supplied split has "
+            "already been unsealed.  Threshold selection must use only "
+            "train + internal-validation data; unsealing before selection "
+            "risks test-data leakage."
+        )
+    if not thresholds:
+        raise ValueError("thresholds must be a non-empty sequence.")
+
+    train_df = split.train
+    val_df = split.val
+
+    scores = [scorer(float(t), train_df, val_df) for t in thresholds]
+    best_score = min(scores)
+
+    # Collect all thresholds that achieve the best score.
+    candidates = [float(t) for t, s in zip(thresholds, scores, strict=True) if s == best_score]
+
+    if len(candidates) == 1:
+        return candidates[0]
+
+    # Deterministic tie-break using seed.
+    rng = np.random.default_rng(seed)
+    idx = int(rng.integers(len(candidates)))
+    return candidates[idx]

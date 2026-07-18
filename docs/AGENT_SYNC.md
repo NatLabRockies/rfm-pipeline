@@ -2114,3 +2114,25 @@ ______________________________________________________________________
 **Effort estimate**: 60–80 hours (experiments + modeling + deployment)
 
 **Delivered alongside**: Phase 8 final report + HPC scaling benchmark suite (`tools/hpc_scaling_benchmark.py`, `tools/hpc_compute_calculator.py`)
+
+## SESSION STATE — workflow↔manuscript alignment milestone launched (slice-runner)
+
+- Root-cause reframe (user): "we need the workflow to match the manuscript" — fix the
+  generic pipeline to implement the manuscript methodology; do not water down the paper.
+- Harness: `docs/WORKFLOW_MANUSCRIPT_ALIGNMENT_PLAN.md` (19 atomic slices P0-S01..P2-S01),
+  `.slice-runner.toml`, `scripts/slice_validate.sh` (hyphen→underscore `-k` bridge).
+  Committed 9dcec9c, pushed to main.
+- Slice→finding map: P0-S01..03=F1 (categorical/scenario predictors), P0-S04..06=F2
+  (sealed test + internal-only selection + frozen provenance), P0-S07..10=F5
+  (perm adequacy, interaction+nonlinear multiplicity, provenance bug), P0-S11..12=F6
+  (validated support recovery + per-stage support provenance), P0-S13=F4 (remove
+  case-study track_a_v3/wave5 from generic src). P1-S01=M3 bootstrap, P1-S02=M4
+  stratified/excluded metrics, P1-S03=M5 baselines, P1-S04=M6 stress tests, P1-S05=F3
+  data-contract. P2-S01=F7 release manifest.
+- Validation: each slice ships tests/alignment/test\_<ID>\_\*.py; gate =
+  `pixi run python -m pytest tests/alignment -k <ID> --tb=short -q`.
+- Run: `slice-runner run-all` launched detached; tiers sonnet→opus, max_concurrent=1.
+  Monitor: `slice-runner status`; logs under `.slice-runner/logs/`.
+- Downstream (NOT slices; require HPC/data-rights/LaTeX): case-study end-to-end rerun to
+  regenerate manuscript numbers (F1/F2/F5/F6 real-data closure), M1/M2/M7 sensitivity
+  re-exec, M8 AEO/BSM provenance+licensing, F7 public releases/DOIs, M9 prose edits.

@@ -627,3 +627,65 @@ tracked in `docs/AGENT_SYNC.md` / `docs/scope_backlog.md`:
 - Manuscript prose: separate prediction/interpretation/inference claims (M9);
   rewrite abstract/cover/results/discussion/model-card from regenerated
   artifacts; JDS admin (ORCID/ScholarOne).
+
+______________________________________________________________________
+
+## PHASE R2 — round-1 regression remediation
+
+### Slice R2-S01: Reconcile permutation-adequacy guard with structural discovery tests (F5 regression)
+
+**Phase:** R2
+**Depends on:** none
+**Estimated size:** medium
+**Files to create/modify:**
+
+- src/rfm_pipeline/manuscript_stages.py
+- tests/test_manuscript_interaction_discovery.py
+- tests/alignment/test_R2_S01_guard_reconciliation.py
+
+**Context.** The P0-S07 permutation-adequacy guard (`check_permutation_adequacy`,
+called from interaction discovery) now raises `PermutationAdequacyError` for
+8 pre-existing structural tests in
+`tests/test_manuscript_interaction_discovery.py`
+(`test_interaction_discovery_generates_all_pairs_from_retained_first_order_terms`,
+`test_interaction_discovery_respects_candidate_pair_range`,
+`test_interaction_discovery_rejects_empty_candidate_pair_range`,
+`test_interaction_discovery_rejects_invalid_parallel_backend`,
+`test_interaction_discovery_uses_configured_parallel_backend_without_fallback`,
+`test_interaction_discovery_accepts_dask_backend_with_executor`,
+`test_interaction_discovery_falls_back_to_joblib_when_dask_executor_fails`,
+`test_interaction_discovery_resumes_from_checkpointed_permutation_scores`).
+These tests deliberately use tiny `permutation_count_B` (2, 3, 19) with **mocked**
+scoring to exercise pair generation, parallel-backend selection, and
+checkpoint/resume plumbing — they do not validate statistical tail behavior.
+The guard must keep protecting real analysis while these plumbing tests still run.
+
+**Requirements (do NOT weaken the guard's real-analysis default and do NOT weaken
+any test's actual assertion target):**
+
+- Add an explicit `enforce_permutation_adequacy: bool = True` field to
+  `InteractionDiscoverySpec` (default True → real runs remain guarded; F5
+  behavior unchanged when unset). The guard runs only when True.
+- Update the 8 structural tests to construct their spec with
+  `enforce_permutation_adequacy=False`, since they intentionally use tiny
+  mocked-scoring configs and assert plumbing, not tail validity. Do not change
+  any other assertion in those tests. Do not change their `permutation_count_B`
+  values (checkpoint/backend assertions depend on them).
+- `min_permutations_required` / `check_permutation_adequacy` behavior is
+  unchanged; the config default still enforces.
+
+**Acceptance criteria:**
+
+- `test_R2_S01_*` asserts: with `enforce_permutation_adequacy=True` (default) an
+  inadequate `B` for the configured quantile still raises
+  `PermutationAdequacyError`; with `enforce_permutation_adequacy=False` the same
+  inadequate `B` does not raise from the guard; the default value of the new
+  field is `True`.
+- The sub-agent MUST also confirm the previously-failing suite is green:
+  `pixi run python -m pytest -q tests/test_manuscript_interaction_discovery.py`
+  exits 0.
+- `pixi run ruff check src/rfm_pipeline/manuscript_stages.py tests/test_manuscript_interaction_discovery.py tests/alignment/test_R2_S01_guard_reconciliation.py` is clean.
+
+**Fixture requirements:**
+
+- Reuse existing InteractionDiscoverySpec construction patterns; synthetic only.

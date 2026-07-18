@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    from rfm_pipeline.config import CategoricalInputDecl
 
 KNOWN_TRANSFORMATIONS = {
     # Legacy labels (used by pre-existing artifact parsing)
@@ -159,3 +164,205 @@ def canonical_module_from_factor_name(name: str) -> str:
     if "." not in name:
         return "Unscoped"
     return name.split(".", 1)[0].strip() or "Unscoped"
+
+
+# ---------------------------------------------------------------------------
+# Design-matrix construction with categorical main effects and interactions
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DesignMatrixSpec:
+    """Specification for design-matrix construction with optional categoricals.
+
+    Parameters
+    ----------
+    categorical_inputs:
+        Declared categorical/block predictors (from config). Each entry may
+        optionally carry an explicit level list.
+    interaction_pairs:
+        Ordered pairs ``(categorical_name, scalar_name)`` for which a
+        categorical×scalar product column should be added.  The categorical
+        side is encoded with the same indicator scheme as the main effects.
+    drop_first:
+        When ``True`` (default), use drop-first dummy coding to avoid perfect
+        multicollinearity.  When ``False``, emit all levels as indicators
+        (useful for explicit contrast matrices or tests).
+    """
+
+    categorical_inputs: tuple[CategoricalInputDecl, ...] = field(default_factory=tuple)  # type: ignore[assignment]
+    interaction_pairs: tuple[tuple[str, str], ...] = ()
+    drop_first: bool = True
+
+
+@dataclass(frozen=True)
+class DesignMatrixResult:
+    """Materialized design matrix and its ordered column catalog.
+
+    Attributes
+    ----------
+    matrix:
+        The assembled design matrix.  Scalar columns retain their original
+        dtype; indicator columns are ``uint8``; interaction columns are
+        ``float64``.
+    ordered_columns:
+        Stable ordered tuple of all column names in ``matrix``.
+    categorical_columns:
+        Column names introduced by categorical main-effect encoding.
+    interaction_columns:
+        Column names introduced by categorical×scalar interactions.
+    """
+
+    matrix: pd.DataFrame
+    ordered_columns: tuple[str, ...]
+    categorical_columns: tuple[str, ...]
+    interaction_columns: tuple[str, ...]
+
+
+def _indicator_columns(
+    series: pd.Series,
+    name: str,
+    levels: list[str] | None,
+    *,
+    drop_first: bool,
+) -> pd.DataFrame:
+    """Encode a single categorical series as indicator columns.
+
+    Parameters
+    ----------
+    series:
+        Raw categorical/boolean column values.
+    name:
+        Column name in the source DataFrame (used for indicator naming).
+    levels:
+        Explicit ordered levels.  When ``None``, levels are inferred from the
+        unique sorted values of *series*.
+    drop_first:
+        Whether to omit the first level (reference category).
+
+    Returns
+    -------
+    pandas.DataFrame
+        One column per retained level named ``"{name}__{level}"``.
+    """
+    if levels is None:
+        levels = sorted(series.dropna().unique().astype(str).tolist())
+    if drop_first and len(levels) > 1:
+        levels = levels[1:]
+    result: dict[str, pd.Series] = {}
+    for lvl in levels:
+        col_name = f"{name}__{lvl}"
+        result[col_name] = (series.astype(str) == str(lvl)).astype("uint8")
+    return pd.DataFrame(result, index=series.index)
+
+
+def build_design_matrix(
+    X: pd.DataFrame,
+    spec: DesignMatrixSpec | None = None,
+) -> DesignMatrixResult:
+    """Construct a design matrix with optional categorical main effects and interactions.
+
+    When *spec* is ``None`` or contains no categorical inputs and no interaction
+    pairs, the output ``matrix`` is byte-for-byte identical to the input *X*
+    (same dtypes, same column order, same index).
+
+    Parameters
+    ----------
+    X:
+        Input feature matrix.  Must contain a column for every name mentioned
+        in *spec*.
+    spec:
+        Design-matrix specification.  Pass ``None`` or an empty
+        :class:`DesignMatrixSpec` to reproduce the no-categorical baseline.
+
+    Returns
+    -------
+    DesignMatrixResult
+        Assembled design matrix, ordered column catalog, and column provenance.
+
+    Raises
+    ------
+    KeyError
+        If a column referenced in *spec* is absent from *X*.
+    ValueError
+        If a scalar column referenced in an interaction pair is also declared
+        as a categorical input.
+    """
+    if spec is None:
+        spec = DesignMatrixSpec()
+
+    cat_names = {decl.name for decl in spec.categorical_inputs}
+    scalar_cols = [c for c in X.columns if c not in cat_names]
+
+    # Validate all referenced columns exist.
+    for decl in spec.categorical_inputs:
+        if decl.name not in X.columns:
+            raise KeyError(f"build_design_matrix: categorical column {decl.name!r} not in X")
+    for cat_col, scalar_col in spec.interaction_pairs:
+        if cat_col not in X.columns:
+            raise KeyError(f"build_design_matrix: categorical column {cat_col!r} not in X")
+        if scalar_col not in X.columns:
+            raise KeyError(f"build_design_matrix: scalar column {scalar_col!r} not in X")
+        if scalar_col in cat_names:
+            raise ValueError(
+                f"build_design_matrix: interaction scalar {scalar_col!r} is also "
+                "declared as a categorical input."
+            )
+
+    # Fast path: no categoricals, no interactions → return X unchanged.
+    if not spec.categorical_inputs and not spec.interaction_pairs:
+        return DesignMatrixResult(
+            matrix=X.copy(),
+            ordered_columns=tuple(X.columns),
+            categorical_columns=(),
+            interaction_columns=(),
+        )
+
+    # Build parts: scalars → categorical indicators → interaction columns.
+    parts: list[pd.DataFrame] = [X[scalar_cols].copy()]
+    categorical_col_names: list[str] = []
+    interaction_col_names: list[str] = []
+
+    # Precompute indicator frames keyed by categorical name for reuse in interactions.
+    indicator_frames: dict[str, pd.DataFrame] = {}
+    for decl in spec.categorical_inputs:
+        ind = _indicator_columns(
+            X[decl.name],
+            name=decl.name,
+            levels=decl.levels,
+            drop_first=spec.drop_first,
+        )
+        indicator_frames[decl.name] = ind
+        parts.append(ind)
+        categorical_col_names.extend(ind.columns.tolist())
+
+    # Add interaction columns: each indicator column × scalar value.
+    for cat_col, scalar_col in spec.interaction_pairs:
+        ind = indicator_frames.get(cat_col)
+        if ind is None:
+            # Interaction requested for a column not in categorical_inputs:
+            # build transient indicators (drop_first applies).
+            ind = _indicator_columns(
+                X[cat_col],
+                name=cat_col,
+                levels=None,
+                drop_first=spec.drop_first,
+            )
+        scalar_values = X[scalar_col]
+        for ind_col in ind.columns:
+            ix_col_name = f"{ind_col}_x_{scalar_col}"
+            parts.append(
+                pd.DataFrame(
+                    {ix_col_name: ind[ind_col].astype(float) * scalar_values},
+                    index=X.index,
+                )
+            )
+            interaction_col_names.append(ix_col_name)
+
+    matrix = pd.concat(parts, axis=1)
+    return DesignMatrixResult(
+        matrix=matrix,
+        ordered_columns=tuple(matrix.columns),
+        categorical_columns=tuple(categorical_col_names),
+        interaction_columns=tuple(interaction_col_names),
+    )

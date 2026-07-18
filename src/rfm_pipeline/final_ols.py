@@ -7,7 +7,8 @@ metric summarization, and artifact-bundle assembly.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -17,7 +18,8 @@ from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
 from .artifacts import PipelineManifest, make_metadata_frame
-from .data import align_xy
+from .data import SealedSplitResult, align_xy
+from .features import DesignMatrixSpec, build_design_matrix
 from .metrics import bootstrap_macro_nrmse_ci
 
 
@@ -115,6 +117,9 @@ class FinalOLSFitResult:
     y_means: np.ndarray
     y_scales: np.ndarray
     n_training_rows: int
+    # P0-S03: design spec for categorical-aware round-trip prediction
+    design_spec: DesignMatrixSpec | None = None
+    categorical_feature_columns: tuple[str, ...] = field(default_factory=tuple)  # type: ignore[assignment]
 
 
 def _coerce_numeric_frame(frame: pd.DataFrame, *, name: str) -> pd.DataFrame:
@@ -372,6 +377,90 @@ def predict_final_ols(result: FinalOLSFitResult, X: pd.DataFrame) -> pd.DataFram
     return pd.DataFrame(pred, index=X_eval.index, columns=list(result.output_names))
 
 
+def fit_final_ols_with_design(
+    X: pd.DataFrame,
+    Y: pd.DataFrame,
+    spec: DesignMatrixSpec,
+    *,
+    output_batch_size: int | None = None,
+) -> FinalOLSFitResult:
+    """Fit the final OLS model from raw inputs using a design-matrix spec.
+
+    Applies *spec* (categorical encoding + interactions) to *X* first, then fits
+    OLS on the resulting numeric design matrix.  The spec and derived categorical
+    column names are stored in the returned result so that :func:`predict_from_raw_records`
+    can round-trip through the same encoding at evaluation time.
+
+    Parameters
+    ----------
+    X
+        Raw input frame (may contain categorical/block columns declared in *spec*).
+    Y
+        Modeled output frame in raw units.
+    spec
+        Design-matrix specification describing categorical encodings and interactions.
+    output_batch_size
+        Forwarded to :func:`fit_final_ols`.
+
+    Returns
+    -------
+    FinalOLSFitResult
+        Fitted result with ``design_spec`` and ``categorical_feature_columns`` set.
+    """
+    dm = build_design_matrix(X, spec)
+    base = fit_final_ols(dm.matrix, Y, output_batch_size=output_batch_size)
+    return FinalOLSFitResult(
+        feature_names=base.feature_names,
+        output_names=base.output_names,
+        coef_raw_scale=base.coef_raw_scale,
+        intercept_raw_scale=base.intercept_raw_scale,
+        coef_standardized=base.coef_standardized,
+        intercept_standardized=base.intercept_standardized,
+        x_means=base.x_means,
+        x_scales=base.x_scales,
+        y_means=base.y_means,
+        y_scales=base.y_scales,
+        n_training_rows=base.n_training_rows,
+        design_spec=spec,
+        categorical_feature_columns=dm.categorical_columns,
+    )
+
+
+def predict_from_raw_records(
+    result: FinalOLSFitResult,
+    X: pd.DataFrame,
+) -> pd.DataFrame:
+    """Predict from raw records, applying the stored design spec if present.
+
+    When *result* was produced by :func:`fit_final_ols_with_design`, the stored
+    :attr:`~FinalOLSFitResult.design_spec` is used to encode categorical inputs
+    before calling :func:`predict_final_ols`.  When *result* has no ``design_spec``
+    (i.e. was produced by :func:`fit_final_ols` directly), the call falls back to
+    :func:`predict_final_ols` unchanged.
+
+    This is the primary entry point for scenario-contrast evaluation: pass two
+    records that differ only in a categorical/block column and the predictions will
+    reflect the fitted main effect for that column.
+
+    Parameters
+    ----------
+    result
+        Fitted OLS result, optionally carrying a design spec.
+    X
+        Raw input frame.  May contain categorical columns when *result* carries a
+        design spec.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Predicted outputs preserving the row index from *X*.
+    """
+    if result.design_spec is None:
+        return predict_final_ols(result, X)
+    dm = build_design_matrix(X, result.design_spec)
+    return predict_final_ols(result, dm.matrix)
+
+
 def make_holdout_nrmse_summary(
     result: FinalOLSFitResult,
     X_holdout: pd.DataFrame,
@@ -539,6 +628,15 @@ def build_postfit_artifacts(
         evaluation=dict(evaluation or {}),
         upstream_provenance=dict(upstream_provenance or {}),
     ).to_dict()
+    # P0-S03: record categorical encoding metadata when result carries a design spec.
+    if result.design_spec is not None and result.design_spec.categorical_inputs:
+        artifacts["manifest"]["categorical_inputs"] = [
+            {"name": decl.name, "levels": decl.levels}
+            for decl in result.design_spec.categorical_inputs
+        ]
+        artifacts["manifest"]["categorical_feature_columns"] = list(
+            result.categorical_feature_columns
+        )
     return artifacts
 
 
@@ -580,6 +678,193 @@ def make_coefficient_matrix_frame(
     return pd.DataFrame(matrix, columns=list(feature_names)).assign(output_name=output_names)[
         ["output_name", *feature_names]
     ]
+
+
+@dataclass(frozen=True)
+class SupportSelectionResult:
+    """Result from the refit-based support-selection rule.
+
+    Parameters
+    ----------
+    feature_names
+        Original-order enriched candidate feature names entering selection.
+    response_names
+        Response column names used in the refit evaluation.
+    selected_features
+        Feature names retained after applying the best threshold.
+    selected_mask
+        Boolean mask over ``feature_names`` indicating retained features.
+    best_threshold
+        Coefficient-magnitude threshold chosen by internal validation.
+    threshold_sensitivity
+        DataFrame with columns ``threshold``, ``n_selected``, ``val_score``
+        documenting performance across all candidate thresholds on the internal
+        validation partition.
+    initial_coef_magnitudes
+        Mean absolute standardized OLS coefficient magnitudes across responses,
+        one value per enriched candidate. Used as the feature-importance ranking
+        that drives threshold-based selection.
+    """
+
+    feature_names: tuple[str, ...]
+    response_names: tuple[str, ...]
+    selected_features: tuple[str, ...]
+    selected_mask: np.ndarray
+    best_threshold: float
+    threshold_sensitivity: pd.DataFrame
+    initial_coef_magnitudes: np.ndarray
+
+
+def select_support_via_refit(
+    feature_cols: Sequence[str],
+    response_cols: Sequence[str],
+    sealed_split: SealedSplitResult,
+    thresholds: Sequence[float],
+    *,
+    seed: int | None = None,
+) -> SupportSelectionResult:
+    """Select sparse support from an enriched candidate set via refit-based criterion.
+
+    Implements the validated support-selection rule (P0-S11 / F6): replaces the
+    no-refit marginal-impact approximation with a justified OLS-refit criterion
+    whose coefficient-magnitude threshold is selected by internal validation only,
+    never the sealed test partition.
+
+    Algorithm
+    ---------
+    1. Fit OLS on the enriched candidate feature set using the training partition.
+    2. Compute mean absolute standardized OLS coefficient magnitudes as feature
+       importance scores.
+    3. For each candidate threshold: retain features whose magnitude exceeds the
+       threshold, refit OLS on the training partition, evaluate RMSE on the
+       internal validation partition.
+    4. Select the best threshold using the P0-S05 internal-validation machinery;
+       the sealed test partition is never accessed.
+    5. Return the resulting sparse support and a threshold-sensitivity table.
+
+    Parameters
+    ----------
+    feature_cols
+        Enriched candidate feature column names. Must be present in the split data.
+    response_cols
+        Response column names. Must be present in the split data.
+    sealed_split
+        Three-way sealed split. Must still be sealed (test not yet exposed) when
+        this function is called.
+    thresholds
+        Candidate coefficient-magnitude threshold values. Lower thresholds retain
+        more features; higher thresholds enforce sparsity more aggressively.
+    seed
+        Seed for deterministic tie-breaking in threshold selection.
+
+    Returns
+    -------
+    SupportSelectionResult
+        Selected sparse support with best threshold and full sensitivity table.
+
+    Raises
+    ------
+    SealedTestAccessError
+        If ``sealed_split`` has already been unsealed.
+    ValueError
+        If ``thresholds`` is empty or required columns are missing from the split data.
+    """
+    from .data import SealedTestAccessError
+    from .manuscript_pipeline_helpers import select_threshold_on_internal_validation
+
+    feature_cols = list(feature_cols)
+    response_cols = list(response_cols)
+
+    if not thresholds:
+        raise ValueError("thresholds must be a non-empty sequence.")
+    thresholds_list = [float(t) for t in thresholds]
+
+    # Guard: raises SealedTestAccessError if already unsealed.
+    if not sealed_split._sealed:
+        raise SealedTestAccessError(
+            "select_support_via_refit: the supplied split has already been unsealed. "
+            "Threshold selection must use only train + internal-validation data; "
+            "unsealing before selection risks test-data leakage."
+        )
+
+    train_df = sealed_split.train
+
+    missing_features = [c for c in feature_cols if c not in train_df.columns]
+    missing_responses = [c for c in response_cols if c not in train_df.columns]
+    if missing_features:
+        raise ValueError(f"Feature columns not found in split data: {missing_features}")
+    if missing_responses:
+        raise ValueError(f"Response columns not found in split data: {missing_responses}")
+
+    # Compute initial OLS coefficient magnitudes on training data.
+    X_train = train_df[feature_cols].to_numpy(dtype=float)
+    Y_train = train_df[response_cols].to_numpy(dtype=float)
+
+    x_scaler = StandardScaler().fit(X_train)
+    y_scaler = StandardScaler().fit(Y_train)
+    X_scaled = x_scaler.transform(X_train)
+    Y_scaled = y_scaler.transform(Y_train)
+
+    initial_model = LinearRegression(fit_intercept=True).fit(X_scaled, Y_scaled)
+    coef = np.asarray(initial_model.coef_, dtype=float)
+    if coef.ndim == 1:
+        coef = coef[np.newaxis, :]  # → (1, n_features) for single-output case
+    # Mean absolute standardized coefficient across responses.
+    coef_magnitudes = np.mean(np.abs(coef), axis=0)  # shape (n_features,)
+
+    _feature_cols = feature_cols
+    _response_cols = response_cols
+    _coef_magnitudes = coef_magnitudes
+
+    def _refit_scorer(threshold: float, train_df_: pd.DataFrame, val_df_: pd.DataFrame) -> float:
+        """Refit OLS on features above threshold; return validation RMSE."""
+        selected = [
+            f for f, mag in zip(_feature_cols, _coef_magnitudes, strict=True) if mag > threshold
+        ]
+        if not selected:
+            return float("inf")
+
+        Xtr = train_df_[selected].to_numpy(dtype=float)
+        Ytr = train_df_[_response_cols].to_numpy(dtype=float)
+        Xval = val_df_[selected].to_numpy(dtype=float)
+        Yval = val_df_[_response_cols].to_numpy(dtype=float)
+
+        model = LinearRegression(fit_intercept=True).fit(Xtr, Ytr)
+        pred = model.predict(Xval)
+        if pred.ndim == 1:
+            pred = pred[:, np.newaxis]
+        residuals = Yval - pred
+        return float(np.sqrt(np.mean(residuals**2)))
+
+    # Select best threshold via internal validation only (P0-S05 machinery).
+    best_threshold = select_threshold_on_internal_validation(
+        sealed_split, thresholds_list, _refit_scorer, seed=seed
+    )
+
+    # Build threshold-sensitivity table using train/val data.
+    val_df = sealed_split.val
+    sensitivity_rows = []
+    for t in thresholds_list:
+        score = _refit_scorer(t, train_df, val_df)
+        n_sel = int(np.sum(coef_magnitudes > t))
+        sensitivity_rows.append({"threshold": t, "n_selected": n_sel, "val_score": score})
+    threshold_sensitivity = pd.DataFrame(sensitivity_rows)
+
+    # Finalize sparse support.
+    selected_mask = coef_magnitudes > best_threshold
+    selected_features = tuple(
+        f for f, keep in zip(feature_cols, selected_mask, strict=True) if keep
+    )
+
+    return SupportSelectionResult(
+        feature_names=tuple(feature_cols),
+        response_names=tuple(response_cols),
+        selected_features=selected_features,
+        selected_mask=selected_mask.copy(),
+        best_threshold=best_threshold,
+        threshold_sensitivity=threshold_sensitivity,
+        initial_coef_magnitudes=coef_magnitudes.copy(),
+    )
 
 
 def make_standardization_frame(

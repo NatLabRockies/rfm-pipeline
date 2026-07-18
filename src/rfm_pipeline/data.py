@@ -2,13 +2,192 @@
 
 from __future__ import annotations
 
+import datetime
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+
+# ---------------------------------------------------------------------------
+# Sealed split protocol
+# ---------------------------------------------------------------------------
+
+
+class SealedTestAccessError(RuntimeError):
+    """Raised when the sealed test partition is read without explicit unsealing."""
+
+
+class SealedSplitResult:
+    """Three-way stratified split with a guarded sealed-test partition.
+
+    Attributes
+    ----------
+    train
+        Training partition (always accessible).
+    val
+        Internal-validation partition (always accessible).
+    strata_balance
+        DataFrame showing row counts per stratum for each partition.
+
+    Methods
+    -------
+    test
+        Property that returns the sealed-test partition. Raises
+        ``SealedTestAccessError`` if the partition has not been unsealed.
+    unseal(reason)
+        Unlock the test partition for the single final evaluation.
+        Records a timestamped entry in ``unseal_log``.
+    unseal_log
+        List of dicts recording each unseal event.
+    """
+
+    def __init__(
+        self,
+        train: pd.DataFrame,
+        val: pd.DataFrame,
+        test: pd.DataFrame,
+        strata_balance: pd.DataFrame,
+    ) -> None:
+        self.train: pd.DataFrame = train
+        self.val: pd.DataFrame = val
+        self._test_data: pd.DataFrame = test
+        self.strata_balance: pd.DataFrame = strata_balance
+        self._sealed: bool = True
+        self._unseal_log: list[dict[str, Any]] = []
+
+    @property
+    def test(self) -> pd.DataFrame:
+        """Return the sealed-test partition, or raise if still sealed."""
+        if self._sealed:
+            raise SealedTestAccessError(
+                "Sealed test partition accessed before unsealing. "
+                "Call .unseal(reason=...) once, at final evaluation only."
+            )
+        return self._test_data
+
+    def unseal(self, *, reason: str) -> None:
+        """Unlock the test partition and record the event.
+
+        Parameters
+        ----------
+        reason
+            Human-readable justification for accessing the sealed test set.
+        """
+        self._sealed = False
+        self._unseal_log.append(
+            {
+                "reason": reason,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }
+        )
+
+    @property
+    def unseal_log(self) -> list[dict[str, Any]]:
+        """Return a snapshot of unseal events (read-only copy)."""
+        return list(self._unseal_log)
+
+
+def make_sealed_split(
+    data: pd.DataFrame,
+    *,
+    strata_column: str,
+    val_fraction: float = 0.15,
+    test_fraction: float = 0.15,
+    random_state: int = 42,
+) -> SealedSplitResult:
+    """Create train / internal-validation / sealed-test partitions.
+
+    Stratification is performed on ``strata_column`` so that each partition
+    preserves the original stratum proportions.
+
+    Parameters
+    ----------
+    data
+        Input DataFrame containing ``strata_column``.
+    strata_column
+        Column name used for stratification.
+    val_fraction
+        Fraction of total rows assigned to internal validation.
+    test_fraction
+        Fraction of total rows assigned to the sealed test set.
+    random_state
+        Base seed for deterministic, reproducible splits.
+
+    Returns
+    -------
+    SealedSplitResult
+        Object containing ``train``, ``val``, and a guarded ``test`` partition,
+        plus a ``strata_balance`` DataFrame.
+
+    Raises
+    ------
+    ValueError
+        Raised when ``strata_column`` is absent from ``data``, or when the
+        combined val+test fraction would leave no training rows.
+    """
+    if strata_column not in data.columns:
+        raise ValueError(
+            f"strata_column {strata_column!r} not found in data columns {list(data.columns)}."
+        )
+    if val_fraction <= 0 or test_fraction <= 0 or val_fraction + test_fraction >= 1.0:
+        raise ValueError(
+            f"val_fraction={val_fraction} and test_fraction={test_fraction} must both be "
+            "positive and sum to less than 1."
+        )
+
+    stratify = data[strata_column].astype(str)
+
+    # First split: peel off the sealed test set.
+    dev_idx, test_idx = train_test_split(
+        np.arange(len(data)),
+        test_size=test_fraction,
+        random_state=random_state,
+        stratify=stratify,
+    )
+
+    # Second split: divide the dev set into train and val.
+    # val_fraction is expressed relative to the full dataset; recompute relative
+    # to the dev subset so that the final proportions are correct.
+    dev_size = len(dev_idx)
+    val_fraction_of_dev = val_fraction / (1.0 - test_fraction)
+    stratify_dev = stratify.iloc[dev_idx].reset_index(drop=True)
+
+    train_sub_idx, val_sub_idx = train_test_split(
+        np.arange(dev_size),
+        test_size=val_fraction_of_dev,
+        random_state=random_state + 1,
+        stratify=stratify_dev,
+    )
+
+    train_idx = np.sort(dev_idx[np.sort(train_sub_idx)])
+    val_idx = np.sort(dev_idx[np.sort(val_sub_idx)])
+    test_idx = np.sort(test_idx)
+
+    train_df = data.iloc[train_idx].copy()
+    val_df = data.iloc[val_idx].copy()
+    test_df = data.iloc[test_idx].copy()
+
+    # Build strata balance summary.
+    strata_order = sorted(data[strata_column].unique().tolist())
+    balance_records: dict[str, list[int]] = {"train": [], "val": [], "test": []}
+    for stratum in strata_order:
+        balance_records["train"].append(int((train_df[strata_column] == stratum).sum()))
+        balance_records["val"].append(int((val_df[strata_column] == stratum).sum()))
+        balance_records["test"].append(int((test_df[strata_column] == stratum).sum()))
+
+    strata_balance = pd.DataFrame(balance_records, index=strata_order)
+    strata_balance.index.name = strata_column
+
+    return SealedSplitResult(
+        train=train_df,
+        val=val_df,
+        test=test_df,
+        strata_balance=strata_balance,
+    )
 
 
 @dataclass(frozen=True)

@@ -3,14 +3,111 @@
 The functions in this module preserve original ordering information so that downstream
 visualization code and manuscript tables can reconstruct feature and output provenance
 without re-running modeling code.
+
+It also provides frozen-config provenance stamping (F2 closure).  A resolved
+configuration must be cryptographically stamped before any sealed-test evaluation
+is permitted.  The stamp records the config hash and the freeze timestamp so that
+post-hoc config drift is detectable.
 """
 
 from __future__ import annotations
 
+import datetime
+import hashlib
+import json
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import pandas as pd
+
+# ---------------------------------------------------------------------------
+# Frozen-config provenance API (F2)
+# ---------------------------------------------------------------------------
+
+
+class FrozenConfigRequiredError(RuntimeError):
+    """Raised when sealed-test evaluation is attempted without a frozen-config stamp."""
+
+
+class ConfigDriftError(RuntimeError):
+    """Raised when the config hash does not match the frozen stamp."""
+
+
+@dataclass(frozen=True)
+class FrozenConfigStamp:
+    """Immutable provenance stamp for a resolved configuration.
+
+    Parameters
+    ----------
+    config_hash:
+        SHA-256 hex digest of the canonical JSON representation of the config.
+    frozen_at:
+        ISO-8601 UTC timestamp recorded at freeze time.
+    """
+
+    config_hash: str
+    frozen_at: str
+
+
+def _config_hash(config: Any) -> str:
+    """Return the SHA-256 hex digest of the canonical JSON serialisation of *config*."""
+    canonical = json.dumps(config, sort_keys=True, default=str).encode()
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def freeze_config(config: Any) -> FrozenConfigStamp:
+    """Freeze *config* and return an auditable provenance stamp.
+
+    The stamp records the SHA-256 hash of the full resolved config and the UTC
+    timestamp of the freeze.  Call this once, before any sealed-test evaluation.
+
+    Parameters
+    ----------
+    config:
+        Any JSON-serialisable resolved-config object (dict, dataclass, etc.).
+
+    Returns
+    -------
+    FrozenConfigStamp
+        Immutable stamp suitable for passing to :func:`require_frozen_stamp`.
+    """
+    return FrozenConfigStamp(
+        config_hash=_config_hash(config),
+        frozen_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    )
+
+
+def require_frozen_stamp(config: Any, stamp: FrozenConfigStamp | None) -> None:
+    """Assert that *config* was frozen before this evaluation point.
+
+    Raises
+    ------
+    FrozenConfigRequiredError
+        When *stamp* is ``None`` — no freeze has been recorded.
+    ConfigDriftError
+        When the hash of *config* does not match *stamp.config_hash*, indicating
+        that the config was modified after the freeze.
+
+    Parameters
+    ----------
+    config:
+        The resolved config that will be used for the sealed-test evaluation.
+    stamp:
+        The :class:`FrozenConfigStamp` returned by :func:`freeze_config`, or
+        ``None`` if no freeze has been performed.
+    """
+    if stamp is None:
+        raise FrozenConfigRequiredError(
+            "Sealed-test evaluation requires a frozen-config stamp. "
+            "Call freeze_config(config) before evaluating on the sealed test set."
+        )
+    current_hash = _config_hash(config)
+    if current_hash != stamp.config_hash:
+        raise ConfigDriftError(
+            f"Config drift detected: current hash {current_hash!r} does not match "
+            f"frozen stamp hash {stamp.config_hash!r}. "
+            "Re-freeze the config if the change is intentional."
+        )
 
 
 @dataclass(frozen=True)

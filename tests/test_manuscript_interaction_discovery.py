@@ -21,7 +21,108 @@ from rfm_pipeline.manuscript_stages import (
 )
 
 
-def test_interaction_discovery_spec_accepts_optional_runtime_overrides() -> None:
+def test_interaction_discovery_guard_on_uses_corrected_family_size_fwer(
+    monkeypatch,
+) -> None:
+    """Guard-ON production path: FWER adequacy is family_size=1 (not n_pairs)."""
+    sample_ids = list(range(1, 41))
+    x1 = [-1.0, -1.0, 1.0, 1.0] * 10
+    x2 = [-1.0, 1.0, -1.0, 1.0] * 10
+    x3 = [1.0 if v % 2 == 0 else -1.0 for v in sample_ids]
+    pca_signal = [a * b for a, b in zip(x1, x2, strict=True)]
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2, "x3": x3})
+    catalog = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2", "x3"],
+            "feature_type": ["first_order"] * 3,
+        }
+    )
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 32 + ["holdout"] * 8})
+    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
+    retained_terms = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2", "x3"],
+            "feature_type": ["first_order"] * 3,
+        }
+    )
+    # With family_size=n_pairs=3 the OLD guard would require B >= 599 for
+    # alpha=0.05. Under the corrected FWER family_size=1 rule, B=19 is enough.
+    spec = InteractionDiscoverySpec(
+        method="tree_shap_interaction_values",
+        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
+        null_threshold_quantile=0.995,
+        retained_pairs_reference=1,
+        permutation_count_B=19,
+        random_seed=123,
+        n_jobs=1,
+        family_error_method="fwer_max_stat",
+        family_error_alpha=0.05,
+        # enforce_permutation_adequacy=True (default) -- guard is ON
+    )
+
+    def _fake_scorer(
+        y_base: np.ndarray,
+        permute_response: bool,
+        *,
+        n_pairs: int,
+        n_comp: int,
+        **_: object,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        _ = (y_base, permute_response)
+        scores = np.ones(n_pairs, dtype=float)
+        component_scores = np.ones((n_pairs, n_comp), dtype=float)
+        return scores, component_scores
+
+    monkeypatch.setattr(
+        manuscript_stages,
+        "_score_interaction_permutation",
+        _fake_scorer,
+    )
+
+    result = discover_manuscript_interactions(
+        inputs, catalog, holdout, pca_scores, retained_terms, spec
+    )
+    assert set(result.pair_scores["pair_name"]) == {"x1:x2", "x1:x3", "x2:x3"}
+    assert result.summary.loc[0, "n_candidate_pairs"] == 3
+
+
+def test_interaction_discovery_guard_on_bh_fdr_requires_n_pairs_budget() -> None:
+    """Guard-ON production path: BH-FDR adequacy scales with n_pairs."""
+    sample_ids = list(range(1, 41))
+    x1 = [-1.0, -1.0, 1.0, 1.0] * 10
+    x2 = [-1.0, 1.0, -1.0, 1.0] * 10
+    x3 = [1.0 if v % 2 == 0 else -1.0 for v in sample_ids]
+    pca_signal = [a * b for a, b in zip(x1, x2, strict=True)]
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2, "x3": x3})
+    catalog = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2", "x3"],
+            "feature_type": ["first_order"] * 3,
+        }
+    )
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 32 + ["holdout"] * 8})
+    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
+    retained_terms = pd.DataFrame(
+        {
+            "feature_name": ["x1", "x2", "x3"],
+            "feature_type": ["first_order"] * 3,
+        }
+    )
+    # BH-FDR with 3 pairs and alpha=0.05 requires B >= ceil(3/0.05)-1 = 59.
+    spec = InteractionDiscoverySpec(
+        method="tree_shap_interaction_values",
+        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
+        null_threshold_quantile=0.995,
+        retained_pairs_reference=1,
+        permutation_count_B=19,
+        random_seed=123,
+        n_jobs=1,
+        family_error_method="bh_fdr",
+        family_error_alpha=0.05,
+    )
+    with pytest.raises(manuscript_stages.PermutationAdequacyError):
+        discover_manuscript_interactions(inputs, catalog, holdout, pca_scores, retained_terms, spec)
+
     config = {
         "case_study": {
             "interface": {"holdout_random_seed": 456},

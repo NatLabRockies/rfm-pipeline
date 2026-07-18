@@ -679,7 +679,9 @@ class InteractionDiscoverySpec:
     aggregation_rule
         Rule used to collapse component-level interaction evidence to one score per pair.
     null_threshold_quantile
-        Quantile of the empirical-null score distribution used as the retention threshold.
+        Quantile of the empirical-null score distribution used only as an informational
+        per-pair diagnostic in the pair-score table. Actual retention is driven by
+        the family-corrected procedure below.
     retained_pairs_reference
         Manuscript-reported retained interaction-pair count for the full case study.
     permutation_count_B
@@ -694,6 +696,14 @@ class InteractionDiscoverySpec:
         Reference label for the manuscript interaction workflow to reconcile against.
     source_workflow_equivalence_status
         Validation status for equivalence to the manuscript interaction workflow.
+    family_error_method
+        Multiplicity-correction procedure applied across the full pair family. One of
+        ``"fwer_max_stat"`` (default; single-step FWER via max-statistic threshold)
+        or ``"bh_fdr"`` (Benjamini-Hochberg FDR). See
+        :func:`multiplicity_controlled_interaction_selection`.
+    family_error_alpha
+        Family-wise error rate (for ``"fwer_max_stat"``) or FDR level (for
+        ``"bh_fdr"``). Defaults to ``0.05``.
     """
 
     method: str
@@ -720,6 +730,8 @@ class InteractionDiscoverySpec:
     dask_cores_per_worker: int = 1
     dask_memory_per_worker: str = "4 GB"
     enforce_permutation_adequacy: bool = True
+    family_error_method: str = "fwer_max_stat"
+    family_error_alpha: float = 0.05
 
 
 @dataclass(frozen=True)
@@ -811,6 +823,9 @@ class NonlinearDiscoverySpec:
     source_workflow_equivalence_status: str = "manuscript_aligned_via_scipy_smoothing_spline"
     n_jobs: int = 1
     transform_library: list[TransformDef] | None = None
+    family_wise_alpha: float = 0.05
+    n_cv_splits: int = 5
+    cv_seed: int = 0
 
 
 @dataclass(frozen=True)
@@ -1890,6 +1905,8 @@ def interaction_discovery_spec_from_case_study_config(
         dask_workers=(int(dask_workers_raw) if dask_workers_raw is not None else None),
         dask_cores_per_worker=int(interaction.get("dask_cores_per_worker", 1)),
         dask_memory_per_worker=str(interaction.get("dask_memory_per_worker", "4 GB")),
+        family_error_method=str(interaction.get("family_error_method", "fwer_max_stat")),
+        family_error_alpha=float(interaction.get("family_error_alpha", 0.05)),
     )
 
 
@@ -2021,8 +2038,8 @@ def _discover_elasticnet_interactions(
                 "left_feature": left,
                 "right_feature": right,
                 "interaction_score": score,
-                "null_threshold": 0.0,  # ElasticNet doesn't use null thresholds
-                "p_value": 0.0 if is_selected else 1.0,
+                "null_threshold": float("nan"),  # ElasticNet doesn't use permutation nulls
+                "p_value": float("nan"),  # ElasticNet doesn't compute empirical p-values
                 "empirical_null_retained": is_selected,
                 "retained": is_selected,
                 "mean_coefficient_magnitude": float(np.abs(coefs).mean()),
@@ -2049,14 +2066,14 @@ def _discover_elasticnet_interactions(
 
     component_interaction_scores = pd.DataFrame(component_scores_data)
 
-    # Null summary: ElasticNet doesn't use permutation nulls, so use simplified summary.
+    # Null summary: ElasticNet doesn't use permutation nulls; use NaN to signal "not computed".
     null_summary_data = []
     for pair_name, _, _ in candidates:
         null_summary_data.append(
             {
                 "pair_name": pair_name,
-                "null_mean": 0.0,
-                "null_std": 0.0,
+                "null_mean": float("nan"),
+                "null_std": float("nan"),
                 "null_count": 0,
             }
         )
@@ -2244,11 +2261,26 @@ def discover_manuscript_interactions(
     if not candidates:
         raise ValueError("feature_catalog does not contain any two-factor interaction candidates.")
     total_candidate_pairs = len(candidates)
+    if spec.family_error_method not in {"fwer_max_stat", "bh_fdr"}:
+        raise ValueError(
+            f"Unknown family_error_method: {spec.family_error_method!r}. "
+            "Expected 'fwer_max_stat' or 'bh_fdr'."
+        )
+    if not 0.0 < spec.family_error_alpha < 1.0:
+        raise ValueError("family_error_alpha must be in the open interval (0, 1).")
     if spec.enforce_permutation_adequacy:
+        # The adequacy guard budget must match the family-corrected procedure that
+        # actually drives retention (F5 fix). For FWER max-stat, the resolution
+        # constraint is 1/(B+1) <= alpha (family_size=1, since a single scalar
+        # threshold is estimated from the max-null distribution). For BH-FDR, the
+        # worst-case constraint is 1/(B+1) <= alpha / n_pairs (family_size=n_pairs).
+        adequacy_family_size = (
+            1 if spec.family_error_method == "fwer_max_stat" else total_candidate_pairs
+        )
         check_permutation_adequacy(
             spec.permutation_count_B,
-            spec.null_threshold_quantile,
-            family_size=total_candidate_pairs,
+            1.0 - spec.family_error_alpha,
+            family_size=adequacy_family_size,
         )
     if pair_start_idx is not None or pair_end_idx is not None:
         start = int(pair_start_idx) if pair_start_idx is not None else 0
@@ -2522,13 +2554,25 @@ def discover_manuscript_interactions(
     for b in range(spec.permutation_count_B):
         null_statistics[b] = all_results[b + 1][0]
 
+    # Diagnostic per-pair quantile threshold; retained purely as an informational
+    # column in the pair-score table so downstream reports can still show a per-pair
+    # empirical-null cut. Actual retention is driven by the family-corrected
+    # procedure via multiplicity_controlled_interaction_selection (F5 wiring).
     thresholds = np.quantile(null_statistics, spec.null_threshold_quantile, axis=0)
-    p_values = (1.0 + (null_statistics >= observed_scores[None, :]).sum(axis=0)) / (
-        spec.permutation_count_B + 1.0
+    selected, p_values, _fwer_threshold = multiplicity_controlled_interaction_selection(
+        observed_scores,
+        null_statistics,
+        alpha=spec.family_error_alpha,
+        method=spec.family_error_method,
     )
-    retained = observed_scores > thresholds
-    retained_term_names = {
-        pair_name for (pair_name, _, _), r in zip(candidates, retained, strict=True) if r
+    retained = selected
+    # empirical_null_retained diagnostic: what the OLD per-pair quantile rule
+    # would have retained. Kept for continuity of the pair-score schema.
+    empirical_null_retained_mask = observed_scores > thresholds
+    empirical_null_retained_names = {
+        pair_name
+        for (pair_name, _, _), r in zip(candidates, empirical_null_retained_mask, strict=True)
+        if r
     }
     pair_scores = _build_interaction_pair_scores(
         candidates=candidates,
@@ -2536,7 +2580,7 @@ def discover_manuscript_interactions(
         thresholds=thresholds,
         p_values=p_values,
         retained=retained,
-        retained_term_names=retained_term_names,
+        retained_term_names=empirical_null_retained_names,
         spec=spec,
     )
     component_scores = _build_component_interaction_scores(
@@ -2806,7 +2850,20 @@ def discover_manuscript_nonlinear_transformations(
     gam_cache: dict[tuple[str, str], tuple[float, float]] = {}
     active_comp_indices = [i for i, a in enumerate(component_active) if a]
     edf_threshold = max(spec.minimum_curvature_score, 2.0)
-    gam_p_threshold = 0.01
+    # R3-S02: route production through the multiplicity-corrected discovery rule
+    # (Bonferroni over the full input × active-component search family) rather
+    # than the raw uncorrected per-(feature, component) 0.01 cut, and select the
+    # replacement transform family by independent k-fold cross-validation
+    # (choose_transform_by_cv) instead of minimum training RMSE against the GAM
+    # smooth on the same training data.
+    n_inputs = len(candidates_by_base)
+    n_active_comps = len(active_comp_indices)
+    corrected_alpha = nonlinear_multiplicity_corrected_alpha(
+        spec.family_wise_alpha,
+        max(n_inputs, 1),
+        max(n_active_comps, 1),
+    )
+    gam_p_threshold = corrected_alpha
 
     base_feat_list = list(candidates_by_base.keys())
     base_feature_index = {name: idx for idx, name in enumerate(base_feat_list)}
@@ -2910,6 +2967,42 @@ def discover_manuscript_nonlinear_transformations(
             ]
             if jobs:
                 for base_feat, feat_result, cache_entries in parallel(jobs):
+                    # R3-S02: separate discovery from choice via independent
+                    # k-fold cross-validation over transform families. This
+                    # overrides the training-data GAM-smooth RMSE choice with
+                    # a nested-CV RMSE choice for features declared nonlinear.
+                    if bool(feat_result.get("nonlinear")):
+                        base_candidates = candidates_by_base[base_feat]
+                        best_comp_name = feat_result.get("best_comp_name")
+                        try:
+                            best_comp_idx = component_names.index(best_comp_name)
+                        except ValueError:
+                            best_comp_idx = active_comp_indices[0] if active_comp_indices else 0
+                        x_vals_feat = x_by_base[base_feat]
+                        y_best = y_scaled[:, best_comp_idx]
+                        n_train_feat = len(x_vals_feat)
+                        n_cv_effective = int(spec.n_cv_splits)
+                        if n_train_feat >= n_cv_effective * 2 and base_candidates:
+                            cv_candidates = [
+                                (feat_name, td) for feat_name, _, td in base_candidates
+                            ]
+                            try:
+                                cv_name, cv_rmse = choose_transform_by_cv(
+                                    x_vals_feat,
+                                    y_best,
+                                    cv_candidates,
+                                    n_splits=n_cv_effective,
+                                    seed=int(spec.cv_seed),
+                                )
+                                feat_result = {
+                                    **feat_result,
+                                    "best_transform_name": cv_name,
+                                    "best_rmse": cv_rmse,
+                                }
+                            except ValueError:
+                                # CV configuration invalid for this feature — fall
+                                # back to the worker's transform choice.
+                                pass
                     feature_results[base_feat] = feat_result
                     serialized_cache_entries: list[dict[str, Any]] = []
                     for key, val in cache_entries:
@@ -3328,9 +3421,13 @@ def nonlinear_discovery_with_multiplicity_correction(
         for comp_idx in active_comp_indices:
             y_comp = y_scaled[:, comp_idx]
             edf, p, _ = _gam_test_and_smooth(x_vals, y_comp)
-            if edf > best_edf or (edf > edf_threshold and p < best_p):
-                best_edf = edf
+            # Track true minimum p-value across components independently of the
+            # EDF-based best-component selection so ``best_p`` reflects the
+            # documented "minimum GAM p-value across active components".
+            if p < best_p:
                 best_p = p
+            if edf > best_edf:
+                best_edf = edf
                 best_comp_idx = comp_idx
 
         is_nonlinear = (best_edf > edf_threshold) and (best_p < corrected_alpha)
@@ -6350,9 +6447,13 @@ def _score_one_nonlinear_feature(
         y_comp = y_scaled[:, comp_idx]
         edf, p, smooth_preds = _gam_test_and_smooth(x_vals, y_comp)
         cache_entries.append(((base_feat, component_names[comp_idx]), (edf, p)))
-        if edf > best_edf or (edf > edf_threshold and p < best_p):
-            best_edf = edf
+        # Track true minimum p-value across components independently of the
+        # EDF-based best-component selection so ``best_p`` reflects the
+        # documented "minimum GAM p-value across active components".
+        if p < best_p:
             best_p = p
+        if edf > best_edf:
+            best_edf = edf
             best_comp_idx = comp_idx
             best_smooth = smooth_preds
 

@@ -689,3 +689,224 @@ any test's actual assertion target):**
 **Fixture requirements:**
 
 - Reuse existing InteractionDiscoverySpec construction patterns; synthetic only.
+
+______________________________________________________________________
+
+## PHASE R3 — independent-review remediation (b96442b..e31fb15 review)
+
+An independent code review found the corrected F5 methodology was implemented and
+unit-tested but NOT wired into the production discovery path (the workflow still
+ran the uncorrected rule), plus real correctness bugs. These slices close that gap.
+
+### Slice R3-S01: Wire multiplicity-controlled interaction selection into the production path (F5 BLOCKING)
+
+**Phase:** R3
+**Depends on:** none
+**Estimated size:** large
+**Files to create/modify:**
+
+- src/rfm_pipeline/manuscript_stages.py
+- tests/test_manuscript_interaction_discovery.py
+- tests/alignment/test_R3_S01_interaction_wiring.py
+
+**Context.** `multiplicity_controlled_interaction_selection` (FWER max-stat /
+BH-FDR) exists and is unit-tested (P0-S08) but is called ONLY by its test. The
+production function `discover_manuscript_interactions` still retains pairs with the
+uncorrected per-pair rule at manuscript_stages.py:2529
+(`retained = observed_scores > thresholds`, a per-pair `null_threshold_quantile`
+cut). The F5 defect the slice claimed to fix is therefore still shipped. Also, the
+permutation-adequacy guard is currently invoked with `family_size=total pairs`
+while the retention is per-pair, so the guard is statistically inconsistent with
+the inference performed.
+
+**Requirements (do NOT weaken tests; do NOT loosen assertions to pass):**
+
+- Route production retention in `discover_manuscript_interactions` through
+  `multiplicity_controlled_interaction_selection(observed_scores, null_statistics, alpha=..., method=...)` and use its `selected` mask; expose
+  the family-error method + level via `InteractionDiscoverySpec` (documented
+  default). The corrected family-wise/FDR selection becomes the default.
+- Make the adequacy guard's `family_size` consistent with the inference actually
+  performed now that selection is family-corrected (i.e. the guard budget must
+  match the corrected family-wise procedure, not the removed per-pair rule).
+- Existing integration tests in `tests/test_manuscript_interaction_discovery.py`
+  that asserted specific retained pairs under the OLD per-pair rule must be
+  updated to the CORRECT expected outputs of the corrected rule, with the
+  expected values derived from the corrected procedure — not by loosening the
+  assertion. Add at least one guard-ON integration test that exercises the real
+  production path (do not leave the guard-ON path untested).
+
+**Acceptance criteria:**
+
+- `test_R3_S01_*` (in tests/alignment) calls the PRODUCTION interaction
+  discovery entry point (`discover_manuscript_interactions` /
+  `run_interaction_discovery_stage`) and asserts: under a pure null, the
+  corrected rule yields far fewer false selections than an uncorrected per-pair
+  0.5% cut on the same statistics (family error is actually controlled); under a
+  planted strong interaction, that interaction is retained.
+- `grep` shows `multiplicity_controlled_interaction_selection` is now referenced
+  in `src/rfm_pipeline/manuscript_stages.py` (wired in), not only in tests.
+- The sub-agent MUST confirm green:
+  `pixi run python -m pytest -q tests/test_manuscript_interaction_discovery.py tests/alignment/test_P0_S07_perm_adequacy.py tests/alignment/test_P0_S08_interaction_multiplicity.py`
+- `pixi run ruff check src/rfm_pipeline/manuscript_stages.py tests/test_manuscript_interaction_discovery.py tests/alignment/test_R3_S01_interaction_wiring.py` is clean.
+
+**Fixture requirements:**
+
+- Synthetic observed + null interaction statistics with a pure-null variant and a
+  planted-signal variant; fixed seed.
+
+### Slice R3-S02: Wire nonlinear multiplicity correction + fix min-p tracking into production (F5 BLOCKING + bug)
+
+**Phase:** R3
+**Depends on:** none
+**Estimated size:** large
+**Files to create/modify:**
+
+- src/rfm_pipeline/manuscript_stages.py
+- tests/alignment/test_R3_S02_nonlinear_wiring.py
+
+**Context.** `nonlinear_discovery_with_multiplicity_correction` (Bonferroni
+`corrected_alpha`, `choose_transform_by_cv`) exists/tested (P0-S10) but no
+production runner calls it. Production `discover_manuscript_nonlinear_transformations`
+→ `_score_one_nonlinear_feature` (manuscript_stages.py ~6352-6376) uses a RAW
+uncorrected per-(feature,component) p-threshold and chooses the transform by
+minimum RMSE against the GAM smooth on the SAME training data (no independent CV).
+Additionally there is a min-p tracking bug: `best_edf`/`best_p` advance jointly
+under a disjunctive condition (~6352-6356 and ~3327-3331), so `best_p` is not the
+minimum p-value across components as documented.
+
+**Requirements (no test weakening):**
+
+- Route the production nonlinear stage through the corrected multiplicity control
+  (apply `corrected_alpha` accounting for inputs × components × transforms) and
+  separate discovery from transform choice via independent/nested CV
+  (`choose_transform_by_cv`). The corrected procedure becomes the default.
+- Fix min-p tracking so the significance decision uses the true minimum p-value
+  across components (`best_p = min(best_p, p)` tracked independently of the
+  EDF-based best-component selection).
+
+**Acceptance criteria:**
+
+- `test_R3_S02_*` calls the PRODUCTION nonlinear discovery entry point and
+  asserts: under a pure null, false selections are controlled at the configured
+  level (materially fewer than the uncorrected per-component threshold); under a
+  planted nonlinear transform, the correct transform family is recovered; and the
+  reported min p-value equals the true minimum across components on a crafted case.
+- `grep` shows the corrected nonlinear function/`corrected_alpha`/
+  `choose_transform_by_cv` are referenced by the production path in
+  `src/rfm_pipeline/manuscript_stages.py`.
+- Confirm green: `pixi run python -m pytest -q tests/alignment/test_P0_S10_nonlinear_multiplicity.py`
+  and any existing nonlinear-discovery tests.
+- `pixi run ruff check src/rfm_pipeline/manuscript_stages.py tests/alignment/test_R3_S02_nonlinear_wiring.py` is clean.
+
+**Fixture requirements:**
+
+- Synthetic component responses: pure-null variant, planted-transform variant, and
+  a crafted multi-component case for the min-p assertion; fixed seed.
+
+### Slice R3-S03: Make the no-case-study-code invariant test honest (F4 test integrity)
+
+**Phase:** R3
+**Depends on:** none
+**Estimated size:** small
+**Files to create/modify:**
+
+- tests/alignment/test_P0_S13_no_casestudy_code.py
+
+**Context.** `test_P0_S13_no_casestudy_code.py` claims to guarantee `src/` stays
+case-study-agnostic but only checks that two removed modules fail to import. It does
+NOT scan `src/` for case-study literals, and pre-existing case-study-specific
+scenario helpers remain in `src/rfm_pipeline/data.py` (`AFSC`/`UAEORO` default column
+names, `add_scenario_flags`) and provenance docstrings in `config.py`. Full
+generalization of those helpers is a separate, larger milestone (tracked in
+`docs/scope_backlog.md`); this slice makes the test HONEST so it prevents NEW
+leakage and documents the known exceptions.
+
+**Requirements (do not weaken; do not delete the existing import/`__all__` checks):**
+
+- Add a filesystem scan over `src/rfm_pipeline/**/*.py` for a denylist of
+  case-study tokens (e.g. `track_a_v3`, `wave5`, `wave1234`, and the removed
+  planning-add-on symbols) that MUST be absent, so re-introducing the removed
+  case-study code fails the test.
+- Explicitly document (in the test) the known pre-existing scenario-helper
+  exceptions (`AFSC`/`UAEORO`/`add_scenario_flags`) as a tracked
+  generalization-backlog item rather than silently ignoring them, so the test's
+  claim matches reality.
+
+**Acceptance criteria:**
+
+- `test_P0_S13_*` fails if any denylisted removed-case-study token reappears in
+  `src/rfm_pipeline/`, and passes on the current tree.
+- Existing import-absence and `__all__`-absence assertions are retained.
+- `pixi run ruff check tests/alignment/test_P0_S13_no_casestudy_code.py` is clean.
+
+**Fixture requirements:**
+
+- None (scans the real src tree).
+
+### Slice R3-S04: Persist resolved categorical levels at fit for reproducible prediction (F1 correctness)
+
+**Phase:** R3
+**Depends on:** none
+**Estimated size:** medium
+**Files to create/modify:**
+
+- src/rfm_pipeline/features.py
+- src/rfm_pipeline/final_ols.py
+- tests/alignment/test_R3_S04_categorical_levels_persist.py
+
+**Context.** When a `CategoricalInputDecl` has `levels=None`, levels are inferred
+from training data at fit time but the stored `DesignMatrixSpec` keeps `levels=None`.
+At predict time levels are re-inferred from the passed records, so a small
+scenario-contrast batch produces a different (often empty after `drop_first`)
+indicator set and `predict_final_ols` raises "Missing retained feature columns".
+The F1 "flip a categorical → prediction changes" round-trip only works when explicit
+levels are declared.
+
+**Requirements:**
+
+- Persist the resolved levels into the stored `DesignMatrixSpec` at fit time so
+  encoding at predict time is reproducible regardless of the prediction batch and
+  independent of `drop_first` on small batches.
+
+**Acceptance criteria:**
+
+- `test_R3_S04_*` fits with `levels=None` on training data, then predicts on a
+  2-row scenario-contrast batch and asserts: no "missing columns" error, and
+  flipping the categorical changes the prediction when its coefficient is nonzero.
+- `pixi run ruff check src/rfm_pipeline/features.py src/rfm_pipeline/final_ols.py tests/alignment/test_R3_S04_categorical_levels_persist.py` is clean.
+
+**Fixture requirements:**
+
+- Synthetic fit with `levels=None` and a nonzero categorical effect.
+
+### Slice R3-S05: Stop fabricating empirical provenance on the ElasticNet interaction path (provenance integrity)
+
+**Phase:** R3
+**Depends on:** none
+**Estimated size:** small
+**Files to create/modify:**
+
+- src/rfm_pipeline/manuscript_stages.py
+- tests/alignment/test_R3_S05_elasticnet_provenance.py
+
+**Context.** The non-default `elasticnet_interactions` method emits
+`p_value = 0.0/1.0`, `null_threshold=0.0`, and an all-zero
+`interaction_null_summary` (manuscript_stages.py ~2024-2062). These are not real
+empirical p-values/null statistics; downstream multiplicity/provenance consumers
+would be misled into treating them as significant permutation results.
+
+**Requirements:**
+
+- On the ElasticNet path, emit `NaN`/`None` for null-derived fields (p-value,
+  null threshold, null summary) rather than fabricated zeros, so consumers can
+  distinguish "not computed" from "significant".
+
+**Acceptance criteria:**
+
+- `test_R3_S05_*` asserts the ElasticNet interaction path yields NaN/None (not
+  0.0/1.0) for null-derived provenance fields, while still reporting its selection.
+- `pixi run ruff check src/rfm_pipeline/manuscript_stages.py tests/alignment/test_R3_S05_elasticnet_provenance.py` is clean.
+
+**Fixture requirements:**
+
+- Synthetic interaction inputs exercising the `elasticnet_interactions` method.

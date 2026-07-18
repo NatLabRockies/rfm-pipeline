@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 import pandas as pd
 
-if TYPE_CHECKING:
-    from rfm_pipeline.config import CategoricalInputDecl
+from rfm_pipeline.config import CategoricalInputDecl
 
 KNOWN_TRANSFORMATIONS = {
     # Legacy labels (used by pre-existing artifact parsing)
@@ -365,4 +363,41 @@ def build_design_matrix(
         ordered_columns=tuple(matrix.columns),
         categorical_columns=tuple(categorical_col_names),
         interaction_columns=tuple(interaction_col_names),
+    )
+
+
+def resolve_spec_levels(X: pd.DataFrame, spec: DesignMatrixSpec) -> DesignMatrixSpec:
+    """Return a new DesignMatrixSpec with all categorical levels resolved from *X*.
+
+    For each :class:`~rfm_pipeline.config.CategoricalInputDecl` whose ``levels``
+    is ``None``, the sorted unique non-null values in the corresponding column of
+    *X* are used as the explicit level list.  Entries that already carry an
+    explicit level list are kept unchanged.
+
+    This should be called at fit time so the stored spec reproduces the same
+    indicator columns at predict time regardless of the prediction batch size.
+
+    Parameters
+    ----------
+    X:
+        Training input frame.  Must contain every column named in *spec*.
+    spec:
+        Design-matrix specification, possibly with ``levels=None`` entries.
+
+    Returns
+    -------
+    DesignMatrixSpec
+        Equivalent spec with all level lists fully populated.
+    """
+    resolved: list[CategoricalInputDecl] = []
+    for decl in spec.categorical_inputs:
+        if decl.levels is None:
+            levels = sorted(X[decl.name].dropna().unique().astype(str).tolist())
+            resolved.append(CategoricalInputDecl(name=decl.name, levels=levels))
+        else:
+            resolved.append(decl)
+    return DesignMatrixSpec(
+        categorical_inputs=tuple(resolved),
+        interaction_pairs=spec.interaction_pairs,
+        drop_first=spec.drop_first,
     )

@@ -40,3 +40,13 @@ ______________________________________________________________________
 - Risk if ignored:
 - Tests required if promoted:
 - Recommendation:
+
+## Generalization backlog: remove hardcoded case-study scenario handling from generic src
+
+- src/rfm_pipeline/data.py hardcodes AFSC/UAEORO default column names + add_scenario_flags with
+  an `AFSC{0|1}_UAEORO{0|1}` label scheme; config.py docstrings tie defaults to the BSM/JDS run.
+  (~74 refs.) This is case-study-specific code in a repo that must stay 100% generic.
+- Target: replace with fully config-driven scenario/categorical handling (subsumes F1 P0-S01/S02
+  generic categorical mechanism), then delete the AFSC/UAEORO helpers.
+- Not started as a bounded slice here (large, higher-risk refactor). Recommended as its own
+  milestone after R3. Tracked so the P0-S13 honesty fix (R3-S03) documents the exception.

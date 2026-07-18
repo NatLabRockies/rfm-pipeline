@@ -6,19 +6,18 @@ import pandas as pd
 
 from rfm_pipeline.artifacts import PipelineManifest
 from rfm_pipeline.data import (
-    add_scenario_flags,
     fit_standardizers,
     stratified_holdout_split,
-    stratified_subset_by_boolean_combination,
+    stratified_subset_by_combination,
 )
 from rfm_pipeline.features import parse_selected_input_structure
 from rfm_pipeline.metrics import bootstrap_macro_nrmse_ci, make_null_mean_prediction
 
 SCENARIOS = [
-    "AFSCoff_UAEOROoff",
-    "AFSCon_UAEOROoff",
-    "AFSCoff_UAEOROon",
-    "AFSCon_UAEOROon",
+    "cat_a=0|cat_b=0",
+    "cat_a=1|cat_b=0",
+    "cat_a=0|cat_b=1",
+    "cat_a=1|cat_b=1",
 ]
 
 
@@ -26,12 +25,15 @@ def test_balanced_subset_then_holdout_then_null_baseline_metrics():
     rows = []
     outputs = []
     run_id = 0
-    for scenario in SCENARIOS:
+    for cat_a, cat_b in [(0, 0), (1, 0), (0, 1), (1, 1)]:
+        scenario = f"cat_a={cat_a}|cat_b={cat_b}"
         for offset in range(7):
             rows.append(
                 {
                     "run_id": run_id,
                     "scenario": scenario,
+                    "cat_a": cat_a,
+                    "cat_b": cat_b,
                     "x1": float(offset),
                     "x2": float(offset + 1),
                 }
@@ -46,9 +48,10 @@ def test_balanced_subset_then_holdout_then_null_baseline_metrics():
             )
             run_id += 1
 
-    X_full = add_scenario_flags(pd.DataFrame(rows))
-    subset = stratified_subset_by_boolean_combination(
+    X_full = pd.DataFrame(rows)
+    subset = stratified_subset_by_combination(
         X_full,
+        columns=["cat_a", "cat_b"],
         n_per_combination=5,
         random_state=17,
     )
@@ -64,7 +67,7 @@ def test_balanced_subset_then_holdout_then_null_baseline_metrics():
         random_state=13,
     )
 
-    feature_columns = ["x1", "x2", "AFSC", "UAEORO"]
+    feature_columns = ["x1", "x2", "cat_a", "cat_b"]
     bundle = fit_standardizers(
         X_train[feature_columns],
         X_holdout[feature_columns],
@@ -88,7 +91,7 @@ def test_balanced_subset_then_holdout_then_null_baseline_metrics():
         n_selected_features=3,
         n_retained_features=3,
         n_outputs=2,
-        all_input_features=["x1", "x2", "AFSC", "UAEORO"],
+        all_input_features=["x1", "x2", "cat_a", "cat_b"],
         selected_features=["x1", "x1_quadratic", "x1*x2"],
         retained_features=["x1", "x1_quadratic", "x1*x2"],
         output_names=["y1", "y2"],

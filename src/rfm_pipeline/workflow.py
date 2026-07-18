@@ -228,7 +228,7 @@ def canonical_case_study_numbers() -> tuple[CaseStudyNumber, ...]:
             value=4,
             unit="strata",
             provenance="audit-resolved",
-            note="AFSC/UAEORO boolean scenario combinations.",
+            note="Four boolean scenario combinations.",
         ),
         CaseStudyNumber(
             key="rows_per_boolean_stratum",

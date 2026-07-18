@@ -220,67 +220,6 @@ class StandardizationBundle:
     y_holdout_scaled: np.ndarray
 
 
-def _parse_on_off_flag(label: str, token_index: int, prefix_len: int) -> int:
-    """Parse a scenario token with an ``on``/``off`` suffix."""
-    parts = str(label).split("_")
-    if token_index >= len(parts):
-        raise ValueError(f"Scenario label {label!r} does not have token index {token_index}.")
-    value = parts[token_index][prefix_len:]
-    if value not in {"on", "off"}:
-        raise ValueError(f"Scenario token {parts[token_index]!r} does not end in 'on'/'off'.")
-    return 1 if value == "on" else 0
-
-
-def add_scenario_flags(
-    frame: pd.DataFrame,
-    *,
-    scenario_column: str = "scenario",
-    afsc_column: str = "AFSC",
-    uaeoro_column: str = "UAEORO",
-) -> pd.DataFrame:
-    """Add AFSC and UAEORO flags from scenario labels.
-
-    Parameters
-    ----------
-    frame
-        Input frame containing scenario labels either in a column or in a MultiIndex
-        level.
-    scenario_column
-        Column or index-level name containing scenario labels.
-    afsc_column
-        Name of the output AFSC indicator column.
-    uaeoro_column
-        Name of the output UAEORO indicator column.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Copy of ``frame`` with integer AFSC and UAEORO indicator columns added.
-
-    Raises
-    ------
-    ValueError
-        Raised when scenario labels cannot be found.
-    """
-    if scenario_column in frame.columns:
-        scenario_series = frame[scenario_column].astype(str)
-    elif isinstance(frame.index, pd.MultiIndex) and scenario_column in frame.index.names:
-        scenario_values = frame.index.get_level_values(scenario_column)
-        scenario_series = pd.Series(scenario_values, index=frame.index).astype(str)
-    else:
-        msg = f"Could not locate scenario labels in column or index: {scenario_column!r}"
-        raise ValueError(msg)
-
-    out = frame.copy()
-    out[afsc_column] = scenario_series.map(lambda label: _parse_on_off_flag(label, 0, 4)).astype(
-        np.int8
-    )
-    out[uaeoro_column] = scenario_series.map(lambda label: _parse_on_off_flag(label, 1, 6)).astype(
-        np.int8
-    )
-    return out
-
-
 def ensure_id_columns(frame: pd.DataFrame, id_columns: Sequence[str]) -> pd.DataFrame:
     """Ensure identifier variables are present as columns.
 
@@ -339,114 +278,113 @@ def align_xy(X: pd.DataFrame, Y: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFra
     return X_aligned, Y_aligned
 
 
-def make_boolean_combination_labels(
+def combination_labels(
     frame: pd.DataFrame,
     *,
-    afsc_column: str = "AFSC",
-    uaeoro_column: str = "UAEORO",
-    output_column: str = "scenario_bool_combo",
+    columns: Sequence[str],
+    output_column: str = "combination",
 ) -> pd.Series:
-    """Create canonical four-scenario boolean-combination labels.
+    """Create deterministic combination labels from arbitrary categorical columns.
 
     Parameters
     ----------
     frame
-        Input frame containing AFSC and UAEORO indicator columns.
-    afsc_column
-        Name of the AFSC indicator column.
-    uaeoro_column
-        Name of the UAEORO indicator column.
+        Input frame containing the requested ``columns``.
+    columns
+        Ordered sequence of column names whose values are joined to form each
+        label.  Column order is preserved verbatim in the output.
     output_column
         Name attached to the returned series.
 
     Returns
     -------
     pandas.Series
-        Series with labels of the form ``AFSC{0|1}_UAEORO{0|1}``.
-    """
-    afsc = frame[afsc_column].astype(int).astype(str)
-    uaeoro = frame[uaeoro_column].astype(int).astype(str)
-    return pd.Series(
-        "AFSC" + afsc + "_UAEORO" + uaeoro,
-        index=frame.index,
-        name=output_column,
-    )
-
-
-def stratified_subset_by_boolean_combination(
-    frame: pd.DataFrame,
-    *,
-    n_per_combination: int = 5000,
-    random_state: int = 123,
-    afsc_column: str = "AFSC",
-    uaeoro_column: str = "UAEORO",
-    require_all_four: bool = True,
-) -> pd.DataFrame:
-    """Sample a canonical 20k subset by boolean-input combination.
-
-    This implements the recovered subset-generation rule used to move from the
-    300k-run archive to the 20k modeling set: sample run identifiers separately
-    within each boolean combination and draw ``n_per_combination`` rows from each
-    of the four scenario strata.
-
-    Parameters
-    ----------
-    frame
-        Candidate rows containing AFSC and UAEORO indicator columns.
-    n_per_combination
-        Number of rows to draw from each boolean combination.
-    random_state
-        Base seed for deterministic sampling.
-    afsc_column
-        Name of the AFSC indicator column.
-    uaeoro_column
-        Name of the UAEORO indicator column.
-    require_all_four
-        Whether to require all four boolean combinations to be present.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Row subset containing equal counts from each boolean combination, ordered by
-        sampled row index within each stratum and then concatenated across strata.
+        Series of strings of the form ``f"{col1}={val1}|{col2}={val2}|..."``.
 
     Raises
     ------
     ValueError
-        Raised when the required strata are missing or too small for the requested
-        sample size.
+        Raised when ``columns`` is empty or references missing columns.
     """
-    scenario_labels = make_boolean_combination_labels(
-        frame,
-        afsc_column=afsc_column,
-        uaeoro_column=uaeoro_column,
-    )
-    expected = [
-        "AFSC0_UAEORO0",
-        "AFSC0_UAEORO1",
-        "AFSC1_UAEORO0",
-        "AFSC1_UAEORO1",
-    ]
-    present = sorted(pd.unique(scenario_labels))
-    if require_all_four and present != expected:
-        raise ValueError(f"Expected all four boolean combinations {expected}, found {present}.")
+    columns = list(columns)
+    if not columns:
+        raise ValueError("combination_labels requires at least one column.")
+    missing = [c for c in columns if c not in frame.columns]
+    if missing:
+        raise ValueError(f"Missing columns {missing} in frame columns {list(frame.columns)}.")
+
+    parts = [frame[col].astype(str).map(lambda v, c=col: f"{c}={v}") for col in columns]
+    joined = parts[0]
+    for part in parts[1:]:
+        joined = joined.str.cat(part, sep="|")
+    return pd.Series(joined.to_numpy(), index=frame.index, name=output_column)
+
+
+def stratified_subset_by_combination(
+    frame: pd.DataFrame,
+    *,
+    columns: Sequence[str],
+    n_per_combination: int = 5000,
+    random_state: int = 123,
+    require_all_combinations: bool = True,
+) -> pd.DataFrame:
+    """Sample a balanced subset stratified by observed value combinations.
+
+    Strata are the observed combinations of the given ``columns`` (sorted
+    deterministically).  Within each stratum, ``n_per_combination`` rows are
+    drawn without replacement using a NumPy ``RandomState`` seeded by
+    ``random_state``.
+
+    Parameters
+    ----------
+    frame
+        Candidate rows containing all of ``columns``.
+    columns
+        Ordered sequence of column names defining the stratification.
+    n_per_combination
+        Number of rows to draw from each observed combination.
+    random_state
+        Base seed for deterministic sampling.
+    require_all_combinations
+        When True (default), every observed combination must have
+        ``>= n_per_combination`` rows; a shortfall raises ``ValueError``.
+        When False, strata smaller than ``n_per_combination`` are skipped.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Row subset containing sampled rows per stratum, concatenated in sorted
+        stratum order.
+
+    Raises
+    ------
+    ValueError
+        Raised when a stratum is too small under ``require_all_combinations=True``
+        or when ``columns`` is empty / references missing columns.
+    """
+    labels = combination_labels(frame, columns=columns)
+    strata_order = sorted(pd.unique(labels).tolist())
 
     rng = np.random.RandomState(random_state)
     parts: list[pd.DataFrame] = []
-    scenario_order = expected if require_all_four else present
-    for scenario in scenario_order:
-        mask = scenario_labels == scenario
+    for stratum in strata_order:
+        mask = labels == stratum
         block = frame.loc[mask]
         if len(block) < int(n_per_combination):
-            raise ValueError(
-                f"Scenario {scenario} has only {len(block)} rows; cannot draw {n_per_combination}."
-            )
+            if require_all_combinations:
+                raise ValueError(
+                    f"Combination {stratum} has only {len(block)} rows; "
+                    f"cannot draw {n_per_combination}."
+                )
+            continue
         sampled_index = rng.choice(
             block.index.to_numpy(),
             size=int(n_per_combination),
             replace=False,
         )
         parts.append(block.loc[sampled_index].copy())
+    if not parts:
+        return frame.iloc[0:0].copy()
     return pd.concat(parts, axis=0)
 
 
@@ -457,8 +395,7 @@ def stratified_holdout_split(
     holdout_fraction: float = 0.05,
     random_state: int = 123,
     scenario_column: str = "scenario",
-    afsc_column: str = "AFSC",
-    uaeoro_column: str = "UAEORO",
+    stratify_columns: Sequence[str] = (),
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Create a deterministic holdout split with scenario-aware stratification.
 
@@ -473,11 +410,13 @@ def stratified_holdout_split(
     random_state
         Random seed forwarded to ``train_test_split``.
     scenario_column
-        Scenario column or index-level name used as a fallback stratification label.
-    afsc_column
-        AFSC indicator column used in the preferred stratification label.
-    uaeoro_column
-        UAEORO indicator column used in the preferred stratification label.
+        Scenario column or index-level name used as a fallback stratification label
+        when ``stratify_columns`` is empty or not all columns are present in ``X``.
+    stratify_columns
+        Ordered sequence of column names used to build the stratification label.
+        When all columns are present in the aligned ``X``, their string values are
+        joined with ``"_"`` to form a composite label.  When empty or any column is
+        absent, the function falls back to ``scenario_column``.
 
     Returns
     -------
@@ -486,9 +425,13 @@ def stratified_holdout_split(
     """
     X_aligned, Y_aligned = align_xy(X, Y)
 
+    stratify_columns = list(stratify_columns)
     stratify = None
-    if afsc_column in X_aligned.columns and uaeoro_column in X_aligned.columns:
-        stratify = X_aligned[afsc_column].astype(str) + "_" + X_aligned[uaeoro_column].astype(str)
+    if stratify_columns and all(c in X_aligned.columns for c in stratify_columns):
+        label = X_aligned[stratify_columns[0]].astype(str)
+        for col in stratify_columns[1:]:
+            label = label + "_" + X_aligned[col].astype(str)
+        stratify = label
     elif scenario_column in X_aligned.columns:
         stratify = X_aligned[scenario_column].astype(str)
     elif isinstance(X_aligned.index, pd.MultiIndex) and scenario_column in X_aligned.index.names:

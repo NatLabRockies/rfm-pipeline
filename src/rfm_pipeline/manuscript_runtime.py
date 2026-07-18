@@ -129,28 +129,28 @@ def write_demo_manuscript_artifacts(root: Path) -> dict[str, Path]:
         [0.1 + float((value * 7) % 17) / 10.0 for value in range(80)],
         name="x2",
     )
-    afsc = pd.Series([value % 2 for value in range(80)], name="AFSC")
-    uaeoro = pd.Series([(value // 2) % 2 for value in range(80)], name="UAEORO")
+    cat_a = pd.Series([value % 2 for value in range(80)], name="cat_a")
+    cat_b = pd.Series([(value // 2) % 2 for value in range(80)], name="cat_b")
     input_matrix = pd.DataFrame(
         {
             "sample_id": sample_ids,
             "x1": x1,
             "x2": x2,
-            "AFSC": afsc,
-            "UAEORO": uaeoro,
+            "cat_a": cat_a,
+            "cat_b": cat_b,
         }
     )
     output_matrix = pd.DataFrame(
         {
             "sample_id": sample_ids,
             "y1": 1.0 + 12.0 * x1 + 30.0 * x2,
-            "y2": -0.5 - 10.0 * x1 + 25.0 * x2 + 0.25 * afsc,
-            "y3": 2.0 + 8.0 * x1 + 15.0 * x2 + 0.25 * uaeoro,
+            "y2": -0.5 - 10.0 * x1 + 25.0 * x2 + 0.25 * cat_a,
+            "y3": 2.0 + 8.0 * x1 + 15.0 * x2 + 0.25 * cat_b,
         }
     )
     input_metadata = pd.DataFrame(
         {
-            "input_name": ["x1", "x2", "AFSC", "UAEORO"],
+            "input_name": ["x1", "x2", "cat_a", "cat_b"],
             "input_kind": ["scalar", "scalar", "boolean", "boolean"],
             "units": ["unitless", "unitless", "flag", "flag"],
         }
@@ -167,8 +167,8 @@ def write_demo_manuscript_artifacts(root: Path) -> dict[str, Path]:
             "feature_name": [
                 "x1",
                 "x2",
-                "AFSC",
-                "UAEORO",
+                "cat_a",
+                "cat_b",
                 "x1:x2",
                 "x1_squared",
                 "log1p_x2",

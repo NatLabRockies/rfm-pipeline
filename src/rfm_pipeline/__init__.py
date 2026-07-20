@@ -142,10 +142,12 @@ from .null_screening import (
     run_null_screening_with_source,
 )
 from .recovery_study import (
+    ProductionRecoveryResult,
     RecoveryScenario,
     empirical_interaction_fwer,
     prespecified_recovery_scenarios,
     recovery_estimands,
+    run_production_recovery_pipeline,
 )
 from .regularized_screening import (
     ScreeningSelectionResult,
@@ -212,10 +214,12 @@ __all__ = [
     "OutputConditioningStageResult",
     "ScreeningSelectionResult",
     "SensitivityStudySpec",
+    "ProductionRecoveryResult",
     "RecoveryScenario",
     "empirical_interaction_fwer",
     "prespecified_recovery_scenarios",
     "recovery_estimands",
+    "run_production_recovery_pipeline",
     "ElasticNetBaseline",
     "GBTBaseline",
     "OracleOLSBaseline",

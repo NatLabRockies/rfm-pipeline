@@ -2331,22 +2331,21 @@ def discover_manuscript_interactions(
     if not candidates:
         raise ValueError("feature_catalog does not contain any two-factor interaction candidates.")
     total_candidate_pairs = len(candidates)
-    if spec.family_error_method not in {"fwer_max_stat", "bh_fdr"}:
+    if spec.family_error_method not in {"fwer_max_stat", "bh_fdr", "fwer_max_stat_exact"}:
         raise ValueError(
             f"Unknown family_error_method: {spec.family_error_method!r}. "
-            "Expected 'fwer_max_stat' or 'bh_fdr'."
+            "Expected 'fwer_max_stat', 'fwer_max_stat_exact', or 'bh_fdr'."
         )
     if not 0.0 < spec.family_error_alpha < 1.0:
         raise ValueError("family_error_alpha must be in the open interval (0, 1).")
     if spec.enforce_permutation_adequacy:
         # The adequacy guard budget must match the family-corrected procedure that
-        # actually drives retention (F5 fix). For FWER max-stat, the resolution
-        # constraint is 1/(B+1) <= alpha (family_size=1, since a single scalar
-        # threshold is estimated from the max-null distribution). For BH-FDR, the
-        # worst-case constraint is 1/(B+1) <= alpha / n_pairs (family_size=n_pairs).
-        adequacy_family_size = (
-            1 if spec.family_error_method == "fwer_max_stat" else total_candidate_pairs
-        )
+        # actually drives retention (F5 fix). For FWER max-stat (both variants),
+        # the resolution constraint is 1/(B+1) <= alpha (family_size=1, since a
+        # single scalar threshold is estimated from the max-null distribution).
+        # For BH-FDR, the worst-case constraint is 1/(B+1) <= alpha / n_pairs
+        # (family_size=n_pairs).
+        adequacy_family_size = total_candidate_pairs if spec.family_error_method == "bh_fdr" else 1
         check_permutation_adequacy(
             spec.permutation_count_B,
             1.0 - spec.family_error_alpha,

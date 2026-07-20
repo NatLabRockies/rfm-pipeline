@@ -1131,3 +1131,160 @@ the BSM/JDS publication run.
 **Fixture requirements:**
 
 - None (filesystem denylist scan of src/rfm_pipeline).
+
+______________________________________________________________________
+
+## Phase RS — Prespecified semi-synthetic recovery study (method-evidence)
+
+Motivation: on the BSM fit, LASSO / stability / HC3 retain every enriched term,
+so the case study alone does not establish general sparse-support recovery or
+FWER control. Per `bsm-public-rf-manuscript/docs/ANALYSIS_HANDOFF.md`
+("Method-evidence requirement"), add (a) an exact finite-permutation maxT
+interaction-FWER rule with global-null validation, (b) a prespecified
+known-support recovery study with recovery estimands and competitive
+comparators, and (c) a small, fully-local reproduction run producing released
+artifacts. All code stays 100% case-study-agnostic (no BSM constants).
+
+### Slice RS-S01: Exact/conservative finite-permutation maxT interaction-FWER rule
+
+**Phase:** RS
+**Depends on:** none
+**Estimated size:** medium
+**Files to create/modify:**
+
+- src/rfm_pipeline/manuscript_stages.py
+- src/rfm_pipeline/__init__.py
+- tests/alignment/test_RS_S01_exact_fwer.py (gate authored test-first; DO NOT weaken)
+
+**Context.** The existing `fwer_max_stat` path selects via
+`observed_scores > quantile(max_null, 1-alpha)`, which is not the exact
+finite-B critical value and can over-reject at small B. Add the
+Westfall–Young single-step maxT adjusted-p rule, which controls FWER at any
+finite B under the complete null.
+
+**Requirements:**
+
+- Add `maxt_adjusted_pvalues(observed_scores, null_statistics) -> np.ndarray`
+  computing, per pair j, `p_adj_j = (1 + #{b : max_over_pairs(null_b) >= obs_j}) / (B + 1)`
+  where `max_over_pairs(null_b)` is the row maximum of `null_statistics`.
+  Validate shapes; `null_statistics` is `(B, n_pairs)`, `observed_scores` is `(n_pairs,)`.
+- Extend `multiplicity_controlled_interaction_selection` with
+  `method="fwer_max_stat_exact"`: returns `(selected, p_values, threshold)` where
+  `p_values` are the maxT-adjusted p-values, `selected = p_values <= alpha`, and
+  `threshold` is the score-space critical value (the `floor(alpha*(B+1))`-th
+  largest row-max of the null, or `None` if `floor(alpha*(B+1)) == 0`).
+- Export both symbols from `__init__.py`.
+- Do not change the existing `fwer_max_stat` or `bh_fdr` behavior.
+
+**Acceptance criteria (`test_RS_S01_*`):**
+
+- Exact formula on a fixed tiny example (hand-computed adjusted p-values).
+- Adjusted p-values are monotone non-increasing in the observed score.
+- `method="fwer_max_stat_exact"` selects exactly the pairs with `p_adj <= alpha`.
+- **Global-null empirical FWER control:** over >= 500 complete-null replicates
+  (obs and null drawn from one exchangeable draw), the empirical family-wise
+  rejection rate is `<= alpha + 3*SE` at `alpha=0.2, B=199`. Pure-numpy; fast.
+- Input-validation errors for bad shapes / alpha.
+
+**Fixture requirements:** deterministic RNG seeds; no external data.
+
+### Slice RS-S02: Prespecified scenario manifest + recovery estimands + comparators
+
+**Phase:** RS
+**Depends on:** RS-S01
+**Estimated size:** large
+**Files to create/modify:**
+
+- src/rfm_pipeline/recovery_study.py (new)
+- src/rfm_pipeline/baselines.py
+- src/rfm_pipeline/__init__.py
+- tests/alignment/test_RS_S02_recovery_study.py
+
+**Context.** Turn the existing `synthetic_dgp` / `stress_tests` scaffolding into a
+prespecified recovery study with fixed manifest and formal estimands, plus the
+missing competitive comparators.
+
+**Requirements:**
+
+- `prespecified_recovery_scenarios() -> list[RecoveryScenario]` returning the
+  seven fixed, seeded scenarios (frozen before any run): global-null,
+  interaction-null (main/nonlinear signal, no true interactions),
+  sparse-strong hierarchical, weak-signal (>=2 SNR levels), correlated/redundant
+  predictors, pure-interaction (negligible marginals), nonlinear +
+  > =1 misspecified transform outside the declared library. Each carries its
+  > `SyntheticDGPSpec`, seed, and known `DGPTrueSupport`. Reuse `synthetic_dgp`.
+- `recovery_estimands(true_support, selected_support) -> dict` reporting, per
+  family (main / interaction / transformation) and whole-support:
+  precision, recall/power, false-discovery proportion, exact-support-recovery
+  (bool), selected-support size. Interaction-pair metrics use unordered pairs.
+- `empirical_interaction_fwer(false_pair_flags) -> dict` returning the
+  proportion of replicates with >= 1 false interaction pair and a binomial
+  (Wilson) confidence interval; plus per-family mean false-selection counts.
+  Do not label FDR/per-comparison/average counts as FWER.
+- Add `OracleOLSBaseline` (fits OLS on the *planted* support; explicitly an
+  unattainable diagnostic) and a nonlinear predictive surrogate baseline (e.g.
+  gradient-boosted trees) to `baselines.py`, both honoring `BaselineProtocol`.
+  Confirm a multitask/sparse-linear comparator is present (`ElasticNetBaseline`).
+- All functions are case-study-agnostic (arbitrary X/Y, no BSM constants).
+
+**Acceptance criteria (`test_RS_S02_*`):**
+
+- Exactly 7 scenarios; each declares its planted support; the global-null
+  scenario plants no interactions; the pure-interaction scenario plants
+  interactions with ~zero main effects; the nonlinear scenario includes a
+  misspecified transform flagged in the spec.
+- `recovery_estimands` on a hand-built (true, selected) pair returns correct
+  precision/recall/FDP/exact-recovery/size per family.
+- `empirical_interaction_fwer` on a fixed flag vector returns the correct
+  proportion and a valid Wilson interval covering it.
+- `OracleOLSBaseline` and the nonlinear surrogate fit/predict on synthetic data
+  and are returned by the comparison harness schema.
+
+**Fixture requirements:** small synthetic multi-output datasets; fixed seeds.
+
+### Slice RS-S03: Small local recovery run + released artifacts
+
+**Phase:** RS
+**Depends on:** RS-S02
+**Estimated size:** large
+**Files to create/modify:**
+
+- scripts/run_recovery_study.py (new)
+- tests/alignment/test_RS_S03_recovery_run.py
+
+**Context.** Execute the prespecified study end-to-end at a documented reduced
+scale that runs on a laptop, producing the released aggregate tables, figure
+data, and a reproduction log. The empirical interaction-FWER is measured on the
+actual interaction-discovery + `fwer_max_stat_exact` selection stage; the
+mathematical guarantee is validated separately in RS-S01.
+
+**Requirements:**
+
+- `scripts/run_recovery_study.py` runs each prespecified scenario at a small,
+  explicitly-documented scale (e.g. ~30 inputs, ~40 outputs, ~2,000 train rows,
+  B=199, null-FWER replicates ~100, alternative replicates ~20 — chosen so the
+  whole study runs in minutes and each stage's candidate-family logic is
+  unchanged). It records, per scenario: what each stage retains, recovery
+  estimands under alternatives, and the global-null empirical interaction-FWER
+  with its binomial CI. Writes to `outputs/recovery_study/`:
+  `fwer_calibration.csv`, `recovery_estimands.csv`, `stage_retention.csv`,
+  `comparator_metrics.csv`, `figure_data/*.csv`, and `reproduction_log.md`
+  (manifest: seeds, scales, versions, success criteria, timestamp).
+- Deterministic under a fixed master seed; `--help`; `--quick` smoke mode used
+  by the test at a tiny scale.
+- The reduced scale is documented in `reproduction_log.md` as a deliberate
+  reduction that preserves correlated inputs, binaries, multivariate responses,
+  PCA reduction, structured discovery, and train-only selection.
+
+**Acceptance criteria (`test_RS_S03_*`):**
+
+- Running the driver in `--quick` mode writes all named artifacts.
+- Global-null empirical interaction-FWER (with CI) is reported and its point
+  estimate does not exceed `alpha + 3*SE`.
+- Under the sparse-strong scenario, whole-support recall exceeds a modest floor
+  and the oracle-OLS comparator is reported; under the global-null scenario the
+  mean false interaction count is small.
+- Artifacts are schema-valid CSVs; `reproduction_log.md` documents the scale
+  reduction.
+
+**Fixture requirements:** runs the driver's `--quick` mode in a tmp dir.

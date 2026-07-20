@@ -13,6 +13,17 @@ last_validation: `pixi run python -m pytest -q` → pass (only skips); `pixi run
 last_commit: rfm-pipeline 7055287 (chore(align): add PHASE G plan) — PHASE G implementation commit pending in this session.
 next_slice: Deeper case-study generalization — remove the BSM fuel-pathway taxonomy hardcoded in manuscript_stages.\_legacy_module_from_factor_name (AHC/CHC/OHC/OI/SE/WW/FM, "Algal Hydrocarbons", etc.); see docs/scope_backlog.md. Downstream (needs HPC/data): case-study end-to-end rerun to regenerate manuscript numbers, M1/M2/M7 sensitivity, M8 provenance/licensing, F7 public releases/DOIs, M9 prose.
 
+## SESSION STATE — 2026-07-20 — PHASE RS complete: recovery-study method-evidence + RS-S04 FWER-leakage fix
+
+- Milestone: generic semi-synthetic recovery study (method-evidence for the exact interaction-FWER claim + support-recovery estimands). Driven via slice-runner (docs/WORKFLOW_MANUSCRIPT_ALIGNMENT_PLAN.md Phase RS).
+- RS-S01 (exact FWER): added `maxt_adjusted_pvalues` + `method="fwer_max_stat_exact"` (Westfall–Young single-step maxT: `p_adj=(1+#{max_null≥obs})/(B+1)`, select `p_adj≤α`) in manuscript_stages.py. Keystone gate tests/alignment/test_RS_S01_exact_fwer.py (mine). Prior quantile `fwer_max_stat` path unchanged.
+- RS-S02/S03: recovery_study.py (7 prespecified scenarios, per-family precision/recall/fdp/exact-recovery estimands, empirical_interaction_fwer w/ Wilson CI separating FWER from mean_false_pair_count), OracleOLSBaseline/GBTBaseline, scripts/run_recovery_study.py driver.
+- RS-S04 (P0 fix, this session): driver's `_score_interaction_pairs` scored raw corr(xi\*xj, Y) → main-effect signal leaked into interaction scores (null scenarios have main+nonlinear effects, no true interactions) → empirical interaction-FWER=1.000. Fixed: hierarchical residualization of interaction features AND response on the retained main-effect design augmented with quadratic transforms, in both observed stat and permutation null. Gate tests/alignment/test_RS_S04_interaction_null_fwer.py (mine, test-first, red 1.000→green).
+- Corrected artifacts (seed 42, reduced-local scale, outputs/recovery_study/, gitignored): FWER global_null 0.100 [0.055,0.174], interaction_null 0.150 [0.093,0.233] at α=0.1 (both CIs cover α → control demonstrated within MC error). Exact interaction-support recovery (precision=recall=1.0) in all structured scenarios except correlated_redundant (documented collinearity failure mode). Comparators (oracle-OLS/GBT/elastic-net) behave as expected.
+- last_validation: `pixi run python -m pytest tests/alignment -q` → all pass (~500); `pixi run ruff check src/ scripts/ tests/` → clean (fixed 4 pre-existing RS-subagent lint findings).
+- Scope: rfm-pipeline stays generic (no case-study literals in RS code). `outputs/` gitignored (regenerable). Stray untracked scripts/build_track_a_v3_manuscript_addon.py left as-is (pre-existing case-specific WIP, not part of this slice).
+- next: manuscript recovery methods+results subsection using outputs/recovery_study/ numbers (bsm-public-rf-manuscript, M-phase, separate slice).
+
 ## SESSION STATE — 2026-06-30 — Monday slice W1 complete: docs-snippet smoke coverage
 
 - Objective (bounded): add regression coverage for command-policy drift in critical docs snippets, without changing workflow code.

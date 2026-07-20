@@ -11,6 +11,15 @@ from .artifacts import (
     canonical_manifest_top_level_keys,
     make_metadata_frame,
 )
+from .baselines import (
+    ElasticNetBaseline,
+    GBTBaseline,
+    OracleOLSBaseline,
+    PerStratumFirstOrderBaseline,
+    PLSBaseline,
+    RidgeBaseline,
+    compare_baselines,
+)
 from .data import (
     StandardizationBundle,
     align_xy,
@@ -96,6 +105,8 @@ from .manuscript_stages import (
     empirical_null_screening_spec_from_case_study_config,
     final_manuscript_artifacts_spec_from_case_study_config,
     interaction_discovery_spec_from_case_study_config,
+    maxt_adjusted_pvalues,
+    multiplicity_controlled_interaction_selection,
     nonlinear_discovery_spec_from_case_study_config,
     output_conditioning_spec_from_case_study_config,
     regenerate_figures_from_committed_data,
@@ -129,6 +140,12 @@ from .null_screening import (
     NullScreeningResult,
     load_source_module,
     run_null_screening_with_source,
+)
+from .recovery_study import (
+    RecoveryScenario,
+    empirical_interaction_fwer,
+    prespecified_recovery_scenarios,
+    recovery_estimands,
 )
 from .regularized_screening import (
     ScreeningSelectionResult,
@@ -195,6 +212,17 @@ __all__ = [
     "OutputConditioningStageResult",
     "ScreeningSelectionResult",
     "SensitivityStudySpec",
+    "RecoveryScenario",
+    "empirical_interaction_fwer",
+    "prespecified_recovery_scenarios",
+    "recovery_estimands",
+    "ElasticNetBaseline",
+    "GBTBaseline",
+    "OracleOLSBaseline",
+    "PerStratumFirstOrderBaseline",
+    "PLSBaseline",
+    "RidgeBaseline",
+    "compare_baselines",
     "SparseSelectionStabilityStageResult",
     "SparseSelectionStabilitySpec",
     "SparseSelectionStabilityResult",
@@ -240,6 +268,8 @@ __all__ = [
     "make_holdout_nrmse_summary",
     "make_metadata_frame",
     "make_null_mean_prediction",
+    "maxt_adjusted_pvalues",
+    "multiplicity_controlled_interaction_selection",
     "make_standardization_frame",
     "manuscript_notebook_manifest_table",
     "manuscript_notebook_order",

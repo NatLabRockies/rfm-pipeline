@@ -4,6 +4,8 @@ Provides a generic fit/predict protocol and concrete baseline implementations:
 - Ridge regression (reduced-rank via PLS or ridge)
 - Elastic-net sparse-linear baseline
 - Per-stratum first-order (OLS) models
+- OracleOLSBaseline (fits OLS on the planted support; unattainable diagnostic)
+- GBTBaseline (gradient-boosted tree nonlinear surrogate)
 
 All baselines operate on arbitrary NumPy X/Y arrays and are case-study-agnostic.
 """
@@ -19,7 +21,9 @@ from typing import Any, Protocol
 import numpy as np
 import pandas as pd
 from sklearn.cross_decomposition import PLSRegression
+from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.linear_model import ElasticNet, MultiTaskElasticNet, Ridge
+from sklearn.multioutput import MultiOutputRegressor
 
 # ---------------------------------------------------------------------------
 # Protocol
@@ -278,6 +282,122 @@ class PerStratumFirstOrderBaseline:
                 if arr is not None:
                     total += np.asarray(arr).nbytes
         return total
+
+
+@dataclass
+class OracleOLSBaseline:
+    """OLS fitted on the planted (oracle) support columns only.
+
+    This is explicitly an *unattainable diagnostic*: it uses the true
+    active-input set that a real analysis cannot know in advance.
+
+    Parameters
+    ----------
+    true_active_inputs
+        Set of feature names (e.g. ``{"x0", "x3"}``) that are truly active.
+        Columns are selected by matching against ``feature_names``.
+    feature_names
+        Ordered column names of ``X`` passed to :meth:`fit`.  If ``None``,
+        all columns are used (no oracle selection).
+    """
+
+    true_active_inputs: frozenset[str]
+    feature_names: list[str] | None = None
+    _model: Ridge | None = field(default=None, repr=False, init=False)
+    _active_cols: list[int] | None = field(default=None, repr=False, init=False)
+
+    @property
+    def name(self) -> str:
+        """Return the oracle OLS baseline name."""
+        return "oracle_ols"
+
+    def fit(self, X: np.ndarray, Y: np.ndarray) -> OracleOLSBaseline:
+        """Fit OLS on the oracle-selected columns."""
+        if self.feature_names is not None:
+            cols = [
+                i for i, fname in enumerate(self.feature_names) if fname in self.true_active_inputs
+            ]
+        else:
+            cols = list(range(X.shape[1]))
+        if not cols:
+            cols = list(range(X.shape[1]))
+        self._active_cols = cols
+        self._model = Ridge(alpha=1e-8)
+        self._model.fit(X[:, cols], Y)
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Predict responses using the oracle-column model."""
+        if self._model is None or self._active_cols is None:
+            raise RuntimeError("Call fit() before predict().")
+        return np.asarray(self._model.predict(X[:, self._active_cols]))
+
+    def model_size_bytes(self) -> int:
+        """Return the fitted oracle OLS coefficient and intercept size in bytes."""
+        if self._model is None:
+            return 0
+        total = 0
+        for attr in ("coef_", "intercept_"):
+            arr = getattr(self._model, attr, None)
+            if arr is not None:
+                total += np.asarray(arr).nbytes
+        return total
+
+
+@dataclass
+class GBTBaseline:
+    """Nonlinear predictive surrogate using gradient-boosted regression trees.
+
+    Multi-output data is handled via :class:`~sklearn.multioutput.MultiOutputRegressor`.
+    This baseline is case-study-agnostic and serves as a nonlinear upper-bound
+    comparator for linear methods.
+
+    Parameters
+    ----------
+    n_estimators
+        Number of boosting rounds.
+    max_depth
+        Maximum tree depth.
+    learning_rate
+        Shrinkage applied to each tree.
+    """
+
+    n_estimators: int = 100
+    max_depth: int = 3
+    learning_rate: float = 0.1
+    _model: Any = field(default=None, repr=False, init=False)
+
+    @property
+    def name(self) -> str:
+        """Return the GBT baseline name."""
+        return f"gbt(n={self.n_estimators},depth={self.max_depth})"
+
+    def fit(self, X: np.ndarray, Y: np.ndarray) -> GBTBaseline:
+        """Fit gradient-boosted trees, wrapping in MultiOutputRegressor for multi-output Y."""
+        Y2d = np.atleast_2d(Y.T).T
+        gbt = GradientBoostingRegressor(
+            n_estimators=self.n_estimators,
+            max_depth=self.max_depth,
+            learning_rate=self.learning_rate,
+        )
+        if Y2d.ndim == 1 or Y2d.shape[1] == 1:
+            gbt.fit(X, Y2d.ravel())
+            self._model = gbt
+        else:
+            mo = MultiOutputRegressor(gbt)
+            mo.fit(X, Y2d)
+            self._model = mo
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Predict responses with the fitted GBT model."""
+        if self._model is None:
+            raise RuntimeError("Call fit() before predict().")
+        return np.asarray(self._model.predict(X))
+
+    def model_size_bytes(self) -> int:
+        """Return 0 (GBT tree structures do not have a simple byte footprint)."""
+        return 0
 
 
 # ---------------------------------------------------------------------------

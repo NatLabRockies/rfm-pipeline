@@ -543,6 +543,62 @@ def fwer_max_stat_threshold(
     return float(np.quantile(max_null, 1.0 - alpha))
 
 
+def maxt_adjusted_pvalues(
+    observed_scores: np.ndarray,
+    null_statistics: np.ndarray,
+) -> np.ndarray:
+    """Westfall–Young single-step maxT adjusted p-values.
+
+    For each pair *j*, computes the exact finite-permutation adjusted p-value::
+
+        p_adj_j = (1 + #{b : max_over_pairs(null_b) >= obs_j}) / (B + 1)
+
+    where ``max_over_pairs(null_b)`` is the row-maximum of *null_statistics*.
+    This controls the family-wise error rate at any finite *B* under the
+    complete null (Westfall & Young 1993, single-step maxT).
+
+    Parameters
+    ----------
+    observed_scores
+        Array of shape ``(n_pairs,)`` of observed interaction scores.
+    null_statistics
+        Array of shape ``(B, n_pairs)`` of permutation-null statistics.
+        Each row is one shared-response permutation; each column is one
+        candidate pair.
+
+    Returns
+    -------
+    np.ndarray
+        Array of shape ``(n_pairs,)`` of maxT-adjusted p-values in (0, 1].
+
+    Raises
+    ------
+    ValueError
+        If *observed_scores* is not 1-D, *null_statistics* is not 2-D with at
+        least one row, their column counts differ, or either array is empty.
+    """
+    observed_scores = np.asarray(observed_scores, dtype=float)
+    null_statistics = np.asarray(null_statistics, dtype=float)
+    if observed_scores.ndim != 1:
+        raise ValueError("observed_scores must be a 1-D array.")
+    if null_statistics.ndim != 2:
+        raise ValueError("null_statistics must be a 2-D array of shape (B, n_pairs).")
+    if null_statistics.shape[0] == 0:
+        raise ValueError("null_statistics must have at least one row (B >= 1).")
+    if len(observed_scores) == 0:
+        raise ValueError("observed_scores must be non-empty.")
+    if null_statistics.shape[1] != len(observed_scores):
+        raise ValueError(
+            f"null_statistics column count ({null_statistics.shape[1]}) must match "
+            f"len(observed_scores) ({len(observed_scores)})."
+        )
+    B = null_statistics.shape[0]
+    max_null = null_statistics.max(axis=1)  # shape (B,)
+    # Broadcast: compare each scalar obs_j against all B row-maxima.
+    exceedances = (max_null[:, None] >= observed_scores[None, :]).sum(axis=0)
+    return (1.0 + exceedances) / (B + 1.0)
+
+
 def bh_fdr_selected(
     p_values: np.ndarray,
     alpha: float,
@@ -643,11 +699,13 @@ def multiplicity_controlled_interaction_selection(
         If *method* is not one of the supported strings, or if shape constraints
         on *observed_scores* / *null_statistics* are violated.
     """
-    if method not in {"fwer_max_stat", "bh_fdr"}:
+    if method not in {"fwer_max_stat", "bh_fdr", "fwer_max_stat_exact"}:
         raise ValueError(
             f"Unknown multiplicity correction method: {method!r}. "
-            "Expected 'fwer_max_stat' or 'bh_fdr'."
+            "Expected 'fwer_max_stat', 'bh_fdr', or 'fwer_max_stat_exact'."
         )
+    if not (0.0 < alpha < 1.0):
+        raise ValueError(f"alpha must be in the open interval (0, 1); got {alpha!r}")
     if observed_scores.ndim != 1:
         raise ValueError("observed_scores must be a 1-D array.")
     if null_statistics.ndim != 2:
@@ -663,6 +721,18 @@ def multiplicity_controlled_interaction_selection(
         threshold: float | None = fwer_max_stat_threshold(null_statistics, alpha)
         selected = observed_scores > threshold
         return selected, p_values, threshold
+    if method == "fwer_max_stat_exact":
+        p_adj = maxt_adjusted_pvalues(observed_scores, null_statistics)
+        selected_exact = p_adj <= alpha
+        # Score-space critical value: floor(alpha*(B+1))-th largest row-max of null.
+        k = int(math.floor(alpha * (B + 1)))
+        if k == 0:
+            threshold_exact: float | None = None
+        else:
+            max_null = null_statistics.max(axis=1)
+            # k-th largest = (B - k)-th smallest (0-indexed)
+            threshold_exact = float(np.partition(max_null, B - k)[B - k])
+        return selected_exact, p_adj, threshold_exact
     # bh_fdr
     selected = bh_fdr_selected(p_values, alpha)
     return selected, p_values, None

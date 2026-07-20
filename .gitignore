@@ -68,3 +68,4 @@ docs/MEMORY.md
 
 # slice-runner local state
 .slice-runner/
+outputs/

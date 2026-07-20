@@ -63,3 +63,19 @@ ______________________________________________________________________
 - Target: make the feature->module grouping config-driven (e.g., a mapping supplied in
   the run config) so the generic pipeline carries no case-study taxonomy. Requires
   manuscript-figure validation. Distinct from PHASE G (AFSC/UAEORO scenario scheme).
+
+## Generic robustness: repo-root detection assumes pyproject.toml (pixi-only repos fail)
+
+- `src/rfm_pipeline/manuscript_runtime.py::normalize_manuscript_repo_root` resolves the
+  repository root by requiring BOTH `pyproject.toml` AND `configs/` at a candidate path.
+  Case-study repos managed with Pixi (e.g. bsm-public-rf) use `pixi.toml` and ship no
+  `pyproject.toml`, so `load_manuscript_case_study_config` -> `config_to_legacy_case_study`
+  raises `FileNotFoundError: Could not resolve repository root ...` when the serial runner
+  (`scripts/run_manuscript_pipeline.py`) is invoked from such a repo.
+- Predates the R3 correction (present in 25ef483); surfaced during the cheap-stages
+  reproduction run because no test exercises this runner path against a pixi-only repo.
+- Interim unblock used on HPC: added a minimal marker `pyproject.toml` to the bsm-public-rf
+  checkout (not the correct generic fix).
+- Target: accept `pixi.toml` OR `pyproject.toml` as a valid repo-root marker (both are
+  standard Python project roots). TDD: add a test that resolves a repo root containing only
+  `pixi.toml` + `configs/`. Keeps rfm-pipeline packaging-tool-agnostic and generic.

@@ -8529,6 +8529,12 @@ def _legacy_feature_type_label(feature_name: str) -> str:
     lowered = name.lower()
     if "*" in name or ":" in name:
         return "Second Order"
+    # Canonical library transforms use the ``{base}_{label}`` convention
+    # (e.g. ``x_sq``, ``x_inv``, ``x_sqrt``, ``x_log1p``, ``x_exp``); detect them
+    # via the shared transform library so counts stay consistent with
+    # ``_infer_feature_type_for_name``.
+    if _parse_supported_transformation_name(name) is not None:
+        return "Non-Linear"
     nonlinear_tokens = (
         "_quadratic",
         "_logarithmic",

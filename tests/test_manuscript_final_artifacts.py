@@ -17,6 +17,7 @@ from rfm_pipeline.manuscript_stages import (
     _build_hc3_inferential_filter_tables,
     _build_legacy_feature_type_counts,
     _build_legacy_interaction_counts_by_module_pair,
+    _build_support_composition_figure_data,
     final_manuscript_artifacts_spec_from_case_study_config,
     run_final_manuscript_artifacts_stage,
 )
@@ -392,6 +393,61 @@ def test_legacy_feature_type_counts_classifies_colon_interactions() -> None:
     assert observed["Second Order"] == 1
     assert observed["Non-Linear"] == 1
     assert observed["First Order"] == 1
+
+
+def test_legacy_feature_type_counts_detects_canonical_transform_suffixes() -> None:
+    """Canonical DEFAULT_TRANSFORM_LIBRARY suffixes must classify as Non-Linear.
+
+    Regression for the support-composition miscount where library transforms
+    named ``{base}_{label}`` (``_sq``, ``_inv``, ``_sqrt``, ``_log1p``, ``_exp``)
+    fell through to First Order because the classifier only matched verbose
+    tokens like ``_squared``/``_inverse``.
+    """
+    import pandas as pd
+
+    final_support_features = pd.DataFrame(
+        {
+            "feature_name": [
+                "CHC.a",  # main effect -> First Order
+                "OHC.b",  # main effect -> First Order
+                "AHC.c:WW.d",  # interaction -> Second Order
+                "CHC.a_sq",  # quadratic  -> Non-Linear
+                "OHC.b_inv",  # inverse    -> Non-Linear
+                "WW.e_sqrt",  # sqrt       -> Non-Linear
+                "SE.f_log1p",  # log1p      -> Non-Linear
+            ]
+        }
+    )
+    counts = _build_legacy_feature_type_counts(final_support_features)
+    observed = {str(row["feature_type"]): int(row["count"]) for _, row in counts.iterrows()}
+
+    assert observed["First Order"] == 2
+    assert observed["Second Order"] == 1
+    assert observed["Non-Linear"] == 4
+
+
+def test_support_composition_figure_data_counts_transforms_separately() -> None:
+    """Support-composition figure data must break out transforms, not fold them
+    into First Order (the 74/49/0 vs 52/49/22 manuscript reconciliation)."""
+    import pandas as pd
+
+    final_support_features = pd.DataFrame(
+        {
+            "feature_name": [
+                "CHC.a",
+                "OHC.b",
+                "AHC.c:WW.d",
+                "CHC.a_sq",
+                "OHC.b_inv",
+            ]
+        }
+    )
+    data = _build_support_composition_figure_data(final_support_features)
+    observed = {str(r["feature_type"]): int(r["n_features"]) for _, r in data.iterrows()}
+
+    assert observed.get("First Order", 0) == 2
+    assert observed.get("Second Order", 0) == 1
+    assert observed.get("Non-Linear", 0) == 2
 
 
 def test_legacy_interaction_counts_detects_colon_delimited_pairs() -> None:

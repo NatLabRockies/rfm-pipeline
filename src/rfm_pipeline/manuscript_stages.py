@@ -774,6 +774,20 @@ class InteractionDiscoverySpec:
     family_error_alpha
         Family-wise error rate (for ``"fwer_max_stat"``) or FDR level (for
         ``"bh_fdr"``). Defaults to ``0.05``.
+    condition_main_effects
+        When ``True`` (default), each response component is residualized against an
+        additive main-effects design (per retained first-order feature, up to
+        ``main_effect_conditioning_degree``) on the training rows before interaction
+        scoring. This removes additive main-effect (including curvature) structure
+        from the response so the response-permutation null is valid: strong main
+        effects can otherwise leak into tree-SHAP / residualized-product interaction
+        scores while the whole-response permutation null (which destroys main effects)
+        fails to calibrate that leakage, inflating the interaction FWER. Genuine
+        interactions are non-additive and survive the residualization, so detection
+        power is preserved.
+    main_effect_conditioning_degree
+        Polynomial degree of the per-feature additive main-effects basis used for
+        conditioning (``1`` = linear only, ``2`` = linear + quadratic, the default).
     """
 
     method: str
@@ -802,6 +816,8 @@ class InteractionDiscoverySpec:
     enforce_permutation_adequacy: bool = True
     family_error_method: str = "fwer_max_stat"
     family_error_alpha: float = 0.05
+    condition_main_effects: bool = True
+    main_effect_conditioning_degree: int = 2
 
 
 @dataclass(frozen=True)
@@ -1977,6 +1993,8 @@ def interaction_discovery_spec_from_case_study_config(
         dask_memory_per_worker=str(interaction.get("dask_memory_per_worker", "4 GB")),
         family_error_method=str(interaction.get("family_error_method", "fwer_max_stat")),
         family_error_alpha=float(interaction.get("family_error_alpha", 0.05)),
+        condition_main_effects=bool(interaction.get("condition_main_effects", True)),
+        main_effect_conditioning_degree=int(interaction.get("main_effect_conditioning_degree", 2)),
     )
 
 
@@ -2241,6 +2259,15 @@ def discover_manuscript_interactions(
     InteractionDiscoveryResult
         Materialized pair-score, component-score, null-summary, retained-pair, and summary tables.
     """
+    if spec.condition_main_effects:
+        pca_scores = _condition_pca_scores_on_main_effects(
+            input_matrix,
+            holdout_assignments,
+            pca_scores,
+            retained_terms,
+            degree=spec.main_effect_conditioning_degree,
+        )
+
     if spec.method == "elasticnet_interactions":
         return _discover_elasticnet_interactions(
             input_matrix, holdout_assignments, pca_scores, retained_terms, spec
@@ -7384,6 +7411,67 @@ def _interaction_candidate_pairs(
     if len(names) != len(set(names)):
         raise ValueError("feature_catalog contains duplicate interaction feature names.")
     return candidates
+
+
+def _condition_pca_scores_on_main_effects(
+    input_matrix: pd.DataFrame,
+    holdout_assignments: pd.DataFrame,
+    pca_scores: pd.DataFrame,
+    retained_terms: pd.DataFrame,
+    *,
+    degree: int,
+) -> pd.DataFrame:
+    """Residualize response components against an additive main-effects design.
+
+    For each retained first-order feature ``x_j`` an additive basis
+    ``[x_j, x_j^2, ..., x_j^degree]`` (standardized on train rows) is assembled with an
+    intercept; each response component is regressed on that design using train rows and
+    replaced (for all rows) by its residual. Removes additive main-effect and curvature
+    structure so the whole-response permutation null used by interaction discovery is
+    valid; genuine (non-additive) interaction structure is preserved. Returns *pca_scores*
+    unchanged when there are no usable retained features, no components, or ``degree < 1``.
+    """
+    if degree < 1:
+        return pca_scores
+    component_names = [str(c) for c in pca_scores.columns if c != "sample_id"]
+    if not component_names:
+        return pca_scores
+    feature_names = [
+        name
+        for name in dict.fromkeys(retained_terms["feature_name"].astype(str))
+        if name in input_matrix.columns
+    ]
+    if not feature_names:
+        return pca_scores
+
+    sample_ids = pca_scores["sample_id"]
+    train_ids = set(_train_sample_ids(holdout_assignments).tolist())
+    train_mask = sample_ids.isin(train_ids).to_numpy()
+    if train_mask.sum() < degree + 2:
+        return pca_scores
+
+    inputs = _align_table_by_sample_id(
+        input_matrix, sample_ids, feature_names, "input matrix"
+    ).to_numpy(dtype=float)
+    columns = [np.ones(len(inputs), dtype=float)]
+    for col in range(inputs.shape[1]):
+        standardized = _standardize_vector(inputs[:, col])
+        if not np.any(standardized):
+            continue  # constant feature contributes no main-effect basis
+        for power in range(1, degree + 1):
+            columns.append(standardized**power)
+    if len(columns) == 1:
+        return pca_scores  # only the intercept; nothing to residualize against
+    design = np.column_stack(columns)
+
+    responses = pca_scores[component_names].to_numpy(dtype=float)
+    design_train = design[train_mask]
+    coefficients, *_ = np.linalg.lstsq(design_train, responses[train_mask], rcond=None)
+    residuals = responses - design @ coefficients
+
+    conditioned = pca_scores.copy()
+    conditioned[component_names] = residuals
+    return conditioned
 
 
 def _residualized_interaction_matrix(

@@ -885,3 +885,85 @@ def test_interaction_discovery_resumes_from_checkpointed_permutation_scores(
     )
     assert loaded_call_counter["count"] == 0
     assert len(loaded_result.pair_scores) == 1
+
+
+def _uniform_inputs(n: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(seed)
+    return rng.uniform(-1.0, 1.0, size=n), rng.uniform(-1.0, 1.0, size=n)
+
+
+def test_condition_pca_scores_removes_additive_main_effects_preserves_interactions() -> None:
+    """Additive linear+quadratic main effects are residualized out; interactions survive."""
+    n = 400
+    sample_ids = list(range(1, n + 1))
+    x1, x2 = _uniform_inputs(n, seed=7)
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2})
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * n})
+    retained_terms = pd.DataFrame(
+        {"feature_name": ["x1", "x2"], "feature_type": ["first_order"] * 2}
+    )
+    main_effect = 3.0 * x1 + 2.0 * (x1**2)  # additive main + curvature, no interaction
+    interaction = 5.0 * x1 * x2  # pure interaction (non-additive)
+    pca_scores = pd.DataFrame(
+        {"sample_id": sample_ids, "PC_main": main_effect, "PC_int": interaction}
+    )
+
+    conditioned = manuscript_stages._condition_pca_scores_on_main_effects(
+        inputs, holdout, pca_scores, retained_terms, degree=2
+    )
+
+    var_main_before = float(np.var(main_effect))
+    var_main_after = float(np.var(conditioned["PC_main"].to_numpy()))
+    var_int_before = float(np.var(interaction))
+    var_int_after = float(np.var(conditioned["PC_int"].to_numpy()))
+
+    # Additive main-effect component is almost entirely removed.
+    assert var_main_after < 1e-6 * var_main_before
+    # Interaction component variance is preserved (survives residualization).
+    assert var_int_after > 0.9 * var_int_before
+
+
+def test_condition_pca_scores_degree_one_leaves_quadratic_curvature() -> None:
+    """Degree=1 removes only linear structure; quadratic curvature remains."""
+    n = 400
+    sample_ids = list(range(1, n + 1))
+    x1, _ = _uniform_inputs(n, seed=11)
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1})
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * n})
+    retained_terms = pd.DataFrame({"feature_name": ["x1"], "feature_type": ["first_order"]})
+    curvature = 2.0 * (x1**2)
+    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": curvature})
+
+    conditioned = manuscript_stages._condition_pca_scores_on_main_effects(
+        inputs, holdout, pca_scores, retained_terms, degree=1
+    )
+    # Substantial quadratic variance remains when only linear terms are conditioned out.
+    assert float(np.var(conditioned["PC1"].to_numpy())) > 0.5 * float(np.var(curvature))
+
+
+def test_condition_pca_scores_degree_zero_returns_unchanged() -> None:
+    """Degree < 1 disables conditioning and returns the input unchanged."""
+    n = 20
+    sample_ids = list(range(1, n + 1))
+    x1, _ = _uniform_inputs(n, seed=3)
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1})
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * n})
+    retained_terms = pd.DataFrame({"feature_name": ["x1"], "feature_type": ["first_order"]})
+    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": x1})
+    out = manuscript_stages._condition_pca_scores_on_main_effects(
+        inputs, holdout, pca_scores, retained_terms, degree=0
+    )
+    pd.testing.assert_frame_equal(out, pca_scores)
+
+
+def test_interaction_spec_conditions_main_effects_by_default() -> None:
+    """The corrected main-effect conditioning is enabled by default."""
+    spec = InteractionDiscoverySpec(
+        method="tree_shap_interaction_values",
+        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
+        null_threshold_quantile=0.95,
+        retained_pairs_reference=0,
+        permutation_count_B=19,
+    )
+    assert spec.condition_main_effects is True
+    assert spec.main_effect_conditioning_degree == 2

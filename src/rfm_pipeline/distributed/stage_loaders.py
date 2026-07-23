@@ -91,15 +91,15 @@ def _read_parquet_with_mode(
     if out_of_core.enable_spill_to_disk:
         temp_root = choose_temp_dir(preferred_root=out_of_core.temp_dir)
         buffer = SpillToDiskBuffer(
-            temp_root=str(temp_root),
-            chunk_size_mb=max(1, int(out_of_core.chunk_size_mb)),
+            temp_dir=str(temp_root),
+            max_memory_mb=max(1, int(out_of_core.max_memory_budget_mb)),
         )
-        chunks = []
-        for chunk in reader:
-            buffer.write(chunk)
-        for chunk in buffer.read():
-            chunks.append(chunk)
-        return pd.concat(chunks, ignore_index=True)
+        try:
+            for chunk in reader:
+                buffer.add_chunk(chunk)
+            return buffer.get_final_dataframe()
+        finally:
+            buffer.cleanup()
 
     return pd.concat(list(reader), ignore_index=True)
 

@@ -63,6 +63,11 @@ class TestDistributedConfig:
         errors = cfg.validate()
         assert any("memory_gb" in e for e in errors)
 
+    def test_reduce_cpus_per_task_zero_invalid(self):
+        cfg = DistributedConfig(slurm=SlurmConfig(reduce_cpus_per_task=0))
+        errors = cfg.validate()
+        assert any("slurm.reduce_cpus_per_task must be >= 1" in e for e in errors)
+
     def test_load_from_yaml(self, tmp_path):
         yaml_content = """
 distributed:
@@ -334,7 +339,13 @@ class TestCheckpointManager:
 
 
 class TestSlurmArrayRunner:
-    def _make_runner(self, tmp_path: Path, n_shards: int = 4) -> SlurmArrayRunner:
+    def _make_runner(
+        self,
+        tmp_path: Path,
+        n_shards: int = 4,
+        reduce_partition: str | None = None,
+        reduce_cpus_per_task: int | None = None,
+    ) -> SlurmArrayRunner:
         cfg = DistributedConfig(
             enabled=True,
             backend="slurm_array",
@@ -348,6 +359,8 @@ class TestSlurmArrayRunner:
                 cpus_per_task=4,
                 max_concurrent_array_tasks=2,
                 log_dir=str(tmp_path / "logs"),
+                reduce_partition=reduce_partition,
+                reduce_cpus_per_task=reduce_cpus_per_task,
             ),
             kestrel=KestrelConfig(
                 projects_root="/projects/bsm",
@@ -436,6 +449,24 @@ class TestSlurmArrayRunner:
         runner = self._make_runner(tmp_path)
         script = runner.generate_reduce_script("interaction_discovery", after_job_id=None)
         assert "--dependency=" not in script
+
+    def test_generate_reduce_script_defaults_to_array_partition_and_cpus(self, tmp_path):
+        # No reduce overrides -> reduce job uses the array partition/cpus (backward compat).
+        runner = self._make_runner(tmp_path)
+        script = runner.generate_reduce_script("interaction_discovery")
+        assert "#SBATCH --partition=debug" in script
+        assert "#SBATCH --cpus-per-task=4" in script
+
+    def test_generate_reduce_script_uses_reduce_overrides(self, tmp_path):
+        # reduce overrides right-size the reduce job independently of the array job.
+        runner = self._make_runner(tmp_path, reduce_partition="shared", reduce_cpus_per_task=8)
+        reduce_script = runner.generate_reduce_script("interaction_discovery")
+        assert "#SBATCH --partition=shared" in reduce_script
+        assert "#SBATCH --cpus-per-task=8" in reduce_script
+        # Array/stage job must remain unaffected by the reduce overrides.
+        stage_script = runner.generate_stage_script("interaction_discovery")
+        assert "#SBATCH --partition=debug" in stage_script
+        assert "#SBATCH --cpus-per-task=4" in stage_script
 
     def test_generate_diagnostic_script(self, tmp_path):
         runner = self._make_runner(tmp_path)

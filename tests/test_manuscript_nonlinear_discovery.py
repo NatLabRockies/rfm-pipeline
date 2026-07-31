@@ -16,7 +16,47 @@ from rfm_pipeline.manuscript_stages import (
     run_nonlinear_discovery_stage,
     write_nonlinear_discovery_artifacts,
 )
-from rfm_pipeline.transforms import QUADRATIC
+from rfm_pipeline.transforms import DEFAULT_TRANSFORM_LIBRARY, QUADRATIC
+
+
+def test_nonlinear_candidates_skip_binary_and_degenerate_features() -> None:
+    """Binary/constant first-order terms must not spawn nonlinear-transform candidates.
+
+    Numeric transforms of a two-point (binary) support are affine-collinear with
+    the main effect, and the ``inverse`` transform is domain-invalid on zeros
+    (it later raises at column materialization). Such candidates must never be
+    generated.
+    """
+    sample_ids = list(range(1, 21))
+    continuous = [float(value) for value in range(1, 21)]
+    binary = [0.0, 1.0] * 10
+    constant = [1.0] * 20
+    inputs = pd.DataFrame(
+        {
+            "sample_id": sample_ids,
+            "x_cont": continuous,
+            "x_bin": binary,
+            "x_const": constant,
+        }
+    )
+
+    candidates = manuscript_stages._generate_supported_nonlinear_candidates(
+        ["x_cont", "x_bin", "x_const"],
+        inputs,
+    )
+
+    base_features = {base for _, base, _ in candidates}
+    candidate_names = {name for name, _, _ in candidates}
+    assert "x_cont" in base_features
+    assert "x_bin" not in base_features
+    assert "x_const" not in base_features
+    # No degenerate transform names leaked in for the binary/constant terms.
+    assert not any(name.startswith("x_bin_") for name in candidate_names)
+    assert not any(name.startswith("x_const_") for name in candidate_names)
+    # The continuous feature still yields the full supported library.
+    assert len([1 for _, base, _ in candidates if base == "x_cont"]) == len(
+        DEFAULT_TRANSFORM_LIBRARY
+    )
 
 
 def test_nonlinear_discovery_retains_residual_quadratic_signal_and_writes_artifacts(

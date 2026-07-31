@@ -6637,6 +6637,14 @@ def _generate_supported_nonlinear_candidates(
             feature_name,
             feature_name,
         ).to_numpy(dtype=float)
+        finite_values = values[np.isfinite(values)]
+        if np.unique(finite_values).size <= 2:
+            # Binary/constant first-order terms are degenerate under nonlinear
+            # transformation: any transform of a two-point support is affine-
+            # collinear with the untransformed main effect, and the ``inverse``
+            # transform is domain-invalid on zeros. Skip candidate generation so
+            # such terms enter screening/interactions as main effects only.
+            continue
         for td in transform_library:
             if td.valid_fraction(values) > 0.0:
                 candidates.append((td.column_name(feature_name), feature_name, td))

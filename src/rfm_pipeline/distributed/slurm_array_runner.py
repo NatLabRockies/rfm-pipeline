@@ -129,10 +129,10 @@ _REDUCE_SBATCH_TEMPLATE = """\
 #!/bin/bash
 #SBATCH --job-name=rfm_reduce_{stage}_{run_id}
 #SBATCH --account={account}
-#SBATCH --partition={partition}
+#SBATCH --partition={reduce_partition}
 #SBATCH --time={reduce_walltime}
 #SBATCH --mem={reduce_memory_mb}M
-#SBATCH --cpus-per-task={cpus_per_task}
+#SBATCH --cpus-per-task={reduce_cpus_per_task}
 #SBATCH --output={log_dir}/rfm_reduce_{stage}_%j.out
 #SBATCH --error={log_dir}/rfm_reduce_{stage}_%j.err
 {dependency_line}
@@ -524,6 +524,9 @@ class SlurmArrayRunner:
         vars_ = self._common_vars(stage)
         vars_["reduce_walltime"] = reduce_walltime
         vars_["reduce_memory_mb"] = reduce_memory_gb * 1024
+        slurm = self.config.slurm
+        vars_["reduce_partition"] = slurm.reduce_partition or slurm.partition
+        vars_["reduce_cpus_per_task"] = slurm.reduce_cpus_per_task or slurm.cpus_per_task
         if after_job_id:
             vars_["dependency_line"] = f"#SBATCH --dependency=afterany:{after_job_id}"
         else:

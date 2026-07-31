@@ -91,15 +91,15 @@ def _read_parquet_with_mode(
     if out_of_core.enable_spill_to_disk:
         temp_root = choose_temp_dir(preferred_root=out_of_core.temp_dir)
         buffer = SpillToDiskBuffer(
-            temp_root=str(temp_root),
-            chunk_size_mb=max(1, int(out_of_core.chunk_size_mb)),
+            temp_dir=str(temp_root),
+            max_memory_mb=max(1, int(out_of_core.max_memory_budget_mb)),
         )
-        chunks = []
-        for chunk in reader:
-            buffer.write(chunk)
-        for chunk in buffer.read():
-            chunks.append(chunk)
-        return pd.concat(chunks, ignore_index=True)
+        try:
+            for chunk in reader:
+                buffer.add_chunk(chunk)
+            return buffer.get_final_dataframe()
+        finally:
+            buffer.cleanup()
 
     return pd.concat(list(reader), ignore_index=True)
 
@@ -254,9 +254,29 @@ def load_sparse_selection_result(output_root: Path) -> SparseSelectionStabilityR
 
 
 def _resolve_data_root(config: WorkflowConfig) -> Path:
-    """Resolve dataset root directory from config.dataset.type."""
-    dataset_type = config.dataset.type
+    """Resolve dataset root directory.
+
+    Precedence:
+
+    1. ``config.dataset.path`` when set. Absolute paths are used as-is; relative
+       paths are resolved against the study root. This lets a caller (e.g. the
+       HPC controller) point at a dataset that lives outside the repository
+       ``artifacts/`` tree, such as on cluster scratch.
+    2. Otherwise, a ``dataset.type``-derived layout under
+       ``<study_root>/artifacts/``.
+
+    The study root is taken from the ``RFM_STUDY_ROOT`` environment variable,
+    falling back to the current working directory.
+    """
     study_root = Path(os.environ.get("RFM_STUDY_ROOT") or Path.cwd())
+    configured_path = getattr(config.dataset, "path", None)
+    if configured_path:
+        candidate = Path(configured_path)
+        if not candidate.is_absolute():
+            candidate = study_root / candidate
+        return candidate
+
+    dataset_type = config.dataset.type
     if dataset_type == "real_full_dataset":
         return study_root / "artifacts" / "preprocessed_real_data_30k"
     if dataset_type == "real_data":

@@ -1288,3 +1288,137 @@ mathematical guarantee is validated separately in RS-S01.
   reduction.
 
 **Fixture requirements:** runs the driver's `--quick` mode in a tmp dir.
+
+## Phase R4 — Validate the SUBMITTED production workflow in the recovery study (round-four audit)
+
+Motivation: the round-four adversarial audit
+(`bsm-public-rf-manuscript/docs/ANALYSIS_HANDOFF.md`, "Round-four audit of the
+current recovery attempt — not accepted") rejects both the generic and BSM
+recovery studies because they run a SEPARATE reimplementation
+(residualized-product score + PCA + quadratic-only transform) instead of the
+actual production stage functions. A substitute pipeline cannot validate the
+submitted workflow. Two blocking gaps: (1) the production interaction stage
+`discover_manuscript_interactions` rejects the exact finite-permutation maxT
+method even though `multiplicity_controlled_interaction_selection` supports it
+(interpolated-quantile rule still ships); (2) no runner drives the production
+stage chain (screen -> interactions -> nonlinear -> sparse/stability) on
+in-memory synthetic data, so recovery evidence never exercises the shipped
+stages. All code stays 100% case-study-agnostic (no BSM constants).
+
+### Slice R4-S01: Accept exact maxT (`fwer_max_stat_exact`) in the production interaction stage
+
+**Phase:** R4
+**Depends on:** none
+**Estimated size:** medium
+**Files to create/modify:**
+
+- src/rfm_pipeline/manuscript_stages.py
+- tests/test_manuscript_interaction_discovery.py
+- tests/alignment/test_R4_S01_exact_fwer_production.py
+
+**Context.** `multiplicity_controlled_interaction_selection` already supports
+`method="fwer_max_stat_exact"` (Westfall-Young single-step maxT adjusted-p rule,
+RS-S01). But `discover_manuscript_interactions` validates
+`spec.family_error_method not in {"fwer_max_stat", "bh_fdr"}` at
+manuscript_stages.py:~2334 and raises for the exact method, so the production
+path can never run exact FWER. `InteractionDiscoverySpec.family_error_method`
+defaults to `"fwer_max_stat"`.
+
+**Requirements (do NOT weaken tests; do NOT loosen assertions to pass):**
+
+- Extend the accepted-method set in `discover_manuscript_interactions` to include
+  `"fwer_max_stat_exact"` and forward it unchanged to
+  `multiplicity_controlled_interaction_selection(method=spec.family_error_method)`,
+  using the returned `selected` mask exactly as for the other methods. Preserve
+  existing behavior for `fwer_max_stat` and `bh_fdr`.
+- Ensure the permutation-adequacy guard's `family_size` is consistent with the
+  exact family-wise procedure (single-step over the full candidate-pair family),
+  matching how `fwer_max_stat` is treated, and that `min_permutations_required`
+  is respected for the exact method.
+- Keep the shared-response permutation-null construction unchanged (the null
+  statistics passed to selection are the existing `(B, n_pairs)` matrix).
+- Do not change `InteractionDiscoverySpec` defaults (backward compatible); only
+  allow the exact method when explicitly requested.
+
+**Acceptance criteria (`test_R4_S01_*`, authored test-first, in tests/alignment):**
+
+- Calls the PRODUCTION entry point `discover_manuscript_interactions` (or
+  `run_interaction_discovery_stage`) with a spec whose
+  `family_error_method="fwer_max_stat_exact"` and `family_error_alpha=0.05` and
+  asserts it runs without raising.
+- Under a planted strong interaction on small synthetic multi-output data, the
+  planted pair is retained by the exact method.
+- Under a complete interaction-null (no true pairs), the exact method retains 0
+  pairs on the fixed-seed fixture (family-wise control at alpha=0.05).
+- A negative test confirms an unknown method name still raises.
+- The sub-agent MUST confirm green:
+  `pixi run python -m pytest -q tests/test_manuscript_interaction_discovery.py tests/alignment/test_R4_S01_exact_fwer_production.py`
+- `pixi run ruff check` is clean on all modified files.
+
+**Fixture requirements:** small synthetic input/PCA-score matrices with a
+pure-null variant and a planted-interaction variant; fixed seeds; no external data.
+
+### Slice R4-S02: Production-stage recovery pipeline runner on in-memory synthetic data
+
+**Phase:** R4
+**Depends on:** R4-S01
+**Estimated size:** large
+**Files to create/modify:**
+
+- src/rfm_pipeline/recovery_study.py
+- src/rfm_pipeline/__init__.py
+- tests/alignment/test_R4_S02_production_pipeline_runner.py
+
+**Context.** The recovery study must exercise the SHIPPED stage functions, not a
+parallel reimplementation. Provide a generic, case-study-agnostic runner that
+drives the production discovery/selection stages on arbitrary in-memory
+train/eval `(X, Y)` at a documented reduced scale, so recovery estimands and
+empirical FWER are measured on `discover_manuscript_interactions`,
+`discover_manuscript_nonlinear_transformations`, and
+`select_manuscript_sparse_support` (plus screening/conditioning), returning the
+per-stage retained sets and the final selected support.
+
+**Requirements (do NOT weaken tests):**
+
+- Add `run_production_recovery_pipeline(X_train, Y_train, X_eval, Y_eval, *, specs..., alpha=0.05, family_error_method="fwer_max_stat_exact", seed) -> ProductionRecoveryResult` that, on arbitrary in-memory data with NO BSM
+  constants and NO ManuscriptNotebookContext:
+  1. conditions/reduces `Y_train` via the production output-conditioning + PCA
+     path (`condition_manuscript_outputs` or its documented reusable core),
+  1. screens inputs via `screen_manuscript_empirical_null_terms`,
+  1. discovers interactions via `discover_manuscript_interactions` with the exact
+     maxT method at `alpha`,
+  1. discovers transformations via
+     `discover_manuscript_nonlinear_transformations` (or the multiplicity-
+     corrected entry point),
+  1. selects sparse support via `select_manuscript_sparse_support`,
+     and returns a dataclass exposing, per stage: candidate count, retained set, and
+     the final selected feature/interaction/transformation support, plus the fitted
+     final-OLS predictions on `X_eval` for predictive metrics. Construct any minimal
+     spec/config objects internally from function arguments; do not require reading
+     BSM config files.
+- If a production stage genuinely requires a context object, build a minimal
+  in-memory shim that supplies only the generic tables/specs the stage reads;
+  keep it in `recovery_study.py`, case-study-agnostic.
+- Export `run_production_recovery_pipeline` and `ProductionRecoveryResult` from
+  `__init__.py`.
+- Deterministic under a fixed seed; runs on a tiny fixture in seconds.
+
+**Acceptance criteria (`test_R4_S02_*`):**
+
+- On a small synthetic multi-output dataset with a planted main effect, a planted
+  interaction pair, and a planted quadratic transform, the runner returns a
+  result whose per-stage retained sets are populated and whose final selected
+  support includes the planted main effect and planted interaction pair (recall
+  > 0 for each family), demonstrating the PRODUCTION stages were actually called.
+- `grep` proves the runner references the production stage functions
+  (`discover_manuscript_interactions`, `discover_manuscript_nonlinear_transformations`,
+  `select_manuscript_sparse_support`) in `src/rfm_pipeline/recovery_study.py`.
+- Under a complete global null the runner retains 0 interaction pairs.
+- The runner accepts independent train and eval response draws (no shared RNG
+  state between train and eval noise).
+- The sub-agent MUST confirm green:
+  `pixi run python -m pytest -q tests/alignment/test_R4_S02_production_pipeline_runner.py`
+- `pixi run ruff check` clean on modified files.
+
+**Fixture requirements:** small synthetic multi-output dataset with known planted
+support; fixed seeds; runs in a tmp dir if artifacts are written.

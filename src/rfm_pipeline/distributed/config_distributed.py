@@ -47,6 +47,10 @@ class SlurmConfig:
     """Memory per node in GB (--mem=). Default is conservative for shared partition."""
     cpus_per_task: int = 36
     """CPUs per SLURM task (--cpus-per-task=)."""
+    reduce_partition: str | None = None
+    """Optional partition override for reduce jobs; defaults to ``partition`` when None."""
+    reduce_cpus_per_task: int | None = None
+    """Optional cpus-per-task override for reduce jobs; defaults to ``cpus_per_task`` when None."""
     max_concurrent_array_tasks: int = 50
     """Maximum simultaneously running array tasks (controls %N throttle)."""
     log_dir: str = "/scratch/${USER}/rfm/${RUN_ID}/logs"
@@ -185,6 +189,8 @@ class DistributedConfig:
             errors.append("slurm.memory_gb must be >= 1")
         if self.slurm.cpus_per_task < 1:
             errors.append("slurm.cpus_per_task must be >= 1")
+        if self.slurm.reduce_cpus_per_task is not None and self.slurm.reduce_cpus_per_task < 1:
+            errors.append("slurm.reduce_cpus_per_task must be >= 1")
         if self.slurm.max_concurrent_array_tasks < 1:
             errors.append("slurm.max_concurrent_array_tasks must be >= 1")
         if self.spill.min_free_gb < 0:

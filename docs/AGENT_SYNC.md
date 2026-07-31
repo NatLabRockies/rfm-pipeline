@@ -2148,3 +2148,21 @@ ______________________________________________________________________
 - Downstream (NOT slices; require HPC/data-rights/LaTeX): case-study end-to-end rerun to
   regenerate manuscript numbers (F1/F2/F5/F6 real-data closure), M1/M2/M7 sensitivity
   re-exec, M8 AEO/BSM provenance+licensing, F7 public releases/DOIs, M9 prose edits.
+
+## 2026-07-30 Path A slice S-A: generic binary/degenerate transform guard (F1)
+
+- Downstream driver: BSM manuscript handoff Path A (full 160-input + exact-FWER run of
+  record). Generic-code prerequisite so binary scenario inputs can enter screening and
+  interaction candidates as main effects WITHOUT spawning degenerate/invalid nonlinear
+  transforms.
+- Change: `_generate_supported_nonlinear_candidates` now skips first-order terms whose
+  finite support has \<=2 distinct values (binary/constant). Rationale: any numeric
+  transform of a two-point support is affine-collinear with the untransformed main
+  effect, and `inverse` is domain-invalid on zeros (previously created an `inverse_<bin>`
+  candidate that later raised at column materialization).
+- Tests: `tests/test_manuscript_nonlinear_discovery.py::test_nonlinear_candidates_skip_binary_and_degenerate_features` (red->green).
+- Validation: full `pixi run pytest tests/ --ignore=tests/test_tools.py` green (pre-existing
+  `nbformat` collection error in test_tools.py only; unrelated).
+- Stays 100% generic: data-driven (nunique\<=2), no case-study names, no config flag.
+- Next slice S-B: make exact interaction FWER selector the production default with >=999
+  null draws; remove any permissive acceptance rule (handoff B).

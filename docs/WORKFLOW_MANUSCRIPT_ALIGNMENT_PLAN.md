@@ -1422,3 +1422,106 @@ per-stage retained sets and the final selected support.
 
 **Fixture requirements:** small synthetic multi-output dataset with known planted
 support; fixed seeds; runs in a tmp dir if artifacts are written.
+
+### Slice PA-B: Enforce finite-permutation adequacy for exact interaction FWER
+
+**Phase:** PA
+**Depends on:** R4-S01
+**Estimated size:** small
+**Files to create/modify:**
+
+- src/rfm_pipeline/manuscript_stages.py
+- tests/alignment/test_PA_B_exact_fwer_draw_adequacy.py
+
+**Context.** `fwer_max_stat_exact` is accepted in production (R4-S01), but the
+exact max-statistic family p-values are only as fine-grained as the number of
+null permutation draws `permutation_count_B` (min achievable adjusted p-value is
+`1/(B+1)`). With too few draws (e.g. the historical B=51/200) an exact family
+correction at alpha=0.05 is not resolvable and silently behaves conservatively
+or degenerately. The governing manuscript handoff requires >=999 null draws for
+the exact route. There is currently no guard tying the exact method to a minimum
+draw count.
+
+**Requirements (do NOT weaken tests):**
+
+- Add a validation in the interaction-discovery spec path (the
+  `InteractionDiscoverySpec` construction and/or
+  `interaction_discovery_spec_from_case_study_config`) that, when
+  `family_error_method == "fwer_max_stat_exact"`, requires
+  `permutation_count_B >= min_exact_permutation_draws` (default 999) and raises a
+  clear `ValueError` naming the offending values otherwise.
+- Expose `min_exact_permutation_draws` as a spec/config field defaulting to 999
+  so a case study can raise (never silently lower) it; a configured value below
+  999 must itself raise.
+- Do NOT change behavior for `fwer_max_stat` (interpolated) or `bh_fdr`.
+- Keep generic: no case-study names, no BSM constants.
+
+**Acceptance criteria (`test_PA_B_*`):**
+
+- Constructing/deriving an interaction spec with
+  `family_error_method="fwer_max_stat_exact"` and `permutation_count_B < 999`
+  raises `ValueError` mentioning both the method and the draw count.
+- The same with `permutation_count_B >= 999` succeeds.
+- `fwer_max_stat` with a small `permutation_count_B` still succeeds (no regression).
+- A configured `min_exact_permutation_draws < 999` raises.
+- The sub-agent MUST confirm green:
+  `pixi run python -m pytest -q tests/alignment/test_PA_B_exact_fwer_draw_adequacy.py`
+- `pixi run ruff check` clean on modified files.
+
+**Fixture requirements:** none beyond small in-memory spec/config dicts; no external data.
+
+### Slice PA-D: Executable per-output nRMSE eligibility ledger
+
+**Phase:** PA
+**Depends on:** none
+**Estimated size:** medium
+**Files to create/modify:**
+
+- src/rfm_pipeline/metrics.py
+- src/rfm_pipeline/__init__.py
+- tests/alignment/test_PA_D_eligibility_ledger.py
+
+**Context.** Macro nRMSE currently applies an inline eligibility predicate
+(`ref_range >= min_range`) inside `macro_nrmse_with_ref` and returns only a
+`k_used` count. The manuscript handoff requires an auditable, machine-readable
+ledger with ONE row per output (all outputs, eligible and ineligible), the exact
+executed predicate, per-component pass flags, a single final eligibility flag, a
+single exclusion reason, and threshold provenance, such that the macro metric
+recomputes from an identifier join to the ledger. This must be generic and
+data-driven (never hard-code the BSM 9,954/23,495 counts).
+
+**Requirements (do NOT weaken tests):**
+
+- Add `build_output_eligibility_ledger(Y_ref, *, output_ids=None, min_range=1e-6) -> pandas.DataFrame`
+  returning exactly `n_outputs` rows with at least: `output_id` (0..n-1 or the
+  supplied identifiers), `ref_min`, `ref_max`, `ref_range`, `ref_variance`,
+  `range_pass` (bool, `ref_range >= min_range`), `variance_pass` (bool,
+  `ref_variance > 0`), `eligible` (bool = AND of the executed component flags),
+  `exclusion_reason` (exactly one short string, empty when eligible), and
+  `min_range_threshold` (provenance). The executed predicate implemented here MUST
+  match the mask used by `macro_nrmse_with_ref`.
+- Add `macro_nrmse_from_ledger(Y_true, Y_pred, ledger) -> float` that computes
+  per-output RMSE, joins to the ledger by `output_id`, averages nRMSE over ONLY
+  `eligible` rows using `ref_range` as denominator, and equals
+  `macro_nrmse_with_ref(...)` on the same inputs.
+- Export both from `__init__.py`.
+- Keep generic: no case-study names/counts; counts are whatever the data yields.
+
+**Acceptance criteria (`test_PA_D_*`):**
+
+- Ledger has exactly `Y_ref.shape[1]` rows; `eligible.sum()` equals the
+  `k_used` from `macro_nrmse_with_ref` on the same `Y_ref`.
+- Every ineligible row has a non-empty `exclusion_reason`; every eligible row has
+  an empty `exclusion_reason`.
+- `macro_nrmse_from_ledger(Y_true, Y_pred, ledger)` equals
+  `macro_nrmse_with_ref(Y_true, Y_pred, Y_ref)[0]` to floating tolerance on a
+  synthetic fixture containing at least one zero-range (ineligible) output.
+- No eligible output is missing from, and no ineligible output contributes to, the
+  macro average.
+- Counts are computed from the fixture (test must NOT hard-code 9,954/23,495).
+- The sub-agent MUST confirm green:
+  `pixi run python -m pytest -q tests/alignment/test_PA_D_eligibility_ledger.py`
+- `pixi run ruff check` clean on modified files.
+
+**Fixture requirements:** small synthetic `Y_true/Y_pred/Y_ref` with a mix of
+finite-range and zero-range (constant) outputs; fixed seed.

@@ -132,6 +132,8 @@ from .manuscript_stages import (
 )
 from .metrics import (
     bootstrap_macro_nrmse_ci,
+    build_output_eligibility_ledger,
+    macro_nrmse_from_ledger,
     macro_nrmse_with_ref,
     make_null_mean_prediction,
 )
@@ -235,6 +237,7 @@ __all__ = [
     "audit_manuscript_reproduction_outputs",
     "bootstrap_macro_nrmse_ci",
     "build_manuscript_feature_design",
+    "build_output_eligibility_ledger",
     "build_manuscript_notebook_context",
     "build_position_map",
     "build_postfit_artifacts",
@@ -266,6 +269,7 @@ __all__ = [
     "load_pipeline_outputs",
     "load_postfit_bundle",
     "load_source_module",
+    "macro_nrmse_from_ledger",
     "macro_nrmse_with_ref",
     "nonlinear_discovery_spec_from_case_study_config",
     "make_coefficient_matrix_frame",

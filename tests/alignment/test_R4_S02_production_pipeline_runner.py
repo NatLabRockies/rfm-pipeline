@@ -85,7 +85,7 @@ def test_R4_S02_planted_effects_recovery() -> None:
         Y_train,
         X_eval,
         Y_eval,
-        permutation_count_B=49,
+        permutation_count_B=999,
         n_tree_estimators=50,
         seed=_PLANTED_SEED,
     )
@@ -158,7 +158,7 @@ def test_R4_S02_global_null_retains_zero_pairs() -> None:
         Y_train,
         X_eval,
         Y_eval,
-        permutation_count_B=49,
+        permutation_count_B=999,
         n_tree_estimators=50,
         seed=999,
     )

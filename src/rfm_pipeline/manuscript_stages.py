@@ -818,6 +818,25 @@ class InteractionDiscoverySpec:
     family_error_alpha: float = 0.05
     condition_main_effects: bool = True
     main_effect_conditioning_degree: int = 2
+    min_exact_permutation_draws: int = 999
+
+    def __post_init__(self) -> None:
+        """Validate exact-FWER permutation adequacy constraints."""
+        _MIN_EXACT_DRAWS_FLOOR = 999
+        if self.min_exact_permutation_draws < _MIN_EXACT_DRAWS_FLOOR:
+            raise ValueError(
+                f"min_exact_permutation_draws={self.min_exact_permutation_draws} is below the "
+                f"minimum allowed floor of {_MIN_EXACT_DRAWS_FLOOR}. "
+                "A lower floor would produce unresolvable exact FWER p-values."
+            )
+        if self.family_error_method == "fwer_max_stat_exact":
+            if self.permutation_count_B < self.min_exact_permutation_draws:
+                raise ValueError(
+                    f"family_error_method='fwer_max_stat_exact' requires "
+                    f"permutation_count_B >= {self.min_exact_permutation_draws} "
+                    f"(got permutation_count_B={self.permutation_count_B}). "
+                    "Too few permutation draws make exact FWER p-values unresolvable."
+                )
 
 
 @dataclass(frozen=True)
@@ -1995,6 +2014,7 @@ def interaction_discovery_spec_from_case_study_config(
         family_error_alpha=float(interaction.get("family_error_alpha", 0.05)),
         condition_main_effects=bool(interaction.get("condition_main_effects", True)),
         main_effect_conditioning_degree=int(interaction.get("main_effect_conditioning_degree", 2)),
+        min_exact_permutation_draws=int(interaction.get("min_exact_permutation_draws", 999)),
     )
 
 

@@ -63,11 +63,17 @@ def _read_yaml_mapping(path: Path) -> dict[str, Any]:
 
 
 def normalize_manuscript_repo_root(candidate: Path) -> Path:
-    """Resolve the repository root from a repo root or any nested repo path."""
+    """Resolve the repository root from a repo root or any nested repo path.
+
+    A repository root is identified by a project marker (``pyproject.toml`` or
+    ``pixi.toml``, so fully pixi-managed study repos are recognized) alongside a
+    ``configs`` directory.
+    """
     path = candidate.expanduser().resolve()
     search_roots = [path, *path.parents]
     for root in search_roots:
-        if (root / "pyproject.toml").exists() and (root / "configs").exists():
+        has_marker = (root / "pyproject.toml").exists() or (root / "pixi.toml").exists()
+        if has_marker and (root / "configs").exists():
             return root
     raise FileNotFoundError(f"Could not resolve repository root from candidate path: {candidate}")
 

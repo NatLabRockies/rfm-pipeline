@@ -36,8 +36,12 @@ Usage:
 Notes
 -----
     - Input matrix must have sample_id as first column
-    - Special columns (sample_id, scenario, run_id, AFSC, UAEORO) are excluded from catalog
+    - Structural id columns (default: sample_id, scenario, run_id) are excluded from
+      the catalog; override with --id-columns. All other columns -- including binary
+      0/1 predictors -- flow through as first-order features.
     - Nonlinear transforms added for features with appropriate domains
+      (features with two-point support, e.g. binaries, are skipped -- any transform
+      of a two-value feature is affine-collinear with its main effect)
     - For large feature sets (>200), use 'top-shap' or 'from-file' interaction strategies
 """
 
@@ -52,13 +56,30 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
+# Structural / identifier columns excluded from the feature catalog by default.
+# These are generic bookkeeping columns, NOT predictors. Case-study-specific
+# columns (including binary predictors) must never be hardcoded here; callers
+# that need to exclude additional columns pass them via ``--id-columns``.
+DEFAULT_ID_COLUMNS: tuple[str, ...] = ("sample_id", "scenario", "run_id")
 
-def load_input_matrix(path: Path) -> tuple[pd.DataFrame, list[str]]:
+
+def load_input_matrix(
+    path: Path, id_columns: set[str] | None = None
+) -> tuple[pd.DataFrame, list[str]]:
     """Load input matrix and extract feature names.
+
+    Parameters
+    ----------
+    path
+        Path to the input matrix parquet file (must contain a ``sample_id`` column).
+    id_columns
+        Structural/identifier columns to exclude from the returned feature list.
+        Defaults to :data:`DEFAULT_ID_COLUMNS`. Any column not listed here --
+        including binary 0/1 predictors -- is retained as a candidate feature.
 
     Returns
     -------
-        Tuple of (full dataframe, list of feature names excluding special columns)
+        Tuple of (full dataframe, list of feature names excluding id columns)
     """
     X = pd.read_parquet(path)
 
@@ -69,14 +90,14 @@ def load_input_matrix(path: Path) -> tuple[pd.DataFrame, list[str]]:
             f"Found columns: {list(X.columns[:5])}"
         )
 
-    # Exclude special columns
-    special_cols = {"sample_id", "scenario", "run_id", "AFSC", "UAEORO"}
-    feature_cols = [col for col in X.columns if col not in special_cols]
+    # Exclude structural id columns only; all other columns are candidate features.
+    id_cols = set(DEFAULT_ID_COLUMNS) if id_columns is None else set(id_columns)
+    feature_cols = [col for col in X.columns if col not in id_cols]
 
     print(f"Loaded input matrix: {X.shape}")
     print(f"  Total columns: {len(X.columns)}")
     print(f"  Feature columns: {len(feature_cols)}")
-    print(f"  Special columns: {len(special_cols & set(X.columns))}")
+    print(f"  Id columns: {len(id_cols & set(X.columns))}")
 
     return X, feature_cols
 
@@ -172,9 +193,8 @@ def generate_top_shap_interactions(
         X_sample = X
         Y_sample = Y
 
-    # Prepare feature matrix
-    special_cols = {"sample_id", "scenario", "run_id", "AFSC", "UAEORO"}
-    X_features = X_sample[[col for col in X_sample.columns if col not in special_cols]]
+    # Prepare feature matrix (feature_names already excludes id columns)
+    X_features = X_sample[list(feature_names)]
 
     # Use first output component for SHAP ranking
     y_target = Y_sample.iloc[:, 0].values if len(Y_sample.shape) > 1 else Y_sample.values
@@ -280,8 +300,8 @@ def generate_nonlinear_transforms(
     if strategy == "none":
         return pd.DataFrame(columns=["feature_name", "feature_type", "origin"])
 
-    special_cols = {"sample_id", "scenario", "run_id", "AFSC", "UAEORO"}
-    X_features = X[[col for col in X.columns if col not in special_cols]]
+    # feature_names already excludes id columns
+    X_features = X[list(feature_names)]
 
     # Deduplicate feature_names in case of input error
     unique_features = list(dict.fromkeys(feature_names))  # preserves order
@@ -308,6 +328,14 @@ def generate_nonlinear_transforms(
             continue
 
         values = X_features[feature].values
+
+        # Skip two-point-support features (e.g. binary 0/1 predictors): any
+        # nonlinear transform of a two-value feature is affine-collinear with
+        # its own main effect, so it adds no independent signal (matches the
+        # pipeline's _generate_supported_nonlinear_candidates guard).
+        finite_values = values[np.isfinite(values)]
+        if np.unique(finite_values).size <= 2:
+            continue
 
         # Quadratic: always safe
         transforms.append(
@@ -512,6 +540,17 @@ def main() -> None:
 
     # Options
     parser.add_argument(
+        "--id-columns",
+        nargs="*",
+        default=None,
+        metavar="COL",
+        help=(
+            "Structural/identifier columns to exclude from the catalog. "
+            f"Default: {' '.join(DEFAULT_ID_COLUMNS)}. All other columns "
+            "(including binary predictors) are retained as candidate features."
+        ),
+    )
+    parser.add_argument(
         "--random-seed",
         type=int,
         default=42,
@@ -550,7 +589,8 @@ def main() -> None:
     print()
 
     # Load input matrix
-    X, feature_names = load_input_matrix(args.input_matrix)
+    id_columns = set(args.id_columns) if args.id_columns is not None else None
+    X, feature_names = load_input_matrix(args.input_matrix, id_columns=id_columns)
 
     # Generate catalog components
     catalog_parts = []

@@ -1525,3 +1525,35 @@ data-driven (never hard-code the BSM 9,954/23,495 counts).
 
 **Fixture requirements:** small synthetic `Y_true/Y_pred/Y_ref` with a mix of
 finite-range and zero-range (constant) outputs; fixed seed.
+
+## Slice PA-C0 — case-study-agnostic feature-catalog generator
+
+**Objective:** Remove hardcoded BSM binary-predictor names (`AFSC`, `UAEORO`)
+from `scripts/generate_feature_catalog.py` and ensure binary/two-value predictors
+flow through the catalog as first-order features (Gate A: all inputs represented),
+while nonlinear transforms skip degenerate two-point-support features (matches the
+pipeline S-A guard). The structural id-column exclusion set becomes configurable.
+
+**Requirements (do NOT weaken tests):**
+
+- Add module constant `DEFAULT_ID_COLUMNS = ("sample_id", "scenario", "run_id")`
+  containing NO case-study-specific names.
+- `load_input_matrix(path, id_columns=None)` excludes only `id_columns`
+  (default `DEFAULT_ID_COLUMNS`); all other columns, including binary 0/1
+  predictors, are retained as candidate features.
+- Add `--id-columns` CLI argument threading into `load_input_matrix`.
+- `generate_nonlinear_transforms` skips any feature whose finite values have
+  `<= 2` distinct values (degenerate transform guard, data-driven, no names).
+- No `AFSC`/`UAEORO` literal remains anywhere in the generator source.
+
+**Acceptance criteria (`test_PA_C0_*`):**
+
+- Binary predictors named like case-study columns are retained in `feature_cols`
+  and in the first-order catalog.
+- `--id-columns`/`id_columns` override is honored.
+- `DEFAULT_ID_COLUMNS` contains no case-study names; generator source contains no
+  `AFSC`/`UAEORO` literal.
+- Nonlinear generation emits no transform of a two-point-support (binary) feature
+  under either `safe` or `all` strategy.
+- `pixi run python -m pytest -q tests/alignment/test_PA_C0_catalog_generalization.py`
+  green; `pixi run ruff check` clean on modified files.

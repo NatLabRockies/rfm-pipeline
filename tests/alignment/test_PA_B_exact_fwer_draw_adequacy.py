@@ -118,6 +118,37 @@ def test_min_exact_permutation_draws_default_is_999():
     assert spec.min_exact_permutation_draws == 999
 
 
+def test_min_exact_permutation_draws_at_199_floor_succeeds():
+    """A case study may lower its floor to 199 (min p_adj = 1/200 = 0.005, well below α)."""
+    spec = _make_spec(
+        permutation_count_B=199,
+        family_error_method="fwer_max_stat_exact",
+        min_exact_permutation_draws=199,
+    )
+    assert spec.min_exact_permutation_draws == 199
+    assert spec.permutation_count_B == 199
+
+
+def test_min_exact_permutation_draws_below_199_floor_raises():
+    with pytest.raises(ValueError, match="min_exact_permutation_draws"):
+        _make_spec(
+            permutation_count_B=198,
+            family_error_method="fwer_max_stat_exact",
+            min_exact_permutation_draws=198,
+        )
+
+
+def test_reduced_draw_exact_fwer_499_succeeds():
+    """A case study may opt into B=499 exact FWER by lowering its floor to 499."""
+    spec = _make_spec(
+        permutation_count_B=499,
+        family_error_method="fwer_max_stat_exact",
+        min_exact_permutation_draws=499,
+    )
+    assert spec.permutation_count_B == 499
+    assert spec.min_exact_permutation_draws == 499
+
+
 def test_min_exact_permutation_draws_can_be_raised():
     """A case study may raise the floor above 999."""
     spec = _make_spec(
@@ -171,3 +202,15 @@ def test_config_min_exact_permutation_draws_below_floor_raises():
     )
     with pytest.raises(ValueError, match="min_exact_permutation_draws"):
         interaction_discovery_spec_from_case_study_config(cfg)
+
+
+def test_config_reduced_draw_exact_fwer_499_succeeds():
+    """Config path: opting into B=499 exact FWER by lowering the floor to 499."""
+    cfg = _make_config(
+        permutation_count_B=499,
+        family_error_method="fwer_max_stat_exact",
+        min_exact_permutation_draws=499,
+    )
+    spec = interaction_discovery_spec_from_case_study_config(cfg)
+    assert spec.permutation_count_B == 499
+    assert spec.min_exact_permutation_draws == 499

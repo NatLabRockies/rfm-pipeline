@@ -555,7 +555,7 @@ def run_production_recovery_pipeline(
     Y_eval: np.ndarray | pd.DataFrame,
     *,
     n_pca_components: int = 2,
-    permutation_count_B: int = 49,
+    permutation_count_B: int = 999,
     alpha: float = 0.05,
     family_error_method: str = "fwer_max_stat_exact",
     n_tree_estimators: int = 50,
@@ -587,7 +587,8 @@ def run_production_recovery_pipeline(
         stage.  Default ``2``.
     permutation_count_B
         Number of permutations used by empirical-null screening and interaction
-        discovery.  Default ``49`` (minimum for FWER resolution at alpha=0.05).
+        discovery.  Default ``999`` (minimum draws for resolvable exact FWER
+        p-values at alpha=0.05).
     alpha
         Family-wise error rate target for interaction discovery and nonlinear
         discovery.  Default ``0.05``.

@@ -110,14 +110,16 @@ def test_interaction_discovery_guard_on_uses_corrected_family_size_fwer_exact(
             "feature_type": ["first_order"] * 3,
         }
     )
-    # With family_size=n_pairs=3 the OLD guard would require B >= 599 for
-    # alpha=0.05. Under the corrected FWER family_size=1 rule, B=19 is enough.
+    # Under the corrected FWER family_size=1 rule the adequacy guard no longer
+    # scales with n_pairs. The exact route additionally enforces the >=999
+    # finite-permutation floor (PA-B), so use B=999 here; the assertions below
+    # exercise pair enumeration under the exact method.
     spec = InteractionDiscoverySpec(
         method="tree_shap_interaction_values",
         aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
         null_threshold_quantile=0.995,
         retained_pairs_reference=1,
-        permutation_count_B=19,
+        permutation_count_B=999,
         random_seed=123,
         n_jobs=1,
         family_error_method="fwer_max_stat_exact",

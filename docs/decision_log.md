@@ -48,3 +48,23 @@ Record architecture, API, schema, workflow, validation, and dependency decisions
 - Tests/docs updated: PHASE G slices in docs/WORKFLOW_MANUSCRIPT_ALIGNMENT_PLAN.md;
   test_data.py/test_features.py/test_pipeline_smoke.py/test_feature_expansion.py
   migrated to the generic API; new tests/alignment/test_G1_S0x\_\*.py per slice.
+
+## 2026-07-31 — Lower exact-FWER permutation-draw floor 999 -> 199 (Path A reduced-draw option)
+
+- Context: Path A's exact interaction-FWER selector (`family_error_method=fwer_max_stat_exact`)
+  is permutation-bound; a benchmark showed a single B=999 shard runs ~10 permutation waves
+  (~8 h/shard on a full node), extrapolating to ~18-20k AU for the interaction stage alone —
+  near the study's ~20k AU cap and ~28x the completed run. The `InteractionDiscoverySpec`
+  guard hardcoded `_MIN_EXACT_DRAWS_FLOOR = 999`, blocking any lower B.
+- Decision: lower the hard floor to 199. Rationale is purely statistical: exact max-T FWER is
+  valid for any B (B does not affect type-I control); the floor only guards p-value
+  RESOLUTION. Min achievable p_adj = 1/(B+1); a floor of 199 gives 0.005, a 10x margin below
+  the conventional alpha = 0.05. The default `min_exact_permutation_draws` field stays 999
+  (conservative); a case study must explicitly opt into a lower (>=199) floor.
+- Consequence: BSM Path A run of record uses B=499 (min_exact_permutation_draws=499),
+  halving interaction cost to ~9-10k AU while remaining a valid exact max-T test. Only
+  effect vs B=999 is slightly coarser resolution / marginally more Monte-Carlo noise near
+  the 0.05 boundary (borderline pairs may flip). Consistent with the manuscript's existing
+  FWER calibration study, which already uses B=199.
+- Tests: tests/alignment/test_PA_B_exact_fwer_draw_adequacy.py — added floor-at-199 success,
+  below-199 raise, and B=499 opt-in (direct + config) cases.

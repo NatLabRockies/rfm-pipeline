@@ -822,7 +822,12 @@ class InteractionDiscoverySpec:
 
     def __post_init__(self) -> None:
         """Validate exact-FWER permutation adequacy constraints."""
-        _MIN_EXACT_DRAWS_FLOOR = 999
+        # Minimum draws that keep exact-FWER permutation p-values resolvable at
+        # conventional significance levels: min achievable p_adj = 1/(B+1), so a
+        # floor of 199 yields resolution 1/200 = 0.005 — a 10x margin below the
+        # usual alpha = 0.05. A case study may set a stricter (higher) floor via
+        # ``min_exact_permutation_draws`` (default 999); it may not go below this.
+        _MIN_EXACT_DRAWS_FLOOR = 199
         if self.min_exact_permutation_draws < _MIN_EXACT_DRAWS_FLOOR:
             raise ValueError(
                 f"min_exact_permutation_draws={self.min_exact_permutation_draws} is below the "

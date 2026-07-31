@@ -72,7 +72,7 @@ def _base_inputs(
     return inputs, catalog, holdout, pca_scores, retained_terms
 
 
-def _exact_spec(*, permutation_count_B: int = 199, seed: int = 42) -> InteractionDiscoverySpec:
+def _exact_spec(*, permutation_count_B: int = 999, seed: int = 42) -> InteractionDiscoverySpec:
     return InteractionDiscoverySpec(
         method="tree_shap_interaction_values",
         aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
@@ -89,7 +89,7 @@ def _exact_spec(*, permutation_count_B: int = 199, seed: int = 42) -> Interactio
 def test_exact_fwer_production_does_not_raise(monkeypatch) -> None:
     """discover_manuscript_interactions accepts fwer_max_stat_exact without raising."""
     inputs, catalog, holdout, pca_scores, retained_terms = _base_inputs(plant_interaction=True)
-    spec = _exact_spec(permutation_count_B=19)
+    spec = _exact_spec(permutation_count_B=999)
 
     def _fake_scorer(
         y_base: np.ndarray,
@@ -114,7 +114,7 @@ def test_exact_fwer_production_does_not_raise(monkeypatch) -> None:
 def test_exact_fwer_retains_planted_pair() -> None:
     """Planted x1:x2 interaction is retained by the exact maxT method."""
     inputs, catalog, holdout, pca_scores, retained_terms = _base_inputs(plant_interaction=True)
-    spec = _exact_spec(permutation_count_B=499, seed=42)
+    spec = _exact_spec(permutation_count_B=999, seed=42)
 
     result = discover_manuscript_interactions(
         inputs, catalog, holdout, pca_scores, retained_terms, spec
@@ -128,7 +128,7 @@ def test_exact_fwer_null_retains_zero_pairs() -> None:
     inputs, catalog, holdout, pca_scores, retained_terms = _base_inputs(
         plant_interaction=False, seed=99
     )
-    spec = _exact_spec(permutation_count_B=499, seed=99)
+    spec = _exact_spec(permutation_count_B=999, seed=99)
 
     result = discover_manuscript_interactions(
         inputs, catalog, holdout, pca_scores, retained_terms, spec

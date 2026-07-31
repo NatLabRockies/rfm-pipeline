@@ -842,3 +842,115 @@ def per_output_nrmse_frame(
             "included_in_macro": included.tolist(),
         }
     )
+
+
+def build_output_eligibility_ledger(
+    Y_ref: np.ndarray,
+    *,
+    output_ids: list[int | str] | None = None,
+    min_range: float = 1e-6,
+) -> pd.DataFrame:
+    """Build a per-output eligibility ledger for macro nRMSE computation.
+
+    Parameters
+    ----------
+    Y_ref
+        Reference matrix, shape ``(n_rows, n_outputs)``.
+    output_ids
+        Optional sequence of identifiers for each output column.  Defaults to
+        ``range(n_outputs)``.
+    min_range
+        Minimum allowable range threshold (provenance column ``min_range_threshold``).
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per output with columns:
+        ``output_id``, ``ref_min``, ``ref_max``, ``ref_range``, ``ref_variance``,
+        ``range_pass``, ``variance_pass``, ``eligible``, ``exclusion_reason``,
+        ``min_range_threshold``.
+    """
+    Y_ref = np.asarray(Y_ref, dtype=np.float64)
+    n_outputs = Y_ref.shape[1]
+
+    if output_ids is None:
+        ids: list = list(range(n_outputs))
+    else:
+        ids = list(output_ids)
+    if len(ids) != n_outputs:
+        raise ValueError(f"output_ids length ({len(ids)}) does not match n_outputs ({n_outputs}).")
+
+    ref_min = np.nanmin(Y_ref, axis=0)
+    ref_max = np.nanmax(Y_ref, axis=0)
+    ref_range = ref_max - ref_min
+    ref_variance = np.nanvar(Y_ref, axis=0)
+
+    range_pass = ref_range >= min_range
+    variance_pass = ref_variance > 0.0
+    eligible = range_pass & variance_pass
+
+    exclusion_reasons = []
+    for rp, vp in zip(range_pass, variance_pass, strict=True):
+        if rp and vp:
+            exclusion_reasons.append("")
+        elif not rp and not vp:
+            exclusion_reasons.append("range_below_threshold;zero_variance")
+        elif not rp:
+            exclusion_reasons.append("range_below_threshold")
+        else:
+            exclusion_reasons.append("zero_variance")
+
+    return pd.DataFrame(
+        {
+            "output_id": ids,
+            "ref_min": ref_min.tolist(),
+            "ref_max": ref_max.tolist(),
+            "ref_range": ref_range.tolist(),
+            "ref_variance": ref_variance.tolist(),
+            "range_pass": range_pass.tolist(),
+            "variance_pass": variance_pass.tolist(),
+            "eligible": eligible.tolist(),
+            "exclusion_reason": exclusion_reasons,
+            "min_range_threshold": [float(min_range)] * n_outputs,
+        }
+    )
+
+
+def macro_nrmse_from_ledger(
+    Y_true: np.ndarray,
+    Y_pred: np.ndarray,
+    ledger: pd.DataFrame,
+) -> float:
+    """Compute macro nRMSE using a pre-built eligibility ledger.
+
+    Per-output RMSE is computed from ``Y_true``/``Y_pred``, then averaged over
+    the rows in *ledger* where ``eligible`` is True, normalised by ``ref_range``.
+    The result equals ``macro_nrmse_with_ref`` when both use the same inputs.
+
+    Parameters
+    ----------
+    Y_true
+        Observed outputs, shape ``(n_rows, n_outputs)``.
+    Y_pred
+        Predicted outputs, shape matching ``Y_true``.
+    ledger
+        DataFrame as returned by :func:`build_output_eligibility_ledger`.
+
+    Returns
+    -------
+    float
+        Macro nRMSE over eligible outputs.
+    """
+    Y_true = np.asarray(Y_true, dtype=np.float64)
+    Y_pred = np.asarray(Y_pred, dtype=np.float64)
+
+    rmse = np.sqrt(np.mean((Y_true - Y_pred) ** 2, axis=0))
+
+    # align by output_id position in ledger
+    eligible_mask = ledger["eligible"].to_numpy(dtype=bool)
+    ref_range_vals = ledger["ref_range"].to_numpy(dtype=np.float64)
+
+    if not np.any(eligible_mask):
+        return float("nan")
+
+    return float(np.mean(rmse[eligible_mask] / ref_range_vals[eligible_mask]))

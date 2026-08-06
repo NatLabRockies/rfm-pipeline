@@ -352,6 +352,18 @@ def _run_nonlinear_discovery_shard(shard, cm, *, config_path: str) -> None:
         transform_library=spec.transform_library,
     )
     total_features = len(base_features)
+    shard_start = int(shard.feature_start_idx or 0)
+    if shard_start >= total_features:
+        _write_checkpoint_warmup_result(
+            shard=shard,
+            cm=cm,
+            stage="nonlinear_discovery",
+            config_path=config_path,
+            work_item_start=total_features,
+            work_item_end=total_features,
+            extra={"n_target_base_features": 0, "n_retained_transformations_preview": 0},
+        )
+        return
     active_feature_indices = _shard_index_subset(shard, max(1, total_features))
     nonlinear = discover_manuscript_nonlinear_transformations(
         tables["case_study_input_matrix"],

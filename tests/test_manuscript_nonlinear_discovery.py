@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 import rfm_pipeline.manuscript_stages as manuscript_stages
+from rfm_pipeline.hpc_shard_worker import _nonlinear_base_feature_names
 from rfm_pipeline.manuscript_runtime import (
     build_manuscript_notebook_context,
 )
@@ -57,6 +58,19 @@ def test_nonlinear_candidates_skip_binary_and_degenerate_features() -> None:
     assert len([1 for _, base, _ in candidates if base == "x_cont"]) == len(
         DEFAULT_TRANSFORM_LIBRARY
     )
+
+
+def test_hpc_nonlinear_partition_uses_supported_base_features() -> None:
+    input_matrix = pd.DataFrame(
+        {
+            "sample_id": [1, 2, 3, 4],
+            "binary": [0, 1, 0, 1],
+            "continuous": [0.1, 0.4, 0.8, 1.2],
+        }
+    )
+    retained_terms = pd.DataFrame({"feature_name": ["binary", "continuous"]})
+
+    assert _nonlinear_base_feature_names(retained_terms, input_matrix) == ("continuous",)
 
 
 def test_nonlinear_discovery_retains_residual_quadratic_signal_and_writes_artifacts(

@@ -30,6 +30,7 @@ from rfm_pipeline.distributed.stage_loaders import (
 )
 from rfm_pipeline.manuscript_runtime import load_manuscript_case_study_config
 from rfm_pipeline.manuscript_stages import (
+    _generate_supported_nonlinear_candidates,
     condition_manuscript_outputs,
     discover_manuscript_interactions,
     discover_manuscript_nonlinear_transformations,
@@ -272,6 +273,22 @@ def _write_checkpoint_warmup_result(
     (cm.staging_dir / "shard_result.json").write_text(json.dumps(payload, indent=2))
 
 
+def _nonlinear_base_feature_names(
+    retained_terms: pd.DataFrame,
+    input_matrix: pd.DataFrame,
+    *,
+    transform_library=None,
+) -> tuple[str, ...]:
+    """Return the base-feature order used by nonlinear discovery shards."""
+    retained_features = retained_terms["feature_name"].astype(str).tolist()
+    candidates = _generate_supported_nonlinear_candidates(
+        retained_features,
+        input_matrix,
+        transform_library=transform_library,
+    )
+    return tuple(dict.fromkeys(base_feature for _, base_feature, _ in candidates))
+
+
 def _run_output_conditioning_shard(shard, cm, *, config_path: str) -> None:
     tables, case_study_config = _load_workflow_tables_and_case_config(config_path)
     spec = output_conditioning_spec_from_case_study_config(case_study_config)
@@ -329,7 +346,12 @@ def _run_nonlinear_discovery_shard(shard, cm, *, config_path: str) -> None:
     conditioning = _load_output_conditioning_result(artifact_root)
     screening = _load_empirical_null_screening_result(artifact_root)
     spec = nonlinear_discovery_spec_from_case_study_config(case_study_config)
-    total_features = int(screening.retained_terms["feature_name"].astype(str).nunique())
+    base_features = _nonlinear_base_feature_names(
+        screening.retained_terms,
+        tables["case_study_input_matrix"],
+        transform_library=spec.transform_library,
+    )
+    total_features = len(base_features)
     active_feature_indices = _shard_index_subset(shard, max(1, total_features))
     nonlinear = discover_manuscript_nonlinear_transformations(
         tables["case_study_input_matrix"],

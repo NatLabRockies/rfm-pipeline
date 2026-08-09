@@ -8,14 +8,17 @@ promotes them with an atomic _SUCCESS.json marker.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import sys
 import time
+from itertools import combinations
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from rfm_pipeline.config import apply_fast_mode_overrides, load_config
@@ -32,7 +35,7 @@ from rfm_pipeline.manuscript_runtime import load_manuscript_case_study_config
 from rfm_pipeline.manuscript_stages import (
     _generate_supported_nonlinear_candidates,
     condition_manuscript_outputs,
-    discover_manuscript_interactions,
+    discover_interaction_scores_only,
     discover_manuscript_nonlinear_transformations,
     empirical_null_screening_spec_from_case_study_config,
     final_manuscript_artifacts_spec_from_case_study_config,
@@ -158,8 +161,8 @@ def _run_shard_stage(shard, cm, args) -> None:
         _run_interaction_shard(shard, cm, config_path=args.config)
         expected_files = [
             "shard_result.json",
-            "retained_interaction_pairs.csv",
-            "interaction_pair_scores.csv",
+            "interaction_shard_scores.npz",
+            "interaction_pair_names.csv",
         ]
     elif stage == "output_conditioning":
         _run_output_conditioning_shard(shard, cm, config_path=_require_config(stage, args.config))
@@ -502,44 +505,63 @@ def _write_interaction_shard_outputs(
     *,
     shard,
     cm,
-    interactions,
-    selected_features: list[str],
+    shard_scores,
+    candidate_family_names: list[str],
 ) -> None:
-    pair_scores_path = cm.staging_dir / "interaction_pair_scores.csv"
-    retained_pairs_path = cm.staging_dir / "retained_interaction_pairs.csv"
-    null_summary_path = cm.staging_dir / "interaction_null_summary.csv"
-    component_scores_path = cm.staging_dir / "component_interaction_scores.csv"
-    stage_summary_path = cm.staging_dir / "interaction_discovery_summary.csv"
+    """Write score-only shard outputs.  No retention decisions are made here.
 
-    interactions.pair_scores.to_csv(pair_scores_path, index=False)
-    interactions.retained_pairs.to_csv(retained_pairs_path, index=False)
-    interactions.interaction_null_summary.to_csv(null_summary_path, index=False)
-    interactions.component_interaction_scores.to_csv(component_scores_path, index=False)
-    interactions.summary.to_csv(stage_summary_path, index=False)
+    Emits:
+    - ``interaction_shard_scores.npz``: observed scores, null score matrix, draw IDs.
+    - ``interaction_pair_names.csv``: ordered pair names for this shard.
+    - ``shard_result.json``: metadata for the reducer.
+
+    The reducer is responsible for assembling the global null matrix and making
+    the single family-wide retention decision.
+    """
+    npz_path = cm.staging_dir / "interaction_shard_scores.npz"
+    pair_names_path = cm.staging_dir / "interaction_pair_names.csv"
+    family_path = cm.staging_dir / "interaction_candidate_family.csv"
+
+    np.savez_compressed(
+        npz_path,
+        observed_scores=np.asarray(shard_scores.observed_scores, dtype=np.float64),
+        null_scores=np.asarray(shard_scores.null_scores, dtype=np.float64),
+        draw_ids=np.asarray(shard_scores.draw_ids, dtype=np.int64),
+    )
+    pd.DataFrame({"pair_name": shard_scores.pair_names}).to_csv(pair_names_path, index=False)
+    pd.DataFrame({"pair_name": candidate_family_names}).to_csv(family_path, index=False)
 
     result = {
         "shard_id": shard.shard_id,
         "stage": "interaction_discovery",
+        "shard_mode": "score_only",
         "feature_start_idx": shard.feature_start_idx,
         "feature_end_idx": shard.feature_end_idx,
-        "n_feature_cols": len(selected_features),
-        "selected_features": selected_features,
-        "n_candidate_pairs": int(interactions.summary.loc[0, "n_candidate_pairs"]),
-        "n_retained_pairs": int(interactions.summary.loc[0, "n_retained_pairs"]),
-        "pair_scores_file": pair_scores_path.name,
-        "retained_pairs_file": retained_pairs_path.name,
-        "null_summary_file": null_summary_path.name,
-        "component_scores_file": component_scores_path.name,
-        "summary_file": stage_summary_path.name,
-        "status": "completed",
+        "n_candidate_pairs": len(shard_scores.pair_names),
+        "spec_random_seed": shard_scores.spec_random_seed,
+        "spec_permutation_count_B": shard_scores.spec_permutation_count_B,
+        "n_draw_ids": int(len(shard_scores.draw_ids)),
+        "shard_scores_file": npz_path.name,
+        "pair_names_file": pair_names_path.name,
+        "candidate_family_file": family_path.name,
+        "candidate_family_sha256": hashlib.sha256(
+            json.dumps(candidate_family_names, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+        "candidate_family_count": len(candidate_family_names),
+        "status": "score_only_completed",
     }
     (cm.staging_dir / "shard_result.json").write_text(json.dumps(result, indent=2))
 
 
 def _run_interaction_shard(shard, cm, config_path: str | None = None) -> None:
-    """Run interaction discovery scoring for the pair-index range assigned to this shard."""
+    """Run score-only interaction scoring for the pair-index range assigned to this shard.
+
+    Shards never make final retention decisions.  They emit observed scores and
+    the complete null-score matrix keyed by shared draw IDs.  The global reducer
+    assembles the full candidate-family null matrix and issues one FWER decision.
+    """
     logger.info(
-        "[interaction_shard] pair_range=[%s, %s) input_paths=%s",
+        "[interaction_shard:score_only] pair_range=[%s, %s) input_paths=%s",
         shard.feature_start_idx,
         shard.feature_end_idx,
         shard.input_paths[:2],
@@ -564,6 +586,9 @@ def _run_interaction_shard(shard, cm, config_path: str | None = None) -> None:
     if len(retained_features) < 2:
         raise ValueError("interaction_discovery shard requires at least two retained features.")
     total_pairs = len(retained_features) * (len(retained_features) - 1) // 2
+    candidate_family_names = [
+        f"{left}:{right}" for left, right in combinations(sorted(retained_features), 2)
+    ]
 
     start = int(shard.feature_start_idx or 0)
     end = int(shard.feature_end_idx or total_pairs)
@@ -572,7 +597,7 @@ def _run_interaction_shard(shard, cm, config_path: str | None = None) -> None:
     artifact_root = _artifact_root_from_output_root(cm.output_root)
 
     spec = _load_interaction_spec(config_path)
-    interactions = discover_manuscript_interactions(
+    shard_scores = discover_interaction_scores_only(
         input_matrix=x_df,
         feature_catalog=feature_catalog_df,
         holdout_assignments=holdout_df,
@@ -583,20 +608,11 @@ def _run_interaction_shard(shard, cm, config_path: str | None = None) -> None:
         pair_start_idx=start,
         pair_end_idx=end,
     )
-    if {"left_feature", "right_feature"}.issubset(interactions.pair_scores.columns):
-        selected_features = sorted(
-            {
-                *interactions.pair_scores["left_feature"].astype(str).tolist(),
-                *interactions.pair_scores["right_feature"].astype(str).tolist(),
-            }
-        )
-    else:
-        selected_features = retained_features
     _write_interaction_shard_outputs(
         shard=shard,
         cm=cm,
-        interactions=interactions,
-        selected_features=selected_features,
+        shard_scores=shard_scores,
+        candidate_family_names=candidate_family_names,
     )
 
 

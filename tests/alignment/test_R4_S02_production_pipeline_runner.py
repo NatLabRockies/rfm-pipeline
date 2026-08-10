@@ -18,6 +18,7 @@ from __future__ import annotations
 import pathlib
 
 import numpy as np
+import pytest
 
 from rfm_pipeline.recovery_study import (
     ProductionRecoveryResult,
@@ -145,27 +146,24 @@ def test_R4_S02_source_references_production_stages() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_R4_S02_global_null_retains_zero_pairs() -> None:
-    """Under a complete global null the runner retains 0 interaction pairs."""
+def test_R4_S02_global_null_terminates_without_fabricated_predictions() -> None:
+    """A global-null run propagates the terminal-stage failure; it never fabricates a null fit."""
     rng = np.random.default_rng(999)
     X_train = rng.standard_normal((160, _N_INPUTS))
     Y_train = rng.standard_normal((160, _N_OUTPUTS)) * 0.1  # pure noise
     X_eval = rng.standard_normal((_N_EVAL, _N_INPUTS))
     Y_eval = rng.standard_normal((_N_EVAL, _N_OUTPUTS)) * 0.1
 
-    result = run_production_recovery_pipeline(
-        X_train,
-        Y_train,
-        X_eval,
-        Y_eval,
-        permutation_count_B=999,
-        n_tree_estimators=50,
-        seed=999,
-    )
-
-    assert len(result.interaction_retained_set) == 0, (
-        f"Expected 0 retained pairs under global null; got {result.interaction_retained_set}"
-    )
+    with pytest.raises(ValueError):
+        run_production_recovery_pipeline(
+            X_train,
+            Y_train,
+            X_eval,
+            Y_eval,
+            permutation_count_B=999,
+            n_tree_estimators=50,
+            seed=999,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -181,20 +179,27 @@ def test_R4_S02_independent_train_eval_rng() -> None:
     was passed.  This confirms no shared RNG state leaks from the train path
     into the eval response draw.
     """
-    rng_train = np.random.default_rng(10)
-    rng_eval_a = np.random.default_rng(20)
-    rng_eval_b = np.random.default_rng(30)
+    X_train, Y_train, X_eval, Y_eval_a = _make_planted_fixture()
+    Y_eval_b = np.random.default_rng(30).standard_normal((_N_EVAL, _N_OUTPUTS))
 
-    X_train = rng_train.standard_normal((80, _N_INPUTS))
-    Y_train = rng_train.standard_normal((80, _N_OUTPUTS))
-    X_eval = rng_eval_a.standard_normal((_N_EVAL, _N_INPUTS))
-
-    # Two independently drawn eval response matrices
-    Y_eval_a = rng_eval_a.standard_normal((_N_EVAL, _N_OUTPUTS))
-    Y_eval_b = rng_eval_b.standard_normal((_N_EVAL, _N_OUTPUTS))
-
-    result_a = run_production_recovery_pipeline(X_train, Y_train, X_eval, Y_eval_a, seed=42)
-    result_b = run_production_recovery_pipeline(X_train, Y_train, X_eval, Y_eval_b, seed=42)
+    result_a = run_production_recovery_pipeline(
+        X_train,
+        Y_train,
+        X_eval,
+        Y_eval_a,
+        permutation_count_B=999,
+        n_tree_estimators=50,
+        seed=42,
+    )
+    result_b = run_production_recovery_pipeline(
+        X_train,
+        Y_train,
+        X_eval,
+        Y_eval_b,
+        permutation_count_B=999,
+        n_tree_estimators=50,
+        seed=42,
+    )
 
     # Both runs complete without error
     assert result_a.eval_predictions.shape == (_N_EVAL, _N_OUTPUTS)

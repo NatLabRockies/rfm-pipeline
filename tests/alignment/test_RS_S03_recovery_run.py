@@ -190,7 +190,7 @@ def test_RS_S03_global_null_mean_false_interaction_small(quick_run):
     mean_false = float(row["mean_false_pair_count"])
     assert math.isfinite(mean_false), "mean_false_pair_count is not finite"
     assert mean_false >= 0.0, "mean_false_pair_count is negative"
-    # Loose bound: with fwer_max_stat_exact at alpha, expected mean false pairs should be small
+    # Loose bound: with canonical maxT at alpha, expected mean false pairs should be small
     assert mean_false <= 5.0, (
         f"mean_false_pair_count={mean_false:.3f} is unexpectedly large for the global null"
     )

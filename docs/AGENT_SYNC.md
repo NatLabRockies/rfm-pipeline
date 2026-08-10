@@ -15,10 +15,18 @@ last_validation: Path A PA-B2 — PR #41 CI (validate 3.10/3.11/3.12 + docs) all
 last_commit: rfm-pipeline 5181f65 (fix: allow empty nonlinear shard tails).
 next_slice: Path A S-F release rebuild. Use the completed B=499 artifacts and BSM commit of record to rebuild the release, then reconcile manuscript values and wording before final gates and completion marking.
 
+## SESSION STATE — 2026-08-10 — G10 pre-execution repair (uncommitted)
+
+- Scope: reviewer-required generic G0/A repair only; no calibration, recovery simulation, remote HPC, full gate, or commit.
+- Added canonical execution contracts/control snapshots and self-verifying score-only interaction artifacts. In-memory and persisted/HPC reductions now share one strict reducer that rejects identity, checksum, range, ordering, and coverage drift.
+- Active selector is exclusively `selection_method="max_t"` with `selection_alpha` and `minimum_selection_draws`; predecessor fields/aliases are rejected. The exact public APIs are `max_t_adjusted_pvalues` and `max_t_critical_value`.
+- Empty candidate families emit exactly one `empty_candidate_family` terminal artifact; one-pair families remain valid. Recovery no longer catches stage failures or fabricates null terminal predictions. HC3/pruning/refit controls are included in pre-execution contracts.
+- Validation: focused interaction/HPC/config/terminal/alignment tests passed; targeted Ruff and `compileall` passed. Remaining validation gap: intentionally unrun calibration/recovery simulations, remote HPC, and full repository gate.
+
 ## SESSION STATE — 2026-07-20 — PHASE RS complete: recovery-study method-evidence + RS-S04 FWER-leakage fix
 
 - Milestone: generic semi-synthetic recovery study (method-evidence for the exact interaction-FWER claim + support-recovery estimands). Driven via slice-runner (docs/WORKFLOW_MANUSCRIPT_ALIGNMENT_PLAN.md Phase RS).
-- RS-S01 (exact FWER): added `maxt_adjusted_pvalues` + `method="fwer_max_stat_exact"` (Westfall–Young single-step maxT: `p_adj=(1+#{max_null≥obs})/(B+1)`, select `p_adj≤α`) in manuscript_stages.py. Keystone gate tests/alignment/test_RS_S01_exact_fwer.py (mine). Prior quantile `fwer_max_stat` path unchanged.
+- RS-S01 (exact FWER): added `max_t_adjusted_pvalues` + `method="max_t"` (Westfall–Young single-step maxT: `p_adj=(1+#{max_null≥obs})/(B+1)`, select `p_adj≤α`) in manuscript_stages.py. Keystone gate tests/alignment/test_RS_S01_exact_fwer.py (mine). The historical quantile selector was superseded by G10.
 - RS-S02/S03: recovery_study.py (7 prespecified scenarios, per-family precision/recall/fdp/exact-recovery estimands, empirical_interaction_fwer w/ Wilson CI separating FWER from mean_false_pair_count), OracleOLSBaseline/GBTBaseline, scripts/run_recovery_study.py driver.
 - RS-S04 (P0 fix, this session): driver's `_score_interaction_pairs` scored raw corr(xi\*xj, Y) → main-effect signal leaked into interaction scores (null scenarios have main+nonlinear effects, no true interactions) → empirical interaction-FWER=1.000. Fixed: hierarchical residualization of interaction features AND response on the retained main-effect design augmented with quadratic transforms, in both observed stat and permutation null. Gate tests/alignment/test_RS_S04_interaction_null_fwer.py (mine, test-first, red 1.000→green).
 - Corrected artifacts (seed 42, reduced-local scale, outputs/recovery_study/, gitignored): FWER global_null 0.100 [0.055,0.174], interaction_null 0.150 [0.093,0.233] at α=0.1 (both CIs cover α → control demonstrated within MC error). Exact interaction-support recovery (precision=recall=1.0) in all structured scenarios except correlated_redundant (documented collinearity failure mode). Comparators (oracle-OLS/GBT/elastic-net) behave as expected.

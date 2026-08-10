@@ -557,7 +557,7 @@ def run_production_recovery_pipeline(
     n_pca_components: int = 2,
     permutation_count_B: int = 999,
     alpha: float = 0.05,
-    family_error_method: str = "fwer_max_stat_exact",
+    selection_method: str = "max_t",
     n_tree_estimators: int = 50,
     seed: int = 0,
 ) -> ProductionRecoveryResult:
@@ -592,10 +592,8 @@ def run_production_recovery_pipeline(
     alpha
         Family-wise error rate target for interaction discovery and nonlinear
         discovery.  Default ``0.05``.
-    family_error_method
-        Multiplicity-correction method for interaction discovery.  Must be one
-        of ``"fwer_max_stat"``, ``"fwer_max_stat_exact"``, or ``"bh_fdr"``.
-        Default ``"fwer_max_stat_exact"``.
+    selection_method
+        Canonical finite-permutation interaction selector. Must be ``"max_t"``.
     n_tree_estimators
         Number of gradient-boosted trees used per SHAP interaction score.
         Lower values speed up the runner at the cost of interaction-detection
@@ -710,8 +708,8 @@ def run_production_recovery_pipeline(
         retained_pairs_reference=0,
         permutation_count_B=permutation_count_B,
         random_seed=seed,
-        family_error_method=family_error_method,
-        family_error_alpha=alpha,
+        selection_method=selection_method,
+        selection_alpha=alpha,
         enforce_permutation_adequacy=False,
         n_jobs=1,
         n_tree_estimators=n_tree_estimators,
@@ -761,68 +759,48 @@ def run_production_recovery_pipeline(
     # ------------------------------------------------------------------
     # 6. Stage 3: interaction discovery (requires >= 2 retained first-order terms)
     # ------------------------------------------------------------------
-    interaction_candidate_count = 0
-    interaction_retained_set: frozenset[str] = frozenset()
-    retained_pairs: pd.DataFrame = pd.DataFrame(columns=["pair_name", "feature_name"])
-    try:
-        ix_result = discover_manuscript_interactions(
-            input_matrix,
-            feature_catalog,
-            holdout_assignments,
-            pca_scores,
-            retained_terms,
-            interaction_spec,
-        )
-        retained_pairs = ix_result.retained_pairs
-        interaction_candidate_count = len(ix_result.pair_scores)
-        if not retained_pairs.empty:
-            pair_col = "pair_name" if "pair_name" in retained_pairs.columns else "feature_name"
-            interaction_retained_set = frozenset(retained_pairs[pair_col].astype(str))
-    except ValueError:
-        pass
+    ix_result = discover_manuscript_interactions(
+        input_matrix,
+        feature_catalog,
+        holdout_assignments,
+        pca_scores,
+        retained_terms,
+        interaction_spec,
+    )
+    retained_pairs = ix_result.retained_pairs
+    interaction_candidate_count = len(ix_result.pair_scores)
+    interaction_retained_set = frozenset(retained_pairs["pair_name"].astype(str))
 
     # ------------------------------------------------------------------
     # 7. Stage 4: nonlinear discovery
     # ------------------------------------------------------------------
-    nonlinear_candidate_count = 0
-    nonlinear_retained_set: frozenset[str] = frozenset()
-    retained_transformations: pd.DataFrame = pd.DataFrame(columns=["feature_name"])
-    try:
-        nl_result = discover_manuscript_nonlinear_transformations(
-            input_matrix,
-            feature_catalog,
-            holdout_assignments,
-            pca_scores,
-            retained_terms,
-            nonlinear_spec,
-        )
-        retained_transformations = nl_result.retained_transformations
-        nonlinear_candidate_count = len(nl_result.transformation_scores)
-        if not retained_transformations.empty:
-            nonlinear_retained_set = frozenset(retained_transformations["feature_name"].astype(str))
-    except ValueError:
-        pass
+    nl_result = discover_manuscript_nonlinear_transformations(
+        input_matrix,
+        feature_catalog,
+        holdout_assignments,
+        pca_scores,
+        retained_terms,
+        nonlinear_spec,
+    )
+    retained_transformations = nl_result.retained_transformations
+    nonlinear_candidate_count = len(nl_result.transformation_scores)
+    nonlinear_retained_set = frozenset(retained_transformations["feature_name"].astype(str))
 
     # ------------------------------------------------------------------
     # 8. Stage 5: sparse EBIC selection + stability filtering
     # ------------------------------------------------------------------
-    final_selected_support: frozenset[str] = frozenset()
-    try:
-        sparse_result = select_manuscript_sparse_support(
-            input_matrix,
-            feature_catalog,
-            holdout_assignments,
-            pca_scores,
-            retained_terms,
-            retained_pairs,
-            retained_transformations,
-            sparse_spec,
-        )
-        stable = sparse_result.final_stable_support
-        if not stable.empty:
-            final_selected_support = frozenset(stable["feature_name"].astype(str))
-    except ValueError:
-        pass
+    sparse_result = select_manuscript_sparse_support(
+        input_matrix,
+        feature_catalog,
+        holdout_assignments,
+        pca_scores,
+        retained_terms,
+        retained_pairs,
+        retained_transformations,
+        sparse_spec,
+    )
+    stable = sparse_result.final_stable_support
+    final_selected_support = frozenset(stable["feature_name"].astype(str))
 
     # ------------------------------------------------------------------
     # 9. Final-OLS predictions on X_eval
@@ -861,12 +839,10 @@ def _ols_eval_predictions(
 ) -> np.ndarray:
     """Fit OLS on (X_train_design, Y_train) and return predictions on X_eval_design.
 
-    Falls back to column-mean null predictions when the final support is empty
-    or any design-building step fails.
+    Raises when no final support is available or the design cannot be built.
     """
-    null_pred = np.tile(Y_train.mean(axis=0), (n_eval, 1))
     if not final_support:
-        return null_pred
+        raise ValueError("Cannot produce terminal OLS predictions because final support is empty.")
 
     support_list = sorted(final_support)
     support_catalog = pd.DataFrame(
@@ -875,26 +851,23 @@ def _ols_eval_predictions(
             "feature_type": ["first_order"] * len(support_list),
         }
     )
-    try:
-        train_rows = input_matrix[input_matrix["sample_id"].isin(train_ids)].reset_index(drop=True)
-        eval_rows = input_matrix[input_matrix["sample_id"].isin(eval_ids)].reset_index(drop=True)
+    train_rows = input_matrix[input_matrix["sample_id"].isin(train_ids)].reset_index(drop=True)
+    eval_rows = input_matrix[input_matrix["sample_id"].isin(eval_ids)].reset_index(drop=True)
 
-        X_design_tr = build_manuscript_feature_design(train_rows, support_catalog)
-        X_design_ev = build_manuscript_feature_design(eval_rows, support_catalog)
+    X_design_tr = build_manuscript_feature_design(train_rows, support_catalog)
+    X_design_ev = build_manuscript_feature_design(eval_rows, support_catalog)
 
-        X_tr = X_design_tr.drop(columns=["sample_id"]).to_numpy(dtype=float)
-        X_ev = X_design_ev.drop(columns=["sample_id"]).to_numpy(dtype=float)
+    X_tr = X_design_tr.drop(columns=["sample_id"]).to_numpy(dtype=float)
+    X_ev = X_design_ev.drop(columns=["sample_id"]).to_numpy(dtype=float)
 
-        # Add intercept column
-        ones_tr = np.ones((len(X_tr), 1), dtype=float)
-        ones_ev = np.ones((len(X_ev), 1), dtype=float)
-        X_tr = np.hstack([ones_tr, X_tr])
-        X_ev = np.hstack([ones_ev, X_ev])
+    # Add intercept column
+    ones_tr = np.ones((len(X_tr), 1), dtype=float)
+    ones_ev = np.ones((len(X_ev), 1), dtype=float)
+    X_tr = np.hstack([ones_tr, X_tr])
+    X_ev = np.hstack([ones_ev, X_ev])
 
-        beta, _, _, _ = np.linalg.lstsq(X_tr, Y_train, rcond=None)
-        return X_ev @ beta
-    except Exception:  # noqa: BLE001
-        return null_pred
+    beta, _, _, _ = np.linalg.lstsq(X_tr, Y_train, rcond=None)
+    return X_ev @ beta
 
 
 # ---------------------------------------------------------------------------

@@ -234,10 +234,10 @@ Repeat the same pattern through 2026-12-21: one Monday slice per week, alternati
 
 **8c progress checkpoint (2026-05-13)**:
 
-- ✅ interaction_discovery supports `parallel_backend=dask` with deterministic dask→threading fallback
+- ✅ interaction_discovery supports explicit `parallel_backend=dask`; executor failures propagate and are never silently rerouted
 - ✅ workflow `runtime.parallelism` config maps into interaction runtime path
-- ✅ shard worker now runs real interaction scoring and emits per-shard pair outputs
-- ✅ reduce step now merges retained pairs and pair scores across shards
+- ✅ shard worker now emits checksummed score-only artifacts bound to one canonical control snapshot
+- ✅ reduce step verifies complete ordered artifact coverage before issuing one global maxT decision
 - ✅ shard manifest caps effective shard count at feature-column cardinality
 - ✅ MPI runner delegates to shard worker with dataclass-aware parameter passing
 - ✅ submit-path input resolution: auto-finds and resolves prior-stage artifacts (pca_scores, retained_terms, X, holdout, catalog)

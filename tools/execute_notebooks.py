@@ -106,7 +106,7 @@ def build_nbconvert_command(
         "--output-dir",
         str(output_dir),
         f"--ExecutePreprocessor.timeout={timeout}",
-        "--ExecutePreprocessor.kernel_name=python3",
+        "--ExecutePreprocessor.kernel_name=pixi-kernel-python3",
     ]
 
 

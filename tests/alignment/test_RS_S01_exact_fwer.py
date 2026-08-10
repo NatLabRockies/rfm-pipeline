@@ -12,12 +12,12 @@ import numpy as np
 import pytest
 
 from rfm_pipeline.manuscript_stages import (
-    maxt_adjusted_pvalues,
+    max_t_adjusted_pvalues,
     multiplicity_controlled_interaction_selection,
 )
 
 
-def test_RS_S01_maxt_adjusted_pvalue_formula():
+def test_RS_S01_max_t_adjusted_pvalue_formula():
     # 3 pairs, B=4 null draws. Row maxima -> [2, 4, 1, 6].
     obs = np.array([5.0, 1.0, 3.0])
     null = np.array(
@@ -32,7 +32,7 @@ def test_RS_S01_maxt_adjusted_pvalue_formula():
     #   obs=5 -> {6}       -> (1+1)/5 = 0.4
     #   obs=1 -> {2,4,1,6} -> (1+4)/5 = 1.0
     #   obs=3 -> {4,6}     -> (1+2)/5 = 0.6
-    padj = maxt_adjusted_pvalues(obs, null)
+    padj = max_t_adjusted_pvalues(obs, null)
     np.testing.assert_allclose(padj, [0.4, 1.0, 0.6])
 
 
@@ -40,7 +40,7 @@ def test_RS_S01_adjusted_pvalues_monotone_in_observed():
     rng = np.random.default_rng(0)
     null = rng.normal(size=(200, 10))
     obs = np.linspace(-1.0, 4.0, 10)
-    padj = maxt_adjusted_pvalues(obs, null)
+    padj = max_t_adjusted_pvalues(obs, null)
     order = np.argsort(obs)
     # Larger observed score => smaller-or-equal adjusted p-value.
     assert np.all(np.diff(padj[order]) <= 1e-12)
@@ -50,7 +50,7 @@ def test_RS_S01_exact_method_selects_padj_le_alpha():
     obs = np.array([5.0, 1.0, 3.0])
     null = np.array([[2.0, 0.5, 1.0], [4.0, 0.8, 2.0], [1.0, 0.2, 0.9], [6.0, 0.3, 2.5]])
     selected, p_values, _ = multiplicity_controlled_interaction_selection(
-        obs, null, alpha=0.5, method="fwer_max_stat_exact"
+        obs, null, alpha=0.5, method="max_t"
     )
     # padj = [0.4, 1.0, 0.6]; alpha=0.5 -> only pair 0.
     np.testing.assert_allclose(p_values, [0.4, 1.0, 0.6])
@@ -70,7 +70,7 @@ def test_RS_S01_global_null_fwer_is_controlled():
         obs = data[0]
         null = data[1:]
         selected, _, _ = multiplicity_controlled_interaction_selection(
-            obs, null, alpha=alpha, method="fwer_max_stat_exact"
+            obs, null, alpha=alpha, method="max_t"
         )
         if selected.any():
             false_reject += 1
@@ -85,10 +85,8 @@ def test_RS_S01_input_validation():
     obs = np.array([1.0, 2.0])
     null = np.zeros((5, 2))
     with pytest.raises(ValueError):
-        maxt_adjusted_pvalues(obs.reshape(2, 1), null)  # obs not 1-D
+        max_t_adjusted_pvalues(obs.reshape(2, 1), null)  # obs not 1-D
     with pytest.raises(ValueError):
-        maxt_adjusted_pvalues(obs, null[:, :1])  # column mismatch
+        max_t_adjusted_pvalues(obs, null[:, :1])  # column mismatch
     with pytest.raises(ValueError):
-        multiplicity_controlled_interaction_selection(
-            obs, null, alpha=1.5, method="fwer_max_stat_exact"
-        )
+        multiplicity_controlled_interaction_selection(obs, null, alpha=1.5, method="max_t")

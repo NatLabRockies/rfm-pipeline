@@ -174,6 +174,18 @@ def main() -> None:
 
     # Build shard manifest
     n_shards = args.n_shards
+    if (
+        args.stage == "interaction_discovery"
+        and n_shards
+        and _estimate_stage_partition_span(args.stage, workflow, artifact_dir) == 0
+    ):
+        # A manual array-width override must not create multiple incompatible
+        # empty-family terminal artifacts or preserve an old multi-shard manifest.
+        n_shards = 1
+        logger.info(
+            "[hpc-submit] interaction_discovery has an empty candidate family; "
+            "using one terminal shard"
+        )
     if not n_shards:
         # For stages with data-driven cardinality, estimate from prior stage outputs
         dynamic_stages = (
@@ -184,7 +196,15 @@ def main() -> None:
         )
         if args.stage in dynamic_stages:
             n_shards = _estimate_stage_work_items(args.stage, workflow, artifact_dir)
-            if n_shards:
+            if args.stage == "interaction_discovery" and n_shards == 0:
+                # A zero-pair family still needs one worker to emit the sole
+                # canonical empty_candidate_family artifact for the reducer.
+                n_shards = 1
+                logger.info(
+                    "[hpc-submit] interaction_discovery has an empty candidate family; "
+                    "submitting one terminal shard"
+                )
+            elif n_shards:
                 logger.info(
                     "[hpc-submit] auto-estimated n_shards for %s: %d (from prior outputs)",
                     args.stage,
@@ -346,6 +366,10 @@ def _build_fresh_manifest(args, artifact_dir: Path, n_shards: int, workflow) -> 
 
     input_paths: list[str] = [str(Path(args.config).resolve())]
     expected_columns = _estimate_stage_partition_span(args.stage, workflow, artifact_dir)
+    if args.stage == "interaction_discovery" and expected_columns == 0:
+        # Do not let a caller-provided array width turn one empty-family
+        # terminal state into multiple incompatible empty artifacts.
+        n_shards = 1
     if args.stage == "interaction_discovery":
         try:
             dataset_path = getattr(workflow.dataset, "path", None)

@@ -13,7 +13,6 @@ import pytest
 from rfm_pipeline import manuscript_stages
 from rfm_pipeline.manuscript_stages import (
     InteractionDiscoverySpec,
-    PermutationAdequacyError,
     discover_manuscript_interactions,
 )
 
@@ -54,8 +53,8 @@ def test_enforce_permutation_adequacy_default_is_true() -> None:
     assert spec.enforce_permutation_adequacy is True
 
 
-def test_inadequate_B_raises_with_enforce_true() -> None:
-    """With enforce=True (default), an inadequate B raises PermutationAdequacyError."""
+def test_inadequate_B_requires_the_canonical_draw_floor_with_enforce_true() -> None:
+    """The canonical maxT floor applies before the legacy adequacy guard."""
     inputs, catalog, holdout, pca_scores, retained_terms = _make_two_feature_data()
     # B=3, quantile=0.95, family_size=1 → min_B=19; 3 < 19 → guard raises
     spec = _make_spec(
@@ -63,12 +62,12 @@ def test_inadequate_B_raises_with_enforce_true() -> None:
         permutation_count_B=3,
         enforce_permutation_adequacy=True,
     )
-    with pytest.raises(PermutationAdequacyError):
+    with pytest.raises(ValueError, match="draw adequacy"):
         discover_manuscript_interactions(inputs, catalog, holdout, pca_scores, retained_terms, spec)
 
 
-def test_inadequate_B_does_not_raise_with_enforce_false(monkeypatch) -> None:
-    """With enforce=False, the same inadequate B does not raise from the guard."""
+def test_inadequate_B_requires_the_canonical_draw_floor_when_guard_is_disabled(monkeypatch) -> None:
+    """Disabling the legacy guard cannot bypass the canonical maxT draw floor."""
     inputs, catalog, holdout, pca_scores, retained_terms = _make_two_feature_data()
 
     def _fake_score(
@@ -89,7 +88,5 @@ def test_inadequate_B_does_not_raise_with_enforce_false(monkeypatch) -> None:
         permutation_count_B=3,
         enforce_permutation_adequacy=False,
     )
-    result = discover_manuscript_interactions(
-        inputs, catalog, holdout, pca_scores, retained_terms, spec
-    )
-    assert len(result.pair_scores) == 1
+    with pytest.raises(ValueError, match="minimum_selection_draws"):
+        discover_manuscript_interactions(inputs, catalog, holdout, pca_scores, retained_terms, spec)

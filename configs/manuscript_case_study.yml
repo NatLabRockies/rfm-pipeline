@@ -41,10 +41,14 @@ case_study:
     aggregation_rule: max_over_components_of_mean_absolute_shap_interaction
     aggregation_rule_status: frozen_repo_decision
     method: tree_shap_interaction_values
+    minimum_selection_draws: 199
     null_threshold_quantile: 0.995
+    permutation_count_B: 200
     public_implementation_method: tree_shap_gradient_boosting
     public_implementation_status: manuscript_aligned
     retained_pairs: 62
+    selection_alpha: 0.05
+    selection_method: max_t
     source_workflow_equivalence_status: manuscript_aligned_via_shap_gradient_boosting
     source_workflow_reference: private_tree_shap_interaction_workflow
   interface:

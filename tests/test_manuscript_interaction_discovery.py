@@ -1,4 +1,4 @@
-"""Tests for manuscript interaction-discovery stage."""
+"""Tests for canonical manuscript interaction discovery."""
 
 from __future__ import annotations
 
@@ -9,247 +9,120 @@ import pandas as pd
 import pytest
 
 import rfm_pipeline.manuscript_stages as manuscript_stages
-from rfm_pipeline.manuscript_runtime import (
-    build_manuscript_notebook_context,
-)
+from rfm_pipeline.interaction_contract import canonical_execution_contract_from_specs
+from rfm_pipeline.manuscript_runtime import build_manuscript_notebook_context
 from rfm_pipeline.manuscript_stages import (
     InteractionDiscoverySpec,
+    discover_interaction_scores_only,
     discover_manuscript_interactions,
-    interaction_discovery_spec_from_case_study_config,
     run_interaction_discovery_stage,
     write_interaction_discovery_artifacts,
 )
 
-
-def test_interaction_discovery_guard_on_uses_corrected_family_size_fwer(
-    monkeypatch,
-) -> None:
-    """Guard-ON production path: FWER adequacy is family_size=1 (not n_pairs)."""
-    sample_ids = list(range(1, 41))
-    x1 = [-1.0, -1.0, 1.0, 1.0] * 10
-    x2 = [-1.0, 1.0, -1.0, 1.0] * 10
-    x3 = [1.0 if v % 2 == 0 else -1.0 for v in sample_ids]
-    pca_signal = [a * b for a, b in zip(x1, x2, strict=True)]
-    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2, "x3": x3})
-    catalog = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2", "x3"],
-            "feature_type": ["first_order"] * 3,
-        }
-    )
-    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 32 + ["holdout"] * 8})
-    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
-    retained_terms = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2", "x3"],
-            "feature_type": ["first_order"] * 3,
-        }
-    )
-    # With family_size=n_pairs=3 the OLD guard would require B >= 599 for
-    # alpha=0.05. Under the corrected FWER family_size=1 rule, B=19 is enough.
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.995,
-        retained_pairs_reference=1,
-        permutation_count_B=19,
-        random_seed=123,
-        n_jobs=1,
-        family_error_method="fwer_max_stat",
-        family_error_alpha=0.05,
-        # enforce_permutation_adequacy=True (default) -- guard is ON
-    )
-
-    def _fake_scorer(
-        y_base: np.ndarray,
-        permute_response: bool,
-        *,
-        n_pairs: int,
-        n_comp: int,
-        **_: object,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        _ = (y_base, permute_response)
-        scores = np.ones(n_pairs, dtype=float)
-        component_scores = np.ones((n_pairs, n_comp), dtype=float)
-        return scores, component_scores
-
-    monkeypatch.setattr(
-        manuscript_stages,
-        "_score_interaction_permutation",
-        _fake_scorer,
-    )
-
-    result = discover_manuscript_interactions(
-        inputs, catalog, holdout, pca_scores, retained_terms, spec
-    )
-    assert set(result.pair_scores["pair_name"]) == {"x1:x2", "x1:x3", "x2:x3"}
-    assert result.summary.loc[0, "n_candidate_pairs"] == 3
+DRAW_COUNT = 199
 
 
-def test_interaction_discovery_guard_on_uses_corrected_family_size_fwer_exact(
-    monkeypatch,
-) -> None:
-    """Guard-ON production path: exact FWER adequacy is family_size=1 (not n_pairs)."""
-    sample_ids = list(range(1, 41))
-    x1 = [-1.0, -1.0, 1.0, 1.0] * 10
-    x2 = [-1.0, 1.0, -1.0, 1.0] * 10
-    x3 = [1.0 if v % 2 == 0 else -1.0 for v in sample_ids]
-    pca_signal = [a * b for a, b in zip(x1, x2, strict=True)]
-    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2, "x3": x3})
-    catalog = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2", "x3"],
-            "feature_type": ["first_order"] * 3,
-        }
-    )
-    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 32 + ["holdout"] * 8})
-    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
-    retained_terms = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2", "x3"],
-            "feature_type": ["first_order"] * 3,
-        }
-    )
-    # Under the corrected FWER family_size=1 rule the adequacy guard no longer
-    # scales with n_pairs. The exact route additionally enforces the >=999
-    # finite-permutation floor (PA-B), so use B=999 here; the assertions below
-    # exercise pair enumeration under the exact method.
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.995,
-        retained_pairs_reference=1,
-        permutation_count_B=999,
-        random_seed=123,
-        n_jobs=1,
-        family_error_method="fwer_max_stat_exact",
-        family_error_alpha=0.05,
-    )
-
-    def _fake_scorer(
-        y_base: np.ndarray,
-        permute_response: bool,
-        *,
-        n_pairs: int,
-        n_comp: int,
-        **_: object,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        _ = (y_base, permute_response)
-        scores = np.ones(n_pairs, dtype=float)
-        component_scores = np.ones((n_pairs, n_comp), dtype=float)
-        return scores, component_scores
-
-    monkeypatch.setattr(
-        manuscript_stages,
-        "_score_interaction_permutation",
-        _fake_scorer,
-    )
-
-    result = discover_manuscript_interactions(
-        inputs, catalog, holdout, pca_scores, retained_terms, spec
-    )
-    assert set(result.pair_scores["pair_name"]) == {"x1:x2", "x1:x3", "x2:x3"}
-    assert result.summary.loc[0, "n_candidate_pairs"] == 3
-
-
-def test_interaction_discovery_guard_on_bh_fdr_requires_n_pairs_budget() -> None:
-    """Guard-ON production path: BH-FDR adequacy scales with n_pairs."""
-    sample_ids = list(range(1, 41))
-    x1 = [-1.0, -1.0, 1.0, 1.0] * 10
-    x2 = [-1.0, 1.0, -1.0, 1.0] * 10
-    x3 = [1.0 if v % 2 == 0 else -1.0 for v in sample_ids]
-    pca_signal = [a * b for a, b in zip(x1, x2, strict=True)]
-    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2, "x3": x3})
-    catalog = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2", "x3"],
-            "feature_type": ["first_order"] * 3,
-        }
-    )
-    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 32 + ["holdout"] * 8})
-    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
-    retained_terms = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2", "x3"],
-            "feature_type": ["first_order"] * 3,
-        }
-    )
-    # BH-FDR with 3 pairs and alpha=0.05 requires B >= ceil(3/0.05)-1 = 59.
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.995,
-        retained_pairs_reference=1,
-        permutation_count_B=19,
-        random_seed=123,
-        n_jobs=1,
-        family_error_method="bh_fdr",
-        family_error_alpha=0.05,
-    )
-    with pytest.raises(manuscript_stages.PermutationAdequacyError):
-        discover_manuscript_interactions(inputs, catalog, holdout, pca_scores, retained_terms, spec)
-
-    config = {
-        "case_study": {
-            "interface": {"holdout_random_seed": 456},
-            "empirical_null_screen": {"permutation_count_B": 11},
-            "interaction_discovery": {
-                "method": "tree_shap_interaction_values",
-                "aggregation_rule": "max_over_components_of_mean_absolute_shap_interaction",
-                "null_threshold_quantile": 0.9,
-                "retained_pairs": 12,
-                "permutation_count_B": 13,
-                "n_tree_estimators": 17,
-                "max_tree_depth": 2,
-                "max_shap_samples": 41,
-                "parallel_batch_timeout_seconds": 17,
-                "parallel_backend": "loky",
-            },
-        }
+def _spec(
+    *,
+    draws: int = DRAW_COUNT,
+    **overrides: object,
+) -> InteractionDiscoverySpec:
+    values: dict[str, object] = {
+        "method": "tree_shap_interaction_values",
+        "aggregation_rule": "max_over_components_of_mean_absolute_shap_interaction",
+        "null_threshold_quantile": 0.95,
+        "retained_pairs_reference": 0,
+        "permutation_count_B": draws,
+        "random_seed": 123,
+        "n_jobs": 1,
+        "selection_method": "max_t",
+        "selection_alpha": 0.05,
+        "minimum_selection_draws": DRAW_COUNT,
     }
-
-    spec = interaction_discovery_spec_from_case_study_config(config)
-
-    assert spec.permutation_count_B == 13
-    assert spec.random_seed == 456
-    assert spec.n_tree_estimators == 17
-    assert spec.max_tree_depth == 2
-    assert spec.max_shap_samples == 41
-    assert spec.parallel_batch_timeout_seconds == 17
-    assert spec.parallel_backend == "loky"
+    values.update(overrides)
+    return InteractionDiscoverySpec(**values)
 
 
-def test_interaction_discovery_retains_residual_pair_signal_and_writes_artifacts(
-    tmp_path: Path,
-) -> None:
-    sample_ids = list(range(1, 41))
-    x1 = [-1.0, -1.0, 1.0, 1.0] * 10
-    x2 = [-1.0, 1.0, -1.0, 1.0] * 10
-    pca_signal = [left * right for left, right in zip(x1, x2, strict=True)]
-    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2})
+def _fixture(
+    *,
+    n_features: int = 2,
+    n_rows: int = 20,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    sample_ids = np.arange(1, n_rows + 1)
+    values = {
+        "x1": np.resize(np.array([-1.0, -1.0, 1.0, 1.0]), n_rows),
+        "x2": np.resize(np.array([-1.0, 1.0, -1.0, 1.0]), n_rows),
+        "x3": np.resize(np.array([1.0, -1.0]), n_rows),
+    }
+    feature_names = [f"x{index}" for index in range(1, n_features + 1)]
+    inputs = pd.DataFrame(
+        {"sample_id": sample_ids, **{name: values[name] for name in feature_names}}
+    )
     catalog = pd.DataFrame(
         {
-            "feature_name": ["x1", "x2"],
-            "feature_type": ["first_order", "first_order"],
-            "origin": ["test"] * 2,
+            "feature_name": feature_names,
+            "feature_type": ["first_order"] * len(feature_names),
         }
     )
-    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 32 + ["holdout"] * 8})
-    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
-    retained_terms = pd.DataFrame(
+    holdout = pd.DataFrame(
         {
-            "feature_name": ["x1", "x2"],
-            "feature_type": ["first_order", "first_order"],
+            "sample_id": sample_ids,
+            "split": ["train"] * (n_rows - 4) + ["holdout"] * 4,
         }
     )
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.95,
-        retained_pairs_reference=367,
-        permutation_count_B=49,
-        random_seed=123,
+    pca_scores = pd.DataFrame(
+        {
+            "sample_id": sample_ids,
+            "PC1": inputs["x1"] * inputs["x2"],
+        }
     )
+    return inputs, catalog, holdout, pca_scores, catalog.copy()
+
+
+def _fake_score(
+    y_base: np.ndarray,
+    permute_response: bool,
+    *,
+    n_pairs: int,
+    n_comp: int,
+    **_: object,
+) -> tuple[np.ndarray, np.ndarray]:
+    _ = y_base
+    score = 0.1 if permute_response else 0.8
+    scores = np.full(n_pairs, score, dtype=float)
+    return scores, np.full((n_pairs, n_comp), score, dtype=float)
+
+
+def test_interaction_discovery_requires_canonical_draw_adequacy() -> None:
+    """The in-memory route refuses to start below the canonical draw floor."""
+    inputs, catalog, holdout, pca_scores, retained_terms = _fixture()
+    spec = _spec(draws=DRAW_COUNT - 1)
+
+    with pytest.raises(ValueError, match="draw adequacy"):
+        discover_manuscript_interactions(
+            inputs,
+            catalog,
+            holdout,
+            pca_scores,
+            retained_terms,
+            spec,
+        )
+
+
+def test_interaction_discovery_rejects_legacy_or_noncanonical_selectors() -> None:
+    """The neutral maxT selector has no legacy or FDR alias."""
+    with pytest.raises(ValueError, match="selection_method"):
+        _spec(selection_method="fwer_max_stat_exact")
+    with pytest.raises(ValueError, match="selection_method"):
+        _spec(selection_method="bh_fdr")
+
+
+def test_interaction_discovery_retains_signal_and_writes_artifacts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    inputs, catalog, holdout, pca_scores, retained_terms = _fixture()
+    monkeypatch.setattr(manuscript_stages, "_score_interaction_permutation", _fake_score)
 
     result = discover_manuscript_interactions(
         inputs,
@@ -257,22 +130,15 @@ def test_interaction_discovery_retains_residual_pair_signal_and_writes_artifacts
         holdout,
         pca_scores,
         retained_terms,
-        spec,
+        _spec(),
     )
 
     assert result.summary.loc[0, "stage"] == "interaction_discovery"
+    assert result.summary.loc[0, "status"] == "completed"
     assert result.summary.loc[0, "n_candidate_pairs"] == 1
     assert result.summary.loc[0, "n_retained_pairs"] == 1
     assert result.pair_scores.loc[0, "pair_name"] == "x1:x2"
     assert result.pair_scores.loc[0, "retained"]
-    assert result.pair_scores.loc[0, "empirical_null_retained"]
-    assert result.summary.loc[0, "public_implementation_method"] == "tree_shap_gradient_boosting"
-    assert result.summary.loc[0, "source_workflow_equivalence_status"] == (
-        "manuscript_aligned_via_shap_gradient_boosting"
-    )
-    assert result.provenance.loc[0, "manuscript_method"] == "tree_shap_interaction_values"
-    assert result.provenance.loc[0, "public_implementation_method"] == "tree_shap_gradient_boosting"
-
     paths = write_interaction_discovery_artifacts(result, tmp_path)
     assert sorted(paths) == [
         "component_interaction_scores",
@@ -283,41 +149,11 @@ def test_interaction_discovery_retains_residual_pair_signal_and_writes_artifacts
         "retained_interaction_pairs",
     ]
     assert paths["retained_interaction_pairs"].read_text(encoding="utf-8").startswith("pair_name")
-    provenance_text = paths["interaction_discovery_provenance"].read_text(encoding="utf-8")
-    assert "tree_shap_gradient_boosting" in provenance_text
-    assert "manuscript_aligned_via_shap_gradient_boosting" in provenance_text
 
 
-def test_interaction_discovery_generates_all_pairs_from_retained_first_order_terms() -> None:
-    sample_ids = list(range(1, 41))
-    x1 = [-1.0, -1.0, 1.0, 1.0] * 10
-    x2 = [-1.0, 1.0, -1.0, 1.0] * 10
-    x3 = [1.0 if value % 2 == 0 else -1.0 for value in sample_ids]
-    pca_signal = [left * right for left, right in zip(x1, x2, strict=True)]
-    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2, "x3": x3})
-    catalog = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2", "x3"],
-            "feature_type": ["first_order", "first_order", "first_order"],
-        }
-    )
-    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 32 + ["holdout"] * 8})
-    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
-    retained_terms = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2", "x3"],
-            "feature_type": ["first_order", "first_order", "first_order"],
-        }
-    )
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.95,
-        retained_pairs_reference=367,
-        permutation_count_B=19,
-        random_seed=123,
-        enforce_permutation_adequacy=False,
-    )
+def test_interaction_discovery_generates_full_candidate_family(monkeypatch) -> None:
+    inputs, catalog, holdout, pca_scores, retained_terms = _fixture(n_features=3)
+    monkeypatch.setattr(manuscript_stages, "_score_interaction_permutation", _fake_score)
 
     result = discover_manuscript_interactions(
         inputs,
@@ -325,66 +161,20 @@ def test_interaction_discovery_generates_all_pairs_from_retained_first_order_ter
         holdout,
         pca_scores,
         retained_terms,
-        spec,
+        _spec(),
     )
 
-    assert set(result.pair_scores["pair_name"]) == {"x1:x2", "x1:x3", "x2:x3"}
+    assert result.pair_scores["pair_name"].tolist() == ["x1:x2", "x1:x3", "x2:x3"]
     assert result.summary.loc[0, "n_candidate_pairs"] == 3
 
 
-def test_interaction_discovery_respects_candidate_pair_range(monkeypatch) -> None:
-    sample_ids = list(range(1, 21))
-    x1 = [-1.0, -1.0, 1.0, 1.0] * 5
-    x2 = [-1.0, 1.0, -1.0, 1.0] * 5
-    x3 = [1.0 if value % 2 == 0 else -1.0 for value in sample_ids]
-    pca_signal = [left * right for left, right in zip(x1, x2, strict=True)]
-    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2, "x3": x3})
-    catalog = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2", "x3"],
-            "feature_type": ["first_order", "first_order", "first_order"],
-        }
-    )
-    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 16 + ["holdout"] * 4})
-    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
-    retained_terms = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2", "x3"],
-            "feature_type": ["first_order", "first_order", "first_order"],
-        }
-    )
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=1,
-        permutation_count_B=2,
-        random_seed=123,
-        n_jobs=1,
-        enforce_permutation_adequacy=False,
-    )
+def test_partial_ranges_use_score_only_path_and_direct_decisions_reject_them(monkeypatch) -> None:
+    inputs, catalog, holdout, pca_scores, retained_terms = _fixture(n_features=3)
+    spec = _spec()
+    contract = canonical_execution_contract_from_specs(spec)
+    monkeypatch.setattr(manuscript_stages, "_score_interaction_permutation", _fake_score)
 
-    def _fake_score_interaction_permutation(
-        y_base: np.ndarray,
-        permute_response: bool,
-        *,
-        n_pairs: int,
-        n_comp: int,
-        **_: object,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        _ = (y_base, permute_response)
-        scores = np.ones(n_pairs, dtype=float)
-        component_scores = np.ones((n_pairs, n_comp), dtype=float)
-        return scores, component_scores
-
-    monkeypatch.setattr(
-        manuscript_stages,
-        "_score_interaction_permutation",
-        _fake_score_interaction_permutation,
-    )
-
-    # Candidate ordering for x1,x2,x3 is: [x1:x2, x1:x3, x2:x3].
-    result = discover_manuscript_interactions(
+    artifact = discover_interaction_scores_only(
         inputs,
         catalog,
         holdout,
@@ -393,44 +183,30 @@ def test_interaction_discovery_respects_candidate_pair_range(monkeypatch) -> Non
         spec,
         pair_start_idx=1,
         pair_end_idx=2,
+        contract=contract,
     )
-    assert result.summary.loc[0, "n_candidate_pairs"] == 1
-    assert set(result.pair_scores["pair_name"]) == {"x1:x3"}
+    assert artifact.pair_names == ("x1:x3",)
+    assert artifact.pair_range_start == 1
+    assert artifact.pair_range_end == 2
+    with pytest.raises(ValueError, match="partial-family"):
+        discover_manuscript_interactions(
+            inputs,
+            catalog,
+            holdout,
+            pca_scores,
+            retained_terms,
+            spec,
+            pair_start_idx=1,
+            pair_end_idx=2,
+        )
 
 
-def test_interaction_discovery_rejects_empty_candidate_pair_range() -> None:
-    sample_ids = list(range(1, 21))
-    x1 = [-1.0, -1.0, 1.0, 1.0] * 5
-    x2 = [-1.0, 1.0, -1.0, 1.0] * 5
-    pca_signal = [left * right for left, right in zip(x1, x2, strict=True)]
-    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2})
-    catalog = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2"],
-            "feature_type": ["first_order", "first_order"],
-        }
-    )
-    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 16 + ["holdout"] * 4})
-    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
-    retained_terms = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2"],
-            "feature_type": ["first_order", "first_order"],
-        }
-    )
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=1,
-        permutation_count_B=2,
-        random_seed=123,
-        n_jobs=1,
-        enforce_permutation_adequacy=False,
-    )
+def test_score_only_discovery_rejects_empty_shard_range() -> None:
+    inputs, catalog, holdout, pca_scores, retained_terms = _fixture()
+    spec = _spec()
 
     with pytest.raises(ValueError, match="candidate range is empty"):
-        discover_manuscript_interactions(
+        discover_interaction_scores_only(
             inputs,
             catalog,
             holdout,
@@ -439,6 +215,7 @@ def test_interaction_discovery_rejects_empty_candidate_pair_range() -> None:
             spec,
             pair_start_idx=5,
             pair_end_idx=6,
+            contract=canonical_execution_contract_from_specs(spec),
         )
 
 
@@ -455,77 +232,25 @@ def test_run_interaction_discovery_stage_executes_demo_context() -> None:
     assert result.artifact_paths["interaction_pair_scores"].exists()
 
 
-def test_interaction_discovery_rejects_invalid_parallel_backend() -> None:
-    sample_ids = list(range(1, 21))
-    x1 = [-1.0, -1.0, 1.0, 1.0] * 5
-    x2 = [-1.0, 1.0, -1.0, 1.0] * 5
-    pca_signal = [left * right for left, right in zip(x1, x2, strict=True)]
-    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2})
-    catalog = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2"],
-            "feature_type": ["first_order", "first_order"],
-        }
-    )
-    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 16 + ["holdout"] * 4})
-    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
-    retained_terms = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2"],
-            "feature_type": ["first_order", "first_order"],
-        }
-    )
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=1,
-        permutation_count_B=2,
-        random_seed=123,
-        n_jobs=2,
-        parallel_backend="invalid_backend",
-        enforce_permutation_adequacy=False,
-    )
+def test_score_only_discovery_rejects_invalid_parallel_backend() -> None:
+    inputs, catalog, holdout, pca_scores, retained_terms = _fixture()
+    spec = _spec(n_jobs=2, parallel_backend="invalid_backend")
 
     with pytest.raises(ValueError, match="parallel_backend"):
-        discover_manuscript_interactions(inputs, catalog, holdout, pca_scores, retained_terms, spec)
+        discover_interaction_scores_only(
+            inputs,
+            catalog,
+            holdout,
+            pca_scores,
+            retained_terms,
+            spec,
+            contract=canonical_execution_contract_from_specs(spec),
+        )
 
 
-def test_interaction_discovery_uses_configured_parallel_backend_without_fallback(
-    monkeypatch,
-) -> None:
-    sample_ids = list(range(1, 21))
-    x1 = [-1.0, -1.0, 1.0, 1.0] * 5
-    x2 = [-1.0, 1.0, -1.0, 1.0] * 5
-    pca_signal = [left * right for left, right in zip(x1, x2, strict=True)]
-    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2})
-    catalog = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2"],
-            "feature_type": ["first_order", "first_order"],
-        }
-    )
-    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 16 + ["holdout"] * 4})
-    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
-    retained_terms = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2"],
-            "feature_type": ["first_order", "first_order"],
-        }
-    )
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=1,
-        permutation_count_B=3,
-        random_seed=123,
-        n_jobs=2,
-        parallel_batch_timeout_seconds=1,
-        parallel_backend="threading",
-        enforce_permutation_adequacy=False,
-    )
-
+def test_score_only_discovery_uses_configured_threading_backend(monkeypatch) -> None:
+    inputs, catalog, holdout, pca_scores, retained_terms = _fixture()
+    spec = _spec(n_jobs=2, parallel_backend="threading")
     calls: list[tuple[int, str]] = []
 
     class FakeParallel:
@@ -536,38 +261,15 @@ def test_interaction_discovery_uses_configured_parallel_backend_without_fallback
         def __enter__(self) -> FakeParallel:
             return self
 
-        def __exit__(self, exc_type, exc, tb) -> bool:
+        def __exit__(self, exc_type, exc, traceback) -> bool:  # noqa: ANN001
             return False
 
-        def __call__(
-            self,
-            jobs: list[tuple[object, tuple[object, ...], dict[str, object]]],
-        ) -> list[tuple[np.ndarray, np.ndarray]]:
+        def __call__(self, jobs):
             calls.append((self.n_jobs, self.backend))
-            results: list[tuple[np.ndarray, np.ndarray]] = []
-            for func, args, kwargs in jobs:
-                results.append(func(*args, **kwargs))
-            return results
-
-    def _fake_score_interaction_permutation(
-        y_base: np.ndarray,
-        permute_response: bool,
-        *,
-        n_pairs: int,
-        n_comp: int,
-        **_: object,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        _ = (y_base, permute_response)
-        scores = np.ones(n_pairs, dtype=float)
-        component_scores = np.ones((n_pairs, n_comp), dtype=float)
-        return scores, component_scores
+            return [function(*args, **kwargs) for function, args, kwargs in jobs]
 
     monkeypatch.setattr(manuscript_stages, "Parallel", FakeParallel)
-    monkeypatch.setattr(
-        manuscript_stages,
-        "_score_interaction_permutation",
-        _fake_score_interaction_permutation,
-    )
+    monkeypatch.setattr(manuscript_stages, "_score_interaction_permutation", _fake_score)
 
     result = discover_manuscript_interactions(
         inputs,
@@ -578,217 +280,74 @@ def test_interaction_discovery_uses_configured_parallel_backend_without_fallback
         spec,
     )
 
-    assert calls[0] == (2, "threading")
-    assert all(n_jobs == 2 and backend == "threading" for n_jobs, backend in calls)
+    assert calls
+    assert all(call == (2, "threading") for call in calls)
     assert len(result.pair_scores) == 1
 
 
-def test_interaction_discovery_accepts_dask_backend_with_executor(
-    monkeypatch,
-) -> None:
-    sample_ids = list(range(1, 21))
-    x1 = [-1.0, -1.0, 1.0, 1.0] * 5
-    x2 = [-1.0, 1.0, -1.0, 1.0] * 5
-    pca_signal = [left * right for left, right in zip(x1, x2, strict=True)]
-    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2})
-    catalog = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2"],
-            "feature_type": ["first_order", "first_order"],
-        }
-    )
-    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 16 + ["holdout"] * 4})
-    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
-    retained_terms = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2"],
-            "feature_type": ["first_order", "first_order"],
-        }
-    )
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=1,
-        permutation_count_B=3,
-        random_seed=123,
-        n_jobs=2,
-        parallel_backend="dask",
-        enforce_permutation_adequacy=False,
-    )
+def test_score_only_discovery_uses_dask_without_fallback(monkeypatch) -> None:
+    """Dask dispatch is used directly and an executor error is not recovered."""
+    inputs, catalog, holdout, pca_scores, retained_terms = _fixture()
+    spec = _spec(n_jobs=2, parallel_backend="dask")
 
     class FakeExecutor:
-        def map(self, fn, items, **kwargs):  # noqa: ANN001, ANN003
-            _ = kwargs
-            return [fn(item) for item in items]
+        def __init__(self) -> None:
+            self.closed = False
+
+        def map(self, function, items):
+            return [function(item) for item in items]
 
         def close(self) -> None:
-            return None
+            self.closed = True
 
-    def _fake_get_executor(backend: str, **kwargs: object):  # noqa: ANN003
-        assert backend == "dask"
-        assert kwargs["n_workers"] == 2
-        return FakeExecutor()
-
-    def _fake_score_interaction_permutation(
-        y_base: np.ndarray,
-        permute_response: bool,
-        *,
-        n_pairs: int,
-        n_comp: int,
-        **_: object,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        _ = (y_base, permute_response)
-        scores = np.ones(n_pairs, dtype=float)
-        component_scores = np.ones((n_pairs, n_comp), dtype=float)
-        return scores, component_scores
-
-    monkeypatch.setattr(manuscript_stages, "get_executor", _fake_get_executor)
+    executor = FakeExecutor()
     monkeypatch.setattr(
         manuscript_stages,
-        "_score_interaction_permutation",
-        _fake_score_interaction_permutation,
+        "get_executor",
+        lambda backend, **kwargs: executor,
     )
-
-    result = discover_manuscript_interactions(
+    monkeypatch.setattr(manuscript_stages, "_score_interaction_permutation", _fake_score)
+    artifact = discover_interaction_scores_only(
         inputs,
         catalog,
         holdout,
         pca_scores,
         retained_terms,
         spec,
+        contract=canonical_execution_contract_from_specs(spec),
     )
-    assert len(result.pair_scores) == 1
+    assert artifact.status == "score_only_completed"
+    assert executor.closed
 
-
-def test_interaction_discovery_falls_back_to_joblib_when_dask_executor_fails(
-    monkeypatch,
-) -> None:
-    sample_ids = list(range(1, 21))
-    x1 = [-1.0, -1.0, 1.0, 1.0] * 5
-    x2 = [-1.0, 1.0, -1.0, 1.0] * 5
-    pca_signal = [left * right for left, right in zip(x1, x2, strict=True)]
-    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2})
-    catalog = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2"],
-            "feature_type": ["first_order", "first_order"],
-        }
-    )
-    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 16 + ["holdout"] * 4})
-    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
-    retained_terms = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2"],
-            "feature_type": ["first_order", "first_order"],
-        }
-    )
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=1,
-        permutation_count_B=3,
-        random_seed=123,
-        n_jobs=2,
-        parallel_backend="dask",
-        enforce_permutation_adequacy=False,
-    )
-
-    class FakeParallel:
-        def __init__(self, n_jobs: int, **kwargs: object) -> None:
-            self.n_jobs = n_jobs
-            self.backend = str(kwargs.get("backend", "loky"))
-
-        def __enter__(self) -> FakeParallel:
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
-            return False
-
-        def __call__(
-            self,
-            jobs: list[tuple[object, tuple[object, ...], dict[str, object]]],
-        ) -> list[tuple[np.ndarray, np.ndarray]]:
-            _ = (self.n_jobs, self.backend)
-            return [func(*args, **kwargs) for func, args, kwargs in jobs]
-
-    def _fake_score_interaction_permutation(
-        y_base: np.ndarray,
-        permute_response: bool,
-        *,
-        n_pairs: int,
-        n_comp: int,
-        **_: object,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        _ = (y_base, permute_response)
-        scores = np.ones(n_pairs, dtype=float)
-        component_scores = np.ones((n_pairs, n_comp), dtype=float)
-        return scores, component_scores
-
-    def _raising_get_executor(backend: str, **kwargs: object):  # noqa: ANN003
-        _ = (backend, kwargs)
-        raise RuntimeError("dask unavailable")
-
-    monkeypatch.setattr(manuscript_stages, "get_executor", _raising_get_executor)
-    monkeypatch.setattr(manuscript_stages, "Parallel", FakeParallel)
     monkeypatch.setattr(
         manuscript_stages,
-        "_score_interaction_permutation",
-        _fake_score_interaction_permutation,
+        "get_executor",
+        lambda backend, **kwargs: (_ for _ in ()).throw(RuntimeError("dask unavailable")),
     )
+    with pytest.raises(RuntimeError, match="dask unavailable"):
+        discover_interaction_scores_only(
+            inputs,
+            catalog,
+            holdout,
+            pca_scores,
+            retained_terms,
+            spec,
+            contract=canonical_execution_contract_from_specs(spec),
+        )
 
-    result = discover_manuscript_interactions(
-        inputs,
-        catalog,
-        holdout,
-        pca_scores,
-        retained_terms,
-        spec,
-    )
-    assert len(result.pair_scores) == 1
 
-
-def test_interaction_discovery_resumes_from_checkpointed_permutation_scores(
+def test_score_only_discovery_resumes_valid_checkpoints_and_propagates_failures(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    sample_ids = list(range(1, 21))
-    x1 = [-1.0, -1.0, 1.0, 1.0] * 5
-    x2 = [-1.0, 1.0, -1.0, 1.0] * 5
-    pca_signal = [left * right for left, right in zip(x1, x2, strict=True)]
-    inputs = pd.DataFrame({"sample_id": sample_ids, "x1": x1, "x2": x2})
-    catalog = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2"],
-            "feature_type": ["first_order", "first_order"],
-        }
-    )
-    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 16 + ["holdout"] * 4})
-    pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": pca_signal})
-    retained_terms = pd.DataFrame(
-        {
-            "feature_name": ["x1", "x2"],
-            "feature_type": ["first_order", "first_order"],
-        }
-    )
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=1,
-        permutation_count_B=5,
-        random_seed=123,
-        n_jobs=1,
-        parallel_backend="threading",
-        enforce_permutation_adequacy=False,
-    )
+    """A failed score raises; only valid completed checkpoints are reused."""
+    inputs, catalog, holdout, pca_scores, retained_terms = _fixture()
+    spec = _spec(parallel_backend="threading")
     checkpoint_root = tmp_path / "interaction_checkpoints"
     monkeypatch.setenv("RFM_PROGRESS_BATCH_SIZE", "2")
+    interrupted_calls = {"count": 0}
 
-    interrupted_call_counter = {"count": 0}
-
-    def _fail_midway_score_interaction_permutation(
+    def _fail_midway(
         y_base: np.ndarray,
         permute_response: bool,
         *,
@@ -796,21 +355,17 @@ def test_interaction_discovery_resumes_from_checkpointed_permutation_scores(
         n_comp: int,
         **_: object,
     ) -> tuple[np.ndarray, np.ndarray]:
-        _ = (y_base, permute_response)
-        interrupted_call_counter["count"] += 1
-        if interrupted_call_counter["count"] >= 3:
+        _ = y_base, permute_response
+        interrupted_calls["count"] += 1
+        if interrupted_calls["count"] >= 3:
             raise RuntimeError("simulated worker interruption")
-        score = float(interrupted_call_counter["count"])
+        score = float(interrupted_calls["count"])
         return np.full(n_pairs, score), np.full((n_pairs, n_comp), score)
 
-    monkeypatch.setattr(
-        manuscript_stages,
-        "_score_interaction_permutation",
-        _fail_midway_score_interaction_permutation,
-    )
-
-    with pytest.raises(RuntimeError, match="parallel batch failed"):
-        discover_manuscript_interactions(
+    monkeypatch.setattr(manuscript_stages, "_score_interaction_permutation", _fail_midway)
+    contract = canonical_execution_contract_from_specs(spec)
+    with pytest.raises(RuntimeError, match="simulated worker interruption"):
+        discover_interaction_scores_only(
             inputs,
             catalog,
             holdout,
@@ -818,14 +373,13 @@ def test_interaction_discovery_resumes_from_checkpointed_permutation_scores(
             retained_terms,
             spec,
             checkpoint_dir=checkpoint_root,
+            contract=contract,
         )
 
-    score_files_after_interrupt = sorted(checkpoint_root.rglob("score_*.npz"))
-    assert len(score_files_after_interrupt) == 2
+    assert len(list(checkpoint_root.rglob("score_*.npz"))) == 2
+    resumed_calls = {"count": 0}
 
-    resumed_call_counter = {"count": 0}
-
-    def _resume_score_interaction_permutation(
+    def _resume(
         y_base: np.ndarray,
         permute_response: bool,
         *,
@@ -833,18 +387,13 @@ def test_interaction_discovery_resumes_from_checkpointed_permutation_scores(
         n_comp: int,
         **_: object,
     ) -> tuple[np.ndarray, np.ndarray]:
-        _ = (y_base, permute_response)
-        resumed_call_counter["count"] += 1
-        score = float(resumed_call_counter["count"] + 10)
+        _ = y_base, permute_response
+        resumed_calls["count"] += 1
+        score = float(resumed_calls["count"] + 10)
         return np.full(n_pairs, score), np.full((n_pairs, n_comp), score)
 
-    monkeypatch.setattr(
-        manuscript_stages,
-        "_score_interaction_permutation",
-        _resume_score_interaction_permutation,
-    )
-
-    resumed_result = discover_manuscript_interactions(
+    monkeypatch.setattr(manuscript_stages, "_score_interaction_permutation", _resume)
+    artifact = discover_interaction_scores_only(
         inputs,
         catalog,
         holdout,
@@ -852,31 +401,16 @@ def test_interaction_discovery_resumes_from_checkpointed_permutation_scores(
         retained_terms,
         spec,
         checkpoint_dir=checkpoint_root,
+        contract=contract,
     )
-    assert resumed_call_counter["count"] == 4
-    assert len(resumed_result.pair_scores) == 1
+    assert resumed_calls["count"] == DRAW_COUNT - 1
+    assert artifact.status == "score_only_completed"
 
-    loaded_call_counter = {"count": 0}
+    def _should_not_run(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("completed score checkpoints must be reused")
 
-    def _should_not_run_score_interaction_permutation(
-        y_base: np.ndarray,
-        permute_response: bool,
-        *,
-        n_pairs: int,
-        n_comp: int,
-        **_: object,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        _ = (y_base, permute_response)
-        loaded_call_counter["count"] += 1
-        raise AssertionError("checkpoint resume should skip recomputation")
-
-    monkeypatch.setattr(
-        manuscript_stages,
-        "_score_interaction_permutation",
-        _should_not_run_score_interaction_permutation,
-    )
-
-    loaded_result = discover_manuscript_interactions(
+    monkeypatch.setattr(manuscript_stages, "_score_interaction_permutation", _should_not_run)
+    loaded = discover_interaction_scores_only(
         inputs,
         catalog,
         holdout,
@@ -884,9 +418,9 @@ def test_interaction_discovery_resumes_from_checkpointed_permutation_scores(
         retained_terms,
         spec,
         checkpoint_dir=checkpoint_root,
+        contract=contract,
     )
-    assert loaded_call_counter["count"] == 0
-    assert len(loaded_result.pair_scores) == 1
+    assert loaded.status == "score_only_completed"
 
 
 def _uniform_inputs(n: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
@@ -904,25 +438,22 @@ def test_condition_pca_scores_removes_additive_main_effects_preserves_interactio
     retained_terms = pd.DataFrame(
         {"feature_name": ["x1", "x2"], "feature_type": ["first_order"] * 2}
     )
-    main_effect = 3.0 * x1 + 2.0 * (x1**2)  # additive main + curvature, no interaction
-    interaction = 5.0 * x1 * x2  # pure interaction (non-additive)
+    main_effect = 3.0 * x1 + 2.0 * (x1**2)
+    interaction = 5.0 * x1 * x2
     pca_scores = pd.DataFrame(
         {"sample_id": sample_ids, "PC_main": main_effect, "PC_int": interaction}
     )
 
     conditioned = manuscript_stages._condition_pca_scores_on_main_effects(
-        inputs, holdout, pca_scores, retained_terms, degree=2
+        inputs,
+        holdout,
+        pca_scores,
+        retained_terms,
+        degree=2,
     )
 
-    var_main_before = float(np.var(main_effect))
-    var_main_after = float(np.var(conditioned["PC_main"].to_numpy()))
-    var_int_before = float(np.var(interaction))
-    var_int_after = float(np.var(conditioned["PC_int"].to_numpy()))
-
-    # Additive main-effect component is almost entirely removed.
-    assert var_main_after < 1e-6 * var_main_before
-    # Interaction component variance is preserved (survives residualization).
-    assert var_int_after > 0.9 * var_int_before
+    assert float(np.var(conditioned["PC_main"].to_numpy())) < 1e-6 * float(np.var(main_effect))
+    assert float(np.var(conditioned["PC_int"].to_numpy())) > 0.9 * float(np.var(interaction))
 
 
 def test_condition_pca_scores_degree_one_leaves_quadratic_curvature() -> None:
@@ -937,9 +468,12 @@ def test_condition_pca_scores_degree_one_leaves_quadratic_curvature() -> None:
     pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": curvature})
 
     conditioned = manuscript_stages._condition_pca_scores_on_main_effects(
-        inputs, holdout, pca_scores, retained_terms, degree=1
+        inputs,
+        holdout,
+        pca_scores,
+        retained_terms,
+        degree=1,
     )
-    # Substantial quadratic variance remains when only linear terms are conditioned out.
     assert float(np.var(conditioned["PC1"].to_numpy())) > 0.5 * float(np.var(curvature))
 
 
@@ -952,20 +486,19 @@ def test_condition_pca_scores_degree_zero_returns_unchanged() -> None:
     holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * n})
     retained_terms = pd.DataFrame({"feature_name": ["x1"], "feature_type": ["first_order"]})
     pca_scores = pd.DataFrame({"sample_id": sample_ids, "PC1": x1})
+
     out = manuscript_stages._condition_pca_scores_on_main_effects(
-        inputs, holdout, pca_scores, retained_terms, degree=0
+        inputs,
+        holdout,
+        pca_scores,
+        retained_terms,
+        degree=0,
     )
     pd.testing.assert_frame_equal(out, pca_scores)
 
 
 def test_interaction_spec_conditions_main_effects_by_default() -> None:
     """The corrected main-effect conditioning is enabled by default."""
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.95,
-        retained_pairs_reference=0,
-        permutation_count_B=19,
-    )
+    spec = _spec()
     assert spec.condition_main_effects is True
     assert spec.main_effect_conditioning_degree == 2

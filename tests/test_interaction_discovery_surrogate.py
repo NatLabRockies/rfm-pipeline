@@ -38,7 +38,7 @@ def test_discover_manuscript_interactions_surrogate():
         aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
         null_threshold_quantile=0.9,
         retained_pairs_reference=1,
-        permutation_count_B=50,
+        permutation_count_B=199,
         random_seed=123,
         implementation_method="residualized_product_permutation_surrogate",
     )

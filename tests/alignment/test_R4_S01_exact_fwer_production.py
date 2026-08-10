@@ -1,8 +1,8 @@
-"""R4-S01: Accept fwer_max_stat_exact in the production interaction stage.
+"""R4-S01: Accept max_t in the production interaction stage.
 
 Acceptance criteria:
 - discover_manuscript_interactions runs without raising when
-  family_error_method="fwer_max_stat_exact".
+  selection_method="max_t".
 - Planted-interaction pair is retained under the exact method.
 - Pure-null fixture retains 0 pairs at alpha=0.05 (fixed seed).
 - Unknown method still raises ValueError.
@@ -81,13 +81,13 @@ def _exact_spec(*, permutation_count_B: int = 999, seed: int = 42) -> Interactio
         permutation_count_B=permutation_count_B,
         random_seed=seed,
         n_jobs=1,
-        family_error_method="fwer_max_stat_exact",
-        family_error_alpha=0.05,
+        selection_method="max_t",
+        selection_alpha=0.05,
     )
 
 
 def test_exact_fwer_production_does_not_raise(monkeypatch) -> None:
-    """discover_manuscript_interactions accepts fwer_max_stat_exact without raising."""
+    """discover_manuscript_interactions accepts max_t without raising."""
     inputs, catalog, holdout, pca_scores, retained_terms = _base_inputs(plant_interaction=True)
     spec = _exact_spec(permutation_count_B=999)
 
@@ -141,19 +141,16 @@ def test_exact_fwer_null_retains_zero_pairs() -> None:
 
 
 def test_unknown_method_still_raises() -> None:
-    """Unknown family_error_method still raises ValueError."""
-    inputs, catalog, holdout, pca_scores, retained_terms = _base_inputs()
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.95,
-        retained_pairs_reference=1,
-        permutation_count_B=19,
-        random_seed=42,
-        n_jobs=1,
-        family_error_method="not_a_real_method",
-        family_error_alpha=0.05,
-        enforce_permutation_adequacy=False,
-    )
-    with pytest.raises(ValueError, match="Unknown family_error_method"):
-        discover_manuscript_interactions(inputs, catalog, holdout, pca_scores, retained_terms, spec)
+    """Unknown selection_method still raises ValueError."""
+    with pytest.raises(ValueError, match="selection_method"):
+        InteractionDiscoverySpec(
+            method="tree_shap_interaction_values",
+            aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
+            null_threshold_quantile=0.95,
+            retained_pairs_reference=1,
+            permutation_count_B=199,
+            random_seed=42,
+            n_jobs=1,
+            selection_method="not_a_real_method",
+            selection_alpha=0.05,
+        )

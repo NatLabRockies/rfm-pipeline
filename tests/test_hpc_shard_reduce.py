@@ -1,8 +1,9 @@
-"""Tests for HPC shard worker + reduce merge integration."""
+"""Tests for canonical score-only HPC interaction reduction."""
 
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
@@ -11,103 +12,132 @@ import pytest
 
 from rfm_pipeline.distributed.checkpoint import CheckpointManager
 from rfm_pipeline.distributed.manifest import ShardManifest
+from rfm_pipeline.interaction_contract import (
+    ScoreOnlyInteractionArtifact,
+    build_control_snapshot,
+    canonical_execution_contract_from_specs,
+)
 from rfm_pipeline.manuscript_stages import (
-    InteractionDiscoveryResult,
     InteractionDiscoverySpec,
-    InteractionScoresShard,
+    discover_interaction_scores_only,
+    reduce_score_only_interaction_artifacts,
 )
 
-
-def _minimal_interaction_result() -> InteractionDiscoveryResult:
-    pair_scores = pd.DataFrame(
-        [
-            {
-                "pair_name": "x1:x2",
-                "interaction_score": 0.5,
-                "empirical_null_threshold": 0.2,
-                "empirical_p_value": 0.01,
-                "empirical_null_retained": True,
-                "retained": True,
-            }
-        ]
-    )
-    component_scores = pd.DataFrame(
-        [{"pair_name": "x1:x2", "component_name": "PC1", "interaction_score": 0.5}]
-    )
-    null_summary = pd.DataFrame(
-        [{"pair_name": "x1:x2", "null_mean_score": 0.1, "null_std_score": 0.01}]
-    )
-    retained_pairs = pair_scores.loc[pair_scores["retained"]].copy()
-    provenance = pd.DataFrame(
-        [
-            {
-                "manuscript_method": "tree_shap_interaction_values",
-                "public_implementation_method": "tree_shap_gradient_boosting",
-                "public_implementation_status": "manuscript_aligned",
-                "source_workflow_reference": "private_tree_shap_interaction_workflow",
-                "source_workflow_equivalence_status": (
-                    "manuscript_aligned_via_shap_gradient_boosting"
-                ),
-                "null_threshold_quantile": 0.9,
-                "permutation_count_B": 3,
-            }
-        ]
-    )
-    summary = pd.DataFrame(
-        [
-            {
-                "stage": "interaction_discovery",
-                "n_candidate_pairs": 1,
-                "n_retained_pairs": 1,
-                "n_training_rows": 10,
-                "n_empirical_null_retained_pairs": 1,
-                "null_threshold_quantile": 0.9,
-                "retained_pairs_reference": 1,
-                "public_implementation_method": "tree_shap_gradient_boosting",
-                "public_implementation_status": "manuscript_aligned",
-                "source_workflow_reference": "private_tree_shap_interaction_workflow",
-                "source_workflow_equivalence_status": (
-                    "manuscript_aligned_via_shap_gradient_boosting"
-                ),
-            }
-        ]
-    )
-    return InteractionDiscoveryResult(
-        pair_scores=pair_scores,
-        component_interaction_scores=component_scores,
-        interaction_null_summary=null_summary,
-        retained_pairs=retained_pairs,
-        provenance=provenance,
-        summary=summary,
-    )
+DRAW_COUNT = 199
 
 
-def _minimal_interaction_shard(
-    pair_names: list[str],
+def _spec(
     *,
-    B: int = 3,
+    draws: int = DRAW_COUNT,
     random_seed: int = 123,
-    observed_multiplier: float = 1.0,
-) -> InteractionScoresShard:
-    """Return a minimal score-only shard for testing."""
-    n_pairs = len(pair_names)
-    rng = np.random.default_rng(42)
-    observed_scores = rng.uniform(0.1, 0.9, size=n_pairs) * observed_multiplier
-    null_scores = rng.uniform(0.0, 0.5, size=(B, n_pairs))
-    draw_ids = np.arange(B, dtype=np.int64)
-    return InteractionScoresShard(
-        pair_names=pair_names,
-        observed_scores=observed_scores,
-        null_scores=null_scores,
-        draw_ids=draw_ids,
-        n_training_rows=8,
-        spec_random_seed=random_seed,
-        spec_permutation_count_B=B,
+    **overrides: object,
+) -> InteractionDiscoverySpec:
+    return InteractionDiscoverySpec(
+        method="tree_shap_interaction_values",
+        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
+        null_threshold_quantile=0.9,
+        retained_pairs_reference=0,
+        permutation_count_B=draws,
+        random_seed=random_seed,
+        selection_method="max_t",
+        selection_alpha=0.05,
+        minimum_selection_draws=DRAW_COUNT,
+        **overrides,
     )
 
 
-def test_hpc_shard_worker_writes_score_only_artifacts(tmp_path, monkeypatch):
-    """Shard must emit score-only NPZ outputs; never retain decisions."""
+def _contract_and_snapshot(
+    pair_names: tuple[str, ...],
+    spec: InteractionDiscoverySpec,
+):
+    contract = canonical_execution_contract_from_specs(spec)
+    snapshot = build_control_snapshot(
+        contract,
+        candidate_pair_names=pair_names,
+        training_sample_ids=np.arange(1, 9, dtype=np.int64),
+        feature_matrix=np.arange(24, dtype=float).reshape(8, 3),
+        response_matrix=np.arange(16, dtype=float).reshape(8, 2),
+        component_names=("PC1", "PC2"),
+    )
+    return contract, snapshot
+
+
+def _artifact(
+    snapshot,
+    *,
+    start: int,
+    end: int,
+    observed: np.ndarray | None = None,
+    null: np.ndarray | None = None,
+) -> ScoreOnlyInteractionArtifact:
+    width = end - start
+    return ScoreOnlyInteractionArtifact(
+        status="score_only_completed",
+        pair_range_start=start,
+        pair_range_end=end,
+        pair_names=snapshot.candidate_pair_names[start:end],
+        observed_scores=(
+            np.linspace(0.6, 0.9, width, dtype=float)
+            if observed is None
+            else np.asarray(observed, dtype=float)
+        ),
+        null_scores=(
+            np.zeros((snapshot.permutation_draws, width), dtype=float)
+            if null is None
+            else np.asarray(null, dtype=float)
+        ),
+        draw_ids=np.arange(snapshot.permutation_draws, dtype=np.int64),
+        control_snapshot=snapshot,
+    )
+
+
+def _shard_metadata(shard_id: str, artifact: ScoreOnlyInteractionArtifact) -> dict[str, object]:
+    return {
+        "shard_id": shard_id,
+        "stage": "interaction_discovery",
+        "shard_mode": "score_only",
+        "status": artifact.status,
+        "pair_range_start": artifact.pair_range_start,
+        "pair_range_end": artifact.pair_range_end,
+        "control_snapshot_sha256": artifact.control_snapshot.checksum,
+        "candidate_family_sha256": artifact.control_snapshot.candidate_family_sha256,
+        "candidate_family_count": len(artifact.control_snapshot.candidate_pair_names),
+    }
+
+
+def _write_score_only_shard(
+    output_root,
+    shard_id: str,
+    artifact: ScoreOnlyInteractionArtifact,
+) -> dict[str, object]:
+    artifact.write_to(output_root / shard_id)
+    return _shard_metadata(shard_id, artifact)
+
+
+def _patch_hpc_reducer(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    contract,
+    spec: InteractionDiscoverySpec,
+) -> None:
+    from rfm_pipeline import hpc_reduce
+
+    monkeypatch.setattr(hpc_reduce, "load_canonical_execution_contract", lambda _: contract)
+    monkeypatch.setattr(hpc_reduce, "load_config", lambda _: object())
+    monkeypatch.setattr(hpc_reduce, "apply_fast_mode_overrides", lambda value: value)
+    monkeypatch.setattr(hpc_reduce, "config_to_legacy_case_study", lambda _: object())
+    monkeypatch.setattr(
+        hpc_reduce,
+        "interaction_discovery_spec_from_case_study_config",
+        lambda _: spec,
+    )
+
+
+def test_hpc_shard_worker_writes_self_verifying_score_only_artifacts(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """Interaction workers emit only the canonical persisted score artifact."""
     from rfm_pipeline import hpc_shard_worker
 
     x_path = tmp_path / "X.parquet"
@@ -115,31 +145,29 @@ def test_hpc_shard_worker_writes_score_only_artifacts(tmp_path, monkeypatch):
     catalog_path = tmp_path / "actual_input_feature_catalog.parquet"
     pca_scores_path = tmp_path / "pca_scores.csv"
     retained_terms_path = tmp_path / "retained_terms.csv"
-
     x_df = pd.DataFrame(
         {
             "sample_id": list(range(1, 11)),
             "x1": [0.0, 1.0] * 5,
             "x2": [1.0, 0.0] * 5,
-            "x3": [0.5] * 10,
         }
     )
     x_df.to_parquet(x_path)
     pd.DataFrame(
         {"sample_id": list(range(1, 11)), "split": ["train"] * 8 + ["holdout"] * 2}
     ).to_parquet(holdout_path)
-    pd.DataFrame(
+    catalog = pd.DataFrame(
         {
-            "feature_name": ["x1", "x2", "x3"],
-            "feature_type": ["first_order", "first_order", "first_order"],
+            "feature_name": ["x1", "x2"],
+            "feature_type": ["first_order", "first_order"],
         }
-    ).to_parquet(catalog_path)
+    )
+    catalog.to_parquet(catalog_path)
     pd.DataFrame({"sample_id": list(range(1, 11)), "PC1": [0.0, 1.0] * 5}).to_csv(
-        pca_scores_path, index=False
+        pca_scores_path,
+        index=False,
     )
-    pd.DataFrame({"feature_name": ["x1", "x2", "x3"], "feature_type": ["first_order"] * 3}).to_csv(
-        retained_terms_path, index=False
-    )
+    catalog.to_csv(retained_terms_path, index=False)
 
     shard = ShardManifest(
         shard_id="task-0000",
@@ -153,313 +181,269 @@ def test_hpc_shard_worker_writes_score_only_artifacts(tmp_path, monkeypatch):
         ],
         output_path=str(tmp_path / "out" / "task-0000"),
         expected_rows=10,
-        expected_columns=3,
+        expected_columns=2,
         feature_start_idx=0,
-        feature_end_idx=2,
+        feature_end_idx=1,
     )
-
-    cm = CheckpointManager(str(tmp_path / "out"), shard.shard_id)
-    cm.mark_running()
-
-    def _fake_spec(_: str | None) -> InteractionDiscoverySpec:
-        return InteractionDiscoverySpec(
-            method="tree_shap_interaction_values",
-            aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-            null_threshold_quantile=0.9,
-            retained_pairs_reference=1,
-            permutation_count_B=3,
-            random_seed=123,
-            n_jobs=1,
-        )
-
-    monkeypatch.setattr(hpc_shard_worker, "_load_interaction_spec", _fake_spec)
+    spec = _spec()
+    contract, snapshot = _contract_and_snapshot(("x1:x2",), spec)
+    artifact = _artifact(snapshot, start=0, end=1)
+    monkeypatch.setattr(hpc_shard_worker, "_load_interaction_spec", lambda _: spec)
+    monkeypatch.setattr(hpc_shard_worker, "load_canonical_execution_contract", lambda _: contract)
     discover_call: dict[str, object] = {}
 
-    def _fake_discover_score_only(*args, **kwargs):  # noqa: ANN002, ANN003
-        _ = args
+    def _fake_discover(*args, **kwargs):  # noqa: ANN002, ANN003
         discover_call.update(kwargs)
-        return _minimal_interaction_shard(["x1:x2"], B=3, random_seed=123)
+        return artifact
 
-    monkeypatch.setattr(
-        hpc_shard_worker,
-        "discover_interaction_scores_only",
-        _fake_discover_score_only,
+    monkeypatch.setattr(hpc_shard_worker, "discover_interaction_scores_only", _fake_discover)
+    cm = CheckpointManager(str(tmp_path / "out"), shard.shard_id)
+    cm.mark_running()
+    hpc_shard_worker._run_shard_stage(
+        shard,
+        cm,
+        SimpleNamespace(config="canonical.yml"),
     )
 
-    hpc_shard_worker._run_interaction_shard(shard, cm, config_path=None)
-
-    shard_result = json.loads((cm.staging_dir / "shard_result.json").read_text())
-    assert shard_result["stage"] == "interaction_discovery"
-    assert shard_result["shard_mode"] == "score_only", "Shard must be score_only; never retain"
-    assert "n_retained_pairs" not in shard_result, (
-        "Score-only shard must not record n_retained_pairs"
-    )
+    result = json.loads((cm.final_dir / "shard_result.json").read_text(encoding="utf-8"))
+    assert result["shard_mode"] == "score_only"
+    assert result["control_snapshot_sha256"] == snapshot.checksum
+    assert result["candidate_family_count"] == 1
+    assert (cm.final_dir / "score_only_interaction.npz").is_file()
+    assert (cm.final_dir / "score_only_interaction.json").is_file()
+    assert not (cm.final_dir / "retained_interaction_pairs.csv").exists()
     assert discover_call["pair_start_idx"] == 0
-    assert discover_call["pair_end_idx"] == 2
-    # Score-only outputs must exist
-    assert (cm.staging_dir / "interaction_shard_scores.npz").exists()
-    assert (cm.staging_dir / "interaction_pair_names.csv").exists()
-    # Old retention artifacts must NOT exist on a score-only shard
-    assert not (cm.staging_dir / "retained_interaction_pairs.csv").exists()
+    assert discover_call["pair_end_idx"] == 1
+    assert discover_call["contract"] is contract
 
 
-def _write_score_only_shard(shard_dir, pair_names, *, B=3, seed=123):
-    """Write a score-only shard directory for reducer tests."""
-    shard_dir.mkdir(parents=True, exist_ok=True)
-    n_pairs = len(pair_names)
-    rng = np.random.default_rng(0)
-    observed_scores = rng.uniform(0.1, 0.9, size=n_pairs)
-    null_scores = rng.uniform(0.0, 0.5, size=(B, n_pairs))
-    draw_ids = np.arange(B, dtype=np.int64)
-    np.savez_compressed(
-        shard_dir / "interaction_shard_scores.npz",
-        observed_scores=observed_scores.astype(np.float64),
-        null_scores=null_scores.astype(np.float64),
-        draw_ids=draw_ids,
-    )
-    pd.DataFrame({"pair_name": pair_names}).to_csv(
-        shard_dir / "interaction_pair_names.csv", index=False
-    )
-    pd.DataFrame({"pair_name": ["x1:x2", "x1:x3"]}).to_csv(
-        shard_dir / "interaction_candidate_family.csv", index=False
-    )
-    return observed_scores, null_scores
-
-
-def test_hpc_reduce_merges_interaction_pair_outputs(tmp_path, monkeypatch):
-    """Reducer performs one global family decision and emits the retained-pair set."""
-    from tools import hpc_reduce
+def test_hpc_reduce_merges_verified_artifacts(tmp_path, monkeypatch) -> None:
+    """The reducer makes one global decision from persisted canonical artifacts."""
+    from rfm_pipeline import hpc_reduce
 
     output_root = tmp_path / "outputs"
     merged_dir = tmp_path / "merged"
-    output_root.mkdir(parents=True)
-    merged_dir.mkdir(parents=True)
-
-    B = 3
-
-    # Provide a minimal spec via monkeypatching so we don't need a real config file.
-    _spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=0,
-        permutation_count_B=B,
-        random_seed=123,
-    )
-    monkeypatch.setattr(hpc_reduce, "load_config", lambda path: object())
-    monkeypatch.setattr(hpc_reduce, "apply_fast_mode_overrides", lambda cfg: cfg)
-    monkeypatch.setattr(hpc_reduce, "config_to_legacy_case_study", lambda cfg: cfg)
-    monkeypatch.setattr(
-        hpc_reduce,
-        "interaction_discovery_spec_from_case_study_config",
-        lambda cfg: _spec,
-    )
-
-    # Shard 0: pair x1:x2
-    _write_score_only_shard(output_root / "task-0000", ["x1:x2"], B=B)
-    # Shard 1: pair x1:x3
-    _write_score_only_shard(output_root / "task-0001", ["x1:x3"], B=B)
-
+    merged_dir.mkdir()
+    spec = _spec()
+    contract, snapshot = _contract_and_snapshot(("x1:x2", "x1:x3"), spec)
+    artifacts = [_artifact(snapshot, start=0, end=1), _artifact(snapshot, start=1, end=2)]
     shard_results = [
-        {
-            "shard_id": "task-0000",
-            "stage": "interaction_discovery",
-            "shard_mode": "score_only",
-            "shard_scores_file": "interaction_shard_scores.npz",
-            "pair_names_file": "interaction_pair_names.csv",
-            "candidate_family_file": "interaction_candidate_family.csv",
-            "n_candidate_pairs": 1,
-            "spec_random_seed": 123,
-            "spec_permutation_count_B": B,
-            "n_draw_ids": B,
-        },
-        {
-            "shard_id": "task-0001",
-            "stage": "interaction_discovery",
-            "shard_mode": "score_only",
-            "shard_scores_file": "interaction_shard_scores.npz",
-            "pair_names_file": "interaction_pair_names.csv",
-            "candidate_family_file": "interaction_candidate_family.csv",
-            "n_candidate_pairs": 1,
-            "spec_random_seed": 123,
-            "spec_permutation_count_B": B,
-            "n_draw_ids": B,
-        },
+        _write_score_only_shard(output_root, f"task-{index:04d}", artifact)
+        for index, artifact in enumerate(artifacts)
     ]
+    _patch_hpc_reducer(monkeypatch, contract=contract, spec=spec)
 
     hpc_reduce._reduce_interaction_discovery(
-        shard_results=shard_results,
-        output_dir=merged_dir,
-        output_root=output_root,
-        config_path="dummy_config.yaml",
+        shard_results,
+        merged_dir,
+        output_root,
+        config_path="canonical.yml",
     )
 
-    merged_retained = pd.read_csv(merged_dir / "retained_interaction_pairs_merged.csv")
-    merged_scores = pd.read_csv(merged_dir / "interaction_pair_scores_merged.csv")
-    # Both pairs appear in the pair-score table regardless of retention outcome
-    assert set(merged_scores["pair_name"]) == {"x1:x2", "x1:x3"}
-    # Retained pairs are a global decision (subset of all pairs)
-    assert set(merged_retained["pair_name"]).issubset({"x1:x2", "x1:x3"})
-    # Summary marks global decision
-    summary = json.loads((merged_dir / "interaction_discovery_merged.json").read_text())
-    assert summary["reducer"] == "global_family_decision"
-    # Canonical hashes must be present
-    assert "canonical_hashes" in summary
-    assert "family_sha256" in summary["canonical_hashes"]
-    assert "null_matrix_sha256" in summary["canonical_hashes"]
-    assert "p_values_sha256" in summary["canonical_hashes"]
-    assert "threshold_sha256" in summary["canonical_hashes"]
-    assert "retained_set_sha256" in summary["canonical_hashes"]
-
-
-def test_global_family_decision_rejects_pair_due_to_other_shard_nulls():
-    from rfm_pipeline.manuscript_stages import reduce_interaction_family_decision
-
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=1,
-        permutation_count_B=20,
-        random_seed=123,
-        family_error_method="fwer_max_stat",
-        family_error_alpha=0.05,
+    scores = pd.read_csv(merged_dir / "interaction_pair_scores_merged.csv")
+    summary = json.loads(
+        (merged_dir / "interaction_discovery_merged.json").read_text(encoding="utf-8")
     )
-    draw_ids = np.arange(20, dtype=np.int64)
-    shard_a = InteractionScoresShard(
-        pair_names=["x1:x2"],
-        observed_scores=np.array([0.5]),
-        null_scores=np.full((20, 1), 0.1),
-        draw_ids=draw_ids,
-        n_training_rows=8,
-        spec_random_seed=123,
-        spec_permutation_count_B=20,
-    )
-    shard_b = InteractionScoresShard(
-        pair_names=["x1:x3"],
-        observed_scores=np.array([0.9]),
-        null_scores=np.full((20, 1), 0.8),
-        draw_ids=draw_ids,
-        n_training_rows=8,
-        spec_random_seed=123,
-        spec_permutation_count_B=20,
+    assert scores["pair_name"].tolist() == ["x1:x2", "x1:x3"]
+    assert summary["reducer"] == "canonical_score_only_family_decision"
+    assert summary["status"] == "completed"
+    assert summary["canonical_hashes"]["control_snapshot_sha256"] == snapshot.checksum
+
+
+def test_empty_interaction_family_builds_one_terminal_hpc_shard(tmp_path, monkeypatch) -> None:
+    """The HPC path represents a globally empty family with one terminal artifact."""
+    from rfm_pipeline import hpc_submit
+    from rfm_pipeline.distributed import manifest
+
+    artifact_dir = tmp_path / "artifacts"
+    retained_terms_dir = artifact_dir / "empirical_null_screen"
+    retained_terms_dir.mkdir(parents=True)
+    pd.DataFrame(columns=["feature_name", "feature_type"]).to_csv(
+        retained_terms_dir / "retained_terms.csv",
+        index=False,
     )
 
-    result = reduce_interaction_family_decision([shard_a, shard_b], spec)
-
-    retained = set(result.retained_pairs["pair_name"])
-    assert "x1:x2" not in retained
-    assert "x1:x3" in retained
-
-
-def test_global_family_decision_rejects_mismatched_draw_ids():
-    from rfm_pipeline.manuscript_stages import reduce_interaction_family_decision
-
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=1,
-        permutation_count_B=3,
-        random_seed=123,
+    monkeypatch.setattr(
+        manifest,
+        "resolve_interaction_discovery_shard_inputs",
+        lambda *_args, **_kwargs: {"retained_terms": "retained_terms.csv"},
     )
-    shard_a = _minimal_interaction_shard(["x1:x2"], B=3)
-    shard_b = _minimal_interaction_shard(["x1:x3"], B=3)
-    shard_b = InteractionScoresShard(
-        pair_names=shard_b.pair_names,
-        observed_scores=shard_b.observed_scores,
-        null_scores=shard_b.null_scores,
-        draw_ids=np.array([0, 1, 3], dtype=np.int64),
-        n_training_rows=shard_b.n_training_rows,
-        spec_random_seed=shard_b.spec_random_seed,
-        spec_permutation_count_B=shard_b.spec_permutation_count_B,
+    args = SimpleNamespace(
+        stage="interaction_discovery",
+        config=tmp_path / "canonical.yml",
     )
 
-    with pytest.raises(ValueError, match="draw_ids do not match"):
-        reduce_interaction_family_decision([shard_a, shard_b], spec)
-
-
-def test_real_score_path_matches_monolithic_and_multishard_execution():
-    from rfm_pipeline.manuscript_stages import (
-        discover_interaction_scores_only,
-        reduce_interaction_family_decision,
+    shards = hpc_submit._build_fresh_manifest(
+        args,
+        artifact_dir,
+        n_shards=5,
+        workflow=SimpleNamespace(dataset=SimpleNamespace(path=None)),
     )
 
+    assert len(shards) == 1
+    assert shards[0].feature_start_idx is None
+    assert shards[0].feature_end_idx is None
+
+
+def test_global_reducer_uses_nulls_from_every_shard() -> None:
+    """A pair is rejected when a different shard raises the global max null."""
+    spec = _spec()
+    contract, snapshot = _contract_and_snapshot(("x1:x2", "x1:x3"), spec)
+    first = _artifact(
+        snapshot,
+        start=0,
+        end=1,
+        observed=np.array([0.5]),
+        null=np.full((DRAW_COUNT, 1), 0.1),
+    )
+    second = _artifact(
+        snapshot,
+        start=1,
+        end=2,
+        observed=np.array([0.9]),
+        null=np.full((DRAW_COUNT, 1), 0.8),
+    )
+
+    result = reduce_score_only_interaction_artifacts(
+        [first, second],
+        spec=spec,
+        contract=contract,
+    )
+
+    assert set(result.retained_pairs["pair_name"]) == {"x1:x3"}
+
+
+def test_artifact_rejects_noncanonical_draw_order() -> None:
+    """A shard cannot relabel or reorder the shared response-permutation schedule."""
+    spec = _spec()
+    _, snapshot = _contract_and_snapshot(("x1:x2",), spec)
+    draw_ids = np.arange(DRAW_COUNT, dtype=np.int64)
+    draw_ids[-1] = DRAW_COUNT
+
+    with pytest.raises(ValueError, match="canonical ordered sequence"):
+        ScoreOnlyInteractionArtifact(
+            status="score_only_completed",
+            pair_range_start=0,
+            pair_range_end=1,
+            pair_names=("x1:x2",),
+            observed_scores=np.array([0.5]),
+            null_scores=np.ones((DRAW_COUNT, 1)),
+            draw_ids=draw_ids,
+            control_snapshot=snapshot,
+        )
+
+
+def _make_interaction_fixture(seed: int = 42):
+    rng = np.random.default_rng(seed)
     samples = np.arange(1, 13)
     x_df = pd.DataFrame(
         {
             "sample_id": samples,
-            "x1": np.linspace(-1.0, 1.0, len(samples)),
-            "x2": np.sin(samples),
-            "x3": np.cos(samples / 2.0),
+            "x1": rng.standard_normal(len(samples)),
+            "x2": rng.standard_normal(len(samples)),
+            "x3": rng.standard_normal(len(samples)),
         }
     )
     holdout_df = pd.DataFrame({"sample_id": samples, "split": "train"})
     pca_df = pd.DataFrame(
         {
             "sample_id": samples,
-            "PC1": x_df["x1"] * x_df["x2"],
-            "PC2": x_df["x2"] + 0.2 * x_df["x3"],
+            "PC1": rng.standard_normal(len(samples)),
+            "PC2": rng.standard_normal(len(samples)),
         }
     )
-    catalog_df = pd.DataFrame(
+    catalog = pd.DataFrame(
         {
             "feature_name": ["x1", "x2", "x3"],
             "feature_type": ["first_order"] * 3,
         }
     )
-    retained_df = catalog_df.copy()
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=0,
-        permutation_count_B=2,
+    return x_df, holdout_df, pca_df, catalog
+
+
+def test_monolithic_and_multishard_scoring_share_full_feature_identity(monkeypatch) -> None:
+    """Partial shards score against the full-family feature matrix and reduce identically."""
+    import rfm_pipeline.manuscript_stages as stages
+
+    x_df, holdout_df, pca_df, catalog = _make_interaction_fixture()
+    spec = _spec(
         random_seed=19,
         n_tree_estimators=5,
         max_tree_depth=2,
         max_shap_samples=12,
         min_component_variance_fraction=0.0,
         condition_main_effects=False,
-        enforce_permutation_adequacy=False,
         parallel_backend="threading",
     )
+    contract = canonical_execution_contract_from_specs(spec)
+    feature_widths: set[int] = set()
+    weights = {"x1:x2": 0.8, "x1:x3": 0.7, "x2:x3": 0.6}
+
+    def _fake_score(**kwargs):
+        feature_widths.add(kwargs["x_feat"].shape[1])
+        values = np.array([weights[item[0]] for item in kwargs["candidates"]], dtype=float)
+        if kwargs["permute_response"]:
+            values *= 0.25
+        return values, np.repeat(values[:, None], kwargs["n_comp"], axis=1)
+
+    monkeypatch.setattr(stages, "_score_interaction_permutation", _fake_score)
     kwargs = {
         "input_matrix": x_df,
-        "feature_catalog": catalog_df,
+        "feature_catalog": catalog,
         "holdout_assignments": holdout_df,
         "pca_scores": pca_df,
-        "retained_terms": retained_df,
+        "retained_terms": catalog,
         "spec": spec,
+        "contract": contract,
     }
     monolithic = discover_interaction_scores_only(**kwargs)
     first = discover_interaction_scores_only(**kwargs, pair_start_idx=0, pair_end_idx=1)
     second = discover_interaction_scores_only(**kwargs, pair_start_idx=1, pair_end_idx=3)
-    reduced = reduce_interaction_family_decision([first, second], spec)
-
-    assert reduced.pair_scores["pair_name"].sort_values().tolist() == sorted(monolithic.pair_names)
-    np.testing.assert_allclose(
-        reduced.pair_scores.sort_values("pair_name")["interaction_score"].to_numpy(),
-        monolithic.observed_scores[np.argsort(np.asarray(monolithic.pair_names))],
+    one_shard = reduce_score_only_interaction_artifacts(
+        [monolithic],
+        spec=spec,
+        contract=contract,
     )
-    np.testing.assert_allclose(
-        reduced.interaction_null_summary["null_mean_score"].to_numpy(),
-        monolithic.null_scores.mean(axis=0),
+    many_shards = reduce_score_only_interaction_artifacts(
+        [first, second],
+        spec=spec,
+        contract=contract,
+    )
+
+    assert feature_widths == {3}
+    pd.testing.assert_frame_equal(
+        one_shard.pair_scores.reset_index(drop=True),
+        many_shards.pair_scores.reset_index(drop=True),
     )
 
 
-def test_production_permutation_uses_one_joint_row_order(monkeypatch):
+def test_reducer_rejects_shuffled_artifact_arrival() -> None:
+    """Reducer refuses reordering rather than silently repairing shard order."""
+    spec = _spec()
+    contract, snapshot = _contract_and_snapshot(("x1:x2", "x1:x3"), spec)
+    first = _artifact(snapshot, start=0, end=1)
+    second = _artifact(snapshot, start=1, end=2)
+
+    with pytest.raises(ValueError, match="reordered|contiguous"):
+        reduce_score_only_interaction_artifacts(
+            [second, first],
+            spec=spec,
+            contract=contract,
+        )
+
+
+def test_production_permutation_uses_one_joint_row_order(monkeypatch) -> None:
     import rfm_pipeline.manuscript_stages as stages
 
     y_base = np.arange(24, dtype=float).reshape(8, 3)
     captured: list[np.ndarray] = []
 
-    def capture_fit(x_feat, y, **kwargs):  # noqa: ANN001
+    def _capture_fit(x_feat, y, **kwargs):  # noqa: ANN001
         _ = x_feat, kwargs
         captured.append(np.asarray(y))
         return object()
 
-    monkeypatch.setattr(stages, "_fit_tree_for_shap", capture_fit)
+    monkeypatch.setattr(stages, "_fit_tree_for_shap", _capture_fit)
     monkeypatch.setattr(
         stages,
         "_shap_mean_abs_interaction_matrix",
@@ -486,7 +470,7 @@ def test_production_permutation_uses_one_joint_row_order(monkeypatch):
         np.testing.assert_array_equal(np.argsort(component), first_order)
 
 
-def test_load_interaction_result_falls_back_to_merged_distributed_outputs(tmp_path):
+def test_load_interaction_result_falls_back_to_merged_distributed_outputs(tmp_path) -> None:
     from rfm_pipeline.distributed.stage_loaders import _load_interaction_discovery_result
 
     merged_root = tmp_path / "hpc_shards_interaction_discovery" / "_merged"
@@ -497,13 +481,12 @@ def test_load_interaction_result_falls_back_to_merged_distributed_outputs(tmp_pa
             {"pair_name": "x1:x3", "interaction_score": 0.7, "retained": False},
         ]
     ).to_csv(merged_root / "interaction_pair_scores_merged.csv", index=False)
-    pd.DataFrame(
-        [
-            {"pair_name": "x1:x2", "interaction_score": 0.8, "retained": True},
-        ]
-    ).to_csv(merged_root / "retained_interaction_pairs_merged.csv", index=False)
+    pd.DataFrame([{"pair_name": "x1:x2", "interaction_score": 0.8, "retained": True}]).to_csv(
+        merged_root / "retained_interaction_pairs_merged.csv", index=False
+    )
     (merged_root / "interaction_discovery_merged.json").write_text(
-        json.dumps({"n_shards": 2, "n_merged_pair_scores": 2, "n_merged_retained_pairs": 1})
+        json.dumps({"n_shards": 2, "n_merged_pair_scores": 2, "n_merged_retained_pairs": 1}),
+        encoding="utf-8",
     )
 
     loaded = _load_interaction_discovery_result(tmp_path)
@@ -514,11 +497,11 @@ def test_load_interaction_result_falls_back_to_merged_distributed_outputs(tmp_pa
     assert int(loaded.summary.loc[0, "n_shards"]) == 2
 
 
-def test_hpc_shard_worker_dispatches_noninteraction_stage(tmp_path, monkeypatch):
+def test_hpc_shard_worker_dispatches_noninteraction_stage(tmp_path, monkeypatch) -> None:
     from rfm_pipeline import hpc_shard_worker
 
     config_path = tmp_path / "case_study.yaml"
-    config_path.write_text("pipeline:\n  stage_order: [output_conditioning]\n")
+    config_path.write_text("pipeline:\n  stage_order: [output_conditioning]\n", encoding="utf-8")
     shard = ShardManifest(
         shard_id="task-0000",
         stage="output_conditioning",
@@ -542,7 +525,8 @@ def test_hpc_shard_worker_dispatches_noninteraction_stage(tmp_path, monkeypatch)
         _ = shard_manifest
         call_record["config_path"] = config_path
         (checkpoint_manager.staging_dir / "shard_result.json").write_text(
-            json.dumps({"shard_id": "task-0000", "stage": "output_conditioning"})
+            json.dumps({"shard_id": "task-0000", "stage": "output_conditioning"}),
+            encoding="utf-8",
         )
 
     monkeypatch.setattr(
@@ -550,25 +534,19 @@ def test_hpc_shard_worker_dispatches_noninteraction_stage(tmp_path, monkeypatch)
         "_run_output_conditioning_shard",
         _fake_run_output_conditioning_shard,
     )
-
-    hpc_shard_worker._run_shard_stage(
-        shard,
-        cm,
-        SimpleNamespace(config=str(config_path)),
-    )
+    hpc_shard_worker._run_shard_stage(shard, cm, SimpleNamespace(config=str(config_path)))
 
     assert call_record["config_path"] == str(config_path)
     assert (cm.final_dir / "_SUCCESS.json").exists()
 
 
-def test_hpc_reduce_materializes_noninteraction_stage(tmp_path, monkeypatch):
-    from tools import hpc_reduce
+def test_hpc_reduce_materializes_noninteraction_stage(tmp_path, monkeypatch) -> None:
+    from rfm_pipeline import hpc_reduce
 
     output_root = tmp_path / "outputs"
     output_dir = tmp_path / "merged"
     output_root.mkdir(parents=True)
     output_dir.mkdir(parents=True)
-
     for shard_id in ("task-0000", "task-0001"):
         shard_dir = output_root / shard_id
         shard_dir.mkdir(parents=True)
@@ -579,7 +557,8 @@ def test_hpc_reduce_materializes_noninteraction_stage(tmp_path, monkeypatch):
                     "stage": "output_conditioning",
                     "status": "checkpoint_warmup_complete",
                 }
-            )
+            ),
+            encoding="utf-8",
         )
 
     monkeypatch.setattr(
@@ -629,499 +608,168 @@ def test_hpc_reduce_materializes_noninteraction_stage(tmp_path, monkeypatch):
     assert merged["status"] == "materialized_from_checkpoints"
 
 
-def _make_interaction_fixture(n_samples=16, n_features=4, B=5, seed=42):
-    """Return (x_df, holdout_df, pca_df, catalog_df, spec) for nontrivial B tests."""
-    rng = np.random.default_rng(seed)
-    samples = np.arange(1, n_samples + 1)
-    cols = {f"x{i}": rng.standard_normal(n_samples) for i in range(1, n_features + 1)}
-    x_df = pd.DataFrame({"sample_id": samples, **cols})
-    holdout_df = pd.DataFrame({"sample_id": samples, "split": "train"})
-    pca_df = pd.DataFrame(
-        {
-            "sample_id": samples,
-            "PC1": rng.standard_normal(n_samples),
-            "PC2": rng.standard_normal(n_samples),
-        }
-    )
-    catalog_df = pd.DataFrame(
-        {
-            "feature_name": [f"x{i}" for i in range(1, n_features + 1)],
-            "feature_type": ["first_order"] * n_features,
-        }
-    )
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=0,
-        permutation_count_B=B,
-        random_seed=seed,
-        n_tree_estimators=5,
-        max_tree_depth=2,
-        max_shap_samples=n_samples,
-        min_component_variance_fraction=0.0,
-        condition_main_effects=False,
-        enforce_permutation_adequacy=False,
-        parallel_backend="threading",
-    )
-    return x_df, holdout_df, pca_df, catalog_df, spec
-
-
-def test_monolithic_one_shard_many_shard_identity_nontrivial_B():
-    """Monolithic, one-shard, and many-shard runs must agree at decision level with nontrivial B."""
-    from rfm_pipeline.manuscript_stages import (
-        discover_interaction_scores_only,
-        reduce_interaction_family_decision,
-    )
-
-    x_df, holdout_df, pca_df, catalog_df, spec = _make_interaction_fixture(B=5)
-    retained_df = catalog_df.copy()
-    kwargs = dict(
-        input_matrix=x_df,
-        feature_catalog=catalog_df,
-        holdout_assignments=holdout_df,
-        pca_scores=pca_df,
-        retained_terms=retained_df,
-        spec=spec,
-    )
-
-    # Monolithic (all pairs in one shard)
-    mono = discover_interaction_scores_only(**kwargs)
-    n_pairs = len(mono.pair_names)
-    assert n_pairs >= 3, "Fixture must have at least 3 candidate pairs"
-    assert spec.permutation_count_B >= 3, "Test requires nontrivial B"
-
-    # One-shard reduction (all pairs, one shard)
-    reduced_one = reduce_interaction_family_decision([mono], spec)
-
-    # Many-shard reduction (split into 3 shards)
-    split = [0, n_pairs // 3, 2 * n_pairs // 3, n_pairs]
-    shards = [
-        discover_interaction_scores_only(
-            **kwargs, pair_start_idx=split[i], pair_end_idx=split[i + 1]
-        )
-        for i in range(3)
-    ]
-    reduced_many = reduce_interaction_family_decision(shards, spec)
-
-    # All must agree on observed scores, null matrix shape, p-values, retained set
-    def _sort_scores(result):
-        df = result.pair_scores.sort_values("pair_name").reset_index(drop=True)
-        return df
-
-    df_mono = _sort_scores(reduced_one)
-    df_many = _sort_scores(reduced_many)
-
-    assert df_mono["pair_name"].tolist() == df_many["pair_name"].tolist()
-    np.testing.assert_allclose(
-        df_mono["interaction_score"].to_numpy(),
-        df_many["interaction_score"].to_numpy(),
-        err_msg="Observed scores differ between one-shard and many-shard reduction",
-    )
-    np.testing.assert_allclose(
-        df_mono["empirical_p_value"].to_numpy(),
-        df_many["empirical_p_value"].to_numpy(),
-        atol=1e-12,
-        err_msg="Adjusted p-values differ between one-shard and many-shard reduction",
-    )
-    # Retained sets must match
-    retained_one = set(reduced_one.retained_pairs["pair_name"].astype(str))
-    retained_many = set(reduced_many.retained_pairs["pair_name"].astype(str))
-    assert retained_one == retained_many, (
-        f"Retained sets differ: one-shard={retained_one}, many-shard={retained_many}"
-    )
-
-
-def test_shuffled_shard_arrival_identity():
-    """Shuffled shard arrival order must not change results, hashes, or retained set."""
-    from rfm_pipeline.manuscript_stages import (
-        discover_interaction_scores_only,
-        reduce_interaction_family_decision,
-    )
-
-    x_df, holdout_df, pca_df, catalog_df, spec = _make_interaction_fixture(B=5)
-    retained_df = catalog_df.copy()
-    kwargs = dict(
-        input_matrix=x_df,
-        feature_catalog=catalog_df,
-        holdout_assignments=holdout_df,
-        pca_scores=pca_df,
-        retained_terms=retained_df,
-        spec=spec,
-    )
-    mono = discover_interaction_scores_only(**kwargs)
-    n_pairs = len(mono.pair_names)
-
-    split = [0, n_pairs // 3, 2 * n_pairs // 3, n_pairs]
-    shards = [
-        discover_interaction_scores_only(
-            **kwargs, pair_start_idx=split[i], pair_end_idx=split[i + 1]
-        )
-        for i in range(3)
-    ]
-    result_forward = reduce_interaction_family_decision(shards, spec)
-    # Reversed order
-    result_reversed = reduce_interaction_family_decision(list(reversed(shards)), spec)
-
-    retained_fwd = set(result_forward.retained_pairs["pair_name"].astype(str))
-    retained_rev = set(result_reversed.retained_pairs["pair_name"].astype(str))
-    assert retained_fwd == retained_rev, (
-        f"Retained sets differ under shuffled shard arrival: fwd={retained_fwd}, rev={retained_rev}"
-    )
-    # Pair scores (all pairs, any order) should contain the same empirical_p_value per pair
-    df_fwd = result_forward.pair_scores.set_index("pair_name")["empirical_p_value"]
-    df_rev = result_reversed.pair_scores.set_index("pair_name")["empirical_p_value"]
-    common = df_fwd.index.intersection(df_rev.index)
-    np.testing.assert_allclose(
-        df_fwd.loc[common].to_numpy(),
-        df_rev.loc[common].to_numpy(),
-        atol=1e-12,
-        err_msg="P-values differ under shuffled shard arrival",
-    )
-
-
-def test_reducer_requires_config_path(tmp_path):
-    """Reducer must raise ValueError when no config_path is given (no default-spec fallback)."""
-    from tools import hpc_reduce
+def test_reducer_requires_config_path(tmp_path) -> None:
+    """Interaction reduction has no default-spec fallback."""
+    from rfm_pipeline import hpc_reduce
 
     output_root = tmp_path / "outputs"
     output_dir = tmp_path / "merged"
     output_root.mkdir()
     output_dir.mkdir()
 
-    B = 3
-    _write_score_only_shard(output_root / "task-0000", ["x1:x2"], B=B)
-    shard_results = [
-        {
-            "shard_id": "task-0000",
-            "stage": "interaction_discovery",
-            "shard_mode": "score_only",
-            "shard_scores_file": "interaction_shard_scores.npz",
-            "pair_names_file": "interaction_pair_names.csv",
-            "candidate_family_file": "interaction_candidate_family.csv",
-            "n_candidate_pairs": 1,
-            "spec_random_seed": 123,
-            "spec_permutation_count_B": B,
-        }
-    ]
-    import pytest
-
     with pytest.raises(ValueError, match="config_path"):
         hpc_reduce._reduce_interaction_discovery(
-            shard_results=shard_results,
+            shard_results=[],
             output_dir=output_dir,
             output_root=output_root,
             config_path=None,
         )
 
 
-def test_reducer_rejects_non_finite_shard_scores(tmp_path):
-    """Reducer must reject shards containing NaN or Inf observed/null scores."""
-    from rfm_pipeline.manuscript_stages import reduce_interaction_family_decision
+def test_artifact_rejects_nonfinite_scores() -> None:
+    spec = _spec()
+    _, snapshot = _contract_and_snapshot(("x1:x2",), spec)
 
-    draw_ids = np.arange(5, dtype=np.int64)
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=0,
-        permutation_count_B=5,
-        random_seed=7,
-    )
-
-    # Shard with NaN in observed scores
-    shard_nan_obs = InteractionScoresShard(
-        pair_names=["x1:x2"],
-        observed_scores=np.array([float("nan")]),
-        null_scores=np.ones((5, 1)),
-        draw_ids=draw_ids,
-        n_training_rows=8,
-        spec_random_seed=7,
-        spec_permutation_count_B=5,
-    )
-    import pytest
-
-    with pytest.raises((ValueError, AssertionError), match="(?i)finite|nan|inf"):
-        reduce_interaction_family_decision([shard_nan_obs], spec)
-
-    # Shard with Inf in null scores
-    shard_inf_null = InteractionScoresShard(
-        pair_names=["x1:x3"],
-        observed_scores=np.array([0.5]),
-        null_scores=np.full((5, 1), float("inf")),
-        draw_ids=draw_ids,
-        n_training_rows=8,
-        spec_random_seed=7,
-        spec_permutation_count_B=5,
-    )
-    with pytest.raises((ValueError, AssertionError), match="(?i)finite|nan|inf"):
-        reduce_interaction_family_decision([shard_inf_null], spec)
-
-
-def test_reducer_rejects_duplicate_shard_pair():
-    """Reducer must reject shards where the same pair name appears in two shards."""
-    import pytest
-
-    from rfm_pipeline.manuscript_stages import reduce_interaction_family_decision
-
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=0,
-        permutation_count_B=3,
-        random_seed=1,
-    )
-    shard_a = _minimal_interaction_shard(["x1:x2"], B=3)
-    shard_b = _minimal_interaction_shard(["x1:x2"], B=3)  # duplicate pair name
-    with pytest.raises(ValueError, match="(?i)duplicate"):
-        reduce_interaction_family_decision([shard_a, shard_b], spec)
-
-
-def test_reducer_rejects_missing_pair_from_expected_family():
-    """Reducer must reject when shard union does not cover expected_pair_names."""
-    import pytest
-
-    from rfm_pipeline.manuscript_stages import reduce_interaction_family_decision
-
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=0,
-        permutation_count_B=3,
-        random_seed=1,
-    )
-    shard = _minimal_interaction_shard(["x1:x2"], B=3)
-    with pytest.raises(ValueError, match="(?i)missing|coverage"):
-        reduce_interaction_family_decision(
-            [shard],
-            spec,
-            expected_pair_names=["x1:x2", "x1:x3"],  # x1:x3 is absent
+    with pytest.raises(ValueError, match="non-finite"):
+        _artifact(
+            snapshot,
+            start=0,
+            end=1,
+            observed=np.array([np.nan]),
+        )
+    with pytest.raises(ValueError, match="non-finite"):
+        _artifact(
+            snapshot,
+            start=0,
+            end=1,
+            null=np.full((DRAW_COUNT, 1), np.inf),
         )
 
 
-def test_reducer_rejects_non_score_only_shard(tmp_path, monkeypatch):
-    """_reduce_interaction_discovery must raise ValueError for non-score-only shards."""
-    import pytest
+def test_reducer_rejects_duplicate_or_incomplete_ranges() -> None:
+    spec = _spec()
+    contract, snapshot = _contract_and_snapshot(("x1:x2", "x1:x3"), spec)
+    first = _artifact(snapshot, start=0, end=1)
 
-    from tools import hpc_reduce
+    with pytest.raises(ValueError, match="reordered|contiguous"):
+        reduce_score_only_interaction_artifacts(
+            [first, first],
+            spec=spec,
+            contract=contract,
+        )
+    with pytest.raises(ValueError, match="coverage"):
+        reduce_score_only_interaction_artifacts(
+            [first],
+            spec=spec,
+            contract=contract,
+        )
+
+
+def test_hpc_reducer_rejects_non_score_only_shard(tmp_path, monkeypatch) -> None:
+    from rfm_pipeline import hpc_reduce
 
     output_root = tmp_path / "outputs"
     output_dir = tmp_path / "merged"
     output_root.mkdir()
     output_dir.mkdir()
+    spec = _spec()
+    contract, _ = _contract_and_snapshot(("x1:x2",), spec)
+    _patch_hpc_reducer(monkeypatch, contract=contract, spec=spec)
 
-    _spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=0,
-        permutation_count_B=3,
-        random_seed=1,
-    )
-    monkeypatch.setattr(hpc_reduce, "load_config", lambda path: object())
-    monkeypatch.setattr(hpc_reduce, "apply_fast_mode_overrides", lambda cfg: cfg)
-    monkeypatch.setattr(hpc_reduce, "config_to_legacy_case_study", lambda cfg: cfg)
-    monkeypatch.setattr(
-        hpc_reduce, "interaction_discovery_spec_from_case_study_config", lambda cfg: _spec
-    )
-
-    # A shard that does NOT have shard_mode=score_only
-    shard_dir = output_root / "task-0000"
-    shard_dir.mkdir()
-    shard_results = [
-        {
-            "shard_id": "task-0000",
-            "stage": "interaction_discovery",
-            "shard_mode": "full_decision",  # not score_only
-            "shard_scores_file": "interaction_shard_scores.npz",
-            "pair_names_file": "interaction_pair_names.csv",
-            "candidate_family_file": "interaction_candidate_family.csv",
-        }
-    ]
-    with pytest.raises(ValueError, match="(?i)score.only"):
+    with pytest.raises(ValueError, match="score-only"):
         hpc_reduce._reduce_interaction_discovery(
-            shard_results=shard_results,
+            shard_results=[
+                {
+                    "shard_id": "task-0000",
+                    "stage": "interaction_discovery",
+                    "shard_mode": "full_decision",
+                }
+            ],
             output_dir=output_dir,
             output_root=output_root,
-            config_path="dummy_config.yaml",
+            config_path="canonical.yml",
         )
 
 
-def test_reducer_emits_canonical_hashes(tmp_path, monkeypatch):
-    """Reducer summary JSON must contain all required canonical hashes."""
-    from tools import hpc_reduce
+def test_hpc_reducer_rejects_manifest_identity_drift(tmp_path, monkeypatch) -> None:
+    from rfm_pipeline import hpc_reduce
 
     output_root = tmp_path / "outputs"
     output_dir = tmp_path / "merged"
-    output_root.mkdir()
     output_dir.mkdir()
+    spec = _spec()
+    contract, snapshot = _contract_and_snapshot(("x1:x2",), spec)
+    artifact = _artifact(snapshot, start=0, end=1)
+    metadata = _write_score_only_shard(output_root, "task-0000", artifact)
+    metadata["candidate_family_count"] = 2
+    _patch_hpc_reducer(monkeypatch, contract=contract, spec=spec)
 
-    B = 5
-    _spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=0,
-        permutation_count_B=B,
-        random_seed=123,
-    )
-    monkeypatch.setattr(hpc_reduce, "load_config", lambda path: object())
-    monkeypatch.setattr(hpc_reduce, "apply_fast_mode_overrides", lambda cfg: cfg)
-    monkeypatch.setattr(hpc_reduce, "config_to_legacy_case_study", lambda cfg: cfg)
-    monkeypatch.setattr(
-        hpc_reduce, "interaction_discovery_spec_from_case_study_config", lambda cfg: _spec
-    )
-
-    # Two shards covering the full family ["x1:x2", "x1:x3"]
-    _write_score_only_shard(output_root / "task-0000", ["x1:x2"], B=B)
-    _write_score_only_shard(output_root / "task-0001", ["x1:x3"], B=B)
-
-    shard_results = [
-        {
-            "shard_id": "task-0000",
-            "stage": "interaction_discovery",
-            "shard_mode": "score_only",
-            "shard_scores_file": "interaction_shard_scores.npz",
-            "pair_names_file": "interaction_pair_names.csv",
-            "candidate_family_file": "interaction_candidate_family.csv",
-            "n_candidate_pairs": 1,
-            "spec_random_seed": 123,
-            "spec_permutation_count_B": B,
-        },
-        {
-            "shard_id": "task-0001",
-            "stage": "interaction_discovery",
-            "shard_mode": "score_only",
-            "shard_scores_file": "interaction_shard_scores.npz",
-            "pair_names_file": "interaction_pair_names.csv",
-            "candidate_family_file": "interaction_candidate_family.csv",
-            "n_candidate_pairs": 1,
-            "spec_random_seed": 123,
-            "spec_permutation_count_B": B,
-        },
-    ]
-
-    import pytest
-
-    # Must fail without config_path
-    with pytest.raises(ValueError, match="config_path"):
+    with pytest.raises(ValueError, match="candidate-family count"):
         hpc_reduce._reduce_interaction_discovery(
-            shard_results=shard_results,
-            output_dir=output_dir,
-            output_root=output_root,
-            config_path=None,
+            [metadata],
+            output_dir,
+            output_root,
+            config_path="canonical.yml",
         )
 
-    # Must succeed with config_path and monkeypatched spec
+
+def test_hpc_reducer_emits_canonical_hashes(tmp_path, monkeypatch) -> None:
+    from rfm_pipeline import hpc_reduce
+
+    output_root = tmp_path / "outputs"
+    output_dir = tmp_path / "merged"
+    output_dir.mkdir()
+    spec = _spec()
+    contract, snapshot = _contract_and_snapshot(("x1:x2", "x1:x3"), spec)
+    shard_results = [
+        _write_score_only_shard(
+            output_root,
+            "task-0000",
+            _artifact(snapshot, start=0, end=1),
+        ),
+        _write_score_only_shard(
+            output_root,
+            "task-0001",
+            _artifact(snapshot, start=1, end=2),
+        ),
+    ]
+    _patch_hpc_reducer(monkeypatch, contract=contract, spec=spec)
+
     hpc_reduce._reduce_interaction_discovery(
-        shard_results=shard_results,
-        output_dir=output_dir,
-        output_root=output_root,
-        config_path="fake_config.yaml",
+        shard_results,
+        output_dir,
+        output_root,
+        config_path="canonical.yml",
     )
-    summary = json.loads((output_dir / "interaction_discovery_merged.json").read_text())
-    assert summary["reducer"] == "global_family_decision"
-    hashes = summary["canonical_hashes"]
-    required_keys = {
+    hashes = json.loads(
+        (output_dir / "interaction_discovery_merged.json").read_text(encoding="utf-8")
+    )["canonical_hashes"]
+    required = {
+        "contract_sha256",
+        "control_snapshot_sha256",
         "family_sha256",
         "null_matrix_sha256",
         "p_values_sha256",
-        "threshold_sha256",
         "retained_set_sha256",
     }
-    assert required_keys <= set(hashes), f"Missing hash keys: {required_keys - set(hashes)}"
-    for key, val in hashes.items():
-        assert isinstance(val, str) and len(val) == 64, f"Hash {key!r} is not a valid SHA-256"
+    assert required <= set(hashes)
+    assert all(isinstance(value, str) and len(value) == 64 for value in hashes.values())
 
 
-def test_reducer_canonical_hashes_in_summary_via_manuscript_stages(tmp_path):
-    """Canonical hashes are present and stable in the merged JSON when using raw stage calls."""
-    import hashlib
-    import json as _json
-
-    from rfm_pipeline.manuscript_stages import (
-        InteractionDiscoverySpec,
-        InteractionScoresShard,
-        reduce_interaction_family_decision,
+def test_reducer_rejects_full_snapshot_identity_drift() -> None:
+    """Matching pair ranges do not permit different response or feature identities."""
+    spec = _spec()
+    contract, snapshot = _contract_and_snapshot(("x1:x2", "x1:x3"), spec)
+    mismatched_snapshot = replace(
+        snapshot,
+        feature_matrix_sha256="0" * 64,
     )
+    first = _artifact(snapshot, start=0, end=1)
+    second = _artifact(mismatched_snapshot, start=1, end=2)
 
-    output_root = tmp_path / "outputs"
-    output_dir = tmp_path / "merged"
-    output_root.mkdir()
-    output_dir.mkdir()
-
-    B = 5
-    np.random.seed(0)
-    rng = np.random.default_rng(0)
-    observed_0 = rng.uniform(0.1, 0.9, size=1)
-    null_0 = rng.uniform(0.0, 0.5, size=(B, 1))
-    observed_1 = rng.uniform(0.1, 0.9, size=1)
-    null_1 = rng.uniform(0.0, 0.5, size=(B, 1))
-    draw_ids = np.arange(B, dtype=np.int64)
-
-    shard_0 = InteractionScoresShard(
-        pair_names=["x1:x2"],
-        observed_scores=observed_0,
-        null_scores=null_0,
-        draw_ids=draw_ids,
-        n_training_rows=8,
-        spec_random_seed=123,
-        spec_permutation_count_B=B,
-    )
-    shard_1 = InteractionScoresShard(
-        pair_names=["x1:x3"],
-        observed_scores=observed_1,
-        null_scores=null_1,
-        draw_ids=draw_ids,
-        n_training_rows=8,
-        spec_random_seed=123,
-        spec_permutation_count_B=B,
-    )
-    spec = InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
-        null_threshold_quantile=0.9,
-        retained_pairs_reference=0,
-        permutation_count_B=B,
-        random_seed=123,
-    )
-    result = reduce_interaction_family_decision([shard_0, shard_1], spec)
-
-    # Verify the result has retained_pairs and pair_scores
-    assert "pair_name" in result.pair_scores.columns
-    assert "empirical_p_value" in result.pair_scores.columns
-
-    # Compute expected family hash
-    family_names = ["x1:x2", "x1:x3"]
-    expected_family_hash = hashlib.sha256(
-        _json.dumps(family_names, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
-
-    # Compute expected null matrix hash
-    global_null = np.concatenate([null_0, null_1], axis=1)
-    null_contiguous = np.ascontiguousarray(global_null, dtype=np.float64)
-    expected_null_hash = hashlib.sha256(
-        repr(null_contiguous.shape).encode("utf-8") + null_contiguous.tobytes()
-    ).hexdigest()
-
-    # Compute expected p_values hash
-    pscores_sorted = result.pair_scores.sort_values("pair_name")
-    pvals = np.ascontiguousarray(pscores_sorted["empirical_p_value"].to_numpy(dtype=np.float64))
-    expected_p_hash = hashlib.sha256(
-        repr(pvals.shape).encode("utf-8") + pvals.tobytes()
-    ).hexdigest()
-
-    # Compute expected retained_set hash
-    retained_names = sorted(result.retained_pairs["pair_name"].astype(str).tolist())
-    expected_retained_hash = hashlib.sha256(
-        _json.dumps(retained_names, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
-
-    # Check that the _reduce_interaction_discovery function computes these correctly
-    # by checking the hash construction logic is consistent (unit-test the hash logic)
-    assert len(expected_family_hash) == 64
-    assert len(expected_null_hash) == 64
-    assert len(expected_p_hash) == 64
-    assert len(expected_retained_hash) == 64
+    with pytest.raises(ValueError, match="full control identity"):
+        reduce_score_only_interaction_artifacts(
+            [first, second],
+            spec=spec,
+            contract=contract,
+        )

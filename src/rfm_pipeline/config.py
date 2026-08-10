@@ -164,15 +164,21 @@ class ScreeningStageConfig:
 class InteractionStageConfig:
     """Interaction discovery parameters.
 
-    Defaults match the validated publication run: ``n_permutations=31`` (B=30
-    permutation null draws plus the observed statistic), ``n_tree_estimators=250``,
-    and ``max_tree_depth=5`` are the manuscript baseline values.
+    Defaults provide the canonical pre-execution maxT resolution:
+    ``n_permutations=201`` (B=200 null draws plus the observed statistic),
+    ``n_tree_estimators=250``, and ``max_tree_depth=5``.
     """
 
     p_threshold: float = 0.05
     """Interaction significance threshold."""
-    n_permutations: int | None = 31
-    """Interaction null permutations (B+1); manuscript baseline is B=30."""
+    selection_method: str = "max_t"
+    """Canonical global interaction selector; only exact finite-permutation maxT is supported."""
+    selection_alpha: float = 0.05
+    """Family-wise error target for the canonical maxT selector."""
+    minimum_selection_draws: int = 199
+    """Minimum null draws required by the pre-execution interaction contract."""
+    n_permutations: int | None = 201
+    """Interaction null permutations (B+1); canonical exact-maxT baseline is B=200."""
     n_tree_estimators: int = 250
     """SHAP tree ensemble size; manuscript baseline is 250."""
     max_tree_depth: int = 5
@@ -253,6 +259,10 @@ class FinalArtifactsStageConfig:
     """Ranking metric for principled downselection modes."""
     delta_threshold_override: float | None = 0.002
     """Delta threshold for feature pruning; manuscript baseline is 0.002."""
+    pruning_error_scale_quantile: float = 0.95
+    """Quantile used to scale the no-refit feature-pruning error penalty."""
+    pruning_remove_count_override: int | None = None
+    """Optional explicit pruning count; mutually exclusive with delta threshold override."""
 
 
 @dataclass
@@ -403,6 +413,15 @@ def load_config(config_path: str | Path) -> WorkflowConfig:
 
     # Parse stage configs
     stages_data = data.get("stages", {})
+    final_artifacts_data = dict(stages_data.get("final_artifacts", {}))
+    if (
+        final_artifacts_data.get("delta_threshold_override") is not None
+        and final_artifacts_data.get("pruning_remove_count_override") is not None
+    ):
+        raise ValueError(
+            "stages.final_artifacts allows at most one pruning override: "
+            "delta_threshold_override or pruning_remove_count_override."
+        )
     stages = StagesConfig(
         empirical_null_screening=ScreeningStageConfig(
             **stages_data.get("empirical_null_screening", {})
@@ -414,7 +433,7 @@ def load_config(config_path: str | Path) -> WorkflowConfig:
             stages_data.get("nonlinear_discovery", {})
         ),
         sparse_selection=SparseStageConfig(**stages_data.get("sparse_selection", {})),
-        final_artifacts=FinalArtifactsStageConfig(**stages_data.get("final_artifacts", {})),
+        final_artifacts=FinalArtifactsStageConfig(**final_artifacts_data),
     )
 
     # Parse validation config

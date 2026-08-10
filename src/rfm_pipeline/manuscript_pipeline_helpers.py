@@ -379,6 +379,9 @@ def config_to_legacy_case_study(workflow_config: WorkflowConfig) -> dict[str, An
 
     itr = workflow_config.stages.interaction_discovery
     interaction_discovery["p_threshold"] = itr.p_threshold
+    interaction_discovery["selection_method"] = str(itr.selection_method)
+    interaction_discovery["selection_alpha"] = float(itr.selection_alpha)
+    interaction_discovery["minimum_selection_draws"] = int(itr.minimum_selection_draws)
     if itr.n_permutations is not None:
         interaction_discovery["permutation_count_B"] = itr.n_permutations - 1
     interaction_discovery["n_tree_estimators"] = itr.n_tree_estimators
@@ -432,8 +435,12 @@ def config_to_legacy_case_study(workflow_config: WorkflowConfig) -> dict[str, An
         final_inferential_filter["max_outputs"] = int(fnl.hc3_output_max_outputs)
     final_inferential_filter["random_seed"] = int(fnl.hc3_output_random_seed)
     final_inferential_filter["subset_metric"] = str(fnl.hc3_output_subset_metric)
-    if fnl.delta_threshold_override is not None:
-        feature_pruning = case_study.setdefault("feature_pruning", {})
+    feature_pruning = final_inferential_filter.setdefault("feature_pruning", {})
+    feature_pruning["error_scale_quantile"] = float(fnl.pruning_error_scale_quantile)
+    if fnl.pruning_remove_count_override is not None:
+        feature_pruning.pop("delta_threshold_override", None)
+        feature_pruning["remove_count_override"] = int(fnl.pruning_remove_count_override)
+    elif fnl.delta_threshold_override is not None:
         feature_pruning["delta_threshold_override"] = float(fnl.delta_threshold_override)
 
     runtime["n_jobs"] = workflow_config.runtime.n_jobs

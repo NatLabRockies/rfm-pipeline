@@ -4,7 +4,7 @@ The F5 defect: ``discover_manuscript_interactions`` used to retain pairs via an
 uncorrected per-pair 0.5% cut (``observed > np.quantile(null, 0.995, axis=0)``).
 This slice routes production retention through
 ``multiplicity_controlled_interaction_selection`` and makes the permutation-
-adequacy guard consistent with the corrected family-wise / FDR procedure.
+adequacy guard consistent with the canonical finite-permutation maxT procedure.
 
 These tests exercise the PRODUCTION entry point
 :func:`rfm_pipeline.manuscript_stages.discover_manuscript_interactions` on a
@@ -16,8 +16,8 @@ and assert:
   (surfaced via the ``empirical_null_retained`` diagnostic column).
 - planted-signal recovery: a strongly-planted interaction is retained.
 - guard consistency: the permutation-adequacy budget is derived from
-  ``family_error_alpha`` / ``family_error_method``, not from the removed
-  per-pair quantile rule.
+  ``selection_alpha`` / ``selection_method``, not from the removed per-pair
+  quantile rule.
 
 Grep guard: ``multiplicity_controlled_interaction_selection`` must be
 referenced in the production module, not only in tests.
@@ -34,7 +34,6 @@ import pytest
 import rfm_pipeline.manuscript_stages as manuscript_stages
 from rfm_pipeline.manuscript_stages import (
     InteractionDiscoverySpec,
-    PermutationAdequacyError,
     discover_manuscript_interactions,
 )
 
@@ -175,8 +174,7 @@ def _run_production_discovery(
     *,
     observed_scores: np.ndarray,
     null_statistics: np.ndarray,
-    family_error_method: str,
-    family_error_alpha: float,
+    selection_alpha: float,
     null_threshold_quantile: float = 0.995,
     permutation_count_B: int = _B_PERMS,
     enforce_permutation_adequacy: bool = True,
@@ -197,8 +195,8 @@ def _run_production_discovery(
         n_jobs=1,
         parallel_backend="threading",
         enforce_permutation_adequacy=enforce_permutation_adequacy,
-        family_error_method=family_error_method,
-        family_error_alpha=family_error_alpha,
+        selection_method="max_t",
+        selection_alpha=selection_alpha,
     )
     result = discover_manuscript_interactions(
         inputs, catalog, holdout, pca_scores, retained_terms, spec
@@ -225,8 +223,7 @@ def test_R3_S01_pure_null_fwer_controls_family_error_vs_per_pair() -> None:
             mp,
             observed_scores=obs,
             null_statistics=null,
-            family_error_method="fwer_max_stat",
-            family_error_alpha=0.05,
+            selection_alpha=0.05,
         )
 
     n_corrected = int(scores["retained"].sum())
@@ -264,8 +261,7 @@ def test_R3_S01_planted_signal_is_retained_under_corrected_rule() -> None:
             mp,
             observed_scores=obs,
             null_statistics=null,
-            family_error_method="fwer_max_stat",
-            family_error_alpha=0.05,
+            selection_alpha=0.05,
         )
 
     # Identify the pair by its ordinal position in the candidate list. The
@@ -281,31 +277,17 @@ def test_R3_S01_planted_signal_is_retained_under_corrected_rule() -> None:
     assert bool(top_row["retained"]), "Highest-scoring pair (planted) must be retained."
 
 
-def test_R3_S01_planted_signal_is_retained_under_bh_fdr_rule() -> None:
-    """Guard-ON integration test: BH-FDR retention path with production wiring."""
-    n_pairs = _N_FEATURES * (_N_FEATURES - 1) // 2
-    planted_col = 2
-    obs, null = _make_null_and_signal_stats(
-        n_pairs=n_pairs,
-        B=600,
-        signal_pair_index=planted_col,
-        seed=_SEED + 2,
-    )
-
-    with pytest.MonkeyPatch.context() as mp:
-        scores = _run_production_discovery(
-            mp,
-            observed_scores=obs,
-            null_statistics=null,
-            family_error_method="bh_fdr",
-            family_error_alpha=0.05,
-            permutation_count_B=600,
+def test_R3_S01_rejects_noncanonical_selection_method() -> None:
+    """The production spec exposes no BH-FDR selector alias."""
+    with pytest.raises(ValueError, match="selection_method"):
+        InteractionDiscoverySpec(
+            method="tree_shap_interaction_values",
+            aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
+            null_threshold_quantile=0.995,
+            retained_pairs_reference=0,
+            permutation_count_B=_B_PERMS,
+            selection_method="bh_fdr",
         )
-
-    top_row = scores.sort_values("interaction_score", ascending=False).iloc[0]
-    assert bool(top_row["retained"]), (
-        "Highest-scoring pair (planted) must be retained under BH-FDR."
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -313,58 +295,35 @@ def test_R3_S01_planted_signal_is_retained_under_bh_fdr_rule() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_R3_S01_adequacy_guard_uses_family_error_alpha_for_fwer(monkeypatch) -> None:
-    """FWER max-stat: guard requires B >= ceil(1/alpha) - 1 (family_size=1)."""
+def test_R3_S01_adequacy_guard_uses_canonical_draw_floor(monkeypatch) -> None:
+    """Canonical maxT preflight requires at least 199 null draws."""
     n_pairs = _N_FEATURES * (_N_FEATURES - 1) // 2
     obs, null = _make_null_and_signal_stats(
         n_pairs=n_pairs, B=200, signal_pair_index=None, seed=_SEED
     )
-    # alpha=0.05 -> min_B = ceil(1/0.05) - 1 = 19. B=15 must fail.
-    with pytest.raises(PermutationAdequacyError):
+    with pytest.raises(ValueError, match="draw adequacy"):
         _run_production_discovery(
             monkeypatch,
             observed_scores=obs,
-            null_statistics=null[:15],
-            family_error_method="fwer_max_stat",
-            family_error_alpha=0.05,
-            permutation_count_B=15,
-            enforce_permutation_adequacy=True,
-        )
-
-
-def test_R3_S01_adequacy_guard_uses_n_pairs_for_bh_fdr(monkeypatch) -> None:
-    """BH-FDR: guard requires B >= ceil(n_pairs/alpha) - 1 (family_size=n_pairs)."""
-    n_pairs = _N_FEATURES * (_N_FEATURES - 1) // 2  # 28
-    # alpha=0.05, family_size=28 -> min_B = ceil(28/0.05) - 1 = 559. B=200 must fail.
-    obs, null = _make_null_and_signal_stats(
-        n_pairs=n_pairs, B=200, signal_pair_index=None, seed=_SEED
-    )
-    with pytest.raises(PermutationAdequacyError):
-        _run_production_discovery(
-            monkeypatch,
-            observed_scores=obs,
-            null_statistics=null,
-            family_error_method="bh_fdr",
-            family_error_alpha=0.05,
-            permutation_count_B=200,
+            null_statistics=null[:198],
+            selection_alpha=0.05,
+            permutation_count_B=198,
             enforce_permutation_adequacy=True,
         )
 
 
 def test_R3_S01_adequacy_guard_passes_at_corrected_minimum(monkeypatch) -> None:
-    """FWER max-stat: guard passes exactly at the corrected minimum B."""
+    """Canonical maxT preflight passes at exactly 199 null draws."""
     n_pairs = _N_FEATURES * (_N_FEATURES - 1) // 2
     obs, null = _make_null_and_signal_stats(
         n_pairs=n_pairs, B=200, signal_pair_index=None, seed=_SEED
     )
-    # min_B = 19 for alpha=0.05, family_size=1.
     scores = _run_production_discovery(
         monkeypatch,
         observed_scores=obs,
-        null_statistics=null[:19],
-        family_error_method="fwer_max_stat",
-        family_error_alpha=0.05,
-        permutation_count_B=19,
+        null_statistics=null[:199],
+        selection_alpha=0.05,
+        permutation_count_B=199,
         enforce_permutation_adequacy=True,
     )
     assert len(scores) == n_pairs

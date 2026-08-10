@@ -1,7 +1,7 @@
 """P0-S08: Multiplicity control across interaction pairs (F5).
 
 Tests cover:
-- fwer_max_stat_threshold: correct quantile, boundary, and error handling
+- max_t_critical_value: correct quantile, boundary, and error handling
 - bh_fdr_selected: standard BH step-up behaviour
 - multiplicity_controlled_interaction_selection: dispatches correctly,
   returns consistent types
@@ -18,7 +18,8 @@ import pytest
 
 from rfm_pipeline.manuscript_stages import (
     bh_fdr_selected,
-    fwer_max_stat_threshold,
+    max_t_adjusted_pvalues,
+    max_t_critical_value,
     multiplicity_controlled_interaction_selection,
 )
 
@@ -140,57 +141,62 @@ def _compute_perm_stats(
 
 
 # ---------------------------------------------------------------------------
-# fwer_max_stat_threshold — unit tests
+# max_t_critical_value — unit tests
 # ---------------------------------------------------------------------------
 
 
-class TestFwerMaxStatThreshold:
+class TestMaxTCriticalValue:
     def test_P0_S08_returns_float(self):
         rng = np.random.default_rng(0)
         null = rng.standard_normal((100, 10))
-        result = fwer_max_stat_threshold(null, alpha=0.05)
+        result = max_t_critical_value(null, alpha=0.05)
         assert isinstance(result, float)
 
-    def test_P0_S08_quantile_is_correct(self):
-        """With alpha=0.05 the result must equal np.quantile(max_null, 0.95)."""
+    def test_P0_S08_exact_order_statistic_is_correct(self):
+        """The score critical value is the finite-permutation maxT order statistic."""
         rng = np.random.default_rng(1)
         null = rng.standard_normal((200, 15))
-        expected = float(np.quantile(null.max(axis=1), 0.95))
-        assert fwer_max_stat_threshold(null, alpha=0.05) == pytest.approx(expected)
+        expected = float(np.partition(null.max(axis=1), 190)[190])
+        assert max_t_critical_value(null, alpha=0.05) == pytest.approx(expected)
 
-    def test_P0_S08_alpha_01_gives_0p9_quantile(self):
+    def test_P0_S08_alpha_01_gives_exact_order_statistic(self):
         rng = np.random.default_rng(2)
         null = rng.standard_normal((300, 5))
-        expected = float(np.quantile(null.max(axis=1), 0.90))
-        assert fwer_max_stat_threshold(null, alpha=0.10) == pytest.approx(expected)
+        expected = float(np.partition(null.max(axis=1), 270)[270])
+        assert max_t_critical_value(null, alpha=0.10) == pytest.approx(expected)
+
+    def test_P0_S08_unresolvable_alpha_returns_none(self):
+        assert max_t_critical_value(np.ones((10, 3)), alpha=0.01) is None
 
     def test_P0_S08_invalid_alpha_zero_raises(self):
         null = np.ones((10, 3))
         with pytest.raises(ValueError, match="alpha"):
-            fwer_max_stat_threshold(null, alpha=0.0)
+            max_t_critical_value(null, alpha=0.0)
 
     def test_P0_S08_invalid_alpha_one_raises(self):
         null = np.ones((10, 3))
         with pytest.raises(ValueError, match="alpha"):
-            fwer_max_stat_threshold(null, alpha=1.0)
+            max_t_critical_value(null, alpha=1.0)
 
     def test_P0_S08_1d_array_raises(self):
         null = np.ones(10)
         with pytest.raises(ValueError):
-            fwer_max_stat_threshold(null, alpha=0.05)
+            max_t_critical_value(null, alpha=0.05)
 
     def test_P0_S08_empty_rows_raises(self):
         null = np.empty((0, 5))
         with pytest.raises(ValueError):
-            fwer_max_stat_threshold(null, alpha=0.05)
+            max_t_critical_value(null, alpha=0.05)
 
-    def test_P0_S08_threshold_exceeds_column_maxima(self):
-        """The threshold (95th pct of max_null) is >= 95th pct of any column."""
+    def test_P0_S08_threshold_exceeds_column_critical_values(self):
+        """The global maxT critical value is at least each column's critical value."""
         rng = np.random.default_rng(3)
         null = rng.standard_normal((500, 20))
-        t = fwer_max_stat_threshold(null, alpha=0.05)
+        t = max_t_critical_value(null, alpha=0.05)
+        assert t is not None
         for col in range(null.shape[1]):
-            assert t >= np.quantile(null[:, col], 0.95) - 1e-12
+            column_critical = float(np.partition(null[:, col], 475)[475])
+            assert t >= column_critical
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +278,7 @@ class TestMultiplicityControlledSelection:
         obs = np.array([1.0, 0.5, 0.2])
         null = np.abs(np.random.default_rng(0).standard_normal((100, 3)))
         selected, pvals, thresh = multiplicity_controlled_interaction_selection(
-            obs, null, alpha=0.05, method="fwer_max_stat"
+            obs, null, alpha=0.05, method="max_t"
         )
         assert selected.dtype == bool
         assert pvals.shape == (3,)
@@ -313,17 +319,19 @@ class TestMultiplicityControlledSelection:
         _, pvals, _ = multiplicity_controlled_interaction_selection(obs, null, alpha=0.05)
         assert (pvals >= 0).all() and (pvals <= 1).all()
 
-    def test_P0_S08_fwer_consistent_with_helper(self):
-        """FWER-selected pairs should match manual threshold application."""
+    def test_P0_S08_max_t_consistent_with_helper(self):
+        """maxT-selected pairs match the adjusted-p-value decision rule."""
         rng = np.random.default_rng(8)
         obs = np.abs(rng.standard_normal(15))
         null = np.abs(rng.standard_normal((200, 15)))
-        selected, _, thresh = multiplicity_controlled_interaction_selection(
-            obs, null, alpha=0.05, method="fwer_max_stat"
+        selected, pvals, thresh = multiplicity_controlled_interaction_selection(
+            obs, null, alpha=0.05, method="max_t"
         )
-        expected_thresh = fwer_max_stat_threshold(null, alpha=0.05)
+        expected_pvals = max_t_adjusted_pvalues(obs, null)
+        expected_thresh = max_t_critical_value(null, alpha=0.05)
+        np.testing.assert_allclose(pvals, expected_pvals)
         assert thresh == pytest.approx(expected_thresh)
-        np.testing.assert_array_equal(selected, obs > expected_thresh)
+        np.testing.assert_array_equal(selected, expected_pvals <= 0.05)
 
     def test_P0_S08_bh_consistent_with_helper(self):
         """BH-selected pairs should match bh_fdr_selected applied to empirical p-values."""
@@ -363,7 +371,7 @@ class TestNullFalseSelectionControl:
         """FWER max-stat: with a fixed seed, no false selections under null."""
         observed, null_stats, _ = null_data
         selected, _, _ = multiplicity_controlled_interaction_selection(
-            observed, null_stats, alpha=0.05, method="fwer_max_stat"
+            observed, null_stats, alpha=0.05, method="max_t"
         )
         # Under the null all selections are false positives.
         n_false = int(selected.sum())
@@ -398,7 +406,7 @@ class TestNullFalseSelectionControl:
         """
         observed, null_stats, _ = null_data
         _, pvals, _ = multiplicity_controlled_interaction_selection(
-            observed, null_stats, alpha=0.05, method="fwer_max_stat"
+            observed, null_stats, alpha=0.05, method="max_t"
         )
         assert float(np.median(pvals)) > 0.05, (
             "Median p-value under the null is suspiciously low; "
@@ -409,7 +417,7 @@ class TestNullFalseSelectionControl:
         """The FWER max-stat threshold must be >= the per-pair 0.95 quantile for any pair."""
         observed, null_stats, _ = null_data
         _, _, fwer_thresh = multiplicity_controlled_interaction_selection(
-            observed, null_stats, alpha=0.05, method="fwer_max_stat"
+            observed, null_stats, alpha=0.05, method="max_t"
         )
         per_pair_95 = np.quantile(null_stats, 0.95, axis=0)
         assert fwer_thresh >= float(per_pair_95.max()) - 1e-12
@@ -440,7 +448,7 @@ class TestPlantedSignalRecovery:
         """FWER max-stat selects the planted pair."""
         observed, null_stats, pairs, true_cols = signal_data
         selected, _, _ = multiplicity_controlled_interaction_selection(
-            observed, null_stats, alpha=0.05, method="fwer_max_stat"
+            observed, null_stats, alpha=0.05, method="max_t"
         )
         for col in true_cols:
             assert selected[col], (
@@ -473,7 +481,7 @@ class TestPlantedSignalRecovery:
         """FWER max-stat does not produce excessive false positives under signal."""
         observed, null_stats, _, true_cols = signal_data
         selected, _, _ = multiplicity_controlled_interaction_selection(
-            observed, null_stats, alpha=0.05, method="fwer_max_stat"
+            observed, null_stats, alpha=0.05, method="max_t"
         )
         false_positives = int(selected.sum()) - sum(1 for c in true_cols if selected[c])
         n_pairs = len(observed)
@@ -488,7 +496,7 @@ class TestPlantedSignalRecovery:
         """The planted pair's empirical p-value should be near the minimum achievable."""
         observed, null_stats, _, true_cols = signal_data
         _, pvals, _ = multiplicity_controlled_interaction_selection(
-            observed, null_stats, alpha=0.05, method="fwer_max_stat"
+            observed, null_stats, alpha=0.05, method="max_t"
         )
         B = null_stats.shape[0]
         min_pval = 1.0 / (B + 1.0)

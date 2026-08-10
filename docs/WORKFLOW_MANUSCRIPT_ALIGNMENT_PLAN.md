@@ -7,6 +7,13 @@ the JDS adversarial review (findings F1–F7, M1–M9): the executed pipeline
 diverged from the principled workflow the manuscript describes, so the workflow
 must be corrected — not the manuscript watered down.
 
+**G10 API supersession.** Historical slice text below may use predecessor
+selector names. The active interface is exclusively
+`selection_method="max_t"`, `selection_alpha`, and
+`minimum_selection_draws` (floor 199); legacy selector fields and aliases are
+rejected. Interaction shards persist checksummed score-only artifacts and the
+reducer rejects reordered, partial, or identity-mismatched families.
+
 **Hard constraints (apply to every slice).**
 
 - The pipeline is a *general* reduced-form modeling workflow. It must stay 100%
@@ -1164,12 +1171,12 @@ finite B under the complete null.
 
 **Requirements:**
 
-- Add `maxt_adjusted_pvalues(observed_scores, null_statistics) -> np.ndarray`
+- Add `max_t_adjusted_pvalues(observed_scores, null_statistics) -> np.ndarray`
   computing, per pair j, `p_adj_j = (1 + #{b : max_over_pairs(null_b) >= obs_j}) / (B + 1)`
   where `max_over_pairs(null_b)` is the row maximum of `null_statistics`.
   Validate shapes; `null_statistics` is `(B, n_pairs)`, `observed_scores` is `(n_pairs,)`.
 - Extend `multiplicity_controlled_interaction_selection` with
-  `method="fwer_max_stat_exact"`: returns `(selected, p_values, threshold)` where
+  `method="max_t"`: returns `(selected, p_values, threshold)` where
   `p_values` are the maxT-adjusted p-values, `selected = p_values <= alpha`, and
   `threshold` is the score-space critical value (the `floor(alpha*(B+1))`-th
   largest row-max of the null, or `None` if `floor(alpha*(B+1)) == 0`).
@@ -1180,7 +1187,7 @@ finite B under the complete null.
 
 - Exact formula on a fixed tiny example (hand-computed adjusted p-values).
 - Adjusted p-values are monotone non-increasing in the observed score.
-- `method="fwer_max_stat_exact"` selects exactly the pairs with `p_adj <= alpha`.
+- `method="max_t"` selects exactly the pairs with `p_adj <= alpha`.
 - **Global-null empirical FWER control:** over >= 500 complete-null replicates
   (obs and null drawn from one exchangeable draw), the empirical family-wise
   rejection rate is `<= alpha + 3*SE` at `alpha=0.2, B=199`. Pure-numpy; fast.
@@ -1255,7 +1262,7 @@ missing competitive comparators.
 **Context.** Execute the prespecified study end-to-end at a documented reduced
 scale that runs on a laptop, producing the released aggregate tables, figure
 data, and a reproduction log. The empirical interaction-FWER is measured on the
-actual interaction-discovery + `fwer_max_stat_exact` selection stage; the
+actual interaction-discovery + `max_t` selection stage; the
 mathematical guarantee is validated separately in RS-S01.
 
 **Requirements:**
@@ -1305,7 +1312,7 @@ stage chain (screen -> interactions -> nonlinear -> sparse/stability) on
 in-memory synthetic data, so recovery evidence never exercises the shipped
 stages. All code stays 100% case-study-agnostic (no BSM constants).
 
-### Slice R4-S01: Accept exact maxT (`fwer_max_stat_exact`) in the production interaction stage
+### Slice R4-S01: Accept exact maxT (`max_t`) in the production interaction stage
 
 **Phase:** R4
 **Depends on:** none
@@ -1317,18 +1324,18 @@ stages. All code stays 100% case-study-agnostic (no BSM constants).
 - tests/alignment/test_R4_S01_exact_fwer_production.py
 
 **Context.** `multiplicity_controlled_interaction_selection` already supports
-`method="fwer_max_stat_exact"` (Westfall-Young single-step maxT adjusted-p rule,
+`method="max_t"` (Westfall-Young single-step maxT adjusted-p rule,
 RS-S01). But `discover_manuscript_interactions` validates
-`spec.family_error_method not in {"fwer_max_stat", "bh_fdr"}` at
+`spec.selection_method not in {"fwer_max_stat", "bh_fdr"}` at
 manuscript_stages.py:~2334 and raises for the exact method, so the production
-path can never run exact FWER. `InteractionDiscoverySpec.family_error_method`
+path can never run exact FWER. `InteractionDiscoverySpec.selection_method`
 defaults to `"fwer_max_stat"`.
 
 **Requirements (do NOT weaken tests; do NOT loosen assertions to pass):**
 
 - Extend the accepted-method set in `discover_manuscript_interactions` to include
-  `"fwer_max_stat_exact"` and forward it unchanged to
-  `multiplicity_controlled_interaction_selection(method=spec.family_error_method)`,
+  `"max_t"` and forward it unchanged to
+  `multiplicity_controlled_interaction_selection(method=spec.selection_method)`,
   using the returned `selected` mask exactly as for the other methods. Preserve
   existing behavior for `fwer_max_stat` and `bh_fdr`.
 - Ensure the permutation-adequacy guard's `family_size` is consistent with the
@@ -1344,7 +1351,7 @@ defaults to `"fwer_max_stat"`.
 
 - Calls the PRODUCTION entry point `discover_manuscript_interactions` (or
   `run_interaction_discovery_stage`) with a spec whose
-  `family_error_method="fwer_max_stat_exact"` and `family_error_alpha=0.05` and
+  `selection_method="max_t"` and `selection_alpha=0.05` and
   asserts it runs without raising.
 - Under a planted strong interaction on small synthetic multi-output data, the
   planted pair is retained by the exact method.
@@ -1380,7 +1387,7 @@ per-stage retained sets and the final selected support.
 
 **Requirements (do NOT weaken tests):**
 
-- Add `run_production_recovery_pipeline(X_train, Y_train, X_eval, Y_eval, *, specs..., alpha=0.05, family_error_method="fwer_max_stat_exact", seed) -> ProductionRecoveryResult` that, on arbitrary in-memory data with NO BSM
+- Add `run_production_recovery_pipeline(X_train, Y_train, X_eval, Y_eval, *, specs..., alpha=0.05, selection_method="max_t", seed) -> ProductionRecoveryResult` that, on arbitrary in-memory data with NO BSM
   constants and NO ManuscriptNotebookContext:
   1. conditions/reduces `Y_train` via the production output-conditioning + PCA
      path (`condition_manuscript_outputs` or its documented reusable core),
@@ -1433,7 +1440,7 @@ support; fixed seeds; runs in a tmp dir if artifacts are written.
 - src/rfm_pipeline/manuscript_stages.py
 - tests/alignment/test_PA_B_exact_fwer_draw_adequacy.py
 
-**Context.** `fwer_max_stat_exact` is accepted in production (R4-S01), but the
+**Context.** `max_t` is accepted in production (R4-S01), but the
 exact max-statistic family p-values are only as fine-grained as the number of
 null permutation draws `permutation_count_B` (min achievable adjusted p-value is
 `1/(B+1)`). With too few draws (e.g. the historical B=51/200) an exact family
@@ -1447,10 +1454,10 @@ draw count.
 - Add a validation in the interaction-discovery spec path (the
   `InteractionDiscoverySpec` construction and/or
   `interaction_discovery_spec_from_case_study_config`) that, when
-  `family_error_method == "fwer_max_stat_exact"`, requires
-  `permutation_count_B >= min_exact_permutation_draws` (default 999) and raises a
+  `selection_method == "max_t"`, requires
+  `permutation_count_B >= minimum_selection_draws` (default 999) and raises a
   clear `ValueError` naming the offending values otherwise.
-- Expose `min_exact_permutation_draws` as a spec/config field defaulting to 999
+- Expose `minimum_selection_draws` as a spec/config field defaulting to 999
   so a case study can raise (never silently lower) it; a configured value below
   999 must itself raise.
 - Do NOT change behavior for `fwer_max_stat` (interpolated) or `bh_fdr`.
@@ -1459,11 +1466,11 @@ draw count.
 **Acceptance criteria (`test_PA_B_*`):**
 
 - Constructing/deriving an interaction spec with
-  `family_error_method="fwer_max_stat_exact"` and `permutation_count_B < 999`
+  `selection_method="max_t"` and `permutation_count_B < 999`
   raises `ValueError` mentioning both the method and the draw count.
 - The same with `permutation_count_B >= 999` succeeds.
 - `fwer_max_stat` with a small `permutation_count_B` still succeeds (no regression).
-- A configured `min_exact_permutation_draws < 999` raises.
+- A configured `minimum_selection_draws < 999` raises.
 - The sub-agent MUST confirm green:
   `pixi run python -m pytest -q tests/alignment/test_PA_B_exact_fwer_draw_adequacy.py`
 - `pixi run ruff check` clean on modified files.

@@ -8,17 +8,14 @@ promotes them with an atomic _SUCCESS.json marker.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
 import sys
 import time
-from itertools import combinations
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
 from rfm_pipeline.config import apply_fast_mode_overrides, load_config
@@ -31,7 +28,7 @@ from rfm_pipeline.distributed.stage_loaders import (
     _load_tables,
     config_to_legacy_case_study,
 )
-from rfm_pipeline.manuscript_runtime import load_manuscript_case_study_config
+from rfm_pipeline.interaction_contract import load_canonical_execution_contract
 from rfm_pipeline.manuscript_stages import (
     _generate_supported_nonlinear_candidates,
     condition_manuscript_outputs,
@@ -161,8 +158,8 @@ def _run_shard_stage(shard, cm, args) -> None:
         _run_interaction_shard(shard, cm, config_path=args.config)
         expected_files = [
             "shard_result.json",
-            "interaction_shard_scores.npz",
-            "interaction_pair_names.csv",
+            "score_only_interaction.npz",
+            "score_only_interaction.json",
         ]
     elif stage == "output_conditioning":
         _run_output_conditioning_shard(shard, cm, config_path=_require_config(stage, args.config))
@@ -493,11 +490,13 @@ def _resolve_interaction_inputs(input_paths: list[str]) -> dict[str, Path]:
 def _load_interaction_spec(config_path: str | None):
     from rfm_pipeline.manuscript_stages import interaction_discovery_spec_from_case_study_config
 
-    if config_path:
-        workflow_config = apply_fast_mode_overrides(load_config(config_path))
-        case_study_config = config_to_legacy_case_study(workflow_config)
-    else:
-        case_study_config = load_manuscript_case_study_config(Path.cwd())
+    if not config_path:
+        raise ValueError(
+            "interaction_discovery shard requires a canonical --config path; "
+            "default configuration fallback is not permitted."
+        )
+    workflow_config = apply_fast_mode_overrides(load_config(config_path))
+    case_study_config = config_to_legacy_case_study(workflow_config)
     return interaction_discovery_spec_from_case_study_config(case_study_config)
 
 
@@ -505,31 +504,17 @@ def _write_interaction_shard_outputs(
     *,
     shard,
     cm,
-    shard_scores,
-    candidate_family_names: list[str],
+    score_artifact,
 ) -> None:
     """Write score-only shard outputs.  No retention decisions are made here.
 
-    Emits:
-    - ``interaction_shard_scores.npz``: observed scores, null score matrix, draw IDs.
-    - ``interaction_pair_names.csv``: ordered pair names for this shard.
-    - ``shard_result.json``: metadata for the reducer.
+    Emits one self-verifying score-only artifact plus ``shard_result.json``.
 
     The reducer is responsible for assembling the global null matrix and making
     the single family-wide retention decision.
     """
-    npz_path = cm.staging_dir / "interaction_shard_scores.npz"
-    pair_names_path = cm.staging_dir / "interaction_pair_names.csv"
-    family_path = cm.staging_dir / "interaction_candidate_family.csv"
-
-    np.savez_compressed(
-        npz_path,
-        observed_scores=np.asarray(shard_scores.observed_scores, dtype=np.float64),
-        null_scores=np.asarray(shard_scores.null_scores, dtype=np.float64),
-        draw_ids=np.asarray(shard_scores.draw_ids, dtype=np.int64),
-    )
-    pd.DataFrame({"pair_name": shard_scores.pair_names}).to_csv(pair_names_path, index=False)
-    pd.DataFrame({"pair_name": candidate_family_names}).to_csv(family_path, index=False)
+    paths = score_artifact.write_to(cm.staging_dir)
+    snapshot = score_artifact.control_snapshot
 
     result = {
         "shard_id": shard.shard_id,
@@ -537,18 +522,15 @@ def _write_interaction_shard_outputs(
         "shard_mode": "score_only",
         "feature_start_idx": shard.feature_start_idx,
         "feature_end_idx": shard.feature_end_idx,
-        "n_candidate_pairs": len(shard_scores.pair_names),
-        "spec_random_seed": shard_scores.spec_random_seed,
-        "spec_permutation_count_B": shard_scores.spec_permutation_count_B,
-        "n_draw_ids": int(len(shard_scores.draw_ids)),
-        "shard_scores_file": npz_path.name,
-        "pair_names_file": pair_names_path.name,
-        "candidate_family_file": family_path.name,
-        "candidate_family_sha256": hashlib.sha256(
-            json.dumps(candidate_family_names, separators=(",", ":")).encode("utf-8")
-        ).hexdigest(),
-        "candidate_family_count": len(candidate_family_names),
-        "status": "score_only_completed",
+        "pair_range_start": score_artifact.pair_range_start,
+        "pair_range_end": score_artifact.pair_range_end,
+        "n_candidate_pairs": len(score_artifact.pair_names),
+        "score_only_metadata_file": paths["metadata"].name,
+        "score_only_scores_file": paths["scores"].name,
+        "control_snapshot_sha256": snapshot.checksum,
+        "candidate_family_sha256": snapshot.candidate_family_sha256,
+        "candidate_family_count": len(snapshot.candidate_pair_names),
+        "status": score_artifact.status,
     }
     (cm.staging_dir / "shard_result.json").write_text(json.dumps(result, indent=2))
 
@@ -574,30 +556,14 @@ def _run_interaction_shard(shard, cm, config_path: str | None = None) -> None:
     pca_scores_df = pd.read_csv(inputs["pca_scores"])
     retained_terms_df = pd.read_csv(inputs["retained_terms"])
 
-    retained_features = (
-        retained_terms_df.get("feature_name", pd.Series(dtype=str))
-        .dropna()
-        .astype(str)
-        .drop_duplicates()
-        .tolist()
-    )
-    available_features = [c for c in x_df.columns if c != "sample_id"]
-    retained_features = [f for f in retained_features if f in available_features]
-    if len(retained_features) < 2:
-        raise ValueError("interaction_discovery shard requires at least two retained features.")
-    total_pairs = len(retained_features) * (len(retained_features) - 1) // 2
-    candidate_family_names = [
-        f"{left}:{right}" for left, right in combinations(sorted(retained_features), 2)
-    ]
-
-    start = int(shard.feature_start_idx or 0)
-    end = int(shard.feature_end_idx or total_pairs)
-    start = max(0, min(start, total_pairs))
-    end = max(start, min(end, total_pairs))
     artifact_root = _artifact_root_from_output_root(cm.output_root)
-
+    contract = load_canonical_execution_contract(
+        _require_config("interaction_discovery", config_path)
+    )
     spec = _load_interaction_spec(config_path)
-    shard_scores = discover_interaction_scores_only(
+    start = int(shard.feature_start_idx or 0)
+    end = shard.feature_end_idx
+    score_artifact = discover_interaction_scores_only(
         input_matrix=x_df,
         feature_catalog=feature_catalog_df,
         holdout_assignments=holdout_df,
@@ -607,12 +573,12 @@ def _run_interaction_shard(shard, cm, config_path: str | None = None) -> None:
         checkpoint_dir=artifact_root / "interaction_discovery",
         pair_start_idx=start,
         pair_end_idx=end,
+        contract=contract,
     )
     _write_interaction_shard_outputs(
         shard=shard,
         cm=cm,
-        shard_scores=shard_scores,
-        candidate_family_names=candidate_family_names,
+        score_artifact=score_artifact,
     )
 
 

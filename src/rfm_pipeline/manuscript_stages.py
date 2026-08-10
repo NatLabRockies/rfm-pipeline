@@ -12,11 +12,9 @@ import hashlib
 import json
 import logging
 import math
-import multiprocessing as mp
 import os
 import re
 import subprocess
-import tempfile
 import time
 import warnings
 from collections.abc import Collection
@@ -40,6 +38,13 @@ from .final_ols import (
     make_coefficient_matrix_frame,
     make_standardization_frame,
     predict_final_ols,
+)
+from .interaction_contract import (
+    CanonicalExecutionContract,
+    ScoreOnlyInteractionArtifact,
+    build_control_snapshot,
+    canonical_execution_contract_from_specs,
+    verify_control_snapshot,
 )
 from .metrics import (
     bootstrap_macro_nrmse_ci,
@@ -535,16 +540,16 @@ def check_permutation_adequacy(
         )
 
 
-def fwer_max_stat_threshold(
+def max_t_critical_value(
     null_statistics: np.ndarray,
     alpha: float,
-) -> float:
-    """Compute the single-step max-statistic FWER threshold.
+) -> float | None:
+    """Compute the exact finite-permutation maxT score-space critical value.
 
-    Under the global null, the maximum score across all candidate pairs is drawn
-    from a common null distribution for each shared-response permutation.  The
-    ``(1 - alpha)`` quantile of this max-null distribution is a threshold that
-    controls the family-wise error rate at *alpha*.
+    The value corresponds to the finite-permutation maxT selection rule:
+    a pair is selected when its adjusted p-value is no greater than ``alpha``.
+    When the configured draw count cannot resolve ``alpha``, returns ``None``
+    rather than interpolating an approximate quantile threshold.
 
     Parameters
     ----------
@@ -557,8 +562,9 @@ def fwer_max_stat_threshold(
 
     Returns
     -------
-    float
-        The ``(1 - alpha)`` quantile of the cross-pair max-null distribution.
+    float or None
+        The exact maxT score-space critical value, or ``None`` if no rejection
+        is possible at the requested alpha and finite draw count.
 
     Raises
     ------
@@ -570,11 +576,15 @@ def fwer_max_stat_threshold(
         raise ValueError("null_statistics must be a 2-D array with at least one row (B >= 1).")
     if not (0.0 < alpha < 1.0):
         raise ValueError(f"alpha must be in the open interval (0, 1); got {alpha!r}")
-    max_null = null_statistics.max(axis=1)  # shape (B,)
-    return float(np.quantile(max_null, 1.0 - alpha))
+    B = null_statistics.shape[0]
+    k = int(math.floor(alpha * (B + 1)))
+    if k == 0:
+        return None
+    max_null = null_statistics.max(axis=1)
+    return float(np.partition(max_null, B - k)[B - k])
 
 
-def maxt_adjusted_pvalues(
+def max_t_adjusted_pvalues(
     observed_scores: np.ndarray,
     null_statistics: np.ndarray,
 ) -> np.ndarray:
@@ -684,7 +694,7 @@ def multiplicity_controlled_interaction_selection(
     observed_scores: np.ndarray,
     null_statistics: np.ndarray,
     alpha: float,
-    method: str = "fwer_max_stat",
+    method: str = "max_t",
 ) -> tuple[np.ndarray, np.ndarray, float | None]:
     """Select interaction pairs with multiplicity control over the full candidate family.
 
@@ -702,14 +712,14 @@ def multiplicity_controlled_interaction_selection(
         for all pairs in a single draw).
     alpha
         Error rate target.  Interpreted as the FWER level for
-        ``method='fwer_max_stat'`` and as the FDR level for
+        ``method='max_t'`` and as the FDR level for
         ``method='bh_fdr'``.
     method
         Multiplicity-correction procedure.  One of:
 
-        ``'fwer_max_stat'``
+        ``'max_t'``
             Single-step max-statistic FWER control via
-            :func:`fwer_max_stat_threshold`.
+            :func:`max_t_critical_value`.
         ``'bh_fdr'``
             Benjamini-Hochberg FDR control via :func:`bh_fdr_selected`.
 
@@ -721,7 +731,7 @@ def multiplicity_controlled_interaction_selection(
         Empirical per-pair p-values of shape ``(n_pairs,)``.  Computed as
         ``(1 + #{b : null_b >= obs}) / (B + 1)``.
     threshold : float or None
-        The scalar FWER threshold when *method* is ``'fwer_max_stat'``;
+        The scalar FWER threshold when *method* is ``'max_t'``;
         ``None`` for ``'bh_fdr'``.
 
     Raises
@@ -730,10 +740,9 @@ def multiplicity_controlled_interaction_selection(
         If *method* is not one of the supported strings, or if shape constraints
         on *observed_scores* / *null_statistics* are violated.
     """
-    if method not in {"fwer_max_stat", "bh_fdr", "fwer_max_stat_exact"}:
+    if method not in {"max_t", "bh_fdr"}:
         raise ValueError(
-            f"Unknown multiplicity correction method: {method!r}. "
-            "Expected 'fwer_max_stat', 'bh_fdr', or 'fwer_max_stat_exact'."
+            f"Unknown multiplicity correction method: {method!r}. Expected 'max_t' or 'bh_fdr'."
         )
     if not (0.0 < alpha < 1.0):
         raise ValueError(f"alpha must be in the open interval (0, 1); got {alpha!r}")
@@ -748,21 +757,11 @@ def multiplicity_controlled_interaction_selection(
         )
     B = null_statistics.shape[0]
     p_values = (1.0 + (null_statistics >= observed_scores[None, :]).sum(axis=0)) / (B + 1.0)
-    if method == "fwer_max_stat":
-        threshold: float | None = fwer_max_stat_threshold(null_statistics, alpha)
-        selected = observed_scores > threshold
-        return selected, p_values, threshold
-    if method == "fwer_max_stat_exact":
-        p_adj = maxt_adjusted_pvalues(observed_scores, null_statistics)
+    if method == "max_t":
+        p_adj = max_t_adjusted_pvalues(observed_scores, null_statistics)
         selected_exact = p_adj <= alpha
         # Score-space critical value: floor(alpha*(B+1))-th largest row-max of null.
-        k = int(math.floor(alpha * (B + 1)))
-        if k == 0:
-            threshold_exact: float | None = None
-        else:
-            max_null = null_statistics.max(axis=1)
-            # k-th largest = (B - k)-th smallest (0-indexed)
-            threshold_exact = float(np.partition(max_null, B - k)[B - k])
+        threshold_exact = max_t_critical_value(null_statistics, alpha)
         return selected_exact, p_adj, threshold_exact
     # bh_fdr
     selected = bh_fdr_selected(p_values, alpha)
@@ -797,14 +796,11 @@ class InteractionDiscoverySpec:
         Reference label for the manuscript interaction workflow to reconcile against.
     source_workflow_equivalence_status
         Validation status for equivalence to the manuscript interaction workflow.
-    family_error_method
-        Multiplicity-correction procedure applied across the full pair family. One of
-        ``"fwer_max_stat"`` (default; single-step FWER via max-statistic threshold)
-        or ``"bh_fdr"`` (Benjamini-Hochberg FDR). See
-        :func:`multiplicity_controlled_interaction_selection`.
-    family_error_alpha
-        Family-wise error rate (for ``"fwer_max_stat"``) or FDR level (for
-        ``"bh_fdr"``). Defaults to ``0.05``.
+    selection_method
+        Canonical multiplicity-correction procedure. ``"max_t"`` is the exact
+        finite-permutation, single-step maxT selector.
+    selection_alpha
+        Family-wise error rate controlled by ``selection_method``.
     condition_main_effects
         When ``True`` (default), each response component is residualized against an
         additive main-effects design (per retained first-order feature, up to
@@ -845,34 +841,26 @@ class InteractionDiscoverySpec:
     dask_cores_per_worker: int = 1
     dask_memory_per_worker: str = "4 GB"
     enforce_permutation_adequacy: bool = True
-    family_error_method: str = "fwer_max_stat"
-    family_error_alpha: float = 0.05
+    selection_method: str = "max_t"
+    selection_alpha: float = 0.05
     condition_main_effects: bool = True
     main_effect_conditioning_degree: int = 2
-    min_exact_permutation_draws: int = 999
+    minimum_selection_draws: int = 199
 
     def __post_init__(self) -> None:
-        """Validate exact-FWER permutation adequacy constraints."""
-        # Minimum draws that keep exact-FWER permutation p-values resolvable at
-        # conventional significance levels: min achievable p_adj = 1/(B+1), so a
-        # floor of 199 yields resolution 1/200 = 0.005 — a 10x margin below the
-        # usual alpha = 0.05. A case study may set a stricter (higher) floor via
-        # ``min_exact_permutation_draws`` (default 999); it may not go below this.
-        _MIN_EXACT_DRAWS_FLOOR = 199
-        if self.min_exact_permutation_draws < _MIN_EXACT_DRAWS_FLOOR:
+        """Validate the neutral exact maxT controls without accepting aliases."""
+        if self.selection_method != "max_t":
             raise ValueError(
-                f"min_exact_permutation_draws={self.min_exact_permutation_draws} is below the "
-                f"minimum allowed floor of {_MIN_EXACT_DRAWS_FLOOR}. "
-                "A lower floor would produce unresolvable exact FWER p-values."
+                "selection_method must be 'max_t'; legacy or approximate selection aliases "
+                f"are not supported (got {self.selection_method!r})."
             )
-        if self.family_error_method == "fwer_max_stat_exact":
-            if self.permutation_count_B < self.min_exact_permutation_draws:
-                raise ValueError(
-                    f"family_error_method='fwer_max_stat_exact' requires "
-                    f"permutation_count_B >= {self.min_exact_permutation_draws} "
-                    f"(got permutation_count_B={self.permutation_count_B}). "
-                    "Too few permutation draws make exact FWER p-values unresolvable."
-                )
+        if not 0.0 < self.selection_alpha < 1.0:
+            raise ValueError("selection_alpha must be in the open interval (0, 1).")
+        if self.minimum_selection_draws < 199:
+            raise ValueError(
+                "minimum_selection_draws must be at least 199 for the canonical "
+                "finite-permutation maxT contract."
+            )
 
 
 @dataclass(frozen=True)
@@ -918,52 +906,6 @@ class InteractionDiscoveryStageResult:
 
     interactions: InteractionDiscoveryResult
     artifact_paths: dict[str, Path]
-
-
-@dataclass(frozen=True)
-class InteractionScoresShard:
-    """Score-only output from a distributed interaction-discovery shard.
-
-    Shards never make retention decisions.  They emit observed scores and the
-    full null-score matrix (one column per candidate pair, one row per shared
-    permutation draw) keyed by draw IDs.  The global reducer assembles the
-    full candidate-family null matrix from all shards and issues a single
-    FWER decision.
-
-    Parameters
-    ----------
-    pair_names
-        Ordered candidate pair names covered by this shard.
-    observed_scores
-        Array of shape ``(n_pairs,)`` of observed max-over-components SHAP
-        interaction scores.
-    null_scores
-        Array of shape ``(B, n_pairs)`` of permutation-null interaction scores.
-        Row ``b`` corresponds to draw ID ``b`` (0-indexed).  All shards sharing
-        the same ``spec.random_seed`` use the same shared-response permutations,
-        so row ``b`` from shard A and row ``b`` from shard B were produced under
-        the same permuted response matrix.  This property is required for the
-        global max-statistic FWER threshold to be valid.
-    draw_ids
-        Array of shape ``(B,)`` = ``[0, 1, ..., B-1]``.  Identical across all
-        shards derived from the same ``spec.random_seed`` and
-        ``spec.permutation_count_B``.  The reducer uses these to verify that
-        all shards share the same null permutation sequence.
-    n_training_rows
-        Number of training rows used for scoring.
-    spec_random_seed
-        ``InteractionDiscoverySpec.random_seed`` used to generate permutations.
-    spec_permutation_count_B
-        ``InteractionDiscoverySpec.permutation_count_B`` used to generate nulls.
-    """
-
-    pair_names: list[str]
-    observed_scores: np.ndarray
-    null_scores: np.ndarray
-    draw_ids: np.ndarray
-    n_training_rows: int
-    spec_random_seed: int
-    spec_permutation_count_B: int
 
 
 @dataclass(frozen=True)
@@ -2040,6 +1982,18 @@ def interaction_discovery_spec_from_case_study_config(
     """
     case_study = case_study_config.get("case_study", {})
     interaction = case_study.get("interaction_discovery", {})
+    legacy_selector_keys = {
+        "family_error_method",
+        "family_error_alpha",
+        "min_exact_permutation_draws",
+    }
+    present_legacy_selector_keys = sorted(legacy_selector_keys.intersection(interaction))
+    if present_legacy_selector_keys:
+        raise ValueError(
+            "Legacy interaction selection fields are not accepted: "
+            f"{present_legacy_selector_keys}. Use selection_method, selection_alpha, "
+            "and minimum_selection_draws."
+        )
     empirical_null = case_study.get("empirical_null_screen", {})
     interface = case_study.get("interface", {})
     runtime = case_study.get("runtime", {})
@@ -2092,11 +2046,11 @@ def interaction_discovery_spec_from_case_study_config(
         dask_workers=(int(dask_workers_raw) if dask_workers_raw is not None else None),
         dask_cores_per_worker=int(interaction.get("dask_cores_per_worker", 1)),
         dask_memory_per_worker=str(interaction.get("dask_memory_per_worker", "4 GB")),
-        family_error_method=str(interaction.get("family_error_method", "fwer_max_stat")),
-        family_error_alpha=float(interaction.get("family_error_alpha", 0.05)),
+        selection_method=str(interaction.get("selection_method", "max_t")),
+        selection_alpha=float(interaction.get("selection_alpha", 0.05)),
         condition_main_effects=bool(interaction.get("condition_main_effects", True)),
         main_effect_conditioning_degree=int(interaction.get("main_effect_conditioning_degree", 2)),
-        min_exact_permutation_draws=int(interaction.get("min_exact_permutation_draws", 999)),
+        minimum_selection_draws=int(interaction.get("minimum_selection_draws", 199)),
     )
 
 
@@ -2326,6 +2280,7 @@ def discover_manuscript_interactions(
     checkpoint_dir: Path | None = None,
     pair_start_idx: int | None = None,
     pair_end_idx: int | None = None,
+    contract: CanonicalExecutionContract | None = None,
 ) -> InteractionDiscoveryResult:
     """Discover candidate interaction pairs via specified method (GBT+SHAP or ElasticNet).
 
@@ -2355,478 +2310,50 @@ def discover_manuscript_interactions(
         When provided with ``pair_end_idx``, only that pair range is scored.
     pair_end_idx
         Optional zero-based end index (exclusive) for candidate-pair slicing.
+    contract
+        Optional canonical execution contract. When supplied, its interaction
+        and terminal-model controls are verified before score execution.
 
     Returns
     -------
     InteractionDiscoveryResult
         Materialized pair-score, component-score, null-summary, retained-pair, and summary tables.
     """
-    if spec.condition_main_effects:
-        pca_scores = _condition_pca_scores_on_main_effects(
-            input_matrix,
-            holdout_assignments,
-            pca_scores,
-            retained_terms,
-            degree=spec.main_effect_conditioning_degree,
-        )
-
     if spec.method == "elasticnet_interactions":
+        if spec.condition_main_effects:
+            pca_scores = _condition_pca_scores_on_main_effects(
+                input_matrix,
+                holdout_assignments,
+                pca_scores,
+                retained_terms,
+                degree=spec.main_effect_conditioning_degree,
+            )
         return _discover_elasticnet_interactions(
             input_matrix, holdout_assignments, pca_scores, retained_terms, spec
         )
-    elif spec.method != "tree_shap_interaction_values":
+    if spec.method != "tree_shap_interaction_values":
         raise ValueError(f"Unsupported interaction-discovery method: {spec.method}")
-
-    expected_rule = "max_over_components_of_mean_absolute_shap_interaction"
-    if spec.aggregation_rule != expected_rule:
-        raise ValueError(f"Unsupported interaction aggregation rule: {spec.aggregation_rule}")
-    if spec.permutation_count_B < 1:
-        raise ValueError("permutation_count_B must be positive.")
-    if not 0.0 < spec.null_threshold_quantile < 1.0:
-        raise ValueError("null_threshold_quantile must be in the interval (0, 1).")
-
-    def _run_interaction_jobs(
-        work_items: list[tuple[int, int]],
-        *,
-        n_jobs: int,
-        backend: str,
-        timeout_seconds: int | None,
-        temp_folder: str | None,
-    ) -> list[tuple[np.ndarray, np.ndarray]]:
-        def _score_from_item(item: tuple[int, int]) -> tuple[np.ndarray, np.ndarray]:
-            score_index, seed = item
-            return _score_interaction_permutation(
-                y_base=y_scaled,
-                permute_response=(score_index > 0),
-                seed=seed,
-                **_score_kwargs,
-            )
-
-        if backend == "dask":
-            requested_workers = spec.dask_workers if spec.dask_workers is not None else n_jobs
-            if requested_workers <= 0:
-                requested_workers = os.cpu_count() or 1
-            dask_timeout = int(timeout_seconds) if timeout_seconds is not None else 3600
-            executor = None
-            try:
-                executor = get_executor(
-                    "dask",
-                    n_workers=max(1, int(requested_workers)),
-                    cores_per_worker=max(1, int(spec.dask_cores_per_worker)),
-                    memory_per_worker=spec.dask_memory_per_worker,
-                    timeout=dask_timeout,
-                )
-                return executor.map(_score_from_item, work_items)
-            except (ImportError, RuntimeError, OSError, TimeoutError, ValueError) as exc:
-                _append_parallel_diagnostic(
-                    "interaction_discovery",
-                    {
-                        "event": "dask_executor_fallback",
-                        "fallback_backend": "threading",
-                        "n_jobs": n_jobs,
-                        "exception_type": type(exc).__name__,
-                        "exception_message": str(exc),
-                    },
-                )
-                backend = "threading"
-            finally:
-                if executor is not None:
-                    executor.close()
-
-        parallel_kwargs: dict[str, Any] = {}
-        if n_jobs > 1 and timeout_seconds is not None and timeout_seconds > 0:
-            parallel_kwargs["timeout"] = int(timeout_seconds)
-        if n_jobs > 1:
-            parallel_kwargs["backend"] = backend
-            parallel_kwargs["prefer"] = "processes" if backend == "loky" else "threads"
-            if backend == "loky" and temp_folder:
-                parallel_kwargs["temp_folder"] = temp_folder
-        jobs = [delayed(_score_from_item)(item) for item in work_items]
-        with Parallel(n_jobs=n_jobs, **parallel_kwargs) as parallel:
-            return parallel(jobs)
-
-    candidates = _generate_pairwise_interactions(
-        _retained_first_order_term_names(retained_terms, input_matrix, minimum_count=2)
-    )
-    component_names = _component_columns(pca_scores)
-    train_ids = _train_sample_ids(holdout_assignments)
-    y_train = _align_table_by_sample_id(pca_scores, train_ids, component_names, "PCA scores")
-    if len(y_train) < 4:
-        raise ValueError("Interaction discovery requires at least four training rows.")
-    y_scaled, component_active = _standardize_for_screening(y_train)
-    if not component_active.any():
-        raise ValueError("All retained PCA components have zero training variance.")
-
-    if not candidates:
-        raise ValueError("feature_catalog does not contain any two-factor interaction candidates.")
-    total_candidate_pairs = len(candidates)
-    if spec.family_error_method not in {"fwer_max_stat", "bh_fdr", "fwer_max_stat_exact"}:
-        raise ValueError(
-            f"Unknown family_error_method: {spec.family_error_method!r}. "
-            "Expected 'fwer_max_stat', 'fwer_max_stat_exact', or 'bh_fdr'."
-        )
-    if not 0.0 < spec.family_error_alpha < 1.0:
-        raise ValueError("family_error_alpha must be in the open interval (0, 1).")
-    if spec.enforce_permutation_adequacy:
-        # The adequacy guard budget must match the family-corrected procedure that
-        # actually drives retention (F5 fix). For FWER max-stat (both variants),
-        # the resolution constraint is 1/(B+1) <= alpha (family_size=1, since a
-        # single scalar threshold is estimated from the max-null distribution).
-        # For BH-FDR, the worst-case constraint is 1/(B+1) <= alpha / n_pairs
-        # (family_size=n_pairs).
-        adequacy_family_size = total_candidate_pairs if spec.family_error_method == "bh_fdr" else 1
-        check_permutation_adequacy(
-            spec.permutation_count_B,
-            1.0 - spec.family_error_alpha,
-            family_size=adequacy_family_size,
-        )
     if pair_start_idx is not None or pair_end_idx is not None:
-        start = int(pair_start_idx) if pair_start_idx is not None else 0
-        end = int(pair_end_idx) if pair_end_idx is not None else total_candidate_pairs
-        start = max(0, min(start, total_candidate_pairs))
-        end = max(start, min(end, total_candidate_pairs))
-        candidates = candidates[start:end]
-        if not candidates:
-            raise ValueError(
-                "interaction_discovery shard candidate range is empty: "
-                f"pair_start_idx={pair_start_idx}, pair_end_idx={pair_end_idx}, "
-                f"total_candidate_pairs={total_candidate_pairs}"
-            )
-
-    # Build feature matrix from all unique features appearing in any pair.
-    feature_names = sorted({name for _, left, right in candidates for name in [left, right]})
-    pair_to_indices = {
-        pair_name: (feature_names.index(left), feature_names.index(right))
-        for pair_name, left, right in candidates
-    }
-    indexed = input_matrix.set_index("sample_id", drop=False)
-    missing_ids = [s for s in train_ids if s not in indexed.index]
-    if missing_ids:
-        preview = ", ".join(str(v) for v in missing_ids[:5])
-        raise ValueError(f"input matrix is missing sample_id values: {preview}")
-    train_rows = indexed.loc[list(train_ids)].reset_index(drop=True)
-    x_feat = np.column_stack(
-        [_source_input_column(train_rows, f, f).to_numpy(dtype=float) for f in feature_names]
-    )
-
-    rng = np.random.default_rng(spec.random_seed)
-    active_comp_indices = [i for i, a in enumerate(component_active) if a]
-
-    # Component pruning: skip components with very low variance
-    # (below min_component_variance_fraction). This reduces SHAP computation for
-    # uninformative components while retaining signal components.
-    if spec.min_component_variance_fraction > 0:
-        component_variances = y_train.var(axis=0).values  # Convert to numpy array
-        max_variance = component_variances.max()
-        if max_variance > 0:
-            variance_fractions = component_variances / max_variance
-            pruned_indices = [
-                i
-                for i in active_comp_indices
-                if variance_fractions[i] >= spec.min_component_variance_fraction
-            ]
-            if pruned_indices:  # Only prune if we keep at least one component
-                active_comp_indices = pruned_indices
-
-    # Hard cap on active component count: keep highest-variance components only.
-    cap = spec.max_active_components
-    if cap is not None and len(active_comp_indices) > cap:
-        component_variances = y_train.var(axis=0).values
-        active_comp_indices = sorted(
-            active_comp_indices,
-            key=lambda i: -component_variances[i],
-        )[:cap]
-
-    n_pairs = len(candidates)
-    n_comp = len(component_names)
-
-    # Adaptive SHAP sampling: use 30% of training set or max 250 samples, whichever is lower.
-    # This reduces SHAP computation cost while maintaining interaction estimate quality.
-    n_train_samples = len(y_train)
-    adaptive_shap_samples = min(250, max(100, int(0.3 * n_train_samples)))
-    effective_max_shap_samples = min(spec.max_shap_samples, adaptive_shap_samples)
-
-    # Pre-generate per-call seeds only. Each worker materializes its own response permutation.
-    # This avoids shipping large permuted matrices through joblib IPC, which can destabilize
-    # process-based parallel execution on large runs.
-    seeds = [int(rng.integers(0, 2**31)) for _ in range(spec.permutation_count_B + 1)]
-
-    _score_kwargs = dict(
-        x_feat=x_feat,
-        n_pairs=n_pairs,
-        n_comp=n_comp,
-        active_comp_indices=active_comp_indices,
-        pair_to_indices=pair_to_indices,
-        candidates=candidates,
-        n_estimators=spec.n_tree_estimators,
-        max_depth=spec.max_tree_depth,
-        max_shap_samples=effective_max_shap_samples,
-    )
-
-    total_scores = len(seeds)
-    checkpoint_root: Path | None = checkpoint_dir
-    if checkpoint_root is None:
-        env_checkpoint_dir = os.getenv("RFM_INTERACTION_CHECKPOINT_DIR")
-        if env_checkpoint_dir:
-            checkpoint_root = Path(env_checkpoint_dir)
-    checkpoint_run_dir: Path | None = None
-    if checkpoint_root is not None:
-        train_ids_digest = hashlib.sha256(
-            "|".join(str(sample_id) for sample_id in train_ids).encode("utf-8")
-        ).hexdigest()
-        checkpoint_signature_payload = {
-            "method": spec.method,
-            "aggregation_rule": spec.aggregation_rule,
-            "null_threshold_quantile": float(spec.null_threshold_quantile),
-            "permutation_count_B": int(spec.permutation_count_B),
-            "random_seed": int(spec.random_seed),
-            "family_error_method": spec.family_error_method,
-            "family_error_alpha": float(spec.family_error_alpha),
-            "condition_main_effects": bool(spec.condition_main_effects),
-            "main_effect_conditioning_degree": int(spec.main_effect_conditioning_degree),
-            "n_tree_estimators": int(spec.n_tree_estimators),
-            "max_tree_depth": int(spec.max_tree_depth),
-            "max_shap_samples": int(spec.max_shap_samples),
-            "n_pairs": int(n_pairs),
-            "pair_names": [pair_name for pair_name, _, _ in candidates],
-            "candidate_family_sha256": hashlib.sha256(
-                json.dumps(
-                    [pair_name for pair_name, _, _ in candidates],
-                    separators=(",", ":"),
-                ).encode("utf-8")
-            ).hexdigest(),
-            "component_names": [str(name) for name in component_names],
-            "train_ids_sha256": train_ids_digest,
-            "input_features_sha256": _digest_array(x_feat),
-            "conditioned_response_sha256": _digest_array(y_scaled),
-            "permutation_schedule_sha256": hashlib.sha256(
-                np.asarray(seeds, dtype=np.int64).tobytes()
-            ).hexdigest(),
-            "code_identity": _interaction_code_identity(),
-        }
-        checkpoint_signature = hashlib.sha256(
-            json.dumps(checkpoint_signature_payload, sort_keys=True).encode("utf-8")
-        ).hexdigest()
-        checkpoint_run_dir = checkpoint_root / checkpoint_signature
-        checkpoint_run_dir.mkdir(parents=True, exist_ok=True)
-        metadata_path = checkpoint_run_dir / "checkpoint_metadata.json"
-        if not metadata_path.exists():
-            metadata_path.write_text(
-                json.dumps(
-                    {
-                        "created_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                        "signature": checkpoint_signature,
-                        **checkpoint_signature_payload,
-                    },
-                    indent=2,
-                    sort_keys=True,
-                )
-                + "\n",
-                encoding="utf-8",
-            )
-
-    def _score_checkpoint_path(score_index: int) -> Path | None:
-        if checkpoint_run_dir is None:
-            return None
-        return checkpoint_run_dir / f"score_{score_index:06d}.npz"
-
-    def _load_checkpoint_score(score_index: int) -> tuple[np.ndarray, np.ndarray] | None:
-        score_path = _score_checkpoint_path(score_index)
-        if score_path is None or not score_path.exists():
-            return None
-        try:
-            with np.load(score_path, allow_pickle=False) as data:
-                scores = np.asarray(data["scores"], dtype=float)
-                component_scores = np.asarray(data["component_scores"], dtype=float)
-        except (OSError, ValueError, KeyError) as exc:
-            _append_parallel_diagnostic(
-                "interaction_discovery",
-                {
-                    "event": "checkpoint_read_failure",
-                    "score_index": score_index,
-                    "checkpoint_path": str(score_path),
-                    "exception_type": type(exc).__name__,
-                    "exception_message": str(exc),
-                },
-            )
-            return None
-        if scores.shape != (n_pairs,) or component_scores.shape != (n_pairs, n_comp):
-            _append_parallel_diagnostic(
-                "interaction_discovery",
-                {
-                    "event": "checkpoint_shape_mismatch",
-                    "score_index": score_index,
-                    "checkpoint_path": str(score_path),
-                    "scores_shape": list(scores.shape),
-                    "component_scores_shape": list(component_scores.shape),
-                    "expected_scores_shape": [n_pairs],
-                    "expected_component_scores_shape": [n_pairs, n_comp],
-                },
-            )
-            return None
-        return scores, component_scores
-
-    def _save_checkpoint_score(score_index: int, result: tuple[np.ndarray, np.ndarray]) -> None:
-        score_path = _score_checkpoint_path(score_index)
-        if score_path is None:
-            return
-        scores, component_scores = result
-        temp_path = score_path.with_suffix(".tmp.npz")
-        np.savez_compressed(
-            temp_path,
-            scores=np.asarray(scores, dtype=float),
-            component_scores=np.asarray(component_scores, dtype=float),
-        )
-        temp_path.replace(score_path)
-
-    cached_prefix = 0
-    for score_index in range(total_scores):
-        score_path = _score_checkpoint_path(score_index)
-        if score_path is None or not score_path.exists():
-            break
-        cached_prefix += 1
-
-    indexed_results: dict[int, tuple[np.ndarray, np.ndarray]] = {}
-    # Use divisor 8 instead of 25 for larger batches (reduce parallelization overhead)
-    batch_size = _progress_batch_size(total_scores, 8)
-    batch_timeout_seconds = int(
-        os.getenv("RFM_INTERACTION_BATCH_TIMEOUT_SECONDS", spec.parallel_batch_timeout_seconds)
-    )
-    parallel_backend = os.getenv("RFM_INTERACTION_PARALLEL_BACKEND", spec.parallel_backend)
-    if parallel_backend not in {"loky", "threading", "dask"}:
         raise ValueError(
-            "interaction_discovery.parallel_backend must be 'loky', 'threading', or 'dask'."
+            "discover_manuscript_interactions cannot make a partial-family decision. "
+            "Use discover_interaction_scores_only and reduce_score_only_interaction_artifacts."
         )
-    start_detail = "starting interaction score permutations"
-    if cached_prefix > 0:
-        start_detail = (
-            "resuming interaction score permutations from checkpoints "
-            f"({cached_prefix}/{total_scores})"
-        )
-    _report_progress(
-        stage="interaction_discovery",
-        completed=cached_prefix,
-        total=total_scores,
-        unit="permutation_scores",
-        detail=start_detail,
+    if contract is None:
+        contract = canonical_execution_contract_from_specs(spec)
+    artifact = discover_interaction_scores_only(
+        input_matrix,
+        feature_catalog,
+        holdout_assignments,
+        pca_scores,
+        retained_terms,
+        spec,
+        checkpoint_dir=checkpoint_dir,
+        contract=contract,
     )
-    with tempfile.TemporaryDirectory(prefix="rfm-interaction-joblib-") as temp_dir:
-        for start in range(0, total_scores, batch_size):
-            stop = min(start + batch_size, total_scores)
-            batch_items = list(enumerate(seeds[start:stop], start=start))
-            missing_batch_items: list[tuple[int, int]] = []
-            for score_index, seed in batch_items:
-                checkpointed = _load_checkpoint_score(score_index)
-                if checkpointed is not None:
-                    indexed_results[score_index] = checkpointed
-                else:
-                    missing_batch_items.append((score_index, seed))
-            if missing_batch_items:
-                batch_result: list[tuple[np.ndarray, np.ndarray]] | None = None
-                try:
-                    batch_result = _run_interaction_jobs(
-                        missing_batch_items,
-                        n_jobs=1 if spec.n_jobs <= 1 else spec.n_jobs,
-                        backend=parallel_backend,
-                        timeout_seconds=(None if spec.n_jobs <= 1 else batch_timeout_seconds),
-                        temp_folder=(None if spec.n_jobs <= 1 else temp_dir),
-                    )
-                except (TimeoutError, mp.TimeoutError, RuntimeError, OSError) as exc:
-                    _append_parallel_diagnostic(
-                        "interaction_discovery",
-                        {
-                            "event": "parallel_batch_failure",
-                            "batch_start": start,
-                            "batch_stop": stop,
-                            "batch_size": len(missing_batch_items),
-                            "backend": parallel_backend,
-                            "n_jobs": spec.n_jobs,
-                            "timeout_seconds": batch_timeout_seconds,
-                            "exception_type": type(exc).__name__,
-                            "exception_message": str(exc),
-                            "controller_pid": os.getpid(),
-                            "worker_snapshot": _worker_process_snapshot(os.getpid()),
-                        },
-                    )
-                    raise RuntimeError(
-                        "Interaction discovery parallel batch failed; "
-                        "no serial fallback or retries are allowed for n_jobs>1."
-                    ) from exc
-                assert batch_result is not None
-                for (score_index, _), result in zip(missing_batch_items, batch_result, strict=True):
-                    indexed_results[score_index] = result
-                    _save_checkpoint_score(score_index, result)
-            _report_progress(
-                stage="interaction_discovery",
-                completed=stop,
-                total=total_scores,
-                unit="permutation_scores",
-            )
-
-    all_results = [indexed_results[idx] for idx in range(total_scores)]
-    observed_scores, observed_comp = all_results[0]
-    null_statistics = np.zeros((spec.permutation_count_B, n_pairs))
-    for b in range(spec.permutation_count_B):
-        null_statistics[b] = all_results[b + 1][0]
-
-    # Diagnostic per-pair quantile threshold; retained purely as an informational
-    # column in the pair-score table so downstream reports can still show a per-pair
-    # empirical-null cut. Actual retention is driven by the family-corrected
-    # procedure via multiplicity_controlled_interaction_selection (F5 wiring).
-    thresholds = np.quantile(null_statistics, spec.null_threshold_quantile, axis=0)
-    selected, p_values, _fwer_threshold = multiplicity_controlled_interaction_selection(
-        observed_scores,
-        null_statistics,
-        alpha=spec.family_error_alpha,
-        method=spec.family_error_method,
-    )
-    retained = selected
-    # empirical_null_retained diagnostic: what the OLD per-pair quantile rule
-    # would have retained. Kept for continuity of the pair-score schema.
-    empirical_null_retained_mask = observed_scores > thresholds
-    empirical_null_retained_names = {
-        pair_name
-        for (pair_name, _, _), r in zip(candidates, empirical_null_retained_mask, strict=True)
-        if r
-    }
-    pair_scores = _build_interaction_pair_scores(
-        candidates=candidates,
-        observed_scores=observed_scores,
-        thresholds=thresholds,
-        p_values=p_values,
-        retained=retained,
-        retained_term_names=empirical_null_retained_names,
+    return reduce_score_only_interaction_artifacts(
+        [artifact],
         spec=spec,
-    )
-    component_scores = _build_component_interaction_scores(
-        candidates=candidates,
-        component_names=component_names,
-        coefficients=observed_comp,
-    )
-    null_summary = _build_interaction_null_summary(candidates, null_statistics)
-    retained_pairs = pair_scores.loc[pair_scores["retained"]].copy()
-    retained_pairs = retained_pairs.sort_values(
-        ["interaction_score", "pair_name"],
-        ascending=[False, True],
-        ignore_index=True,
-    )
-    provenance = _build_interaction_provenance(spec)
-    summary = _build_interaction_discovery_summary(
-        n_training_rows=len(y_train),
-        n_candidate_pairs=len(candidates),
-        n_empirical_null_retained_pairs=int(pair_scores["empirical_null_retained"].sum()),
-        n_retained_pairs=len(retained_pairs),
-        n_components=len(component_names),
-        max_score=float(observed_scores.max()),
-        spec=spec,
-    )
-    return InteractionDiscoveryResult(
-        pair_scores=pair_scores,
-        component_interaction_scores=component_scores,
-        interaction_null_summary=null_summary,
-        retained_pairs=retained_pairs,
-        provenance=provenance,
-        summary=summary,
+        contract=contract,
     )
 
 
@@ -2877,13 +2404,14 @@ def discover_interaction_scores_only(
     checkpoint_dir: Path | None = None,
     pair_start_idx: int | None = None,
     pair_end_idx: int | None = None,
-) -> InteractionScoresShard:
+    contract: CanonicalExecutionContract | None = None,
+) -> ScoreOnlyInteractionArtifact:
     """Score interaction pairs for a distributed shard without making retention decisions.
 
     Produces bit-identical observed and null scores to :func:`discover_manuscript_interactions`
     for the same pair range and spec.  Shards must never make retain decisions because the
     global FWER threshold requires the *complete* candidate-family null matrix assembled from
-    all shards.  See :func:`reduce_interaction_family_decision` for the global decision step.
+    all shards.  See :func:`reduce_score_only_interaction_artifacts` for the global decision step.
 
     Parameters
     ----------
@@ -2910,9 +2438,10 @@ def discover_interaction_scores_only(
 
     Returns
     -------
-    InteractionScoresShard
-        Observed scores, full null-score matrix (B × n_pairs), and draw IDs.
-        No retention decision is made.
+    ScoreOnlyInteractionArtifact
+        Persistable observed scores, full null-score matrix (B × n_pairs), draw
+        IDs, and the verified canonical control snapshot. No retention decision
+        is made.
     """
     if spec.method != "tree_shap_interaction_values":
         raise ValueError(
@@ -2925,6 +2454,20 @@ def discover_interaction_scores_only(
         raise ValueError(f"Unsupported interaction aggregation rule: {spec.aggregation_rule}")
     if spec.permutation_count_B < 1:
         raise ValueError("permutation_count_B must be positive.")
+    if spec.parallel_backend not in {"threading", "loky", "dask"}:
+        raise ValueError(
+            "interaction_discovery.parallel_backend must be 'threading', 'loky', or 'dask'; "
+            "unsupported backends are not silently replaced."
+        )
+    if contract is None:
+        contract = canonical_execution_contract_from_specs(spec)
+    expected_interaction_controls = canonical_execution_contract_from_specs(
+        spec
+    ).interaction_controls
+    if contract.interaction_controls != expected_interaction_controls:
+        raise ValueError(
+            "Canonical interaction controls do not match the supplied interaction spec."
+        )
 
     if spec.condition_main_effects:
         pca_scores = _condition_pca_scores_on_main_effects(
@@ -2935,9 +2478,12 @@ def discover_interaction_scores_only(
             degree=spec.main_effect_conditioning_degree,
         )
 
-    candidates = _generate_pairwise_interactions(
-        _retained_first_order_term_names(retained_terms, input_matrix, minimum_count=2)
+    retained_first_order = _retained_first_order_term_names(
+        retained_terms,
+        input_matrix,
+        minimum_count=0,
     )
+    all_candidates = _generate_pairwise_interactions(retained_first_order)
     component_names = _component_columns(pca_scores)
     train_ids = _train_sample_ids(holdout_assignments)
     y_train = _align_table_by_sample_id(pca_scores, train_ids, component_names, "PCA scores")
@@ -2946,21 +2492,52 @@ def discover_interaction_scores_only(
     y_scaled, component_active = _standardize_for_screening(y_train)
     if not component_active.any():
         raise ValueError("All retained PCA components have zero training variance.")
-    if not candidates:
-        raise ValueError("feature_catalog does not contain any two-factor interaction candidates.")
+    total_candidate_pairs = len(all_candidates)
+    full_feature_names = sorted(
+        {name for _, left, right in all_candidates for name in [left, right]}
+    )
+    indexed = input_matrix.set_index("sample_id", drop=False)
+    missing_ids = [s for s in train_ids if s not in indexed.index]
+    if missing_ids:
+        preview = ", ".join(str(v) for v in missing_ids[:5])
+        raise ValueError(f"input matrix is missing sample_id values: {preview}")
+    train_rows = indexed.loc[list(train_ids)].reset_index(drop=True)
+    x_full = (
+        np.column_stack(
+            [
+                _source_input_column(train_rows, f, f).to_numpy(dtype=float)
+                for f in full_feature_names
+            ]
+        )
+        if full_feature_names
+        else np.empty((len(train_rows), 0), dtype=float)
+    )
+    control_snapshot = build_control_snapshot(
+        contract,
+        candidate_pair_names=tuple(pair_name for pair_name, _, _ in all_candidates),
+        training_sample_ids=train_ids.to_numpy(),
+        feature_matrix=x_full,
+        response_matrix=y_scaled,
+        component_names=tuple(component_names),
+    )
+    verify_control_snapshot(control_snapshot, contract)
+    if not all_candidates:
+        return ScoreOnlyInteractionArtifact.empty_terminal(control_snapshot)
 
-    total_candidate_pairs = len(candidates)
-    feature_names = sorted({name for _, left, right in candidates for name in [left, right]})
+    candidates = all_candidates
+    feature_names = full_feature_names
     pair_to_indices = {
         pair_name: (feature_names.index(left), feature_names.index(right))
-        for pair_name, left, right in candidates
+        for pair_name, left, right in all_candidates
     }
+    start = 0
+    end = total_candidate_pairs
     if pair_start_idx is not None or pair_end_idx is not None:
         start = int(pair_start_idx) if pair_start_idx is not None else 0
         end = int(pair_end_idx) if pair_end_idx is not None else total_candidate_pairs
         start = max(0, min(start, total_candidate_pairs))
         end = max(start, min(end, total_candidate_pairs))
-        candidates = candidates[start:end]
+        candidates = all_candidates[start:end]
         if not candidates:
             raise ValueError(
                 "interaction_discovery shard candidate range is empty: "
@@ -2968,15 +2545,7 @@ def discover_interaction_scores_only(
                 f"total_candidate_pairs={total_candidate_pairs}"
             )
 
-    indexed = input_matrix.set_index("sample_id", drop=False)
-    missing_ids = [s for s in train_ids if s not in indexed.index]
-    if missing_ids:
-        preview = ", ".join(str(v) for v in missing_ids[:5])
-        raise ValueError(f"input matrix is missing sample_id values: {preview}")
-    train_rows = indexed.loc[list(train_ids)].reset_index(drop=True)
-    x_feat = np.column_stack(
-        [_source_input_column(train_rows, f, f).to_numpy(dtype=float) for f in feature_names]
-    )
+    x_feat = x_full
 
     rng = np.random.default_rng(spec.random_seed)
     active_comp_indices = [i for i, a in enumerate(component_active) if a]
@@ -3033,42 +2602,11 @@ def discover_interaction_scores_only(
             checkpoint_root = Path(env_checkpoint_dir)
     checkpoint_run_dir: Path | None = None
     if checkpoint_root is not None:
-        train_ids_digest = hashlib.sha256(
-            "|".join(str(sample_id) for sample_id in train_ids).encode("utf-8")
-        ).hexdigest()
         checkpoint_signature_payload = {
-            "method": spec.method,
-            "aggregation_rule": spec.aggregation_rule,
-            "null_threshold_quantile": float(spec.null_threshold_quantile),
-            "permutation_count_B": int(spec.permutation_count_B),
-            "random_seed": int(spec.random_seed),
-            "family_error_method": spec.family_error_method,
-            "family_error_alpha": float(spec.family_error_alpha),
-            "condition_main_effects": bool(spec.condition_main_effects),
-            "main_effect_conditioning_degree": int(spec.main_effect_conditioning_degree),
-            "n_tree_estimators": int(spec.n_tree_estimators),
-            "max_tree_depth": int(spec.max_tree_depth),
-            "max_shap_samples": int(spec.max_shap_samples),
-            "n_pairs": int(n_pairs),
-            "pair_names": [pair_name for pair_name, _, _ in candidates],
-            "candidate_family_sha256": hashlib.sha256(
-                json.dumps(
-                    [
-                        f"{lf}:{rf}"
-                        for _, lf, rf in _generate_pairwise_interactions(
-                            sorted(
-                                {name for _, left, right in candidates for name in [left, right]}
-                            )
-                        )
-                    ],
-                    separators=(",", ":"),
-                ).encode("utf-8")
-            ).hexdigest(),
-            "component_names": [str(name) for name in component_names],
+            "control_snapshot_sha256": control_snapshot.checksum,
+            "pair_range_start": start,
+            "pair_range_end": end,
             "active_comp_indices": list(active_comp_indices),
-            "train_ids_sha256": train_ids_digest,
-            "input_features_sha256": _digest_array(x_feat),
-            "conditioned_response_sha256": _digest_array(y_scaled),
             "permutation_schedule_sha256": hashlib.sha256(
                 np.asarray(seeds, dtype=np.int64).tobytes()
             ).hexdigest(),
@@ -3106,14 +2644,14 @@ def discover_interaction_scores_only(
         score_path = _score_checkpoint_path_so(score_index)
         if score_path is None or not score_path.exists():
             return None
-        try:
-            with np.load(score_path, allow_pickle=False) as data:
-                scores = np.asarray(data["scores"], dtype=float)
-                component_scores = np.asarray(data["component_scores"], dtype=float)
-        except (OSError, ValueError, KeyError):
-            return None
+        with np.load(score_path, allow_pickle=False) as data:
+            scores = np.asarray(data["scores"], dtype=float)
+            component_scores = np.asarray(data["component_scores"], dtype=float)
         if scores.shape != (n_pairs,) or component_scores.shape != (n_pairs, n_comp):
-            return None
+            raise ValueError(
+                f"Interaction score checkpoint has invalid shape at {score_path}; "
+                "delete the corrupt checkpoint before rerunning."
+            )
         return scores, component_scores
 
     def _save_checkpoint_score_so(score_index: int, result: tuple[np.ndarray, np.ndarray]) -> None:
@@ -3140,36 +2678,51 @@ def discover_interaction_scores_only(
 
     indexed_results: dict[int, tuple[np.ndarray, np.ndarray]] = {}
     batch_size = _progress_batch_size(total_scores, 8)
-    with tempfile.TemporaryDirectory(prefix="rfm-interaction-joblib-") as temp_dir:
-        for start in range(0, total_scores, batch_size):
-            stop = min(start + batch_size, total_scores)
-            batch_items = list(enumerate(seeds[start:stop], start=start))
-            missing_batch_items: list[tuple[int, int]] = []
-            for score_index, seed in batch_items:
-                checkpointed = _load_checkpoint_score_so(score_index)
-                if checkpointed is not None:
-                    indexed_results[score_index] = checkpointed
-                else:
-                    missing_batch_items.append((score_index, seed))
-            if missing_batch_items:
-                parallel_backend = os.getenv(
-                    "RFM_INTERACTION_PARALLEL_BACKEND", spec.parallel_backend
+    for batch_start in range(0, total_scores, batch_size):
+        batch_stop = min(batch_start + batch_size, total_scores)
+        batch_items = list(enumerate(seeds[batch_start:batch_stop], start=batch_start))
+        missing_batch_items: list[tuple[int, int]] = []
+        for score_index, seed in batch_items:
+            checkpointed = _load_checkpoint_score_so(score_index)
+            if checkpointed is not None:
+                indexed_results[score_index] = checkpointed
+            else:
+                missing_batch_items.append((score_index, seed))
+        if missing_batch_items:
+            parallel_backend = os.getenv("RFM_INTERACTION_PARALLEL_BACKEND", spec.parallel_backend)
+            if parallel_backend not in {"threading", "loky", "dask"}:
+                raise ValueError(
+                    "RFM_INTERACTION_PARALLEL_BACKEND must be 'threading', 'loky', or 'dask'."
                 )
-                n_jobs_eff = 1 if spec.n_jobs <= 1 else spec.n_jobs
-                parallel_kwargs: dict[str, Any] = {}
+            n_jobs_eff = 1 if spec.n_jobs <= 1 else spec.n_jobs
+            if parallel_backend == "dask":
+                requested_workers = (
+                    spec.dask_workers if spec.dask_workers is not None else n_jobs_eff
+                )
+                executor = get_executor(
+                    "dask",
+                    n_workers=max(1, int(requested_workers)),
+                    cores_per_worker=max(1, int(spec.dask_cores_per_worker)),
+                    memory_per_worker=spec.dask_memory_per_worker,
+                    timeout=int(spec.parallel_batch_timeout_seconds),
+                )
+                try:
+                    batch_result = executor.map(_score_from_item_so, missing_batch_items)
+                finally:
+                    executor.close()
+            else:
+                parallel_kwargs: dict[str, Any] = {"max_nbytes": None}
                 if n_jobs_eff > 1:
                     parallel_kwargs["backend"] = parallel_backend
                     parallel_kwargs["prefer"] = (
                         "processes" if parallel_backend == "loky" else "threads"
                     )
-                    if parallel_backend == "loky" and temp_dir:
-                        parallel_kwargs["temp_folder"] = temp_dir
                 jobs = [delayed(_score_from_item_so)(item) for item in missing_batch_items]
                 with Parallel(n_jobs=n_jobs_eff, **parallel_kwargs) as parallel:
                     batch_result = parallel(jobs)
-                for (score_index, _), result in zip(missing_batch_items, batch_result, strict=True):
-                    indexed_results[score_index] = result
-                    _save_checkpoint_score_so(score_index, result)
+            for (score_index, _), result in zip(missing_batch_items, batch_result, strict=True):
+                indexed_results[score_index] = result
+                _save_checkpoint_score_so(score_index, result)
 
     all_results = [indexed_results[idx] for idx in range(total_scores)]
     observed_scores, _ = all_results[0]
@@ -3177,176 +2730,165 @@ def discover_interaction_scores_only(
     for b in range(spec.permutation_count_B):
         null_statistics[b] = all_results[b + 1][0]
 
-    pair_names = [pair_name for pair_name, _, _ in candidates]
-    draw_ids = np.arange(spec.permutation_count_B, dtype=np.int64)
-    return InteractionScoresShard(
+    pair_names = tuple(pair_name for pair_name, _, _ in candidates)
+    return ScoreOnlyInteractionArtifact(
+        status="score_only_completed",
+        pair_range_start=start,
+        pair_range_end=end,
         pair_names=pair_names,
         observed_scores=observed_scores,
         null_scores=null_statistics,
-        draw_ids=draw_ids,
-        n_training_rows=len(y_train),
-        spec_random_seed=spec.random_seed,
-        spec_permutation_count_B=spec.permutation_count_B,
+        draw_ids=np.arange(spec.permutation_count_B, dtype=np.int64),
+        control_snapshot=control_snapshot,
     )
 
 
-def reduce_interaction_family_decision(
-    shards: list[InteractionScoresShard],
-    spec: InteractionDiscoverySpec,
+def reduce_score_only_interaction_artifacts(
+    artifacts: list[ScoreOnlyInteractionArtifact],
     *,
-    expected_pair_names: list[str] | None = None,
-    pca_component_names: list[str] | None = None,
-    n_training_rows: int | None = None,
+    spec: InteractionDiscoverySpec,
+    contract: CanonicalExecutionContract,
+    expected_pair_names: tuple[str, ...] | None = None,
 ) -> InteractionDiscoveryResult:
-    """Make a single global retention decision over the full candidate family.
+    """Reduce verified score-only artifacts through the one canonical path.
 
-    Assembles the complete null-score matrix from all shard outputs (which were
-    scored under shared response permutations), computes the global max-statistic
-    FWER threshold, and emits the only authoritative retained-pair set.
-
-    All shards must share the same ``spec_random_seed`` and
-    ``spec_permutation_count_B`` so that draw ID ``b`` in every shard corresponds
-    to the same permuted response matrix.  Pair names must be disjoint across
-    shards and together cover the full candidate family.
-
-    Parameters
-    ----------
-    shards
-        List of :class:`InteractionScoresShard` produced by
-        :func:`discover_interaction_scores_only` (one per distributed shard).
-    spec
-        Interaction-discovery specification.  ``spec.family_error_method`` and
-        ``spec.family_error_alpha`` drive the global decision.
-    expected_pair_names
-        Optional ordered list of all candidate pair names.  When provided, the
-        reducer validates that the union of shard pair names matches exactly and
-        that the ordering is consistent.
-    pca_component_names
-        Optional list of PCA component names for the provenance / summary tables.
-    n_training_rows
-        Optional training-row count for the summary table.
-
-    Returns
-    -------
-    InteractionDiscoveryResult
-        Full pair-score table with global retention flags, provenance, and summary.
-
-    Raises
-    ------
-    ValueError
-        If shards are missing, have mismatched draw IDs or random seeds,
-        have duplicate pair names, or do not cover expected_pair_names.
+    Artifact arrival order is meaningful: every artifact must cover the next
+    contiguous canonical pair range.  The reducer never sorts or repairs
+    ranges, identities, checksums, or candidate names because doing so could
+    hide a partial or reordered family decision.
     """
-    if not shards:
-        raise ValueError("reduce_interaction_family_decision requires at least one shard.")
-
-    # Validate that all shards share the same permutation sequence parameters.
-    ref_seed = shards[0].spec_random_seed
-    ref_B = shards[0].spec_permutation_count_B
-    ref_draw_ids = shards[0].draw_ids
-    for i, shard in enumerate(shards[1:], start=1):
-        if shard.spec_random_seed != ref_seed:
-            raise ValueError(
-                f"Shard {i} has spec_random_seed={shard.spec_random_seed}, "
-                f"expected {ref_seed}. All shards must use the same seed."
-            )
-        if shard.spec_permutation_count_B != ref_B:
-            raise ValueError(
-                f"Shard {i} has spec_permutation_count_B={shard.spec_permutation_count_B}, "
-                f"expected {ref_B}. All shards must use the same permutation count."
-            )
-        if not np.array_equal(shard.draw_ids, ref_draw_ids):
-            raise ValueError(
-                f"Shard {i} draw_ids do not match shard 0 draw_ids. "
-                "All shards must use the same shared permutation draw sequence."
-            )
-
-    # Validate pair-name coverage and disjointness.
-    all_pair_names: list[str] = []
-    seen: set[str] = set()
-    for i, shard in enumerate(shards):
-        for pair_name in shard.pair_names:
-            if pair_name in seen:
-                raise ValueError(
-                    f"Duplicate pair name {pair_name!r} found in shard {i}. "
-                    "Candidate pair names must be disjoint across shards."
-                )
-            seen.add(pair_name)
-            all_pair_names.append(pair_name)
-
-    if expected_pair_names is not None:
-        expected_set = set(expected_pair_names)
-        actual_set = set(all_pair_names)
-        missing = expected_set - actual_set
-        extra = actual_set - expected_set
-        if missing or extra:
-            raise ValueError(
-                f"Shard coverage mismatch. Missing pairs: {sorted(missing)[:5]}. "
-                f"Unexpected pairs: {sorted(extra)[:5]}."
-            )
-
-    # Assemble global observed scores and null matrix.
-    # Order: iterate shards in order, preserving within-shard ordering.
-    all_observed = np.concatenate([shard.observed_scores for shard in shards])
-    # null_scores has shape (B, n_pairs_in_shard); concatenate along axis=1.
-    global_null = np.concatenate([shard.null_scores for shard in shards], axis=1)
-
-    n_total_pairs = len(all_pair_names)
-    B = int(ref_B)
-    if global_null.shape != (B, n_total_pairs):
+    if not artifacts:
+        raise ValueError("Score-only reduction requires at least one artifact.")
+    expected_controls = canonical_execution_contract_from_specs(spec).interaction_controls
+    if contract.interaction_controls != expected_controls:
         raise ValueError(
-            f"Assembled global null matrix has shape {global_null.shape}, "
-            f"expected ({B}, {n_total_pairs})."
+            "Canonical interaction controls do not match the reducer interaction spec."
         )
 
-    # Reject non-finite scores — NaN or Inf indicate a corrupt or incomplete shard.
-    if not np.all(np.isfinite(all_observed)):
-        bad_pairs = [
-            name
-            for name, v in zip(all_pair_names, all_observed, strict=False)
-            if not np.isfinite(v)
-        ]
+    reference_snapshot = artifacts[0].control_snapshot
+    verify_control_snapshot(reference_snapshot, contract)
+    if expected_pair_names is not None and tuple(expected_pair_names) != (
+        reference_snapshot.candidate_pair_names
+    ):
         raise ValueError(
-            f"Observed scores contain non-finite values for pairs: {bad_pairs[:5]}. "
-            "Ensure all shards completed successfully before reducing."
+            "Expected candidate-family order differs from the persisted canonical family."
         )
-    if not np.all(np.isfinite(global_null)):
-        raise ValueError(
-            "Global null matrix contains non-finite values (NaN or Inf). "
-            "Ensure all shard null-score NPZ files are complete and uncorrupted."
+    for position, artifact in enumerate(artifacts):
+        verify_control_snapshot(artifact.control_snapshot, contract)
+        if artifact.control_snapshot.checksum != reference_snapshot.checksum:
+            raise ValueError(
+                f"Artifact {position} full control identity differs from the canonical snapshot."
+            )
+
+    canonical_pairs = reference_snapshot.candidate_pair_names
+    if not canonical_pairs:
+        if len(artifacts) != 1 or artifacts[0].status != "empty_candidate_family":
+            raise ValueError(
+                "An empty candidate family requires exactly one empty_candidate_family artifact."
+            )
+        empty_pair_scores = pd.DataFrame(
+            columns=[
+                "pair_name",
+                "left_feature",
+                "right_feature",
+                "interaction_score",
+                "null_threshold",
+                "empirical_p_value",
+                "retained",
+                "empirical_null_retained",
+                "aggregation_rule",
+            ]
+        )
+        empty_summary = _build_interaction_discovery_summary(
+            n_training_rows=reference_snapshot.n_training_rows,
+            n_candidate_pairs=0,
+            n_empirical_null_retained_pairs=0,
+            n_retained_pairs=0,
+            n_components=len(reference_snapshot.component_names),
+            max_score=0.0,
+            spec=spec,
+        )
+        empty_summary.insert(1, "status", "empty_candidate_family")
+        return InteractionDiscoveryResult(
+            pair_scores=empty_pair_scores,
+            component_interaction_scores=pd.DataFrame(
+                columns=["pair_name", "component_name", "interaction_score"]
+            ),
+            interaction_null_summary=pd.DataFrame(
+                columns=["pair_name", "null_mean_score", "null_std_score"]
+            ),
+            retained_pairs=empty_pair_scores.copy(),
+            provenance=_build_interaction_provenance(spec),
+            summary=empty_summary,
         )
 
-    # Single global FWER/BH decision over the complete candidate family.
-    selected, p_values, fwer_threshold = multiplicity_controlled_interaction_selection(
+    expected_start = 0
+    for position, artifact in enumerate(artifacts):
+        if artifact.status != "score_only_completed":
+            raise ValueError(
+                f"Artifact {position} has status {artifact.status!r}; a non-empty family "
+                "requires completed score-only artifacts."
+            )
+        if artifact.pair_range_start != expected_start:
+            raise ValueError(
+                "Score-only artifact ranges are reordered or do not provide contiguous coverage: "
+                f"artifact {position} begins at {artifact.pair_range_start}, "
+                f"expected {expected_start}."
+            )
+        if artifact.pair_range_end > len(canonical_pairs):
+            raise ValueError("Score-only artifact range exceeds the canonical candidate family.")
+        expected_pairs = canonical_pairs[artifact.pair_range_start : artifact.pair_range_end]
+        if artifact.pair_names != expected_pairs:
+            raise ValueError(
+                "Score-only artifact pair ordering differs from the canonical candidate-family "
+                "range."
+            )
+        expected_start = artifact.pair_range_end
+    if expected_start != len(canonical_pairs):
+        raise ValueError(
+            "Score-only artifact coverage is incomplete: "
+            f"covered [0, {expected_start}) of {len(canonical_pairs)} candidate pairs."
+        )
+
+    all_observed = np.concatenate([artifact.observed_scores for artifact in artifacts])
+    global_null = np.concatenate([artifact.null_scores for artifact in artifacts], axis=1)
+    expected_shape = (reference_snapshot.permutation_draws, len(canonical_pairs))
+    if global_null.shape != expected_shape:
+        raise ValueError(
+            f"Global null-score matrix shape {global_null.shape} does not match {expected_shape}."
+        )
+    if not np.isfinite(all_observed).all() or not np.isfinite(global_null).all():
+        raise ValueError("Score-only reduction rejects non-finite observed or null scores.")
+
+    selected, p_values, _selection_threshold = multiplicity_controlled_interaction_selection(
         all_observed,
         global_null,
-        alpha=spec.family_error_alpha,
-        method=spec.family_error_method,
+        alpha=spec.selection_alpha,
+        method=spec.selection_method,
     )
-
-    # Informational per-pair quantile thresholds (same as in monolithic function).
     thresholds = np.quantile(global_null, spec.null_threshold_quantile, axis=0)
-    empirical_null_retained_mask = all_observed > thresholds
-    empirical_null_retained_names = {
-        name for name, r in zip(all_pair_names, empirical_null_retained_mask, strict=True) if r
+    empirical_null_retained = {
+        name
+        for name, selected_by_quantile in zip(
+            canonical_pairs,
+            all_observed > thresholds,
+            strict=True,
+        )
+        if selected_by_quantile
     }
-
-    # Build candidate list in shard order for pair-score table construction.
     candidates: list[tuple[str, str, str]] = []
-    for shard in shards:
-        for pair_name in shard.pair_names:
-            parts = pair_name.split(":", 1)
-            left = parts[0] if len(parts) == 2 else pair_name
-            right = parts[1] if len(parts) == 2 else pair_name
-            candidates.append((pair_name, left, right))
-
+    for pair_name in canonical_pairs:
+        parts = pair_name.split(":")
+        if len(parts) != 2 or not all(parts):
+            raise ValueError(f"Canonical candidate pair name is invalid: {pair_name!r}")
+        candidates.append((pair_name, parts[0], parts[1]))
     pair_scores = _build_interaction_pair_scores(
         candidates=candidates,
         observed_scores=all_observed,
         thresholds=thresholds,
         p_values=p_values,
         retained=selected,
-        retained_term_names=empirical_null_retained_names,
+        retained_term_names=empirical_null_retained,
         spec=spec,
     )
     retained_pairs = pair_scores.loc[pair_scores["retained"]].copy()
@@ -3355,42 +2897,31 @@ def reduce_interaction_family_decision(
         ascending=[False, True],
         ignore_index=True,
     )
-
-    # Minimal null summary (per-pair mean/std from global null matrix).
-    null_summary_rows = [
+    null_summary = pd.DataFrame(
         {
-            "pair_name": name,
-            "null_mean_score": float(global_null[:, j].mean()),
-            "null_std_score": float(global_null[:, j].std()),
+            "pair_name": canonical_pairs,
+            "null_mean_score": global_null.mean(axis=0),
+            "null_std_score": global_null.std(axis=0),
         }
-        for j, name in enumerate(all_pair_names)
-    ]
-    null_summary = pd.DataFrame(null_summary_rows)
-
-    # Minimal component-score table (empty: individual shard component scores are not
-    # reassembled by the reducer — only the aggregate max scores are available).
-    component_scores = pd.DataFrame(columns=["pair_name", "component_name", "interaction_score"])
-
-    effective_n_training = (
-        n_training_rows if n_training_rows is not None else shards[0].n_training_rows
     )
-    effective_n_comp = len(pca_component_names) if pca_component_names is not None else 0
-    provenance = _build_interaction_provenance(spec)
     summary = _build_interaction_discovery_summary(
-        n_training_rows=effective_n_training,
-        n_candidate_pairs=n_total_pairs,
+        n_training_rows=reference_snapshot.n_training_rows,
+        n_candidate_pairs=len(canonical_pairs),
         n_empirical_null_retained_pairs=int(pair_scores["empirical_null_retained"].sum()),
         n_retained_pairs=len(retained_pairs),
-        n_components=effective_n_comp,
-        max_score=float(all_observed.max()) if len(all_observed) > 0 else 0.0,
+        n_components=len(reference_snapshot.component_names),
+        max_score=float(all_observed.max()),
         spec=spec,
     )
+    summary.insert(1, "status", "completed")
     return InteractionDiscoveryResult(
         pair_scores=pair_scores,
-        component_interaction_scores=component_scores,
+        component_interaction_scores=pd.DataFrame(
+            columns=["pair_name", "component_name", "interaction_score"]
+        ),
         interaction_null_summary=null_summary,
         retained_pairs=retained_pairs,
-        provenance=provenance,
+        provenance=_build_interaction_provenance(spec),
         summary=summary,
     )
 
@@ -3426,6 +2957,8 @@ def run_interaction_discovery_stage(context: Any) -> InteractionDiscoveryStageRe
         checkpoint_dir=context.runtime.output_root / "empirical_null_screen",
     )
     interaction_spec = interaction_discovery_spec_from_case_study_config(context.case_study_config)
+    final_spec = final_manuscript_artifacts_spec_from_case_study_config(context.case_study_config)
+    contract = canonical_execution_contract_from_specs(interaction_spec, final_spec)
     interactions = discover_manuscript_interactions(
         context.tables["case_study_input_matrix"],
         context.tables["manuscript_feature_catalog"],
@@ -3434,6 +2967,7 @@ def run_interaction_discovery_stage(context: Any) -> InteractionDiscoveryStageRe
         screening.retained_terms,
         interaction_spec,
         checkpoint_dir=context.runtime.output_root / "interaction_discovery" / "_batch_checkpoints",
+        contract=contract,
     )
     artifact_paths = write_interaction_discovery_artifacts(
         interactions,
@@ -4578,6 +4112,8 @@ def run_sparse_selection_stability_stage(context: Any) -> SparseSelectionStabili
         checkpoint_dir=context.runtime.output_root / "empirical_null_screen",
     )
     interaction_spec = interaction_discovery_spec_from_case_study_config(context.case_study_config)
+    final_spec = final_manuscript_artifacts_spec_from_case_study_config(context.case_study_config)
+    contract = canonical_execution_contract_from_specs(interaction_spec, final_spec)
     interactions = discover_manuscript_interactions(
         context.tables["case_study_input_matrix"],
         context.tables["manuscript_feature_catalog"],
@@ -4586,6 +4122,7 @@ def run_sparse_selection_stability_stage(context: Any) -> SparseSelectionStabili
         screening.retained_terms,
         interaction_spec,
         checkpoint_dir=context.runtime.output_root / "interaction_discovery" / "_batch_checkpoints",
+        contract=contract,
     )
     nonlinear_spec = nonlinear_discovery_spec_from_case_study_config(context.case_study_config)
     nonlinear = discover_manuscript_nonlinear_transformations(
@@ -5689,6 +5226,8 @@ def run_final_manuscript_artifacts_stage(
         checkpoint_dir=context.runtime.output_root / "empirical_null_screen",
     )
     interaction_spec = interaction_discovery_spec_from_case_study_config(context.case_study_config)
+    final_spec = final_manuscript_artifacts_spec_from_case_study_config(context.case_study_config)
+    contract = canonical_execution_contract_from_specs(interaction_spec, final_spec)
     interactions = discover_manuscript_interactions(
         context.tables["case_study_input_matrix"],
         context.tables["manuscript_feature_catalog"],
@@ -5697,6 +5236,7 @@ def run_final_manuscript_artifacts_stage(
         screening.retained_terms,
         interaction_spec,
         checkpoint_dir=context.runtime.output_root / "interaction_discovery" / "_batch_checkpoints",
+        contract=contract,
     )
     nonlinear_spec = nonlinear_discovery_spec_from_case_study_config(context.case_study_config)
     nonlinear = discover_manuscript_nonlinear_transformations(
@@ -5720,7 +5260,6 @@ def run_final_manuscript_artifacts_stage(
         sparse_spec,
         checkpoint_dir=context.runtime.output_root / "sparse_selection",
     )
-    final_spec = final_manuscript_artifacts_spec_from_case_study_config(context.case_study_config)
     final_artifacts = regenerate_final_manuscript_artifacts(
         context.tables["case_study_input_matrix"],
         context.tables["case_study_output_matrix"],
@@ -5795,6 +5334,8 @@ def run_manuscript_reproduction_stage_chain(
     )
 
     interaction_spec = interaction_discovery_spec_from_case_study_config(context.case_study_config)
+    final_spec = final_manuscript_artifacts_spec_from_case_study_config(context.case_study_config)
+    contract = canonical_execution_contract_from_specs(interaction_spec, final_spec)
     interactions = discover_manuscript_interactions(
         context.tables["case_study_input_matrix"],
         context.tables["manuscript_feature_catalog"],
@@ -5803,6 +5344,7 @@ def run_manuscript_reproduction_stage_chain(
         screening.retained_terms,
         interaction_spec,
         checkpoint_dir=context.runtime.output_root / "interaction_discovery" / "_batch_checkpoints",
+        contract=contract,
     )
     interaction_paths = write_interaction_discovery_artifacts(
         interactions,
@@ -5853,7 +5395,6 @@ def run_manuscript_reproduction_stage_chain(
         artifact_paths=sparse_paths,
     )
 
-    final_spec = final_manuscript_artifacts_spec_from_case_study_config(context.case_study_config)
     final_artifacts = regenerate_final_manuscript_artifacts(
         context.tables["case_study_input_matrix"],
         context.tables["case_study_output_matrix"],

@@ -33,3 +33,4 @@ def test_build_nbconvert_command_uses_temp_output_dir(tmp_path: Path) -> None:
     assert "--to" in command
     assert "notebook" in command
     assert "--ExecutePreprocessor.timeout=900" in command
+    assert "--ExecutePreprocessor.kernel_name=pixi-kernel-python3" in command

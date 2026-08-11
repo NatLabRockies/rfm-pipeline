@@ -24,7 +24,7 @@ class ShardManifest:
 
     A shard is the unit of work assigned to a single SLURM array task.
     For rfm-pipeline, each shard corresponds to one
-    interaction-scoring batch (a subset of feature pairs) or one
+    complete-family interaction permutation-draw block or one
     output-conditioning chunk.
 
     Attributes
@@ -45,7 +45,7 @@ class ShardManifest:
         Expected number of feature columns in input (for validation).
     feature_start_idx
         Work-item start index (inclusive). For interaction_discovery this is a
-        pair-index range; for other sharded stages this is the stage-specific
+        permutation-draw range; for other sharded stages this is the stage-specific
         item index range.
     feature_end_idx
         Work-item end index (exclusive).
@@ -110,7 +110,8 @@ def build_manifest(
 ) -> list[ShardManifest]:
     """Build a list of ShardManifest records for a given stage.
 
-    For interaction_discovery, shards are split by feature-pair range.
+    For interaction_discovery, shards are split by permutation-draw range over
+    the complete ordered candidate family.
     For other stages, each shard gets all inputs (embarrassingly parallel
     by resample index or permutation index, controlled by the runner).
 

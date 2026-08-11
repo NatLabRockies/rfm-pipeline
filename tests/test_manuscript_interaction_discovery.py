@@ -15,7 +15,9 @@ from rfm_pipeline.manuscript_stages import (
     InteractionDiscoverySpec,
     discover_interaction_scores_only,
     discover_manuscript_interactions,
+    reduce_interaction_draw_blocks,
     run_interaction_discovery_stage,
+    score_interaction_draw_block,
     write_interaction_discovery_artifacts,
 )
 
@@ -168,53 +170,55 @@ def test_interaction_discovery_generates_full_candidate_family(monkeypatch) -> N
     assert result.summary.loc[0, "n_candidate_pairs"] == 3
 
 
-def test_partial_ranges_use_score_only_path_and_direct_decisions_reject_them(monkeypatch) -> None:
+def test_draw_blocks_keep_the_complete_candidate_family(monkeypatch) -> None:
     inputs, catalog, holdout, pca_scores, retained_terms = _fixture(n_features=3)
     spec = _spec()
     contract = canonical_execution_contract_from_specs(spec)
     monkeypatch.setattr(manuscript_stages, "_score_interaction_permutation", _fake_score)
 
-    artifact = discover_interaction_scores_only(
+    first = score_interaction_draw_block(
         inputs,
         catalog,
         holdout,
         pca_scores,
         retained_terms,
         spec,
-        pair_start_idx=1,
-        pair_end_idx=2,
+        draw_start=0,
+        draw_end=100,
         contract=contract,
     )
-    assert artifact.pair_names == ("x1:x3",)
-    assert artifact.pair_range_start == 1
-    assert artifact.pair_range_end == 2
-    with pytest.raises(ValueError, match="partial-family"):
-        discover_manuscript_interactions(
-            inputs,
-            catalog,
-            holdout,
-            pca_scores,
-            retained_terms,
-            spec,
-            pair_start_idx=1,
-            pair_end_idx=2,
-        )
+    second = score_interaction_draw_block(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        spec,
+        draw_start=100,
+        draw_end=DRAW_COUNT,
+        contract=contract,
+    )
+    assert first.pair_names == ("x1:x2", "x1:x3", "x2:x3")
+    assert second.pair_names == first.pair_names
+    assert reduce_interaction_draw_blocks(
+        [first, second], spec=spec, contract=contract
+    ).null_scores.shape == (DRAW_COUNT, 3)
 
 
-def test_score_only_discovery_rejects_empty_shard_range() -> None:
+def test_score_only_discovery_rejects_empty_draw_block() -> None:
     inputs, catalog, holdout, pca_scores, retained_terms = _fixture()
     spec = _spec()
 
-    with pytest.raises(ValueError, match="candidate range is empty"):
-        discover_interaction_scores_only(
+    with pytest.raises(ValueError, match="draw block"):
+        score_interaction_draw_block(
             inputs,
             catalog,
             holdout,
             pca_scores,
             retained_terms,
             spec,
-            pair_start_idx=5,
-            pair_end_idx=6,
+            draw_start=5,
+            draw_end=5,
             contract=canonical_execution_contract_from_specs(spec),
         )
 

@@ -32,13 +32,13 @@ from rfm_pipeline.interaction_contract import load_canonical_execution_contract
 from rfm_pipeline.manuscript_stages import (
     _generate_supported_nonlinear_candidates,
     condition_manuscript_outputs,
-    discover_interaction_scores_only,
     discover_manuscript_nonlinear_transformations,
     empirical_null_screening_spec_from_case_study_config,
     final_manuscript_artifacts_spec_from_case_study_config,
     nonlinear_discovery_spec_from_case_study_config,
     output_conditioning_spec_from_case_study_config,
     regenerate_final_manuscript_artifacts,
+    score_interaction_draw_block,
     screen_manuscript_empirical_null_terms,
     select_manuscript_sparse_support,
     sparse_selection_stability_spec_from_case_study_config,
@@ -522,8 +522,8 @@ def _write_interaction_shard_outputs(
         "shard_mode": "score_only",
         "feature_start_idx": shard.feature_start_idx,
         "feature_end_idx": shard.feature_end_idx,
-        "pair_range_start": score_artifact.pair_range_start,
-        "pair_range_end": score_artifact.pair_range_end,
+        "draw_range_start": score_artifact.draw_range_start,
+        "draw_range_end": score_artifact.draw_range_end,
         "n_candidate_pairs": len(score_artifact.pair_names),
         "score_only_metadata_file": paths["metadata"].name,
         "score_only_scores_file": paths["scores"].name,
@@ -536,14 +536,14 @@ def _write_interaction_shard_outputs(
 
 
 def _run_interaction_shard(shard, cm, config_path: str | None = None) -> None:
-    """Run score-only interaction scoring for the pair-index range assigned to this shard.
+    """Run score-only interaction scoring for the draw block assigned to this shard.
 
     Shards never make final retention decisions.  They emit observed scores and
     the complete null-score matrix keyed by shared draw IDs.  The global reducer
     assembles the full candidate-family null matrix and issues one FWER decision.
     """
     logger.info(
-        "[interaction_shard:score_only] pair_range=[%s, %s) input_paths=%s",
+        "[interaction_shard:score_only] draw_range=[%s, %s) input_paths=%s",
         shard.feature_start_idx,
         shard.feature_end_idx,
         shard.input_paths[:2],
@@ -563,7 +563,7 @@ def _run_interaction_shard(shard, cm, config_path: str | None = None) -> None:
     spec = _load_interaction_spec(config_path)
     start = int(shard.feature_start_idx or 0)
     end = shard.feature_end_idx
-    score_artifact = discover_interaction_scores_only(
+    score_artifact = score_interaction_draw_block(
         input_matrix=x_df,
         feature_catalog=feature_catalog_df,
         holdout_assignments=holdout_df,
@@ -571,8 +571,8 @@ def _run_interaction_shard(shard, cm, config_path: str | None = None) -> None:
         retained_terms=retained_terms_df,
         spec=spec,
         checkpoint_dir=artifact_root / "interaction_discovery",
-        pair_start_idx=start,
-        pair_end_idx=end,
+        draw_start=start,
+        draw_end=int(end if end is not None else spec.permutation_count_B),
         contract=contract,
     )
     _write_interaction_shard_outputs(

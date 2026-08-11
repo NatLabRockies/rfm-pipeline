@@ -1,4 +1,111 @@
+## SESSION STATE — 2026-08-11 — G11-HPC-S1 NO-SUBMIT Kestrel package (uncommitted)
+
+- Implemented only G11-HPC-S1 in isolated worktree
+  `/Users/dhetting/src/rfm-pipeline-g11-integration`, preserving the staged
+  G11-G0 contract and the pre-existing unstaged G11-A/G11-P work. No git
+  staging/reset/commit/push was performed.
+- Added `src/rfm_pipeline/hpc_campaign_package.py`,
+  `configs/hpc/g11_kestrel_campaign.yml`, and
+  `tests/alignment/test_G11_HPC_S1_kestrel_package.py`. The package emits
+  content-addressed worker/reducer scripts plus JSONL manifests for
+  `resolution` (20 fixture/schedule jobs), `gate_b` (5000 null jobs),
+  `recovery` (1400 strong+stress jobs), and `fixed_family_supplement`
+  (30 family-size/schedule jobs). Interaction sharding is draw-block only; no
+  pair-range sharding or `sbatch` invocation is generated.
+- Hashing is fail-closed across source, contract, lock, input, schedule,
+  parent, and output identities. Manifests track attempts/retries; resume
+  validation requires atomic `_SUCCESS.json` markers; downstream dependency
+  validation rejects missing/failed parent reducer markers. Reducer scripts
+  bind contract config, contract hash, and expected shard ranges.
+- Dispatch remains explicitly blocked:
+  `scheduler_submission_permitted: false`. The user-approved
+  `allocation_quota: "16000"` is now explicit, as is Kestrel's
+  `allocation_unit: node_hour`. The corrected conservative envelope is
+  12,121.25 estimated and 15,152 requested node-hours, which is within the
+  approved 16,000-AU ceiling. The package exposes per-stage node-hour
+  contributions, telemetry schema, explicit pilot matrix, deterministic
+  post-pilot selector, a bounded one-GiB-per-worker pre-pilot storage cap,
+  inode count, and the contract's zero automatic-retry policy.
+- Validation passed:
+  `pixi run pytest -q tests/alignment/test_G11_HPC_S1_kestrel_package.py`
+  (13 passed after correcting AU accounting) and
+  `pixi run pytest -q tests/alignment/test_G11_G0_S1_campaign_contract.py`
+  and
+  `pixi run ruff check src/rfm_pipeline/hpc_campaign_package.py tests/alignment/test_G11_HPC_S1_kestrel_package.py`.
+  No scheduler submission, full gate, or commit occurred.
+
 # Agent Sync
+
+## SESSION STATE — 2026-08-11 — G11-P-S1 train-freeze-predict (uncommitted)
+
+- Implemented only G11-P-S1 in isolated worktree
+  `/Users/dhetting/src/rfm-pipeline-g11-integration`; no BSM worktree change
+  was required. Pre-existing staged G11-G0 and unstaged G11-A work remain
+  unstaged/staged as found.
+- Train-only OLS emits a content-addressed immutable freeze manifest before
+  holdout access. Prediction verifies that manifest before reading holdout
+  arrays, then persists and validates aligned truth/prediction row IDs,
+  strata, and the exact output-eligibility ledger.
+- G11 eligibility is exactly `variance > 1e-12` AND
+  `range / (abs(train_mean) + 1e-12) >= 1e-2`. Production-ledger validation
+  requires 23,495 total outputs: 9,954 eligible and 13,541 excluded.
+- Bootstrap accepts only validated frozen truth/prediction matrices; it
+  resamples rows within strata and rejects row, ID, ledger, draw-range/draw-ID,
+  or frozen-model identity mismatches. It performs no model fit or reselection.
+  Macro nRMSE is the arithmetic mean of eligible output-wise RMSE/range.
+- Added focused contract tests. Expected red: missing G11-P symbols during
+  collection. Validation then passed: focused G11-P (25 tests); G11
+  integration/metrics/import suite (51 tests); targeted Ruff. No scheduler
+  submit, result figure/manuscript claim, full gate, commit, or push.
+- Final targeted G11 integration regression suite passed (95 tests), including
+  G11-G0, G11-A, G11-P, interaction, HPC-reduction, metrics, and import
+  coverage.
+
+## SESSION STATE — 2026-08-11 — G11-A-S1 draw-block interaction artifacts (uncommitted)
+
+- Implemented only G11-A-S1 in isolated worktree
+  `/Users/dhetting/src/rfm-pipeline-g11-integration`, preserving the staged
+  G11-G0 campaign contract. Interaction shards now partition the full ordered
+  candidate family by contiguous permutation-draw blocks, with observed scores
+  owned only by the block beginning at draw zero. Pair-range interaction work
+  is removed.
+- `ScoreOnlyInteractionArtifact` is now a self-verifying complete-family
+  draw-block artifact. Persisted artifacts bind their range, ordered family,
+  control snapshot, score payload, and NPZ checksum; assembly rejects missing,
+  duplicate, gapped, reordered, mixed-identity, corrupt, or non-finite input.
+  Blocks make no retention decision; the canonical reducer remains the sole
+  inferential decision point.
+- HPC manifest generation assigns interaction draw ranges (not pair ranges);
+  worker metadata and reduction validate those persisted ranges. No scheduler
+  command was submitted or executed.
+- Added G11 serial/two-block equivalence and artifact-integrity tests; updated
+  canonical interaction/HPC tests to exercise draw blocks. Validation passed:
+  combined focused G11/interaction/HPC suite (75 tests) and targeted Ruff. Full
+  repository gate was not run. No commit/push,
+  manuscript, or BSM changes.
+
+## SESSION STATE — 2026-08-11 — G11 integration reconciliation (uncommitted)
+
+- Isolated worktree: `/Users/dhetting/src/rfm-pipeline-g11-integration`, branch
+  `g11-integration-reconcile`, created at required G10 base
+  `628fdce60bed184337f7a43cc263919a49335e7a`. The original dirty worktrees
+  were not modified.
+- Staged only compatible G11-G0 implementation from misplaced commit
+  `798fdac`: `campaign_contract.py` and its G11-G0 contract test. The contract
+  locks `max_stat_adjusted_p_mc`, screen `B=3199`, interaction `B=999`, and
+  158 continuous plus two binary inputs. It remains `OPEN`; no result artifact,
+  gate `PASS`, scheduler action, or manuscript result was created.
+- Rejected the G11-A attempted port `b665911`: it conflicts across the G10
+  canonical score-only contract/reducer, shard worker, interaction stage, and
+  HPC tests. Taking its old reducer would discard identity/checksum/range/
+  coverage controls, so it must be rebased and independently reviewed rather
+  than resolved by favouring either side.
+- Do not port dependent G11-P (`21dcca9`) or G11-HPC (`d4ef1f4`) until the
+  required G11-G0-S2 and G11-A-S2 reviews pass and G11-A is cleanly rebased.
+  The current plan explicitly prohibits downstream starts before those reviews.
+- Validation: `pixi run --frozen python -m pytest tests/alignment/test_G11_G0_S1_campaign_contract.py -q` (17 passed);
+  targeted Ruff and staged diff checks passed. Full gates were not run and no
+  commit or push is authorized.
 
 repo: NatLabRockies/rfm-pipeline
 local_dir: ~/src/rfm-pipeline (renamed by user 2026-06-01)

@@ -401,8 +401,8 @@ def _estimate_stage_partition_span(stage: str, workflow, artifact_dir: Path) -> 
         return _estimate_stage_work_items(stage, workflow, artifact_dir)
     feature_count = _estimate_stage_work_items(stage, workflow, artifact_dir)
     if feature_count < 2:
-        return feature_count
-    return int(feature_count * (feature_count - 1) // 2)
+        return 0
+    return max(1, int(workflow.stages.interaction_discovery.n_permutations) - 1)
 
 
 def _estimate_stage_work_items(stage: str, workflow, artifact_dir: Path) -> int:

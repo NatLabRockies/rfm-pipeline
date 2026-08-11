@@ -1,7 +1,7 @@
 r"""HPC reduce worker — aggregates shard outputs into stage artifacts.
 
 Run after all SLURM array tasks complete. For interaction discovery, this merges
-per-shard pair tables. For all other stages, shard tasks warm checkpoint files and
+complete-family permutation draw blocks. For all other stages, shard tasks warm checkpoint files and
 the reduce job materializes canonical stage artifacts from those checkpoints.
 """
 
@@ -276,8 +276,8 @@ def _reduce_interaction_discovery(
     The reducer:
     1. Loads each self-verifying ``score_only_interaction`` artifact.
     2. Verifies every artifact against the canonical execution contract.
-    3. Validates ordered, contiguous, complete candidate-family coverage.
-    4. Assembles the global null matrix (B × P_total) by column-concatenating shard null matrices.
+    3. Validates ordered, contiguous, complete permutation-draw coverage.
+    4. Assembles the global null matrix (B × P_total) by row-concatenating draw blocks.
     5. Calls ``reduce_score_only_interaction_artifacts`` to apply one global maxT decision.
     6. Writes ``retained_interaction_pairs_merged.csv``, ``interaction_pair_scores_merged.csv``,
        and ``interaction_discovery_merged.json``.
@@ -309,11 +309,11 @@ def _reduce_interaction_discovery(
                 "score-only artifact."
             )
         if (
-            shard_meta.get("pair_range_start") != artifact.pair_range_start
-            or shard_meta.get("pair_range_end") != artifact.pair_range_end
+            shard_meta.get("draw_range_start") != artifact.draw_range_start
+            or shard_meta.get("draw_range_end") != artifact.draw_range_end
         ):
             raise ValueError(
-                f"Shard {shard_id!r} metadata range does not match its persisted "
+                f"Shard {shard_id!r} metadata draw range does not match its persisted "
                 "score-only artifact."
             )
         if shard_meta.get("control_snapshot_sha256") != artifact.control_snapshot.checksum:
@@ -345,7 +345,7 @@ def _reduce_interaction_discovery(
     result.retained_pairs.to_csv(retained_out, index=False)
     result.pair_scores.to_csv(pair_scores_out, index=False)
     snapshot = artifacts[0].control_snapshot
-    global_null = np.concatenate([artifact.null_scores for artifact in artifacts], axis=1)
+    global_null = np.concatenate([artifact.null_scores for artifact in artifacts], axis=0)
     canonical_hashes = {
         "contract_sha256": contract.checksum,
         "control_snapshot_sha256": snapshot.checksum,

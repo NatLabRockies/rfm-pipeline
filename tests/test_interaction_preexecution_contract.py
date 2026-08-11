@@ -84,22 +84,23 @@ def _artifact(
     observed: np.ndarray | None = None,
     null: np.ndarray | None = None,
 ) -> ScoreOnlyInteractionArtifact:
-    width = end - start
-    draws = snapshot.permutation_draws
+    width = len(snapshot.candidate_pair_names)
     return ScoreOnlyInteractionArtifact(
         status="score_only_completed",
-        pair_range_start=start,
-        pair_range_end=end,
-        pair_names=snapshot.candidate_pair_names[start:end],
+        draw_range_start=start,
+        draw_range_end=end,
+        pair_names=snapshot.candidate_pair_names,
         observed_scores=(
-            np.full(width, 0.9, dtype=float)
-            if observed is None
-            else np.asarray(observed, dtype=float)
+            np.asarray(observed, dtype=float)
+            if observed is not None
+            else (np.full(width, 0.9, dtype=float) if start == 0 else np.empty(0, dtype=float))
         ),
         null_scores=(
-            np.zeros((draws, width), dtype=float) if null is None else np.asarray(null, dtype=float)
+            np.zeros((end - start, width), dtype=float)
+            if null is None
+            else np.asarray(null, dtype=float)
         ),
-        draw_ids=np.arange(draws, dtype=np.int64),
+        draw_ids=np.arange(start, end, dtype=np.int64),
         control_snapshot=snapshot,
     )
 
@@ -221,8 +222,8 @@ def test_legacy_exact_fwer_method_name_is_rejected_without_alias() -> None:
 def test_persisted_score_only_artifact_and_memory_reducer_share_strict_contract(tmp_path) -> None:
     """Persisted and in-memory artifacts use one reducer and reject tampering."""
     contract, snapshot = _contract_and_snapshot(("x1:x2", "x1:x3"))
-    first = _artifact(snapshot, start=0, end=1)
-    second = _artifact(snapshot, start=1, end=2)
+    first = _artifact(snapshot, start=0, end=100)
+    second = _artifact(snapshot, start=100, end=199)
 
     first.write_to(tmp_path / "first")
     second.write_to(tmp_path / "second")
@@ -270,7 +271,7 @@ def test_hpc_reducer_uses_the_same_persisted_artifact_reducer(tmp_path, monkeypa
     output_root = tmp_path / "shards"
     merged = tmp_path / "merged"
     merged.mkdir()
-    artifacts = [_artifact(snapshot, start=0, end=1), _artifact(snapshot, start=1, end=2)]
+    artifacts = [_artifact(snapshot, start=0, end=100), _artifact(snapshot, start=100, end=199)]
     shard_results = []
     for index, artifact in enumerate(artifacts):
         shard_id = f"task-{index:04d}"
@@ -280,8 +281,8 @@ def test_hpc_reducer_uses_the_same_persisted_artifact_reducer(tmp_path, monkeypa
                 "shard_id": shard_id,
                 "shard_mode": "score_only",
                 "status": artifact.status,
-                "pair_range_start": artifact.pair_range_start,
-                "pair_range_end": artifact.pair_range_end,
+                "draw_range_start": artifact.draw_range_start,
+                "draw_range_end": artifact.draw_range_end,
                 "control_snapshot_sha256": artifact.control_snapshot.checksum,
                 "candidate_family_sha256": artifact.control_snapshot.candidate_family_sha256,
                 "candidate_family_count": len(artifact.control_snapshot.candidate_pair_names),
@@ -326,7 +327,7 @@ def test_one_pair_is_valid_and_empty_family_is_terminal() -> None:
     """A one-pair family reduces normally; a zero-pair family ends explicitly."""
     one_contract, one_snapshot = _contract_and_snapshot(("x1:x2",))
     one_result = reduce_score_only_interaction_artifacts(
-        [_artifact(one_snapshot, start=0, end=1)],
+        [_artifact(one_snapshot, start=0, end=199)],
         spec=_interaction_spec(),
         contract=one_contract,
     )

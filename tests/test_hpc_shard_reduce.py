@@ -21,6 +21,7 @@ from rfm_pipeline.manuscript_stages import (
     InteractionDiscoverySpec,
     discover_interaction_scores_only,
     reduce_score_only_interaction_artifacts,
+    score_interaction_draw_block,
 )
 
 DRAW_COUNT = 199
@@ -70,23 +71,27 @@ def _artifact(
     observed: np.ndarray | None = None,
     null: np.ndarray | None = None,
 ) -> ScoreOnlyInteractionArtifact:
-    width = end - start
+    width = len(snapshot.candidate_pair_names)
     return ScoreOnlyInteractionArtifact(
         status="score_only_completed",
-        pair_range_start=start,
-        pair_range_end=end,
-        pair_names=snapshot.candidate_pair_names[start:end],
+        draw_range_start=start,
+        draw_range_end=end,
+        pair_names=snapshot.candidate_pair_names,
         observed_scores=(
-            np.linspace(0.6, 0.9, width, dtype=float)
-            if observed is None
-            else np.asarray(observed, dtype=float)
+            np.asarray(observed, dtype=float)
+            if observed is not None
+            else (
+                np.linspace(0.6, 0.9, width, dtype=float)
+                if start == 0
+                else np.empty(0, dtype=float)
+            )
         ),
         null_scores=(
-            np.zeros((snapshot.permutation_draws, width), dtype=float)
+            np.zeros((end - start, width), dtype=float)
             if null is None
             else np.asarray(null, dtype=float)
         ),
-        draw_ids=np.arange(snapshot.permutation_draws, dtype=np.int64),
+        draw_ids=np.arange(start, end, dtype=np.int64),
         control_snapshot=snapshot,
     )
 
@@ -97,8 +102,8 @@ def _shard_metadata(shard_id: str, artifact: ScoreOnlyInteractionArtifact) -> di
         "stage": "interaction_discovery",
         "shard_mode": "score_only",
         "status": artifact.status,
-        "pair_range_start": artifact.pair_range_start,
-        "pair_range_end": artifact.pair_range_end,
+        "draw_range_start": artifact.draw_range_start,
+        "draw_range_end": artifact.draw_range_end,
         "control_snapshot_sha256": artifact.control_snapshot.checksum,
         "candidate_family_sha256": artifact.control_snapshot.candidate_family_sha256,
         "candidate_family_count": len(artifact.control_snapshot.candidate_pair_names),
@@ -183,11 +188,11 @@ def test_hpc_shard_worker_writes_self_verifying_score_only_artifacts(
         expected_rows=10,
         expected_columns=2,
         feature_start_idx=0,
-        feature_end_idx=1,
+        feature_end_idx=DRAW_COUNT,
     )
     spec = _spec()
     contract, snapshot = _contract_and_snapshot(("x1:x2",), spec)
-    artifact = _artifact(snapshot, start=0, end=1)
+    artifact = _artifact(snapshot, start=0, end=DRAW_COUNT)
     monkeypatch.setattr(hpc_shard_worker, "_load_interaction_spec", lambda _: spec)
     monkeypatch.setattr(hpc_shard_worker, "load_canonical_execution_contract", lambda _: contract)
     discover_call: dict[str, object] = {}
@@ -196,7 +201,7 @@ def test_hpc_shard_worker_writes_self_verifying_score_only_artifacts(
         discover_call.update(kwargs)
         return artifact
 
-    monkeypatch.setattr(hpc_shard_worker, "discover_interaction_scores_only", _fake_discover)
+    monkeypatch.setattr(hpc_shard_worker, "score_interaction_draw_block", _fake_discover)
     cm = CheckpointManager(str(tmp_path / "out"), shard.shard_id)
     cm.mark_running()
     hpc_shard_worker._run_shard_stage(
@@ -212,8 +217,8 @@ def test_hpc_shard_worker_writes_self_verifying_score_only_artifacts(
     assert (cm.final_dir / "score_only_interaction.npz").is_file()
     assert (cm.final_dir / "score_only_interaction.json").is_file()
     assert not (cm.final_dir / "retained_interaction_pairs.csv").exists()
-    assert discover_call["pair_start_idx"] == 0
-    assert discover_call["pair_end_idx"] == 1
+    assert discover_call["draw_start"] == 0
+    assert discover_call["draw_end"] == DRAW_COUNT
     assert discover_call["contract"] is contract
 
 
@@ -226,7 +231,10 @@ def test_hpc_reduce_merges_verified_artifacts(tmp_path, monkeypatch) -> None:
     merged_dir.mkdir()
     spec = _spec()
     contract, snapshot = _contract_and_snapshot(("x1:x2", "x1:x3"), spec)
-    artifacts = [_artifact(snapshot, start=0, end=1), _artifact(snapshot, start=1, end=2)]
+    artifacts = [
+        _artifact(snapshot, start=0, end=100),
+        _artifact(snapshot, start=100, end=DRAW_COUNT),
+    ]
     shard_results = [
         _write_score_only_shard(output_root, f"task-{index:04d}", artifact)
         for index, artifact in enumerate(artifacts)
@@ -244,7 +252,7 @@ def test_hpc_reduce_merges_verified_artifacts(tmp_path, monkeypatch) -> None:
     summary = json.loads(
         (merged_dir / "interaction_discovery_merged.json").read_text(encoding="utf-8")
     )
-    assert scores["pair_name"].tolist() == ["x1:x2", "x1:x3"]
+    assert set(scores["pair_name"]) == {"x1:x2", "x1:x3"}
     assert summary["reducer"] == "canonical_score_only_family_decision"
     assert summary["status"] == "completed"
     assert summary["canonical_hashes"]["control_snapshot_sha256"] == snapshot.checksum
@@ -286,22 +294,21 @@ def test_empty_interaction_family_builds_one_terminal_hpc_shard(tmp_path, monkey
 
 
 def test_global_reducer_uses_nulls_from_every_shard() -> None:
-    """A pair is rejected when a different shard raises the global max null."""
+    """A pair is rejected when a later draw block raises the global max null."""
     spec = _spec()
     contract, snapshot = _contract_and_snapshot(("x1:x2", "x1:x3"), spec)
     first = _artifact(
         snapshot,
         start=0,
-        end=1,
-        observed=np.array([0.5]),
-        null=np.full((DRAW_COUNT, 1), 0.1),
+        end=100,
+        observed=np.array([0.5, 0.9]),
+        null=np.full((100, 2), 0.1),
     )
     second = _artifact(
         snapshot,
-        start=1,
-        end=2,
-        observed=np.array([0.9]),
-        null=np.full((DRAW_COUNT, 1), 0.8),
+        start=100,
+        end=DRAW_COUNT,
+        null=np.full((DRAW_COUNT - 100, 2), 0.8),
     )
 
     result = reduce_score_only_interaction_artifacts(
@@ -320,11 +327,11 @@ def test_artifact_rejects_noncanonical_draw_order() -> None:
     draw_ids = np.arange(DRAW_COUNT, dtype=np.int64)
     draw_ids[-1] = DRAW_COUNT
 
-    with pytest.raises(ValueError, match="canonical ordered sequence"):
+    with pytest.raises(ValueError, match="canonical contiguous draw range"):
         ScoreOnlyInteractionArtifact(
             status="score_only_completed",
-            pair_range_start=0,
-            pair_range_end=1,
+            draw_range_start=0,
+            draw_range_end=DRAW_COUNT,
             pair_names=("x1:x2",),
             observed_scores=np.array([0.5]),
             null_scores=np.ones((DRAW_COUNT, 1)),
@@ -362,7 +369,7 @@ def _make_interaction_fixture(seed: int = 42):
 
 
 def test_monolithic_and_multishard_scoring_share_full_feature_identity(monkeypatch) -> None:
-    """Partial shards score against the full-family feature matrix and reduce identically."""
+    """Draw blocks score the full-family feature matrix and reduce identically."""
     import rfm_pipeline.manuscript_stages as stages
 
     x_df, holdout_df, pca_df, catalog = _make_interaction_fixture()
@@ -397,8 +404,8 @@ def test_monolithic_and_multishard_scoring_share_full_feature_identity(monkeypat
         "contract": contract,
     }
     monolithic = discover_interaction_scores_only(**kwargs)
-    first = discover_interaction_scores_only(**kwargs, pair_start_idx=0, pair_end_idx=1)
-    second = discover_interaction_scores_only(**kwargs, pair_start_idx=1, pair_end_idx=3)
+    first = score_interaction_draw_block(**kwargs, draw_start=0, draw_end=100)
+    second = score_interaction_draw_block(**kwargs, draw_start=100, draw_end=DRAW_COUNT)
     one_shard = reduce_score_only_interaction_artifacts(
         [monolithic],
         spec=spec,
@@ -421,8 +428,8 @@ def test_reducer_rejects_shuffled_artifact_arrival() -> None:
     """Reducer refuses reordering rather than silently repairing shard order."""
     spec = _spec()
     contract, snapshot = _contract_and_snapshot(("x1:x2", "x1:x3"), spec)
-    first = _artifact(snapshot, start=0, end=1)
-    second = _artifact(snapshot, start=1, end=2)
+    first = _artifact(snapshot, start=0, end=100)
+    second = _artifact(snapshot, start=100, end=DRAW_COUNT)
 
     with pytest.raises(ValueError, match="reordered|contiguous"):
         reduce_score_only_interaction_artifacts(
@@ -634,14 +641,14 @@ def test_artifact_rejects_nonfinite_scores() -> None:
         _artifact(
             snapshot,
             start=0,
-            end=1,
+            end=DRAW_COUNT,
             observed=np.array([np.nan]),
         )
     with pytest.raises(ValueError, match="non-finite"):
         _artifact(
             snapshot,
             start=0,
-            end=1,
+            end=DRAW_COUNT,
             null=np.full((DRAW_COUNT, 1), np.inf),
         )
 
@@ -649,7 +656,7 @@ def test_artifact_rejects_nonfinite_scores() -> None:
 def test_reducer_rejects_duplicate_or_incomplete_ranges() -> None:
     spec = _spec()
     contract, snapshot = _contract_and_snapshot(("x1:x2", "x1:x3"), spec)
-    first = _artifact(snapshot, start=0, end=1)
+    first = _artifact(snapshot, start=0, end=100)
 
     with pytest.raises(ValueError, match="reordered|contiguous"):
         reduce_score_only_interaction_artifacts(
@@ -699,7 +706,7 @@ def test_hpc_reducer_rejects_manifest_identity_drift(tmp_path, monkeypatch) -> N
     output_dir.mkdir()
     spec = _spec()
     contract, snapshot = _contract_and_snapshot(("x1:x2",), spec)
-    artifact = _artifact(snapshot, start=0, end=1)
+    artifact = _artifact(snapshot, start=0, end=DRAW_COUNT)
     metadata = _write_score_only_shard(output_root, "task-0000", artifact)
     metadata["candidate_family_count"] = 2
     _patch_hpc_reducer(monkeypatch, contract=contract, spec=spec)
@@ -725,12 +732,12 @@ def test_hpc_reducer_emits_canonical_hashes(tmp_path, monkeypatch) -> None:
         _write_score_only_shard(
             output_root,
             "task-0000",
-            _artifact(snapshot, start=0, end=1),
+            _artifact(snapshot, start=0, end=100),
         ),
         _write_score_only_shard(
             output_root,
             "task-0001",
-            _artifact(snapshot, start=1, end=2),
+            _artifact(snapshot, start=100, end=DRAW_COUNT),
         ),
     ]
     _patch_hpc_reducer(monkeypatch, contract=contract, spec=spec)
@@ -757,15 +764,15 @@ def test_hpc_reducer_emits_canonical_hashes(tmp_path, monkeypatch) -> None:
 
 
 def test_reducer_rejects_full_snapshot_identity_drift() -> None:
-    """Matching pair ranges do not permit different response or feature identities."""
+    """Matching draw ranges do not permit different response or feature identities."""
     spec = _spec()
     contract, snapshot = _contract_and_snapshot(("x1:x2", "x1:x3"), spec)
     mismatched_snapshot = replace(
         snapshot,
         feature_matrix_sha256="0" * 64,
     )
-    first = _artifact(snapshot, start=0, end=1)
-    second = _artifact(mismatched_snapshot, start=1, end=2)
+    first = _artifact(snapshot, start=0, end=100)
+    second = _artifact(mismatched_snapshot, start=100, end=DRAW_COUNT)
 
     with pytest.raises(ValueError, match="full control identity"):
         reduce_score_only_interaction_artifacts(

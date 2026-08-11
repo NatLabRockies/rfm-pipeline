@@ -379,11 +379,18 @@ def _readonly_array(value: np.ndarray, *, dtype: np.dtype[Any]) -> np.ndarray:
 
 @dataclass(frozen=True)
 class ScoreOnlyInteractionArtifact:
-    """Persistable score-only output for one contiguous candidate-pair range."""
+    """Persistable score-only output for one contiguous permutation-draw block.
+
+    Each completed artifact scores the complete ordered candidate family.  The
+    block beginning at draw zero owns the single observed-score fit; all blocks
+    contain only their assigned null-draw rows.  Pair-range shards are
+    deliberately unsupported because they duplicate model fits and cannot
+    represent a complete-family inferential unit.
+    """
 
     status: str
-    pair_range_start: int
-    pair_range_end: int
+    draw_range_start: int
+    draw_range_end: int
     pair_names: tuple[str, ...]
     observed_scores: np.ndarray
     null_scores: np.ndarray
@@ -392,6 +399,7 @@ class ScoreOnlyInteractionArtifact:
 
     _STATUS_COMPLETED = "score_only_completed"
     _STATUS_EMPTY = "empty_candidate_family"
+    _SCHEMA_VERSION = 2
     _NPZ_NAME = "score_only_interaction.npz"
     _METADATA_NAME = "score_only_interaction.json"
 
@@ -408,26 +416,25 @@ class ScoreOnlyInteractionArtifact:
 
         if self.status not in {self._STATUS_COMPLETED, self._STATUS_EMPTY}:
             raise ValueError(f"Unknown score-only artifact status: {self.status!r}")
-        if self.pair_range_start < 0 or self.pair_range_end < self.pair_range_start:
-            raise ValueError("Score-only artifact has an invalid pair range.")
-        expected_pairs = self.control_snapshot.candidate_pair_names[
-            self.pair_range_start : self.pair_range_end
-        ]
-        if pair_names != expected_pairs:
+        if self.draw_range_start < 0 or self.draw_range_end < self.draw_range_start:
+            raise ValueError("Score-only artifact has an invalid draw range.")
+        if pair_names != self.control_snapshot.candidate_pair_names:
             raise ValueError(
-                "Score-only artifact pair names do not match the canonical candidate-family range."
+                "Score-only artifact must contain the complete ordered canonical candidate family."
             )
         draws = self.control_snapshot.permutation_draws
-        if not np.array_equal(draw_ids, np.arange(draws, dtype=np.int64)):
+        if not np.array_equal(
+            draw_ids, np.arange(self.draw_range_start, self.draw_range_end, dtype=np.int64)
+        ):
             raise ValueError(
-                "Score-only artifact draw IDs must be the canonical ordered sequence 0..B-1."
+                "Score-only artifact draw IDs must be its canonical contiguous draw range."
             )
 
         if self.status == self._STATUS_EMPTY:
             if (
                 self.control_snapshot.candidate_pair_names
-                or self.pair_range_start != 0
-                or self.pair_range_end != 0
+                or self.draw_range_start != 0
+                or self.draw_range_end != draws
                 or pair_names
                 or observed.shape != (0,)
                 or null.shape != (draws, 0)
@@ -437,17 +444,18 @@ class ScoreOnlyInteractionArtifact:
                 )
             return
 
-        width = self.pair_range_end - self.pair_range_start
+        width = len(pair_names)
         if width < 1:
             raise ValueError(
                 "Completed score-only artifacts must cover at least one candidate pair."
             )
-        if observed.shape != (width,):
+        expected_observed_shape = (width,) if self.draw_range_start == 0 else (0,)
+        if observed.shape != expected_observed_shape:
             raise ValueError(
-                "Score-only artifact observed-score shape does not match its pair range."
+                "Only the draw block beginning at zero may contain complete observed scores."
             )
-        if null.shape != (draws, width):
-            raise ValueError("Score-only artifact null-score shape does not match its pair range.")
+        if null.shape != (self.draw_range_end - self.draw_range_start, width):
+            raise ValueError("Score-only artifact null-score shape does not match its draw range.")
         if not np.isfinite(observed).all() or not np.isfinite(null).all():
             raise ValueError("Score-only artifact contains non-finite scores.")
 
@@ -457,8 +465,8 @@ class ScoreOnlyInteractionArtifact:
         draws = control_snapshot.permutation_draws
         return cls(
             status=cls._STATUS_EMPTY,
-            pair_range_start=0,
-            pair_range_end=0,
+            draw_range_start=0,
+            draw_range_end=draws,
             pair_names=(),
             observed_scores=np.empty(0, dtype=np.float64),
             null_scores=np.empty((draws, 0), dtype=np.float64),
@@ -468,14 +476,14 @@ class ScoreOnlyInteractionArtifact:
 
     @property
     def payload_sha256(self) -> str:
-        """Hash range metadata, names, snapshot, and score arrays."""
+        """Hash draw-block metadata, names, snapshot, and score arrays."""
         digest = hashlib.sha256()
         digest.update(
             _canonical_json(
                 {
                     "status": self.status,
-                    "pair_range_start": self.pair_range_start,
-                    "pair_range_end": self.pair_range_end,
+                    "draw_range_start": self.draw_range_start,
+                    "draw_range_end": self.draw_range_end,
                     "pair_names": list(self.pair_names),
                     "control_snapshot_sha256": self.control_snapshot.checksum,
                 }
@@ -500,10 +508,10 @@ class ScoreOnlyInteractionArtifact:
         )
         temporary_npz.replace(npz_path)
         metadata = {
-            "schema_version": 1,
+            "schema_version": self._SCHEMA_VERSION,
             "status": self.status,
-            "pair_range_start": self.pair_range_start,
-            "pair_range_end": self.pair_range_end,
+            "draw_range_start": self.draw_range_start,
+            "draw_range_end": self.draw_range_end,
             "pair_names": list(self.pair_names),
             "control_snapshot": self.control_snapshot.to_dict(),
             "payload_sha256": self.payload_sha256,
@@ -526,8 +534,20 @@ class ScoreOnlyInteractionArtifact:
                 f"Missing score-only artifact files: {npz_path} and {metadata_path} are required."
             )
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        if metadata.get("schema_version") != 1:
+        if metadata.get("schema_version") != cls._SCHEMA_VERSION:
             raise ValueError("Unsupported score-only artifact schema.")
+        required = {
+            "status",
+            "draw_range_start",
+            "draw_range_end",
+            "pair_names",
+            "control_snapshot",
+            "payload_sha256",
+            "npz_sha256",
+        }
+        missing = required.difference(metadata)
+        if missing:
+            raise ValueError(f"Score-only artifact metadata is incomplete: {sorted(missing)}")
         expected_npz_checksum = str(metadata.get("npz_sha256", ""))
         actual_npz_checksum = _sha256_bytes(npz_path.read_bytes())
         if actual_npz_checksum != expected_npz_checksum:
@@ -535,8 +555,8 @@ class ScoreOnlyInteractionArtifact:
         with np.load(npz_path, allow_pickle=False) as arrays:
             artifact = cls(
                 status=str(metadata["status"]),
-                pair_range_start=int(metadata["pair_range_start"]),
-                pair_range_end=int(metadata["pair_range_end"]),
+                draw_range_start=int(metadata["draw_range_start"]),
+                draw_range_end=int(metadata["draw_range_end"]),
                 pair_names=tuple(str(name) for name in metadata["pair_names"]),
                 observed_scores=arrays["observed_scores"],
                 null_scores=arrays["null_scores"],

@@ -1,0 +1,24 @@
+hpc_campaign:
+  run_id: g11-kestrel-nosubmit
+  scheduler_submission_permitted: false
+  cluster:
+    account: bsm
+    max_array_size: 11000
+    cpu_cores_per_node: 104
+    memory_per_node_gb: 240
+    partitions:
+      - debug
+      - short
+      - standard
+      - long
+      - shared
+      - nvme
+      - medmem
+      - bigmem
+      - hbw
+    project_root: /projects/bsm
+    scratch_template: /scratch/{user}/bsm_runs/{run_id}
+    kill_wait: 30s
+    job_requeue: false
+    allocation_unit: node_hour
+    allocation_quota: "16000"

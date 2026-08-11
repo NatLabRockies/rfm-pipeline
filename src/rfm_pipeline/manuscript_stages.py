@@ -1342,6 +1342,813 @@ class ManuscriptReproductionAuditStageResult:
 
 
 # ---------------------------------------------------------------------------
+# G11-P-S1: train-freeze-predict and bootstrap paths
+# ---------------------------------------------------------------------------
+
+
+class ModelFreezeAuthorizationError(ValueError):
+    """Raised when a freeze manifest's hash does not match its content.
+
+    This error blocks holdout data access until a valid, un-tampered
+    ``ModelFreezeManifest`` is presented.
+    """
+
+
+def _compute_model_freeze_hash(
+    contract_hash: str,
+    feature_names: tuple[str, ...],
+    output_names: tuple[str, ...],
+    n_train_rows: int,
+    y_train_min: tuple[float, ...],
+    y_train_max: tuple[float, ...],
+    y_train_mean: tuple[float, ...],
+    y_train_variance: tuple[float, ...],
+    x_means: tuple[float, ...],
+    x_scales: tuple[float, ...],
+    model_digest: str,
+) -> str:
+    """Compute a deterministic SHA-256 freeze hash from manifest content fields."""
+    payload = json.dumps(
+        {
+            "contract_hash": contract_hash,
+            "feature_names": list(feature_names),
+            "output_names": list(output_names),
+            "n_train_rows": n_train_rows,
+            "y_train_min": list(y_train_min),
+            "y_train_max": list(y_train_max),
+            "y_train_mean": list(y_train_mean),
+            "y_train_variance": list(y_train_variance),
+            "x_means": list(x_means),
+            "x_scales": list(x_scales),
+            "model_digest": model_digest,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _compute_frozen_model_digest(coef: np.ndarray, intercept: np.ndarray) -> str:
+    """Bind the fitted coefficient payload to an immutable model freeze."""
+    digest = hashlib.sha256()
+    digest.update(_digest_array(np.asarray(coef, dtype=np.float64)).encode("ascii"))
+    digest.update(_digest_array(np.asarray(intercept, dtype=np.float64)).encode("ascii"))
+    return digest.hexdigest()
+
+
+@dataclass(frozen=True)
+class ModelFreezeManifest:
+    """Immutable identity token produced after training-only fits.
+
+    The ``freeze_hash`` is a SHA-256 of all other fields; any tampering
+    causes ``verify_freeze_hash`` to raise ``ModelFreezeAuthorizationError``.
+    Holdout bytes must not be read before this manifest exists and its hash
+    has been verified.
+
+    Parameters
+    ----------
+    freeze_hash
+        SHA-256 of the canonical serialization of all other fields.
+    contract_hash
+        G11 campaign-contract hash bound to this freeze (caller-supplied).
+    feature_names
+        Final feature names after HC3 filter and pruning, in model order.
+    output_names
+        Retained scalar output names, in model order.
+    n_train_rows
+        Number of training rows used to fit the model.
+    y_train_min
+        Per-output training minimum (one value per ``output_names`` entry).
+    y_train_max
+        Per-output training maximum.
+    y_train_mean
+        Per-output training mean.
+    y_train_variance
+        Per-output training variance (population, ddof=0).
+    x_means
+        Per-feature training mean used for standardization.
+    x_scales
+        Per-feature training scale used for standardization.
+    model_digest
+        Digest of the fitted coefficient and intercept arrays.
+    """
+
+    freeze_hash: str
+    contract_hash: str
+    feature_names: tuple[str, ...]
+    output_names: tuple[str, ...]
+    n_train_rows: int
+    y_train_min: tuple[float, ...]
+    y_train_max: tuple[float, ...]
+    y_train_mean: tuple[float, ...]
+    y_train_variance: tuple[float, ...]
+    x_means: tuple[float, ...]
+    x_scales: tuple[float, ...]
+    model_digest: str
+
+    def verify_freeze_hash(self) -> None:
+        """Verify that ``freeze_hash`` is consistent with the other fields.
+
+        Raises
+        ------
+        ModelFreezeAuthorizationError
+            When the stored hash does not match the recomputed hash.
+        """
+        expected = _compute_model_freeze_hash(
+            self.contract_hash,
+            self.feature_names,
+            self.output_names,
+            self.n_train_rows,
+            self.y_train_min,
+            self.y_train_max,
+            self.y_train_mean,
+            self.y_train_variance,
+            self.x_means,
+            self.x_scales,
+            self.model_digest,
+        )
+        if self.freeze_hash != expected:
+            raise ModelFreezeAuthorizationError(
+                f"Freeze manifest hash mismatch: stored={self.freeze_hash!r}, "
+                f"recomputed={expected!r}. Holdout access denied."
+            )
+
+
+@dataclass(frozen=True)
+class TrainFitAndFreezeResult:
+    """Result of training-only fit with an immutable freeze manifest.
+
+    The fit is performed exclusively on training bytes.  No holdout data is
+    accepted by ``train_fit_and_freeze``.  Downstream stages must call
+    ``verify_freeze_hash()`` before reading holdout bytes.
+
+    Parameters
+    ----------
+    freeze_manifest
+        Content-addressed identity token for the training fit.
+    coef
+        Final OLS coefficient matrix, shape ``(n_features, n_outputs)``.
+    intercept
+        Per-output intercepts, shape ``(n_outputs,)``.
+    x_means
+        Per-feature training means used for standardization.
+    x_scales
+        Per-feature training scales used for standardization.
+    """
+
+    freeze_manifest: ModelFreezeManifest
+    coef: np.ndarray
+    intercept: np.ndarray
+    x_means: np.ndarray
+    x_scales: np.ndarray
+
+    def verify_freeze_hash(self) -> None:
+        """Verify both the manifest and its bound fitted-model payload."""
+        self.freeze_manifest.verify_freeze_hash()
+        current_model_digest = _compute_frozen_model_digest(self.coef, self.intercept)
+        if current_model_digest != self.freeze_manifest.model_digest:
+            raise ModelFreezeAuthorizationError(
+                "Frozen model digest mismatch. Holdout access denied."
+            )
+
+
+@dataclass(frozen=True)
+class FrozenPredictionMatrices:
+    """Frozen holdout truth and prediction matrices authorized by a model freeze.
+
+    Bootstrap shards must accept only this artifact; they must never receive
+    raw training or holdout data.
+
+    Parameters
+    ----------
+    freeze_hash
+        Hash of the ``ModelFreezeManifest`` that authorized holdout access.
+    y_holdout
+        Holdout truth matrix, shape ``(n_holdout, n_outputs)``.
+    y_pred
+        Predicted values for holdout rows, shape matching ``y_holdout``.
+    y_train_min
+        Per-output training minimum (for nRMSE range normalization).
+    y_train_max
+        Per-output training maximum.
+    y_train_mean
+        Per-output training mean (for G11 eligibility predicate).
+    y_train_variance
+        Per-output training variance (for G11 eligibility predicate).
+    output_names
+        Ordered output names corresponding to matrix columns.
+    """
+
+    freeze_hash: str
+    y_holdout: np.ndarray
+    y_pred: np.ndarray
+    y_train_min: np.ndarray
+    y_train_max: np.ndarray
+    y_train_mean: np.ndarray
+    y_train_variance: np.ndarray
+    output_names: tuple[str, ...]
+    truth_ids: tuple[str, ...]
+    prediction_ids: tuple[str, ...]
+    strata: tuple[str, ...]
+    eligibility_ledger: pd.DataFrame
+
+    def validate(self) -> None:
+        """Fail closed unless persisted frozen matrices and their ledgers agree."""
+        if self.y_holdout.ndim != 2 or self.y_pred.ndim != 2:
+            raise ValueError("Frozen truth and prediction matrices must be two-dimensional.")
+        if self.y_holdout.shape != self.y_pred.shape:
+            raise ValueError("Frozen truth and prediction rows/columns must match.")
+        n_rows, n_outputs = self.y_holdout.shape
+        if len(self.truth_ids) != n_rows or len(self.prediction_ids) != n_rows:
+            raise ValueError("Frozen truth/prediction IDs must match matrix rows.")
+        if self.truth_ids != self.prediction_ids:
+            raise ValueError("Frozen truth and prediction IDs must match exactly.")
+        if len(set(self.truth_ids)) != n_rows:
+            raise ValueError("Frozen truth/prediction IDs must be unique.")
+        if len(self.strata) != n_rows:
+            raise ValueError("Frozen strata must match matrix rows.")
+        if len(self.output_names) != n_outputs:
+            raise ValueError("Frozen output IDs must match matrix columns.")
+        if any(
+            values.shape != (n_outputs,)
+            for values in (
+                self.y_train_min,
+                self.y_train_max,
+                self.y_train_mean,
+                self.y_train_variance,
+            )
+        ):
+            raise ValueError("Frozen training statistics must match output columns.")
+        if not np.isfinite(self.y_holdout).all() or not np.isfinite(self.y_pred).all():
+            raise ValueError("Frozen truth and predictions must be finite.")
+        expected_ledger = _g11_eligibility_ledger_from_statistics(
+            output_ids=self.output_names,
+            ref_min=self.y_train_min,
+            ref_max=self.y_train_max,
+            ref_mean=self.y_train_mean,
+            ref_variance=self.y_train_variance,
+        )
+        try:
+            pd.testing.assert_frame_equal(
+                self.eligibility_ledger.reset_index(drop=True),
+                expected_ledger.reset_index(drop=True),
+                check_dtype=False,
+                check_exact=True,
+            )
+        except AssertionError as error:
+            raise ValueError(
+                "Frozen output eligibility ledger does not match training statistics."
+            ) from error
+
+
+@dataclass(frozen=True)
+class BootstrapMetricShard:
+    """Per-draw macro nRMSE for one contiguous draw block.
+
+    Bootstrap shards never refit; they consume only ``FrozenPredictionMatrices``
+    and row-draw indices.
+
+    Parameters
+    ----------
+    freeze_hash
+        Must match across all shards before reduction.
+    draw_start
+        Inclusive start index of the draw block.
+    draw_end
+        Exclusive end index of the draw block.
+    per_draw_macro_nrmse
+        Macro nRMSE for each draw in ``[draw_start, draw_end)``.
+    eligible_count
+        Number of outputs that passed the G11 two-part eligibility predicate.
+    """
+
+    freeze_hash: str
+    schedule_hash: str
+    draw_start: int
+    draw_end: int
+    per_draw_macro_nrmse: np.ndarray
+    eligible_count: int
+    draw_ids: np.ndarray
+    stratum_counts: tuple[int, ...]
+
+
+def train_fit_and_freeze(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    *,
+    feature_names: list[str],
+    output_names: list[str],
+    contract_hash: str,
+) -> TrainFitAndFreezeResult:
+    """Fit a final OLS model on training bytes only and produce a freeze manifest.
+
+    This function is the sole entry point for fitting.  It does **not** accept
+    holdout data in any form.  Holdout access is gated by ``holdout_predict``,
+    which requires a verified ``ModelFreezeManifest``.
+
+    Parameters
+    ----------
+    x_train
+        Training feature matrix, shape ``(n_train, n_features)``.
+    y_train
+        Training response matrix, shape ``(n_train, n_outputs)``.
+    feature_names
+        Ordered names for the ``n_features`` columns of ``x_train``.
+    output_names
+        Ordered names for the ``n_outputs`` columns of ``y_train``.
+    contract_hash
+        G11 campaign-contract hash to bind into the freeze manifest.
+
+    Returns
+    -------
+    TrainFitAndFreezeResult
+        Fitted model and a content-addressed ``ModelFreezeManifest``.
+    """
+    x_train = np.asarray(x_train, dtype=np.float64)
+    y_train = np.asarray(y_train, dtype=np.float64)
+    if x_train.ndim != 2:
+        raise ValueError(f"x_train must be 2-D; got shape {x_train.shape}")
+    if y_train.ndim != 2:
+        raise ValueError(f"y_train must be 2-D; got shape {y_train.shape}")
+    n_train, n_features = x_train.shape
+    n_outputs = y_train.shape[1]
+    if len(feature_names) != n_features:
+        raise ValueError(
+            f"feature_names length ({len(feature_names)}) != n_features ({n_features})"
+        )
+    if len(output_names) != n_outputs:
+        raise ValueError(f"output_names length ({len(output_names)}) != n_outputs ({n_outputs})")
+
+    # Standardize features using training statistics only.
+    x_means = x_train.mean(axis=0)
+    x_scales = x_train.std(axis=0)
+    x_scales[x_scales == 0.0] = 1.0  # avoid division by zero for constant features
+    x_std = (x_train - x_means) / x_scales
+
+    # Fit OLS on standardized training features.
+    from sklearn.linear_model import LinearRegression
+
+    lr = LinearRegression(fit_intercept=True)
+    lr.fit(x_std, y_train)
+    coef = np.asarray(lr.coef_.T, dtype=np.float64)  # (n_features, n_outputs)
+    intercept = np.asarray(lr.intercept_, dtype=np.float64)
+
+    # Training statistics for eligibility and normalization.
+    y_train_min = tuple(float(v) for v in y_train.min(axis=0).tolist())
+    y_train_max = tuple(float(v) for v in y_train.max(axis=0).tolist())
+    y_train_mean = tuple(float(v) for v in y_train.mean(axis=0).tolist())
+    y_train_variance = tuple(float(v) for v in y_train.var(axis=0).tolist())
+
+    model_digest = _compute_frozen_model_digest(coef, intercept)
+    freeze_hash = _compute_model_freeze_hash(
+        contract_hash=contract_hash,
+        feature_names=tuple(feature_names),
+        output_names=tuple(output_names),
+        n_train_rows=n_train,
+        y_train_min=y_train_min,
+        y_train_max=y_train_max,
+        y_train_mean=y_train_mean,
+        y_train_variance=y_train_variance,
+        x_means=tuple(float(v) for v in x_means.tolist()),
+        x_scales=tuple(float(v) for v in x_scales.tolist()),
+        model_digest=model_digest,
+    )
+
+    manifest = ModelFreezeManifest(
+        freeze_hash=freeze_hash,
+        contract_hash=contract_hash,
+        feature_names=tuple(feature_names),
+        output_names=tuple(output_names),
+        n_train_rows=n_train,
+        y_train_min=y_train_min,
+        y_train_max=y_train_max,
+        y_train_mean=y_train_mean,
+        y_train_variance=y_train_variance,
+        x_means=tuple(float(v) for v in x_means.tolist()),
+        x_scales=tuple(float(v) for v in x_scales.tolist()),
+        model_digest=model_digest,
+    )
+
+    return TrainFitAndFreezeResult(
+        freeze_manifest=manifest,
+        coef=coef,
+        intercept=intercept,
+        x_means=x_means,
+        x_scales=x_scales,
+    )
+
+
+def holdout_predict(
+    train_freeze_result: TrainFitAndFreezeResult,
+    x_holdout: np.ndarray,
+    y_holdout: np.ndarray,
+    *,
+    holdout_ids: tuple[str, ...],
+    strata: np.ndarray,
+) -> FrozenPredictionMatrices:
+    """Predict holdout responses using a verified frozen model.
+
+    Holdout bytes are only accessible after the freeze manifest has been
+    verified.  Any hash tamper raises ``ModelFreezeAuthorizationError``
+    before holdout data is touched.
+
+    Parameters
+    ----------
+    train_freeze_result
+        Result of ``train_fit_and_freeze``; must contain a valid manifest.
+    x_holdout
+        Holdout feature matrix, shape ``(n_holdout, n_features)``.
+    y_holdout
+        Holdout truth matrix, shape ``(n_holdout, n_outputs)``.
+
+    Returns
+    -------
+    FrozenPredictionMatrices
+        Frozen truth/prediction matrices authorized by the manifest hash.
+
+    Raises
+    ------
+    ModelFreezeAuthorizationError
+        When the freeze manifest's hash does not match its content.
+    """
+    # Authorization gate: verify hash before touching holdout bytes.
+    train_freeze_result.verify_freeze_hash()
+
+    x_holdout = np.asarray(x_holdout, dtype=np.float64)
+    y_holdout = np.asarray(y_holdout, dtype=np.float64)
+    holdout_ids = tuple(str(identifier) for identifier in holdout_ids)
+    strata = np.asarray(strata)
+    if x_holdout.ndim != 2 or y_holdout.ndim != 2:
+        raise ValueError("Holdout features and truth must be two-dimensional.")
+    if x_holdout.shape[0] != y_holdout.shape[0]:
+        raise ValueError("Holdout feature and truth rows must match.")
+    if x_holdout.shape[1] != len(train_freeze_result.freeze_manifest.feature_names):
+        raise ValueError("Holdout feature columns must match the frozen model.")
+    if y_holdout.shape[1] != len(train_freeze_result.freeze_manifest.output_names):
+        raise ValueError("Holdout truth columns must match the frozen model.")
+    if len(holdout_ids) != y_holdout.shape[0] or len(strata) != y_holdout.shape[0]:
+        raise ValueError("Holdout IDs and strata must match holdout rows.")
+    if len(set(holdout_ids)) != len(holdout_ids):
+        raise ValueError("Holdout IDs must be unique.")
+    x_std = (x_holdout - train_freeze_result.x_means) / train_freeze_result.x_scales
+    y_pred = x_std @ train_freeze_result.coef + train_freeze_result.intercept
+
+    manifest = train_freeze_result.freeze_manifest
+    frozen = FrozenPredictionMatrices(
+        freeze_hash=manifest.freeze_hash,
+        y_holdout=y_holdout,
+        y_pred=y_pred,
+        y_train_min=np.array(manifest.y_train_min, dtype=np.float64),
+        y_train_max=np.array(manifest.y_train_max, dtype=np.float64),
+        y_train_mean=np.array(manifest.y_train_mean, dtype=np.float64),
+        y_train_variance=np.array(manifest.y_train_variance, dtype=np.float64),
+        output_names=manifest.output_names,
+        truth_ids=holdout_ids,
+        prediction_ids=holdout_ids,
+        strata=tuple(str(value) for value in strata),
+        eligibility_ledger=_g11_eligibility_ledger_from_statistics(
+            output_ids=manifest.output_names,
+            ref_min=np.asarray(manifest.y_train_min, dtype=np.float64),
+            ref_max=np.asarray(manifest.y_train_max, dtype=np.float64),
+            ref_mean=np.asarray(manifest.y_train_mean, dtype=np.float64),
+            ref_variance=np.asarray(manifest.y_train_variance, dtype=np.float64),
+        ),
+    )
+    frozen.validate()
+    return frozen
+
+
+def build_g11_output_eligibility_ledger(
+    Y_train: np.ndarray,
+    output_ids: list | None = None,
+) -> pd.DataFrame:
+    """Build a per-output eligibility ledger using the exact G11 two-part predicate.
+
+    The predicate is:
+      1. ``variance > 1e-12``
+      2. ``range / (abs(train_mean) + 1e-12) >= 1e-2``
+
+    The legacy ``range >= 1e-6`` gate is **not** a criterion and must not
+    change the eligible population.
+
+    Parameters
+    ----------
+    Y_train
+        Training response matrix, shape ``(n_rows, n_outputs)``.
+    output_ids
+        Optional ordered identifiers for each column.  Defaults to
+        ``range(n_outputs)``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per output with columns:
+        ``output_id``, ``ref_min``, ``ref_max``, ``ref_range``, ``ref_mean``,
+        ``ref_variance``, ``relative_range``, ``variance_pass``,
+        ``relative_range_pass``, ``eligible``, ``exclusion_reason``.
+    """
+    Y_train = np.asarray(Y_train, dtype=np.float64)
+    n_outputs = Y_train.shape[1]
+    if output_ids is None:
+        ids: list = list(range(n_outputs))
+    else:
+        ids = list(output_ids)
+    if len(ids) != n_outputs:
+        raise ValueError(f"output_ids length ({len(ids)}) does not match n_outputs ({n_outputs}).")
+
+    return _g11_eligibility_ledger_from_statistics(
+        output_ids=ids,
+        ref_min=Y_train.min(axis=0),
+        ref_max=Y_train.max(axis=0),
+        ref_mean=Y_train.mean(axis=0),
+        ref_variance=Y_train.var(axis=0),
+    )
+
+
+def _g11_eligibility_ledger_from_statistics(
+    *,
+    output_ids: Collection[object],
+    ref_min: np.ndarray,
+    ref_max: np.ndarray,
+    ref_mean: np.ndarray,
+    ref_variance: np.ndarray,
+) -> pd.DataFrame:
+    """Build the immutable G11 eligibility ledger from frozen training statistics."""
+    ref_range = ref_max - ref_min
+    relative_range = ref_range / (np.abs(ref_mean) + 1e-12)
+
+    variance_pass = ref_variance > 1e-12
+    relative_range_pass = relative_range >= 1e-2
+    eligible = variance_pass & relative_range_pass
+
+    exclusion_reasons = []
+    for vp, rp in zip(variance_pass, relative_range_pass, strict=True):
+        if vp and rp:
+            exclusion_reasons.append("")
+        elif not vp and not rp:
+            exclusion_reasons.append("near_zero_variance;small_relative_range")
+        elif not vp:
+            exclusion_reasons.append("near_zero_variance")
+        else:
+            exclusion_reasons.append("small_relative_range")
+
+    return pd.DataFrame(
+        {
+            "output_id": list(output_ids),
+            "ref_min": ref_min.tolist(),
+            "ref_max": ref_max.tolist(),
+            "ref_range": ref_range.tolist(),
+            "ref_mean": ref_mean.tolist(),
+            "ref_variance": ref_variance.tolist(),
+            "relative_range": relative_range.tolist(),
+            "variance_pass": variance_pass.tolist(),
+            "relative_range_pass": relative_range_pass.tolist(),
+            "eligible": eligible.tolist(),
+            "exclusion_reason": exclusion_reasons,
+        }
+    )
+
+
+def validate_g11_production_eligibility_ledger(
+    ledger: pd.DataFrame,
+    *,
+    expected_accounting: dict[str, int] | None = None,
+) -> dict[str, int]:
+    """Validate the G11 production output-eligibility predicate and accounting.
+
+    ``expected_accounting`` belongs to the applicable case-study contract.
+    Generic callers may omit it to validate the ledger's schema and predicate
+    without inheriting a case-study-specific output count.
+    """
+    required = {"output_id", "ref_min", "ref_max", "ref_mean", "ref_variance", "eligible"}
+    if missing := required.difference(ledger.columns):
+        raise ValueError(f"Production eligibility ledger is missing columns: {sorted(missing)}.")
+    if ledger["output_id"].duplicated().any():
+        raise ValueError("Production eligibility ledger contains duplicate output IDs.")
+    ref_range = ledger["ref_max"].to_numpy(dtype=np.float64) - ledger["ref_min"].to_numpy(
+        dtype=np.float64
+    )
+    expected_eligible = (ledger["ref_variance"].to_numpy(dtype=np.float64) > 1e-12) & (
+        ref_range / (np.abs(ledger["ref_mean"].to_numpy(dtype=np.float64)) + 1e-12) >= 1e-2
+    )
+    if not np.array_equal(ledger["eligible"].to_numpy(dtype=bool), expected_eligible):
+        raise ValueError("Production eligibility ledger does not use the G11 eligibility rule.")
+    total = int(len(ledger))
+    eligible = int(ledger["eligible"].astype(bool).sum())
+    excluded = total - eligible
+    observed = {"total": total, "eligible": eligible, "excluded": excluded}
+    if expected_accounting is not None:
+        if set(expected_accounting) != set(observed):
+            raise ValueError(
+                "expected_accounting must contain exactly total, eligible, and excluded."
+            )
+        for key, value in expected_accounting.items():
+            if observed[key] != value:
+                raise ValueError(
+                    f"Production eligibility {key} mismatch: expected {value}, got {observed[key]}."
+                )
+    return observed
+
+
+def _g11_eligible_mask(frozen: FrozenPredictionMatrices) -> np.ndarray:
+    """Return boolean eligible mask for outputs using G11 two-part predicate."""
+    frozen.validate()
+    return frozen.eligibility_ledger["eligible"].to_numpy(dtype=bool)
+
+
+def _bootstrap_schedule_hash(
+    frozen: FrozenPredictionMatrices,
+    *,
+    random_seed: int,
+) -> str:
+    """Bind every draw block to one global stratified bootstrap schedule."""
+    payload = {
+        "algorithm": "stratified_row_bootstrap_v1",
+        "freeze_hash": frozen.freeze_hash,
+        "random_seed": random_seed,
+        "truth_ids": frozen.truth_ids,
+        "strata": frozen.strata,
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def bootstrap_metric_block(
+    frozen: FrozenPredictionMatrices,
+    *,
+    draw_start: int,
+    draw_end: int,
+    random_seed: int,
+) -> BootstrapMetricShard:
+    """Compute macro nRMSE for a contiguous block of bootstrap row draws.
+
+    This function **never refits** any model.  It consumes only the frozen
+    truth/prediction matrices and row-draw indices derived from ``random_seed``.
+    All eligibility decisions are made from frozen training statistics stored
+    in ``frozen``.
+
+    Parameters
+    ----------
+    frozen
+        Frozen holdout truth/prediction matrices from ``holdout_predict``.
+    draw_start
+        Inclusive start index of this shard's draw block.
+    draw_end
+        Exclusive end index of this shard's draw block.
+    random_seed
+        Global bootstrap seed.  All shards must use the same seed; each
+        shard's draws are the slice ``[draw_start, draw_end)`` of the global
+        pre-generated row-index array.
+
+    Returns
+    -------
+    BootstrapMetricShard
+        Per-draw macro nRMSE for draws ``[draw_start, draw_end)``.
+    """
+    if draw_start < 0:
+        raise ValueError(f"draw_start must be >= 0; got {draw_start}")
+    if draw_end <= draw_start:
+        raise ValueError(f"draw_end ({draw_end}) must be > draw_start ({draw_start})")
+    frozen.validate()
+
+    n_draws = draw_end - draw_start
+
+    # Pre-generate all row draws up to draw_end so that each shard produces
+    # the identical slice of the global draw sequence regardless of draw_start.
+    rng = np.random.RandomState(random_seed)
+    _, inverse = np.unique(np.asarray(frozen.strata), return_inverse=True)
+    strata_indices = [np.flatnonzero(inverse == code) for code in range(inverse.max() + 1)]
+    all_draws = np.stack(
+        [
+            np.concatenate(
+                [rng.choice(indices, size=len(indices), replace=True) for indices in strata_indices]
+            )
+            for _ in range(draw_end)
+        ]
+    )
+    block_draws = all_draws[draw_start:draw_end]  # shape (n_draws, n_holdout)
+
+    eligible_mask = _g11_eligible_mask(frozen)
+    eligible_count = int(eligible_mask.sum())
+    y_train_range = frozen.y_train_max - frozen.y_train_min
+
+    per_draw_nrmse = np.full(n_draws, np.nan, dtype=np.float64)
+    for i, row_idx in enumerate(block_draws):
+        y_t = frozen.y_holdout[row_idx]
+        y_p = frozen.y_pred[row_idx]
+        rmse = np.sqrt(np.mean((y_t - y_p) ** 2, axis=0))
+        ranges = y_train_range.copy()
+        ranges[~eligible_mask] = np.nan
+        # Avoid division by zero or near-zero range.
+        safe_range = np.where(ranges > 0, ranges, np.nan)
+        per_output_nrmse = rmse / safe_range
+        eligible_nrmse = per_output_nrmse[eligible_mask]
+        per_draw_nrmse[i] = float(np.nanmean(eligible_nrmse)) if eligible_count > 0 else np.nan
+
+    return BootstrapMetricShard(
+        freeze_hash=frozen.freeze_hash,
+        schedule_hash=_bootstrap_schedule_hash(frozen, random_seed=random_seed),
+        draw_start=draw_start,
+        draw_end=draw_end,
+        per_draw_macro_nrmse=per_draw_nrmse,
+        eligible_count=eligible_count,
+        draw_ids=np.arange(draw_start, draw_end, dtype=np.int64),
+        stratum_counts=tuple(len(indices) for indices in strata_indices),
+    )
+
+
+def reduce_bootstrap_metric_blocks(
+    shards: list[BootstrapMetricShard],
+    *,
+    expected_total_draws: int | None = None,
+) -> BootstrapMetricShard:
+    """Assemble draw-block shards into one complete bootstrap result.
+
+    Parameters
+    ----------
+    shards
+        Unordered list of ``BootstrapMetricShard`` instances.
+    expected_total_draws
+        When provided, the reducer verifies that the assembled range is
+        ``[0, expected_total_draws)`` exactly.
+
+    Returns
+    -------
+    BootstrapMetricShard
+        One shard spanning ``[0, total_draws)`` with all per-draw values.
+
+    Raises
+    ------
+    ValueError
+        On empty input, mismatched ``freeze_hash``, gaps, overlaps, or wrong
+        total draw count.
+    """
+    if not shards:
+        raise ValueError("reduce_bootstrap_metric_blocks received an empty shard list.")
+
+    # Verify all shards share the same frozen model and bootstrap schedule.
+    canonical_hash = shards[0].freeze_hash
+    canonical_schedule_hash = shards[0].schedule_hash
+    for s in shards[1:]:
+        if s.freeze_hash != canonical_hash:
+            raise ValueError(
+                f"freeze_hash mismatch: expected {canonical_hash!r}, got {s.freeze_hash!r}. "
+                "All bootstrap shards must originate from the same frozen model."
+            )
+        if s.schedule_hash != canonical_schedule_hash:
+            raise ValueError(
+                "Bootstrap schedule hash mismatch. All shards must use the "
+                "same global random schedule."
+            )
+    for shard in shards:
+        expected_draw_ids = np.arange(shard.draw_start, shard.draw_end, dtype=np.int64)
+        if shard.per_draw_macro_nrmse.shape != (
+            shard.draw_end - shard.draw_start,
+        ) or not np.array_equal(shard.draw_ids, expected_draw_ids):
+            raise ValueError(
+                "Bootstrap shard draw IDs or metric values do not match its draw range."
+            )
+
+    # Sort by draw_start and check for gaps / overlaps.
+    ordered = sorted(shards, key=lambda s: s.draw_start)
+    if ordered[0].draw_start != 0:
+        raise ValueError(
+            f"Bootstrap shard gap: expected draw_start=0, got {ordered[0].draw_start}. "
+            "Draws must cover [0, total) without gaps."
+        )
+    total_draws = ordered[-1].draw_end
+    for prev, curr in zip(ordered, ordered[1:], strict=False):
+        if curr.draw_start < prev.draw_end:
+            raise ValueError(
+                f"Bootstrap shard overlap: shard [{curr.draw_start}, {curr.draw_end}) "
+                f"overlaps [{prev.draw_start}, {prev.draw_end})."
+            )
+        if curr.draw_start > prev.draw_end:
+            raise ValueError(
+                f"Bootstrap shard gap: draws [{prev.draw_end}, {curr.draw_start}) are missing."
+            )
+
+    if expected_total_draws is not None and total_draws != expected_total_draws:
+        raise ValueError(
+            f"Bootstrap total draw count mismatch: assembled {total_draws} draws, "
+            f"expected {expected_total_draws}."
+        )
+
+    assembled = np.concatenate([s.per_draw_macro_nrmse for s in ordered])
+    return BootstrapMetricShard(
+        freeze_hash=canonical_hash,
+        schedule_hash=canonical_schedule_hash,
+        draw_start=0,
+        draw_end=total_draws,
+        per_draw_macro_nrmse=assembled,
+        eligible_count=ordered[0].eligible_count,
+        draw_ids=np.concatenate([shard.draw_ids for shard in ordered]),
+        stratum_counts=ordered[0].stratum_counts,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Per-stage support-composition provenance (F6)
 # ---------------------------------------------------------------------------
 
@@ -2278,8 +3085,6 @@ def discover_manuscript_interactions(
     spec: InteractionDiscoverySpec,
     *,
     checkpoint_dir: Path | None = None,
-    pair_start_idx: int | None = None,
-    pair_end_idx: int | None = None,
     contract: CanonicalExecutionContract | None = None,
 ) -> InteractionDiscoveryResult:
     """Discover candidate interaction pairs via specified method (GBT+SHAP or ElasticNet).
@@ -2305,11 +3110,10 @@ def discover_manuscript_interactions(
     checkpoint_dir
         Optional directory for per-permutation checkpoints. When provided, completed permutation
         scores are persisted and reused on subsequent reruns with the same discovery signature.
-    pair_start_idx
-        Optional zero-based start index (inclusive) for candidate-pair slicing.
-        When provided with ``pair_end_idx``, only that pair range is scored.
-    pair_end_idx
-        Optional zero-based end index (exclusive) for candidate-pair slicing.
+    draw_start
+        Zero-based inclusive null-permutation draw index.
+    draw_end
+        Zero-based exclusive null-permutation draw index.
     contract
         Optional canonical execution contract. When supplied, its interaction
         and terminal-model controls are verified before score execution.
@@ -2333,11 +3137,6 @@ def discover_manuscript_interactions(
         )
     if spec.method != "tree_shap_interaction_values":
         raise ValueError(f"Unsupported interaction-discovery method: {spec.method}")
-    if pair_start_idx is not None or pair_end_idx is not None:
-        raise ValueError(
-            "discover_manuscript_interactions cannot make a partial-family decision. "
-            "Use discover_interaction_scores_only and reduce_score_only_interaction_artifacts."
-        )
     if contract is None:
         contract = canonical_execution_contract_from_specs(spec)
     artifact = discover_interaction_scores_only(
@@ -2393,7 +3192,7 @@ def write_interaction_discovery_artifacts(
     return written
 
 
-def discover_interaction_scores_only(
+def score_interaction_draw_block(
     input_matrix: pd.DataFrame,
     feature_catalog: pd.DataFrame,
     holdout_assignments: pd.DataFrame,
@@ -2402,14 +3201,15 @@ def discover_interaction_scores_only(
     spec: InteractionDiscoverySpec,
     *,
     checkpoint_dir: Path | None = None,
-    pair_start_idx: int | None = None,
-    pair_end_idx: int | None = None,
+    draw_start: int,
+    draw_end: int,
     contract: CanonicalExecutionContract | None = None,
 ) -> ScoreOnlyInteractionArtifact:
-    """Score interaction pairs for a distributed shard without making retention decisions.
+    """Score the complete interaction family for one permutation-draw block.
 
-    Produces bit-identical observed and null scores to :func:`discover_manuscript_interactions`
-    for the same pair range and spec.  Shards must never make retain decisions because the
+    Produces bit-identical observed and null scores to :func:`discover_manuscript_interactions`.
+    Every block scores the complete ordered pair family; only the block starting at
+    zero evaluates the observed response. Shards must never make retain decisions because the
     global FWER threshold requires the *complete* candidate-family null matrix assembled from
     all shards.  See :func:`reduce_score_only_interaction_artifacts` for the global decision step.
 
@@ -2431,21 +3231,21 @@ def discover_interaction_scores_only(
         draw IDs index the same shared-response permutation sequence.
     checkpoint_dir
         Optional directory for per-permutation checkpoints.
-    pair_start_idx
-        Optional zero-based start index (inclusive) for candidate-pair slicing.
-    pair_end_idx
-        Optional zero-based end index (exclusive) for candidate-pair slicing.
+    draw_start
+        Zero-based inclusive null-permutation draw index.
+    draw_end
+        Zero-based exclusive null-permutation draw index.
 
     Returns
     -------
     ScoreOnlyInteractionArtifact
-        Persistable observed scores, full null-score matrix (B × n_pairs), draw
-        IDs, and the verified canonical control snapshot. No retention decision
-        is made.
+        Persistable complete-family observed score (only for the first block),
+        block null-score matrix, draw IDs, and the verified canonical control
+        snapshot. No retention decision is made.
     """
     if spec.method != "tree_shap_interaction_values":
         raise ValueError(
-            f"discover_interaction_scores_only only supports "
+            f"score_interaction_draw_block only supports "
             f"method='tree_shap_interaction_values'; got {spec.method!r}. "
             "Distributed score-only sharding is not implemented for other methods."
         )
@@ -2524,26 +3324,19 @@ def discover_interaction_scores_only(
     if not all_candidates:
         return ScoreOnlyInteractionArtifact.empty_terminal(control_snapshot)
 
-    candidates = all_candidates
     feature_names = full_feature_names
     pair_to_indices = {
         pair_name: (feature_names.index(left), feature_names.index(right))
         for pair_name, left, right in all_candidates
     }
-    start = 0
-    end = total_candidate_pairs
-    if pair_start_idx is not None or pair_end_idx is not None:
-        start = int(pair_start_idx) if pair_start_idx is not None else 0
-        end = int(pair_end_idx) if pair_end_idx is not None else total_candidate_pairs
-        start = max(0, min(start, total_candidate_pairs))
-        end = max(start, min(end, total_candidate_pairs))
-        candidates = all_candidates[start:end]
-        if not candidates:
-            raise ValueError(
-                "interaction_discovery shard candidate range is empty: "
-                f"pair_start_idx={pair_start_idx}, pair_end_idx={pair_end_idx}, "
-                f"total_candidate_pairs={total_candidate_pairs}"
-            )
+    start = int(draw_start)
+    end = int(draw_end)
+    if start < 0 or end > spec.permutation_count_B or end <= start:
+        raise ValueError(
+            "interaction_discovery draw block must be a non-empty range within "
+            f"[0, {spec.permutation_count_B}); got [{draw_start}, {draw_end})."
+        )
+    candidates = all_candidates
 
     x_feat = x_full
 
@@ -2571,7 +3364,7 @@ def discover_interaction_scores_only(
             key=lambda i: -component_variances[i],
         )[:cap]
 
-    n_pairs = len(candidates)
+    n_pairs = total_candidate_pairs
     n_comp = len(component_names)
     n_train_samples = len(y_train)
     adaptive_shap_samples = min(250, max(100, int(0.3 * n_train_samples)))
@@ -2594,7 +3387,10 @@ def discover_interaction_scores_only(
     )
 
     # Build checkpoint run dir (same logic as discover_manuscript_interactions).
-    total_scores = len(seeds)
+    score_items = ([(0, seeds[0])] if start == 0 else []) + [
+        (draw + 1, seeds[draw + 1]) for draw in range(start, end)
+    ]
+    total_scores = len(score_items)
     checkpoint_root: Path | None = checkpoint_dir
     if checkpoint_root is None:
         env_checkpoint_dir = os.getenv("RFM_INTERACTION_CHECKPOINT_DIR")
@@ -2604,8 +3400,8 @@ def discover_interaction_scores_only(
     if checkpoint_root is not None:
         checkpoint_signature_payload = {
             "control_snapshot_sha256": control_snapshot.checksum,
-            "pair_range_start": start,
-            "pair_range_end": end,
+            "draw_range_start": start,
+            "draw_range_end": end,
             "active_comp_indices": list(active_comp_indices),
             "permutation_schedule_sha256": hashlib.sha256(
                 np.asarray(seeds, dtype=np.int64).tobytes()
@@ -2680,7 +3476,7 @@ def discover_interaction_scores_only(
     batch_size = _progress_batch_size(total_scores, 8)
     for batch_start in range(0, total_scores, batch_size):
         batch_stop = min(batch_start + batch_size, total_scores)
-        batch_items = list(enumerate(seeds[batch_start:batch_stop], start=batch_start))
+        batch_items = score_items[batch_start:batch_stop]
         missing_batch_items: list[tuple[int, int]] = []
         for score_index, seed in batch_items:
             checkpointed = _load_checkpoint_score_so(score_index)
@@ -2724,41 +3520,58 @@ def discover_interaction_scores_only(
                 indexed_results[score_index] = result
                 _save_checkpoint_score_so(score_index, result)
 
-    all_results = [indexed_results[idx] for idx in range(total_scores)]
-    observed_scores, _ = all_results[0]
-    null_statistics = np.zeros((spec.permutation_count_B, n_pairs))
-    for b in range(spec.permutation_count_B):
-        null_statistics[b] = all_results[b + 1][0]
+    observed_scores = indexed_results[0][0] if start == 0 else np.empty(0, dtype=np.float64)
+    null_statistics = np.vstack([indexed_results[draw + 1][0] for draw in range(start, end)])
 
     pair_names = tuple(pair_name for pair_name, _, _ in candidates)
     return ScoreOnlyInteractionArtifact(
         status="score_only_completed",
-        pair_range_start=start,
-        pair_range_end=end,
+        draw_range_start=start,
+        draw_range_end=end,
         pair_names=pair_names,
         observed_scores=observed_scores,
         null_scores=null_statistics,
-        draw_ids=np.arange(spec.permutation_count_B, dtype=np.int64),
+        draw_ids=np.arange(start, end, dtype=np.int64),
         control_snapshot=control_snapshot,
     )
 
 
-def reduce_score_only_interaction_artifacts(
+def discover_interaction_scores_only(
+    input_matrix: pd.DataFrame,
+    feature_catalog: pd.DataFrame,
+    holdout_assignments: pd.DataFrame,
+    pca_scores: pd.DataFrame,
+    retained_terms: pd.DataFrame,
+    spec: InteractionDiscoverySpec,
+    *,
+    checkpoint_dir: Path | None = None,
+    contract: CanonicalExecutionContract | None = None,
+) -> ScoreOnlyInteractionArtifact:
+    """Score one serial draw block spanning every configured permutation draw."""
+    return score_interaction_draw_block(
+        input_matrix,
+        feature_catalog,
+        holdout_assignments,
+        pca_scores,
+        retained_terms,
+        spec,
+        draw_start=0,
+        draw_end=spec.permutation_count_B,
+        checkpoint_dir=checkpoint_dir,
+        contract=contract,
+    )
+
+
+def reduce_interaction_draw_blocks(
     artifacts: list[ScoreOnlyInteractionArtifact],
     *,
     spec: InteractionDiscoverySpec,
     contract: CanonicalExecutionContract,
     expected_pair_names: tuple[str, ...] | None = None,
-) -> InteractionDiscoveryResult:
-    """Reduce verified score-only artifacts through the one canonical path.
-
-    Artifact arrival order is meaningful: every artifact must cover the next
-    contiguous canonical pair range.  The reducer never sorts or repairs
-    ranges, identities, checksums, or candidate names because doing so could
-    hide a partial or reordered family decision.
-    """
+) -> ScoreOnlyInteractionArtifact:
+    """Assemble ordered complete-family draw blocks without an inferential decision."""
     if not artifacts:
-        raise ValueError("Score-only reduction requires at least one artifact.")
+        raise ValueError("Draw-block reduction requires at least one artifact.")
     expected_controls = canonical_execution_contract_from_specs(spec).interaction_controls
     if contract.interaction_controls != expected_controls:
         raise ValueError(
@@ -2786,6 +3599,89 @@ def reduce_score_only_interaction_artifacts(
             raise ValueError(
                 "An empty candidate family requires exactly one empty_candidate_family artifact."
             )
+        return artifacts[0]
+
+    expected_start = 0
+    observed_scores: np.ndarray | None = None
+    null_blocks: list[np.ndarray] = []
+    for position, artifact in enumerate(artifacts):
+        if artifact.status != "score_only_completed":
+            raise ValueError(
+                f"Artifact {position} has status {artifact.status!r}; a non-empty family "
+                "requires completed score-only artifacts."
+            )
+        if artifact.draw_range_start != expected_start:
+            raise ValueError(
+                "Draw-block artifacts are reordered, duplicate, or do not provide contiguous "
+                f"coverage: artifact {position} begins at {artifact.draw_range_start}, "
+                f"expected {expected_start}."
+            )
+        if artifact.draw_range_end > reference_snapshot.permutation_draws:
+            raise ValueError("Draw-block artifact range exceeds the canonical permutation draws.")
+        if artifact.pair_names != canonical_pairs:
+            raise ValueError(
+                "Draw-block artifact pair ordering differs from the complete canonical family."
+            )
+        if artifact.draw_range_start == 0:
+            observed_scores = artifact.observed_scores
+        elif artifact.observed_scores.size:
+            raise ValueError("Only the first draw block may contain observed scores.")
+        null_blocks.append(artifact.null_scores)
+        expected_start = artifact.draw_range_end
+    if expected_start != reference_snapshot.permutation_draws:
+        raise ValueError(
+            "Draw-block artifact coverage is incomplete: "
+            f"covered [0, {expected_start}) of {reference_snapshot.permutation_draws} draws."
+        )
+    if observed_scores is None:
+        raise ValueError("Draw-block reduction requires the first block's observed scores.")
+    null_scores = np.concatenate(null_blocks, axis=0)
+    if not np.isfinite(observed_scores).all() or not np.isfinite(null_scores).all():
+        raise ValueError("Draw-block reduction rejects non-finite observed or null scores.")
+    return ScoreOnlyInteractionArtifact(
+        status="score_only_completed",
+        draw_range_start=0,
+        draw_range_end=reference_snapshot.permutation_draws,
+        pair_names=canonical_pairs,
+        observed_scores=observed_scores,
+        null_scores=null_scores,
+        draw_ids=np.arange(reference_snapshot.permutation_draws, dtype=np.int64),
+        control_snapshot=reference_snapshot,
+    )
+
+
+def reduce_score_only_interaction_artifacts(
+    artifacts: list[ScoreOnlyInteractionArtifact],
+    *,
+    spec: InteractionDiscoverySpec,
+    contract: CanonicalExecutionContract,
+    expected_pair_names: tuple[str, ...] | None = None,
+) -> InteractionDiscoveryResult:
+    """Reduce verified score-only artifacts through the one canonical path.
+
+    Artifact arrival order is meaningful: every artifact must cover the next
+    contiguous canonical draw range over the complete candidate family. The
+    reducer never sorts or repairs ranges, identities, checksums, or candidate
+    names because doing so could hide a partial or reordered family decision.
+    """
+    if not artifacts:
+        raise ValueError("Score-only reduction requires at least one artifact.")
+    expected_controls = canonical_execution_contract_from_specs(spec).interaction_controls
+    if contract.interaction_controls != expected_controls:
+        raise ValueError(
+            "Canonical interaction controls do not match the reducer interaction spec."
+        )
+
+    assembled = reduce_interaction_draw_blocks(
+        artifacts,
+        spec=spec,
+        contract=contract,
+        expected_pair_names=expected_pair_names,
+    )
+    reference_snapshot = assembled.control_snapshot
+
+    canonical_pairs = reference_snapshot.candidate_pair_names
+    if not canonical_pairs:
         empty_pair_scores = pd.DataFrame(
             columns=[
                 "pair_name",
@@ -2822,36 +3718,8 @@ def reduce_score_only_interaction_artifacts(
             summary=empty_summary,
         )
 
-    expected_start = 0
-    for position, artifact in enumerate(artifacts):
-        if artifact.status != "score_only_completed":
-            raise ValueError(
-                f"Artifact {position} has status {artifact.status!r}; a non-empty family "
-                "requires completed score-only artifacts."
-            )
-        if artifact.pair_range_start != expected_start:
-            raise ValueError(
-                "Score-only artifact ranges are reordered or do not provide contiguous coverage: "
-                f"artifact {position} begins at {artifact.pair_range_start}, "
-                f"expected {expected_start}."
-            )
-        if artifact.pair_range_end > len(canonical_pairs):
-            raise ValueError("Score-only artifact range exceeds the canonical candidate family.")
-        expected_pairs = canonical_pairs[artifact.pair_range_start : artifact.pair_range_end]
-        if artifact.pair_names != expected_pairs:
-            raise ValueError(
-                "Score-only artifact pair ordering differs from the canonical candidate-family "
-                "range."
-            )
-        expected_start = artifact.pair_range_end
-    if expected_start != len(canonical_pairs):
-        raise ValueError(
-            "Score-only artifact coverage is incomplete: "
-            f"covered [0, {expected_start}) of {len(canonical_pairs)} candidate pairs."
-        )
-
-    all_observed = np.concatenate([artifact.observed_scores for artifact in artifacts])
-    global_null = np.concatenate([artifact.null_scores for artifact in artifacts], axis=1)
+    all_observed = assembled.observed_scores
+    global_null = assembled.null_scores
     expected_shape = (reference_snapshot.permutation_draws, len(canonical_pairs))
     if global_null.shape != expected_shape:
         raise ValueError(

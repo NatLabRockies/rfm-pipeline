@@ -827,10 +827,22 @@ def _project_quota_availability(
         capture_output=True,
         text=True,
     )
-    project_match = re.search(r"(?m)^\s*([0-9]+)\s+P\s+", project.stdout)
+    project_match = re.search(r"(?m)^\s*([0-9]+)\s+([P-])\s+", project.stdout)
     if project_match is None:
         raise ValueError("could not parse the Lustre project ID")
     project_id = project_match.group(1)
+    if project_id == "0" or project_match.group(2) != "P":
+        available_bytes, available_inodes = _filesystem_availability(project_root)
+        return (
+            available_bytes,
+            available_inodes,
+            {
+                "project_command": ["lfs", "project", "-d", project_root],
+                "project_stdout": project.stdout,
+                "project_id": project_id,
+                "quota_mode": "filesystem_available_no_project_quota",
+            },
+        )
     quota = run_command(
         ["lfs", "quota", "-hp", project_id, project_root],
         check=True,
@@ -869,6 +881,7 @@ def _project_quota_availability(
         "quota_bytes": quota_bytes,
         "used_inodes": used_inodes,
         "quota_inodes": quota_inodes,
+        "quota_mode": "project_quota",
     }
     return quota_bytes - used_bytes, available_inodes, audit
 

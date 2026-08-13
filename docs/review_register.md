@@ -307,6 +307,143 @@ ______________________________________________________________________
   multi-id chain, empty/bad-type rejection, single-stage cascade
   expansion, stage-suffixed manifest lookup, and idempotency).
 
+## REVIEW-0012 — G11 phased authorization could submit stale or partial science
+
+- Date: 2026-08-12
+- Severity: P0 / HPC-submission integrity
+- Status: fixed in the current uncommitted integration branch
+- Evidence:
+  - preflight required current remaining AU to equal the original package
+    allocation value, which becomes false as soon as an earlier tranche spends
+    AU and makes later phases impossible to authorize honestly;
+  - all confirmatory stages shared one broad `production` preflight rather than
+    exact Gate-B, applied-production, and Gate-C script/resource inventories;
+  - phased execution compared contract and inventory but omitted source and
+    dependency-lock identity before invoking the scheduler;
+  - phase authorization accepted prerequisite-shaped JSON without proving that
+    it was the packaged reducer artifact protected by the packaged reducer
+    `_SUCCESS.json`; and
+  - a reducer depended only on a successful `afterany` audit. An audit can
+    successfully report incomplete workers, so that dependency alone could
+    release scientific reduction after a worker failure.
+- Resolution:
+  - tranche-specific same-day preflights now use current positive remaining AU
+    and require it to exceed 125% of the selected tranche envelope;
+  - phases are exactly `pilot`, `development`, `gate_b`, `gate_p`, and `gate_c`;
+  - execution binds source, contract, lock, campaign inventory, current date,
+    resource freeze, and authorization hashes before scheduler calls;
+  - prerequisite decisions must be the exact packaged reducer outputs, be
+    listed in content-addressed scientific artifacts, and have a valid packaged
+    reducer result and success marker; and
+  - reducers require `afterok` on all worker jobs plus the `afterany` audit,
+    while audits remain available for failure diagnosis.
+- Tests: new negative tests reject source/lock drift, stale inventory, forged
+  prerequisites, and invalid phase evidence; focused HPC package suite and the
+  complete `./test_repo.sh --check` gate pass.
+- Blocks merge/submission: no after commit and clean-cluster preflight; the
+  current dirty/uncommitted worktree and unresolved live Kestrel evidence still
+  block scheduler submission.
+
+## REVIEW-0013 — G11 resource classes and authorization were under-bound
+
+- Date: 2026-08-12
+- Severity: P0 / one-shot HPC execution integrity
+- Status: fixed in the current uncommitted integration branch
+- Evidence: null calibration unnecessarily ran all recovery comparators; one
+  strong-recovery pilot resource request covered both 160x160x4 null jobs and
+  2000x160x40 recovery jobs; a selected 1,998-draw schedule did not scale
+  simulation walltime; the BSM driver was dynamically imported without a
+  manifest hash; and written phase authorization omitted package/preflight/
+  prerequisite identities that it had validated.
+- Resolution: comparator artifacts are mandatory only for all strong/stress
+  records; a three-profile exact-scale null pilot now freezes a separate Gate-B
+  null array while the strong array retains recovery-pilot resources; the two
+  arrays still feed one 5,600-record reducer; selected interaction draws scale
+  both simulation resource classes; the recovery driver and applied-data
+  preparer are content-bound; and
+  schema-v2 authorization binds run, source, lock, inventory, preflight, and
+  prerequisite hashes at write, submission, and worker execution boundaries.
+- Validation: prospective failures were observed for comparator scope,
+  1,998-draw scaling, driver identity, authorization replay, and resource-array
+  separation before implementation; focused regressions and the complete HPC
+  package suite pass after repair.
+- Blocks merge/submission: unresolved live Kestrel/data/commit evidence remains
+  unchanged; no scheduler command was executed.
+
+## REVIEW-0014 — Demo runtime scratch accumulated on local workstations
+
+- Date: 2026-08-12
+- Severity: P0 / local execution availability
+- Status: fixed in the current uncommitted integration branch
+- Evidence: the demo runtime used `tempfile.mkdtemp` without an owner, leaving
+  roughly 65 MiB after each construction. More than 800 directories exhausted
+  the laptop filesystem. Context-owned temporary directories fixed ordinary
+  Python calls, but notebook kernels could still be terminated before their
+  finalizers ran and left six smaller remnants after a complete gate.
+- Resolution: demo contexts now own a `TemporaryDirectory`; the notebook runner
+  also assigns each kernel a scratch parent inside its own temporary execution
+  directory, which is removed after the subprocess exits regardless of kernel
+  finalization. Pytest now retains at most one failed temporary run and removes
+  successful-run scratch, instead of retaining three package-heavy runs.
+  Neither production paths nor HPC retention policy changed.
+- Validation: both prospective cleanup regressions pass; a real manuscript
+  notebook completed without increasing the residual demo-directory count; the
+  six pre-fix notebook remnants were removed; zero demo directories remained;
+  three pre-policy pytest runs totaling 3.0 GiB were removed; and local free
+  space was 194 GiB after cleanup. The complete repository gate
+  passed before the final notebook-boundary hardening, and its affected focused
+  tests plus the real-notebook execution passed afterward.
+- Blocks merge/submission: no; this is laptop scratch hygiene only.
+
+## REVIEW-0015 — Pilot preflight and campaign admission envelope were incomplete
+
+- Date: 2026-08-12
+- Severity: P0 / one-shot HPC execution integrity
+- Status: fixed in the current uncommitted integration branch
+- Evidence: pilot executes the BSM Gate-B-null and recovery paths, but pilot
+  preflight skipped every bound BSM executable/config hash. Full package
+  generation also tolerated a nonempty destination. The reported 175,449-AU,
+  9,528-GiB, 57,165-inode envelope covered primary attempts plus headroom but
+  omitted the contract's one permitted infrastructure retry for each of 7,593
+  workers, contrary to the manuscript handoff's requirement to budget every
+  attempt and retry slot.
+- Resolution: pilot preflight now validates the BSM adapter, recovery driver,
+  DGP contract, and applied-data preparer; all package generation requires an
+  empty destination; and whole-campaign plus tranche preflight envelopes
+  include all retry worker resources/artifacts before applying 25% campaign
+  headroom. The provisional worst-case pre-pilot bound is now 438,589 AUs,
+  19,019 GiB, and 114,113 inodes. The no-retry planning estimate remains
+  140,167 AUs, while primary requested walltime would charge at most 175,449
+  AUs before post-pilot resource selection.
+- Operational closure: a `live-smoke` command gathers same-day `aus_report`,
+  clean Git/commit, Lustre project-quota, scratch-capacity, and exact pilot
+  `sbatch --test-only` evidence into hashed records. Its scheduler command path
+  is restricted to `sbatch --test-only`; it cannot submit work.
+- Validation: prospective tests failed for stale full-package roots, stale BSM
+  pilot bytes, missing live-smoke implementation, and unresolved allocation;
+  the focused HPC package suite passes after repair.
+- Blocks merge/submission: yes until the paired repos are committed, BSM pins
+  that exact RFM commit, clean checkouts are installed on Kestrel, and the live
+  smoke passes against the actual allocation/quota. No scheduler job ran.
+
+### 2026-08-13 correction — worst-case retry reservation rejected
+
+The 438,589-AU figure above is retained as audit history, not as the operative
+budget. It assumes all 7,593 workers consume their complete requested walltime,
+all 7,593 workers use their one permitted retry, and a further 25% campaign
+factor is applied. That is a scheduler stress bound, not expected experiment
+usage, and it made a 25,000-AU publication campaign impossible by construction.
+
+The implemented policy now uses the minimum defensible control: live smoke is
+zero-AU `sbatch --test-only`; the bounded pilot is checked as its own tranche;
+accepted pilot telemetry freezes the lowest projected-AU profiles; and a final
+package is rejected unless the whole projected campaign plus one shared 20%
+overrun/retry reserve fits the fixed 25,000-AU ceiling. Individual retry
+authorization remains limited to eligible infrastructure failures and the retry
+package rebuilds the audit/reducer dependency chain. The deterministic
+post-pilot test fixture projects 23,021 AUs including the completed pilot,
+resolution, confirmatory production, and shared reserve.
+
 ## Independent review of alignment diff b96442b..e31fb15 (round 3 remediation)
 
 - REVIEW-R3-01 \[BLOCKING, fixed-by R3-S01\]: multiplicity_controlled_interaction_selection

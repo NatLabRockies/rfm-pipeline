@@ -50,7 +50,7 @@ def test_RS_S01_exact_method_selects_padj_le_alpha():
     obs = np.array([5.0, 1.0, 3.0])
     null = np.array([[2.0, 0.5, 1.0], [4.0, 0.8, 2.0], [1.0, 0.2, 0.9], [6.0, 0.3, 2.5]])
     selected, p_values, _ = multiplicity_controlled_interaction_selection(
-        obs, null, alpha=0.5, method="max_t"
+        obs, null, alpha=0.5, method="max_stat_adjusted_p_mc"
     )
     # padj = [0.4, 1.0, 0.6]; alpha=0.5 -> only pair 0.
     np.testing.assert_allclose(p_values, [0.4, 1.0, 0.6])
@@ -70,7 +70,7 @@ def test_RS_S01_global_null_fwer_is_controlled():
         obs = data[0]
         null = data[1:]
         selected, _, _ = multiplicity_controlled_interaction_selection(
-            obs, null, alpha=alpha, method="max_t"
+            obs, null, alpha=alpha, method="max_stat_adjusted_p_mc"
         )
         if selected.any():
             false_reject += 1
@@ -89,4 +89,6 @@ def test_RS_S01_input_validation():
     with pytest.raises(ValueError):
         max_t_adjusted_pvalues(obs, null[:, :1])  # column mismatch
     with pytest.raises(ValueError):
-        multiplicity_controlled_interaction_selection(obs, null, alpha=1.5, method="max_t")
+        multiplicity_controlled_interaction_selection(
+            obs, null, alpha=1.5, method="max_stat_adjusted_p_mc"
+        )

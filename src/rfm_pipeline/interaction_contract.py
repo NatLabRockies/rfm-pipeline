@@ -34,6 +34,38 @@ def _sha256_names(names: tuple[str, ...]) -> str:
     return _sha256_bytes(_canonical_json(list(names)))
 
 
+def _seed_schedule_identity(
+    *, stage_seed: int, permutation_draws: int, n_training_rows: int
+) -> tuple[str, str]:
+    """Return the exact score-seed and response-row schedule identities."""
+    schedule_rng = np.random.default_rng(stage_seed)
+    score_seeds = np.asarray(
+        [int(schedule_rng.integers(0, 2**31)) for _ in range(permutation_draws + 1)],
+        dtype=np.int64,
+    )
+    permutation_digest = hashlib.sha256()
+    permutation_digest.update(repr((permutation_draws, n_training_rows)).encode("utf-8"))
+    for score_seed in score_seeds[1:]:
+        row_order = np.random.default_rng(int(score_seed)).permutation(n_training_rows)
+        permutation_digest.update(np.asarray(row_order, dtype=np.int64).tobytes(order="C"))
+    return _sha256_array(score_seeds), permutation_digest.hexdigest()
+
+
+def _current_source_and_lock_hashes() -> tuple[str, str]:
+    """Hash the live implementation tree and dependency lock for reuse checks."""
+    repo_root = Path(__file__).resolve().parents[2]
+    source_digest = hashlib.sha256()
+    for source_path in sorted((repo_root / "src" / "rfm_pipeline").rglob("*.py")):
+        source_digest.update(str(source_path.relative_to(repo_root)).encode("utf-8"))
+        source_digest.update(b"\0")
+        source_digest.update(source_path.read_bytes())
+        source_digest.update(b"\0")
+    lock_path = repo_root / "pixi.lock"
+    if not lock_path.is_file():
+        raise ValueError("Control snapshot requires the repository dependency lockfile.")
+    return source_digest.hexdigest(), _sha256_bytes(lock_path.read_bytes())
+
+
 def _plain_dataclass_dict(value: Any) -> dict[str, Any]:
     """Return a deterministic JSON-compatible dataclass mapping."""
     if not is_dataclass(value):
@@ -59,9 +91,10 @@ class CanonicalExecutionContract:
     def __post_init__(self) -> None:
         """Validate exact maxT and terminal-refit controls."""
         method = self.interaction_controls.get("selection_method")
-        if method != "max_t":
+        if method != "max_stat_adjusted_p_mc":
             raise ValueError(
-                f"Canonical interaction controls require selection_method='max_t'; got {method!r}."
+                "Canonical interaction controls require "
+                f"selection_method='max_stat_adjusted_p_mc'; got {method!r}."
             )
         alpha = float(self.interaction_controls.get("selection_alpha", 0.0))
         draws = int(self.interaction_controls.get("permutation_count_B", 0))
@@ -233,6 +266,11 @@ class ControlSnapshot:
 
     schema_version: int
     contract_sha256: str
+    implementation_source_sha256: str
+    dependency_lock_sha256: str
+    stage_seed: int
+    score_seed_schedule_sha256: str
+    permutation_index_schedule_sha256: str
     candidate_pair_names: tuple[str, ...]
     candidate_family_sha256: str
     training_sample_ids_sha256: str
@@ -254,12 +292,26 @@ class ControlSnapshot:
             raise ValueError(
                 "Control snapshot candidate-family checksum does not match pair order."
             )
+        for name, value in (
+            ("contract_sha256", self.contract_sha256),
+            ("implementation_source_sha256", self.implementation_source_sha256),
+            ("dependency_lock_sha256", self.dependency_lock_sha256),
+            ("score_seed_schedule_sha256", self.score_seed_schedule_sha256),
+            ("permutation_index_schedule_sha256", self.permutation_index_schedule_sha256),
+        ):
+            if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+                raise ValueError(f"Control snapshot {name} is not a SHA-256 digest.")
 
     def to_dict(self) -> dict[str, Any]:
         """Return a serialization-safe snapshot payload."""
         return {
             "schema_version": int(self.schema_version),
             "contract_sha256": self.contract_sha256,
+            "implementation_source_sha256": self.implementation_source_sha256,
+            "dependency_lock_sha256": self.dependency_lock_sha256,
+            "stage_seed": int(self.stage_seed),
+            "score_seed_schedule_sha256": self.score_seed_schedule_sha256,
+            "permutation_index_schedule_sha256": self.permutation_index_schedule_sha256,
             "candidate_pair_names": list(self.candidate_pair_names),
             "candidate_family_sha256": self.candidate_family_sha256,
             "training_sample_ids_sha256": self.training_sample_ids_sha256,
@@ -276,6 +328,11 @@ class ControlSnapshot:
         required = {
             "schema_version",
             "contract_sha256",
+            "implementation_source_sha256",
+            "dependency_lock_sha256",
+            "stage_seed",
+            "score_seed_schedule_sha256",
+            "permutation_index_schedule_sha256",
             "candidate_pair_names",
             "candidate_family_sha256",
             "training_sample_ids_sha256",
@@ -291,6 +348,11 @@ class ControlSnapshot:
         return cls(
             schema_version=int(data["schema_version"]),
             contract_sha256=str(data["contract_sha256"]),
+            implementation_source_sha256=str(data["implementation_source_sha256"]),
+            dependency_lock_sha256=str(data["dependency_lock_sha256"]),
+            stage_seed=int(data["stage_seed"]),
+            score_seed_schedule_sha256=str(data["score_seed_schedule_sha256"]),
+            permutation_index_schedule_sha256=str(data["permutation_index_schedule_sha256"]),
             candidate_pair_names=tuple(str(name) for name in data["candidate_pair_names"]),
             candidate_family_sha256=str(data["candidate_family_sha256"]),
             training_sample_ids_sha256=str(data["training_sample_ids_sha256"]),
@@ -336,9 +398,21 @@ def build_control_snapshot(
     if len(component_names) != len(set(component_names)):
         raise ValueError("Control snapshot component names must be unique.")
     draws = int(contract.interaction_controls["permutation_count_B"])
+    stage_seed = int(contract.interaction_controls["random_seed"])
+    score_seed_hash, permutation_schedule_hash = _seed_schedule_identity(
+        stage_seed=stage_seed,
+        permutation_draws=draws,
+        n_training_rows=int(training_ids.size),
+    )
+    source_hash, lock_hash = _current_source_and_lock_hashes()
     return ControlSnapshot(
         schema_version=1,
         contract_sha256=contract.checksum,
+        implementation_source_sha256=source_hash,
+        dependency_lock_sha256=lock_hash,
+        stage_seed=stage_seed,
+        score_seed_schedule_sha256=score_seed_hash,
+        permutation_index_schedule_sha256=permutation_schedule_hash,
         candidate_pair_names=tuple(str(name) for name in candidate_pair_names),
         candidate_family_sha256=_sha256_names(tuple(str(name) for name in candidate_pair_names)),
         training_sample_ids_sha256=_sha256_array(training_ids),
@@ -361,10 +435,31 @@ def verify_control_snapshot(
         raise ValueError(
             "Control snapshot contract checksum differs from the canonical execution contract."
         )
+    current_source_hash, current_lock_hash = _current_source_and_lock_hashes()
+    if snapshot.implementation_source_sha256 != current_source_hash:
+        raise ValueError("Control snapshot implementation source hash differs from live bytes.")
+    if snapshot.dependency_lock_sha256 != current_lock_hash:
+        raise ValueError("Control snapshot dependency lock hash differs from live bytes.")
     expected_draws = int(contract.interaction_controls["permutation_count_B"])
     if snapshot.permutation_draws != expected_draws:
         raise ValueError(
             "Control snapshot permutation draw count differs from the canonical execution contract."
+        )
+    expected_stage_seed = int(contract.interaction_controls["random_seed"])
+    if snapshot.stage_seed != expected_stage_seed:
+        raise ValueError(
+            "Control snapshot stage seed differs from the canonical execution contract."
+        )
+    expected_score_hash, expected_permutation_hash = _seed_schedule_identity(
+        stage_seed=expected_stage_seed,
+        permutation_draws=expected_draws,
+        n_training_rows=snapshot.n_training_rows,
+    )
+    if snapshot.score_seed_schedule_sha256 != expected_score_hash:
+        raise ValueError("Control snapshot score-seed schedule differs from the frozen seed.")
+    if snapshot.permutation_index_schedule_sha256 != expected_permutation_hash:
+        raise ValueError(
+            "Control snapshot permutation-index schedule differs from the frozen seed and rows."
         )
     expected_family_checksum = _sha256_names(snapshot.candidate_pair_names)
     if snapshot.candidate_family_sha256 != expected_family_checksum:

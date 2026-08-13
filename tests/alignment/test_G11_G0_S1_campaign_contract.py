@@ -12,7 +12,9 @@ from rfm_pipeline.campaign_contract import (
     build_campaign_inventory,
     compute_contract_hash,
     compute_operating_characteristic_table,
+    fixed_family_pair_order,
     largest_passing_wilson_count,
+    select_resolution_draw_count,
     validate_campaign_inventory,
     validate_contract_hash,
     validate_predictor_design,
@@ -119,6 +121,116 @@ def test_g11_contract_null_regimes_each_1000_reps():
 
 def test_g11_contract_strong_regimes_each_200_reps():
     assert all(s.n_replicates == 200 for s in G11_CONTRACT.scenarios if s.kind == "strong")
+
+
+def test_g11_contract_uses_prespecified_calibration_and_recovery_scales():
+    """Null calibration and recovery must not silently share a development scale."""
+    null_scenarios = [scenario for scenario in G11_CONTRACT.scenarios if scenario.kind == "null"]
+    recovery_scenarios = [
+        scenario for scenario in G11_CONTRACT.scenarios if scenario.kind in {"strong", "stress"}
+    ]
+    development = [scenario for scenario in G11_CONTRACT.scenarios if scenario.kind == "dev"]
+
+    assert {(s.n_train, s.n_eval, s.n_response) for s in null_scenarios} == {(160, 80, 4)}
+    assert {(s.n_train, s.n_eval, s.n_response) for s in recovery_scenarios} == {(2000, 500, 40)}
+    assert {(s.n_train, s.n_eval, s.n_response) for s in development} == {(160, 80, 4)}
+
+
+def test_g11_contract_freezes_no_rerun_campaign_controls():
+    assert G11_CONTRACT.resolution_base_draws == 999
+    assert G11_CONTRACT.resolution_max_multiplier == 4
+    assert G11_CONTRACT.resolution_family_size == 100
+    assert G11_CONTRACT.resolution_boundary_interval == pytest.approx((0.04, 0.06))
+    assert G11_CONTRACT.fixed_family_replicates == 1000
+    assert G11_CONTRACT.bootstrap_draws == 2000
+    assert G11_CONTRACT.n_tree_estimators == 250
+    assert G11_CONTRACT.n_stability_subsamples == 50
+    assert G11_CONTRACT.stability_jaccard_threshold == pytest.approx(0.75)
+    assert G11_CONTRACT.stability_spearman_threshold == pytest.approx(0.90)
+    assert G11_CONTRACT.power_gate_lower_bound == pytest.approx(0.80)
+    assert G11_CONTRACT.pilot_repetitions == 3
+    assert G11_CONTRACT.retryable_scheduler_states == (
+        "BOOT_FAIL",
+        "NODE_FAIL",
+        "PREEMPTED",
+    )
+    assert G11_CONTRACT.recovery_comparators == (
+        "proposed_terminal_workflow",
+        "oracle_ols",
+        "elastic_net_algebraic_library",
+        "raw_input_boosted_tree",
+    )
+    assert G11_CONTRACT.comparator_cv_folds == 3
+    assert G11_CONTRACT.elastic_net_alpha_grid == (0.0001, 0.001, 0.01, 0.1, 1.0)
+    assert G11_CONTRACT.elastic_net_l1_ratio_grid == (0.1, 0.5, 0.9)
+    assert G11_CONTRACT.boosted_tree_candidate_grid == (
+        (100, 2, 0.05),
+        (250, 3, 0.05),
+    )
+    assert G11_CONTRACT.comparator_failure_action == "terminal_failure_no_retry"
+
+
+def _resolution_records(*, unstable_first_comparison: bool) -> list[dict[str, object]]:
+    records = []
+    base = G11_CONTRACT.resolution_base_draws
+    for fixture in ("nondegenerate_null", "strong_planted"):
+        for schedule_index in range(G11_CONTRACT.resolution_schedules):
+            p_base = np.linspace(0.001, 0.999, G11_CONTRACT.resolution_family_size)
+            p_2b = p_base[::-1] if unstable_first_comparison else p_base.copy()
+            records.append(
+                {
+                    "fixture_kind": fixture,
+                    "schedule_index": schedule_index,
+                    "adjusted_p_values": {
+                        str(base): p_base.tolist(),
+                        str(2 * base): p_2b.tolist(),
+                        str(4 * base): p_2b.tolist(),
+                    },
+                }
+            )
+    return records
+
+
+def test_resolution_selector_uses_smallest_passing_nested_prefix() -> None:
+    accepted = select_resolution_draw_count(
+        _resolution_records(unstable_first_comparison=False),
+        G11_CONTRACT,
+    )
+    assert accepted["selected_B_interaction"] == 999
+
+    fallback = select_resolution_draw_count(
+        _resolution_records(unstable_first_comparison=True),
+        G11_CONTRACT,
+    )
+    assert fallback["selected_B_interaction"] == 1998
+
+
+def test_resolution_selector_requires_every_schedule_outside_boundary_band() -> None:
+    records = _resolution_records(unstable_first_comparison=False)
+    first = records[0]
+    base = G11_CONTRACT.resolution_base_draws
+    p_base = np.asarray(first["adjusted_p_values"][str(base)], dtype=float)
+    p_2b = np.asarray(first["adjusted_p_values"][str(2 * base)], dtype=float)
+    p_base[0] = 0.10
+    p_2b[0] = 0.01
+    first["adjusted_p_values"][str(base)] = p_base.tolist()
+    first["adjusted_p_values"][str(2 * base)] = p_2b.tolist()
+
+    selected = select_resolution_draw_count(records, G11_CONTRACT)
+
+    assert selected["selected_B_interaction"] == 1998
+
+
+def test_fixed_family_order_is_hashed_unique_nested_and_type_nonvacuous() -> None:
+    order = fixed_family_pair_order(G11_CONTRACT)
+
+    assert len(order) == 1000
+    assert len(set(order)) == 1000
+    for family_size in G11_CONTRACT.fixed_family_sizes:
+        prefix = order[:family_size]
+        assert any("binary_0:binary_1" == pair for pair in prefix)
+        assert any(pair.startswith("x") and ":binary_" in pair for pair in prefix)
+        assert any(pair.startswith("x") and ":x" in pair for pair in prefix)
 
 
 def test_g11_operating_characteristic_table():

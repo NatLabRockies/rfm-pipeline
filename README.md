@@ -100,6 +100,43 @@ For large datasets, individual stages can be distributed across SLURM array
 jobs. See `configs/sensitivity_study/study_spec.yml` for an example sensitivity
 study configuration and `scripts/submit_sensitivity_study.sh` for submission.
 
+The publication G11 campaign has a separate fail-closed pilot live-smoke
+entrypoint. Run it only from the clean, pinned Kestrel RFM checkout. Set the
+private campaign config's `allocation_quota` to the hard 25,000-AU campaign
+ceiling. Pass the current remaining value reported by `aus_report` when that
+tool lists the Slurm account. If it does not list the account, pass the same
+25,000-AU hard ceiling; the command then requires `sacctmgr` to confirm the
+exact Kestrel account association:
+
+```bash
+pixi run python -m rfm_pipeline.hpc_campaign_package live-smoke \
+  --package-root /scratch/$USER/bsm_runs/g11-live-smoke-package \
+  --evidence-root /projects/bsm/g11_authorizations/live-smoke-YYYY-MM-DD \
+  --repo-root /projects/bsm/software/rfm-pipeline \
+  --config /projects/bsm/g11_authorizations/g11-kestrel-live.yml \
+  --remaining-au <current-aus_report-value>
+```
+
+Both destination directories must be new or empty. The command runs only
+read-only allocation/Git/Lustre probes and `sbatch --test-only`; it never calls
+ordinary `sbatch`. It fails unless `nationalpfa` is confirmed by `sacctmgr` and
+the entered value is either bound by `aus_report` or equals the configured hard
+ceiling, both checkouts are clean and content-bound,
+every pilot script uses `debug` with at most one hour walltime and passes
+`--test-only`, output roots are empty, and the pilot's estimate plus 20% reserve
+fits. A successful live smoke produces
+`HPC_SUBMISSION_READY` evidence but does not authorize submission.
+
+The 25,000-AU ceiling applies to the complete campaign. `sbatch --test-only`
+uses zero AUs. The bounded pilot is admitted separately; its telemetry selects
+the minimum projected-AU resource profiles. The regenerated final package
+counts the already-run pilot and resolution with confirmatory production and
+rejects the campaign unless their combined projected use, including the single
+20% reserve for runtime overrun and occasional infrastructure retries, is at
+most 25,000 AUs. The pre-pilot worst-case walltime calculation is diagnostic
+only because it assumes every job runs to its time limit and is not an
+allocation forecast.
+
 ## Sensitivity study
 
 The package includes a built-in sensitivity study framework for evaluating

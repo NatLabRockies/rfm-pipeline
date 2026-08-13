@@ -2,8 +2,9 @@ hpc_campaign:
   run_id: g11-kestrel-nosubmit
   scheduler_submission_permitted: false
   cluster:
-    account: bsm
+    account: nationalpfa
     max_array_size: 11000
+    max_array_concurrency: 64
     cpu_cores_per_node: 104
     memory_per_node_gb: 240
     partitions:
@@ -20,5 +21,28 @@ hpc_campaign:
     scratch_template: /scratch/{user}/bsm_runs/{run_id}
     kill_wait: 30s
     job_requeue: false
-    allocation_unit: node_hour
-    allocation_quota: "16000"
+    allocation_unit: AU
+    cpu_charge_factor: 10.0
+    qos_factor: 1.0
+    # These are validated on Kestrel by the non-submitting preflight.  The
+    # package cannot submit if any checkout, file hash, or data path differs.
+    rfm_repository_root: /projects/bsm/software/rfm-pipeline
+    bsm_repository_root: /projects/bsm/software/bsm-public-rf
+    scientific_adapter_relative_path: scripts/g11_campaign_adapter.py
+    scientific_adapter_sha256: 48e9d42d59e6b0aa563b6c2d93714e58f3e483fb1afaffc5deaed8cee6d3f7b1
+    bsm_recovery_driver_relative_path: scripts/run_bsm_recovery_study.py
+    bsm_recovery_driver_sha256: f8aee6fca141666e8e061762d3fa930e5fe494449b99c78316c19702fdeeee46
+    bsm_dgp_contract_relative_path: configs/bsm_dgp_contract.yaml
+    bsm_dgp_contract_sha256: 4c035f618dbc86708f3568139648101173799e518f068b56523317aad93decaf
+    applied_data_preparer_relative_path: scripts/prepare_g11_applied_data.py
+    applied_data_preparer_sha256: 8999e4dc11fef135d8b15c6276b45d0694c9e6804ccf94956ddad064d3697362
+    applied_config_relative_path: configs/manuscript_case_study.yml
+    applied_config_sha256: 0d0e9ddf09776c890285824253218ae1cabf6afb6d32976f196bba7f58df6070
+    applied_data_root: /scratch/dhetting/bsm/g11_applied_prepared_v1
+    # Filled with the byte hash of dataset_manifest.json after deterministic
+    # splitting; UNKNOWN keeps every non-pilot phase locked.
+    applied_data_manifest_sha256: db88a36423da5d94f5ebdc9fd566f4b85df6ad1096950dba3eebf4d4bd1f134c
+    authorization_root: /projects/bsm/g11_authorizations
+    # Hard whole-campaign ceiling for this manuscript version. The live-smoke
+    # CLI separately accepts the current remaining AU from same-day aus_report.
+    allocation_quota: "25000"

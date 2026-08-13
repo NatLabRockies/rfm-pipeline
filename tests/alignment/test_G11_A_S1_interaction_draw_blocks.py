@@ -30,12 +30,12 @@ def _spec() -> InteractionDiscoverySpec:
         aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
         null_threshold_quantile=0.95,
         retained_pairs_reference=0,
-        permutation_count_B=199,
+        permutation_count_B=999,
         random_seed=20260811,
         n_jobs=1,
-        selection_method="max_t",
+        selection_method="max_stat_adjusted_p_mc",
         selection_alpha=0.05,
-        minimum_selection_draws=199,
+        minimum_selection_draws=999,
     )
 
 
@@ -94,8 +94,8 @@ def test_serial_and_complete_family_draw_blocks_are_identical(monkeypatch) -> No
     contract = canonical_execution_contract_from_specs(spec)
 
     serial = discover_interaction_scores_only(*tables, spec, contract=contract)
-    first = _block(tables, spec, contract, 0, 73)
-    second = _block(tables, spec, contract, 73, 199)
+    first = _block(tables, spec, contract, 0, 373)
+    second = _block(tables, spec, contract, 373, 999)
     combined = reduce_interaction_draw_blocks([first, second], spec=spec, contract=contract)
 
     assert first.pair_names == ("x1:x2", "x1:x3", "x2:x3")
@@ -110,8 +110,8 @@ def test_serial_and_complete_family_draw_blocks_are_identical(monkeypatch) -> No
 @pytest.mark.parametrize(
     ("ranges", "message"),
     [
-        ([(0, 73), (74, 199)], "coverage"),
-        ([(0, 73), (72, 199)], "reordered|duplicate|contiguous"),
+        ([(0, 373), (374, 999)], "coverage"),
+        ([(0, 373), (372, 999)], "reordered|duplicate|contiguous"),
     ],
 )
 def test_draw_block_reducer_rejects_gaps_and_duplicate_draws(monkeypatch, ranges, message) -> None:
@@ -133,8 +133,8 @@ def test_draw_block_reducer_rejects_reordered_mixed_and_corrupt_artifacts(
     tables = _tables()
     spec = _spec()
     contract = canonical_execution_contract_from_specs(spec)
-    first = _block(tables, spec, contract, 0, 100)
-    second = _block(tables, spec, contract, 100, 199)
+    first = _block(tables, spec, contract, 0, 500)
+    second = _block(tables, spec, contract, 500, 999)
 
     with pytest.raises(ValueError, match="reordered"):
         reduce_interaction_draw_blocks([second, first], spec=spec, contract=contract)
@@ -185,3 +185,30 @@ def test_hpc_manifest_partitions_interaction_draws_not_pairs(tmp_path) -> None:
         (333, 666),
         (666, 999),
     ]
+
+
+def test_fixed_family_scoring_preserves_the_prespecified_pair_order(monkeypatch) -> None:
+    monkeypatch.setattr(stages, "_score_interaction_permutation", _fake_score)
+    tables = _tables()
+    spec = _spec()
+    contract = canonical_execution_contract_from_specs(spec)
+
+    block = score_interaction_draw_block(
+        *tables,
+        spec,
+        draw_start=0,
+        draw_end=2,
+        contract=contract,
+        candidate_pair_names=("x2:x3", "x1:x2"),
+    )
+    assert block.pair_names == ("x2:x3", "x1:x2")
+
+    with pytest.raises(ValueError, match="prespecified candidate pair"):
+        score_interaction_draw_block(
+            *tables,
+            spec,
+            draw_start=0,
+            draw_end=2,
+            contract=contract,
+            candidate_pair_names=("x1:missing",),
+        )

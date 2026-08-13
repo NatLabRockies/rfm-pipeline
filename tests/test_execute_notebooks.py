@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tools.execute_notebooks import build_nbconvert_command, discover_notebooks
+from tools.execute_notebooks import (
+    build_nbconvert_command,
+    discover_notebooks,
+    execute_notebook,
+)
 
 
 def test_discover_notebooks_selects_expected_directories(tmp_path: Path) -> None:
@@ -34,3 +38,28 @@ def test_build_nbconvert_command_uses_temp_output_dir(tmp_path: Path) -> None:
     assert "notebook" in command
     assert "--ExecutePreprocessor.timeout=900" in command
     assert "--ExecutePreprocessor.kernel_name=pixi-kernel-python3" in command
+
+
+def test_execute_notebook_bounds_kernel_demo_storage(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    notebook = tmp_path / "notebooks" / "demo.ipynb"
+    notebook.parent.mkdir()
+    notebook.write_text("{}", encoding="utf-8")
+    observed: dict[str, Path] = {}
+
+    def fake_run(command, *, cwd, check, env):
+        del command, cwd, check
+        demo_parent = Path(env["RFM_MANUSCRIPT_DEMO_PARENT"])
+        demo_parent.mkdir(parents=True)
+        leaked_kernel_directory = demo_parent / "rfm_pipeline_demo_interrupted_kernel"
+        leaked_kernel_directory.mkdir()
+        (leaked_kernel_directory / "artifact.bin").write_bytes(b"test")
+        observed["demo_parent"] = demo_parent
+
+    monkeypatch.setattr("tools.execute_notebooks.subprocess.run", fake_run)
+
+    execute_notebook(notebook, tmp_path, timeout=900)
+
+    assert not observed["demo_parent"].exists()

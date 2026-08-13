@@ -195,7 +195,7 @@ def _run_production_discovery(
         n_jobs=1,
         parallel_backend="threading",
         enforce_permutation_adequacy=enforce_permutation_adequacy,
-        selection_method="max_t",
+        selection_method="max_stat_adjusted_p_mc",
         selection_alpha=selection_alpha,
     )
     result = discover_manuscript_interactions(

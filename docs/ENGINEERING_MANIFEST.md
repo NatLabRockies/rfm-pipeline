@@ -266,3 +266,38 @@ ______________________________________________________________________
 1. Keep `docs/AGENT_SYNC.md` aligned with current branch/status
 
 **This is the PRIMARY purpose of the repository. Everything else is secondary.**
+
+## 2026-08-12 G11 integration checkpoint
+
+- [x] Implement the full typed G11 scientific contract and stage-native
+  recovery/applied execution path on `g11-integration-reconcile`.
+- [x] Generate fail-closed content-addressed pilot, resolution, Gate-B,
+  applied-production, and Gate-C plans with exact-coverage audits and
+  worker-gated scientific reducers.
+- [x] Validate source/lock/inventory/resource/authorization identity and exact
+  packaged prerequisites before any phased scheduler call.
+- [x] Bind the BSM recovery driver and schema-v2 phase authorization to the
+  exact run/package/preflight/prerequisite identities; pilot and dispatch Gate-B
+  null and strong records as distinct resource classes under one scientific
+  decision.
+- [x] Add a no-submit Kestrel pilot live-smoke command that requires fresh
+  empty package/evidence roots, captures same-day AU/Git/Lustre evidence, runs
+  exact `sbatch --test-only`, and validates retry-aware capacity without any
+  ordinary `sbatch` path.
+- [x] Enforce the author-supplied 25,000-AU whole-campaign ceiling. Admit the
+  bounded pilot independently, select minimum-projected-AU profiles from its
+  telemetry, and reject the regenerated final package unless the already-run
+  pilot and resolution plus confirmatory production and one shared 20% reserve
+  fit the ceiling. Do not reserve a second full campaign merely because one
+  retry is permitted.
+- [x] Pass the complete repository gate: `./test_repo.sh --check`.
+- [ ] Commit the reviewed RFM and paired BSM integration diffs and install those
+  exact clean commits in the Kestrel checkouts.
+- [ ] Prepare the immutable applied train/holdout layout and bind its manifest
+  hash in the campaign configuration; this is a production preflight task, not
+  permission to read holdout responses during adaptive work.
+- [ ] Freeze same-day remaining AU, project/scratch byte and inode availability,
+  and exact `sbatch --test-only` hashes for the tranche being authorized.
+- [ ] Run the bounded pilot only after the user separately authorizes scheduler
+  submission; use accepted telemetry to freeze production resources, then run
+  resolution. No confirmatory phase is authorized by this checkpoint.

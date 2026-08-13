@@ -278,7 +278,7 @@ class TestMultiplicityControlledSelection:
         obs = np.array([1.0, 0.5, 0.2])
         null = np.abs(np.random.default_rng(0).standard_normal((100, 3)))
         selected, pvals, thresh = multiplicity_controlled_interaction_selection(
-            obs, null, alpha=0.05, method="max_t"
+            obs, null, alpha=0.05, method="max_stat_adjusted_p_mc"
         )
         assert selected.dtype == bool
         assert pvals.shape == (3,)
@@ -325,7 +325,7 @@ class TestMultiplicityControlledSelection:
         obs = np.abs(rng.standard_normal(15))
         null = np.abs(rng.standard_normal((200, 15)))
         selected, pvals, thresh = multiplicity_controlled_interaction_selection(
-            obs, null, alpha=0.05, method="max_t"
+            obs, null, alpha=0.05, method="max_stat_adjusted_p_mc"
         )
         expected_pvals = max_t_adjusted_pvalues(obs, null)
         expected_thresh = max_t_critical_value(null, alpha=0.05)
@@ -371,7 +371,7 @@ class TestNullFalseSelectionControl:
         """FWER max-stat: with a fixed seed, no false selections under null."""
         observed, null_stats, _ = null_data
         selected, _, _ = multiplicity_controlled_interaction_selection(
-            observed, null_stats, alpha=0.05, method="max_t"
+            observed, null_stats, alpha=0.05, method="max_stat_adjusted_p_mc"
         )
         # Under the null all selections are false positives.
         n_false = int(selected.sum())
@@ -406,7 +406,7 @@ class TestNullFalseSelectionControl:
         """
         observed, null_stats, _ = null_data
         _, pvals, _ = multiplicity_controlled_interaction_selection(
-            observed, null_stats, alpha=0.05, method="max_t"
+            observed, null_stats, alpha=0.05, method="max_stat_adjusted_p_mc"
         )
         assert float(np.median(pvals)) > 0.05, (
             "Median p-value under the null is suspiciously low; "
@@ -417,7 +417,7 @@ class TestNullFalseSelectionControl:
         """The FWER max-stat threshold must be >= the per-pair 0.95 quantile for any pair."""
         observed, null_stats, _ = null_data
         _, _, fwer_thresh = multiplicity_controlled_interaction_selection(
-            observed, null_stats, alpha=0.05, method="max_t"
+            observed, null_stats, alpha=0.05, method="max_stat_adjusted_p_mc"
         )
         per_pair_95 = np.quantile(null_stats, 0.95, axis=0)
         assert fwer_thresh >= float(per_pair_95.max()) - 1e-12
@@ -448,7 +448,7 @@ class TestPlantedSignalRecovery:
         """FWER max-stat selects the planted pair."""
         observed, null_stats, pairs, true_cols = signal_data
         selected, _, _ = multiplicity_controlled_interaction_selection(
-            observed, null_stats, alpha=0.05, method="max_t"
+            observed, null_stats, alpha=0.05, method="max_stat_adjusted_p_mc"
         )
         for col in true_cols:
             assert selected[col], (
@@ -481,7 +481,7 @@ class TestPlantedSignalRecovery:
         """FWER max-stat does not produce excessive false positives under signal."""
         observed, null_stats, _, true_cols = signal_data
         selected, _, _ = multiplicity_controlled_interaction_selection(
-            observed, null_stats, alpha=0.05, method="max_t"
+            observed, null_stats, alpha=0.05, method="max_stat_adjusted_p_mc"
         )
         false_positives = int(selected.sum()) - sum(1 for c in true_cols if selected[c])
         n_pairs = len(observed)
@@ -496,7 +496,7 @@ class TestPlantedSignalRecovery:
         """The planted pair's empirical p-value should be near the minimum achievable."""
         observed, null_stats, _, true_cols = signal_data
         _, pvals, _ = multiplicity_controlled_interaction_selection(
-            observed, null_stats, alpha=0.05, method="max_t"
+            observed, null_stats, alpha=0.05, method="max_stat_adjusted_p_mc"
         )
         B = null_stats.shape[0]
         min_pval = 1.0 / (B + 1.0)

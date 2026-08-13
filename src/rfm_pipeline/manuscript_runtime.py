@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +40,11 @@ class ManuscriptRuntimeContext:
     unresolved_placeholders: tuple[str, ...]
     local_override_used: bool
     runtime_dir: Path | None
+    _temporary_directory: tempfile.TemporaryDirectory[str] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -325,13 +331,22 @@ def resolve_manuscript_runtime(repo_root: Path) -> ManuscriptRuntimeContext:
         output_root.mkdir(parents=True, exist_ok=True)
         mode = "real"
         runtime_dir = None
+        temporary_directory = None
     else:
         # Silent demo fallback by design: dev machines commonly have a
         # local override pointing at remote scratch paths that do not
         # exist locally. Strict real-mode callers
         # (`build_manuscript_notebook_context(real_required=True)`) raise
         # loud separately when this resolves to demo.
-        runtime_dir = Path(tempfile.mkdtemp(prefix="rfm_pipeline_demo_"))
+        demo_parent_value = os.environ.get("RFM_MANUSCRIPT_DEMO_PARENT")
+        demo_parent = Path(demo_parent_value).expanduser().resolve() if demo_parent_value else None
+        if demo_parent is not None:
+            demo_parent.mkdir(parents=True, exist_ok=True)
+        temporary_directory = tempfile.TemporaryDirectory(
+            prefix="rfm_pipeline_demo_",
+            dir=demo_parent,
+        )
+        runtime_dir = Path(temporary_directory.name)
         artifact_paths = write_demo_manuscript_artifacts(runtime_dir / "data")
         output_root = runtime_dir / "artifacts"
         output_root.mkdir(parents=True, exist_ok=True)
@@ -345,6 +360,7 @@ def resolve_manuscript_runtime(repo_root: Path) -> ManuscriptRuntimeContext:
         unresolved_placeholders=unresolved,
         local_override_used=local_override_used,
         runtime_dir=runtime_dir,
+        _temporary_directory=temporary_directory,
     )
 
 

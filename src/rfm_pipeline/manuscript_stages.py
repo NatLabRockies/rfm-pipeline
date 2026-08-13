@@ -18,7 +18,7 @@ import subprocess
 import time
 import warnings
 from collections.abc import Collection
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from itertools import combinations
 from pathlib import Path
 from statistics import NormalDist
@@ -430,6 +430,130 @@ class EmpiricalNullScreeningResult:
 
 
 @dataclass(frozen=True)
+class ScreeningNullBlock:
+    """One content-addressed contiguous screening-permutation draw block."""
+
+    draw_start: int
+    draw_end: int
+    n_training_rows: int
+    feature_names: tuple[str, ...]
+    component_names: tuple[str, ...]
+    observed_statistics: np.ndarray
+    component_coefficients: np.ndarray
+    feature_active: np.ndarray
+    null_statistics: np.ndarray
+    schedule_hash: str
+    input_hash: str
+    artifact_hash: str
+
+    def _payload_hash(self) -> str:
+        digest = hashlib.sha256()
+        digest.update(
+            json.dumps(
+                {
+                    "draw_start": self.draw_start,
+                    "draw_end": self.draw_end,
+                    "n_training_rows": self.n_training_rows,
+                    "feature_names": self.feature_names,
+                    "component_names": self.component_names,
+                    "schedule_hash": self.schedule_hash,
+                    "input_hash": self.input_hash,
+                },
+                sort_keys=True,
+            ).encode("utf-8")
+        )
+        for array in (
+            self.observed_statistics,
+            self.component_coefficients,
+            self.feature_active,
+            self.null_statistics,
+        ):
+            digest.update(_digest_array(np.asarray(array)).encode("ascii"))
+        return digest.hexdigest()
+
+    def validate(self) -> None:
+        """Verify draw coverage, shapes, finiteness, and the artifact hash."""
+        if not 0 <= self.draw_start < self.draw_end:
+            raise ValueError("screening draw block has an invalid range")
+        if self.n_training_rows < 1:
+            raise ValueError("screening draw block must record positive training rows")
+        n_features = len(self.feature_names)
+        if self.observed_statistics.shape != (n_features,):
+            raise ValueError("screening observed-statistic shape mismatch")
+        if self.component_coefficients.shape != (n_features, len(self.component_names)):
+            raise ValueError("screening coefficient shape mismatch")
+        if self.feature_active.shape != (n_features,):
+            raise ValueError("screening feature-active shape mismatch")
+        if self.null_statistics.shape != (self.draw_end - self.draw_start, n_features):
+            raise ValueError("screening null-block shape mismatch")
+        if not all(
+            np.isfinite(array).all()
+            for array in (
+                self.observed_statistics,
+                self.component_coefficients,
+                self.null_statistics,
+            )
+        ):
+            raise ValueError("screening draw block contains non-finite values")
+        if self.artifact_hash != self._payload_hash():
+            raise ValueError("screening artifact hash does not match its bytes")
+
+    def write(self, path: Path) -> None:
+        """Write a self-verifying screening block to a new directory."""
+        self.validate()
+        path.mkdir(parents=True, exist_ok=True)
+        if any(path.iterdir()):
+            raise FileExistsError(f"refusing to overwrite non-empty screening block path: {path}")
+        npz_path = path / "screening_block.npz"
+        np.savez_compressed(
+            npz_path,
+            observed_statistics=self.observed_statistics,
+            component_coefficients=self.component_coefficients,
+            feature_active=self.feature_active,
+            null_statistics=self.null_statistics,
+        )
+        metadata = {
+            "draw_start": self.draw_start,
+            "draw_end": self.draw_end,
+            "n_training_rows": self.n_training_rows,
+            "feature_names": list(self.feature_names),
+            "component_names": list(self.component_names),
+            "schedule_hash": self.schedule_hash,
+            "input_hash": self.input_hash,
+            "artifact_hash": self.artifact_hash,
+            "npz_sha256": hashlib.sha256(npz_path.read_bytes()).hexdigest(),
+        }
+        (path / "screening_block.json").write_text(
+            json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
+    @classmethod
+    def read(cls, path: Path) -> ScreeningNullBlock:
+        """Read and verify a screening block from disk."""
+        metadata = json.loads((path / "screening_block.json").read_text(encoding="utf-8"))
+        npz_path = path / "screening_block.npz"
+        if hashlib.sha256(npz_path.read_bytes()).hexdigest() != metadata["npz_sha256"]:
+            raise ValueError("screening NPZ checksum mismatch")
+        with np.load(npz_path, allow_pickle=False) as arrays:
+            block = cls(
+                draw_start=int(metadata["draw_start"]),
+                draw_end=int(metadata["draw_end"]),
+                n_training_rows=int(metadata["n_training_rows"]),
+                feature_names=tuple(str(value) for value in metadata["feature_names"]),
+                component_names=tuple(str(value) for value in metadata["component_names"]),
+                observed_statistics=np.asarray(arrays["observed_statistics"], dtype=float),
+                component_coefficients=np.asarray(arrays["component_coefficients"], dtype=float),
+                feature_active=np.asarray(arrays["feature_active"], dtype=bool),
+                null_statistics=np.asarray(arrays["null_statistics"], dtype=float),
+                schedule_hash=str(metadata["schedule_hash"]),
+                input_hash=str(metadata["input_hash"]),
+                artifact_hash=str(metadata["artifact_hash"]),
+            )
+        block.validate()
+        return block
+
+
+@dataclass(frozen=True)
 class EmpiricalNullScreeningStageResult:
     """Empirical-null screening result plus paths written for notebook handoff.
 
@@ -694,7 +818,7 @@ def multiplicity_controlled_interaction_selection(
     observed_scores: np.ndarray,
     null_statistics: np.ndarray,
     alpha: float,
-    method: str = "max_t",
+    method: str = "max_stat_adjusted_p_mc",
 ) -> tuple[np.ndarray, np.ndarray, float | None]:
     """Select interaction pairs with multiplicity control over the full candidate family.
 
@@ -712,13 +836,13 @@ def multiplicity_controlled_interaction_selection(
         for all pairs in a single draw).
     alpha
         Error rate target.  Interpreted as the FWER level for
-        ``method='max_t'`` and as the FDR level for
+        ``method='max_stat_adjusted_p_mc'`` and as the FDR level for
         ``method='bh_fdr'``.
     method
         Multiplicity-correction procedure.  One of:
 
-        ``'max_t'``
-            Single-step max-statistic FWER control via
+        ``'max_stat_adjusted_p_mc'``
+            Finite-B single-step Monte Carlo maximum-statistic selection via
             :func:`max_t_critical_value`.
         ``'bh_fdr'``
             Benjamini-Hochberg FDR control via :func:`bh_fdr_selected`.
@@ -731,7 +855,8 @@ def multiplicity_controlled_interaction_selection(
         Empirical per-pair p-values of shape ``(n_pairs,)``.  Computed as
         ``(1 + #{b : null_b >= obs}) / (B + 1)``.
     threshold : float or None
-        The scalar FWER threshold when *method* is ``'max_t'``;
+        The scalar family threshold when *method* is
+        ``'max_stat_adjusted_p_mc'``;
         ``None`` for ``'bh_fdr'``.
 
     Raises
@@ -740,9 +865,10 @@ def multiplicity_controlled_interaction_selection(
         If *method* is not one of the supported strings, or if shape constraints
         on *observed_scores* / *null_statistics* are violated.
     """
-    if method not in {"max_t", "bh_fdr"}:
+    if method not in {"max_stat_adjusted_p_mc", "bh_fdr"}:
         raise ValueError(
-            f"Unknown multiplicity correction method: {method!r}. Expected 'max_t' or 'bh_fdr'."
+            "Unknown multiplicity correction method: "
+            f"{method!r}. Expected 'max_stat_adjusted_p_mc' or 'bh_fdr'."
         )
     if not (0.0 < alpha < 1.0):
         raise ValueError(f"alpha must be in the open interval (0, 1); got {alpha!r}")
@@ -757,7 +883,7 @@ def multiplicity_controlled_interaction_selection(
         )
     B = null_statistics.shape[0]
     p_values = (1.0 + (null_statistics >= observed_scores[None, :]).sum(axis=0)) / (B + 1.0)
-    if method == "max_t":
+    if method == "max_stat_adjusted_p_mc":
         p_adj = max_t_adjusted_pvalues(observed_scores, null_statistics)
         selected_exact = p_adj <= alpha
         # Score-space critical value: floor(alpha*(B+1))-th largest row-max of null.
@@ -797,8 +923,8 @@ class InteractionDiscoverySpec:
     source_workflow_equivalence_status
         Validation status for equivalence to the manuscript interaction workflow.
     selection_method
-        Canonical multiplicity-correction procedure. ``"max_t"`` is the exact
-        finite-permutation, single-step maxT selector.
+        Canonical multiplicity-correction procedure. ``"max_stat_adjusted_p_mc"``
+        is the finite-B Monte Carlo single-step maximum-statistic selector.
     selection_alpha
         Family-wise error rate controlled by ``selection_method``.
     condition_main_effects
@@ -841,7 +967,7 @@ class InteractionDiscoverySpec:
     dask_cores_per_worker: int = 1
     dask_memory_per_worker: str = "4 GB"
     enforce_permutation_adequacy: bool = True
-    selection_method: str = "max_t"
+    selection_method: str = "max_stat_adjusted_p_mc"
     selection_alpha: float = 0.05
     condition_main_effects: bool = True
     main_effect_conditioning_degree: int = 2
@@ -849,17 +975,18 @@ class InteractionDiscoverySpec:
 
     def __post_init__(self) -> None:
         """Validate the neutral exact maxT controls without accepting aliases."""
-        if self.selection_method != "max_t":
+        if self.selection_method != "max_stat_adjusted_p_mc":
             raise ValueError(
-                "selection_method must be 'max_t'; legacy or approximate selection aliases "
+                "selection_method must be 'max_stat_adjusted_p_mc'; legacy or misleading "
+                "selection identifiers "
                 f"are not supported (got {self.selection_method!r})."
             )
         if not 0.0 < self.selection_alpha < 1.0:
             raise ValueError("selection_alpha must be in the open interval (0, 1).")
         if self.minimum_selection_draws < 199:
             raise ValueError(
-                "minimum_selection_draws must be at least 199 for the canonical "
-                "finite-permutation maxT contract."
+                "minimum_selection_draws must be at least 199 for the generic "
+                "finite-B Monte Carlo maximum-statistic contract."
             )
 
 
@@ -1092,6 +1219,129 @@ class SparseSelectionStabilityResult:
     final_stable_support: pd.DataFrame
     provenance: pd.DataFrame
     summary: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class SparseFullFitArtifact:
+    """One immutable full-data EBIC fit reused by all stability workers."""
+
+    candidate_names: tuple[str, ...]
+    component_names: tuple[str, ...]
+    n_training_rows: int
+    feature_active: np.ndarray
+    full_support_mask: np.ndarray
+    full_importance: np.ndarray
+    coefficient_matrix: np.ndarray
+    component_model_selection: pd.DataFrame
+    input_hash: str
+    artifact_hash: str
+
+    def write(self, path: Path) -> None:
+        """Write the immutable full-data sparse fit to a new directory."""
+        if path.exists():
+            raise FileExistsError(f"refusing to overwrite sparse full-fit artifact: {path}")
+        path.mkdir(parents=True)
+        arrays_path = path / "sparse_full_fit.npz"
+        np.savez_compressed(
+            arrays_path,
+            feature_active=self.feature_active,
+            full_support_mask=self.full_support_mask,
+            full_importance=self.full_importance,
+            coefficient_matrix=self.coefficient_matrix,
+        )
+        model_rows = self.component_model_selection.to_dict(orient="records")
+        metadata = {
+            "candidate_names": list(self.candidate_names),
+            "component_names": list(self.component_names),
+            "n_training_rows": self.n_training_rows,
+            "component_model_selection": model_rows,
+            "input_hash": self.input_hash,
+            "artifact_hash": self.artifact_hash,
+            "npz_sha256": hashlib.sha256(arrays_path.read_bytes()).hexdigest(),
+        }
+        (path / "sparse_full_fit.json").write_text(
+            json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    @classmethod
+    def read(cls, path: Path) -> SparseFullFitArtifact:
+        """Read and verify an immutable full-data sparse fit."""
+        metadata = json.loads((path / "sparse_full_fit.json").read_text(encoding="utf-8"))
+        arrays_path = path / "sparse_full_fit.npz"
+        if hashlib.sha256(arrays_path.read_bytes()).hexdigest() != metadata["npz_sha256"]:
+            raise ValueError("sparse full-fit NPZ checksum mismatch")
+        with np.load(arrays_path, allow_pickle=False) as arrays:
+            artifact = cls(
+                candidate_names=tuple(metadata["candidate_names"]),
+                component_names=tuple(metadata["component_names"]),
+                n_training_rows=int(metadata["n_training_rows"]),
+                feature_active=np.asarray(arrays["feature_active"], dtype=bool),
+                full_support_mask=np.asarray(arrays["full_support_mask"], dtype=bool),
+                full_importance=np.asarray(arrays["full_importance"], dtype=float),
+                coefficient_matrix=np.asarray(arrays["coefficient_matrix"], dtype=float),
+                component_model_selection=pd.DataFrame(metadata["component_model_selection"]),
+                input_hash=str(metadata["input_hash"]),
+                artifact_hash=str(metadata["artifact_hash"]),
+            )
+        if artifact.artifact_hash != _sparse_full_fit_hash(artifact):
+            raise ValueError("sparse full-fit artifact hash mismatch")
+        return artifact
+
+
+@dataclass(frozen=True)
+class SparseStabilityBlock:
+    """One stability-resample result bound to a frozen full sparse fit."""
+
+    resample_id: int
+    full_fit_hash: str
+    support_mask: np.ndarray
+    importance: np.ndarray
+    summary: dict[str, Any]
+    artifact_hash: str
+
+    def write(self, path: Path) -> None:
+        """Write one immutable stability resample block."""
+        if path.exists():
+            raise FileExistsError(f"refusing to overwrite sparse stability block: {path}")
+        path.mkdir(parents=True)
+        arrays_path = path / "sparse_stability_block.npz"
+        np.savez_compressed(
+            arrays_path,
+            support_mask=self.support_mask,
+            importance=self.importance,
+        )
+        metadata = {
+            "resample_id": self.resample_id,
+            "full_fit_hash": self.full_fit_hash,
+            "summary": self.summary,
+            "artifact_hash": self.artifact_hash,
+            "npz_sha256": hashlib.sha256(arrays_path.read_bytes()).hexdigest(),
+        }
+        (path / "sparse_stability_block.json").write_text(
+            json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    @classmethod
+    def read(cls, path: Path) -> SparseStabilityBlock:
+        """Read and verify one stability resample block."""
+        metadata = json.loads((path / "sparse_stability_block.json").read_text(encoding="utf-8"))
+        arrays_path = path / "sparse_stability_block.npz"
+        if hashlib.sha256(arrays_path.read_bytes()).hexdigest() != metadata["npz_sha256"]:
+            raise ValueError("sparse stability-block NPZ checksum mismatch")
+        with np.load(arrays_path, allow_pickle=False) as arrays:
+            block = cls(
+                resample_id=int(metadata["resample_id"]),
+                full_fit_hash=str(metadata["full_fit_hash"]),
+                support_mask=np.asarray(arrays["support_mask"], dtype=bool),
+                importance=np.asarray(arrays["importance"], dtype=float),
+                summary=dict(metadata["summary"]),
+                artifact_hash=str(metadata["artifact_hash"]),
+            )
+        if block.artifact_hash != _sparse_stability_block_hash(block):
+            raise ValueError("sparse stability-block artifact hash mismatch")
+        return block
 
 
 @dataclass(frozen=True)
@@ -1513,6 +1763,20 @@ class TrainFitAndFreezeResult:
 
 
 @dataclass(frozen=True)
+class TerminalTrainFitResult:
+    """Training-only HC3, pruning, final-refit, and model-freeze artifacts."""
+
+    freeze_result: TrainFitAndFreezeResult
+    prefilter_feature_names: tuple[str, ...]
+    hc3_feature_names: tuple[str, ...]
+    final_feature_names: tuple[str, ...]
+    hc3_wald_intervals: pd.DataFrame
+    hc3_inferential_filter_summary: pd.DataFrame
+    feature_pruning_impact: pd.DataFrame
+    feature_pruning_summary: pd.DataFrame
+
+
+@dataclass(frozen=True)
 class FrozenPredictionMatrices:
     """Frozen holdout truth and prediction matrices authorized by a model freeze.
 
@@ -1736,6 +2000,328 @@ def train_fit_and_freeze(
         x_means=x_means,
         x_scales=x_scales,
     )
+
+
+def train_mean_and_freeze(
+    y_train: np.ndarray,
+    *,
+    output_names: list[str],
+    contract_hash: str,
+) -> TrainFitAndFreezeResult:
+    """Freeze the training-mean baseline with an explicit zero-column design."""
+    values = np.asarray(y_train, dtype=np.float64)
+    if values.ndim != 2 or values.shape[0] < 1 or not np.isfinite(values).all():
+        raise ValueError("training-mean freeze requires a finite two-dimensional response")
+    if len(output_names) != values.shape[1] or len(set(output_names)) != len(output_names):
+        raise ValueError("training-mean output names must uniquely match response columns")
+    coefficient = np.empty((0, values.shape[1]), dtype=np.float64)
+    intercept = values.mean(axis=0)
+    y_train_min = tuple(float(value) for value in values.min(axis=0))
+    y_train_max = tuple(float(value) for value in values.max(axis=0))
+    y_train_mean = tuple(float(value) for value in intercept)
+    y_train_variance = tuple(float(value) for value in values.var(axis=0))
+    model_digest = _compute_frozen_model_digest(coefficient, intercept)
+    freeze_hash = _compute_model_freeze_hash(
+        contract_hash=contract_hash,
+        feature_names=(),
+        output_names=tuple(output_names),
+        n_train_rows=values.shape[0],
+        y_train_min=y_train_min,
+        y_train_max=y_train_max,
+        y_train_mean=y_train_mean,
+        y_train_variance=y_train_variance,
+        x_means=(),
+        x_scales=(),
+        model_digest=model_digest,
+    )
+    return TrainFitAndFreezeResult(
+        freeze_manifest=ModelFreezeManifest(
+            freeze_hash=freeze_hash,
+            contract_hash=contract_hash,
+            feature_names=(),
+            output_names=tuple(output_names),
+            n_train_rows=values.shape[0],
+            y_train_min=y_train_min,
+            y_train_max=y_train_max,
+            y_train_mean=y_train_mean,
+            y_train_variance=y_train_variance,
+            x_means=(),
+            x_scales=(),
+            model_digest=model_digest,
+        ),
+        coef=coefficient,
+        intercept=intercept,
+        x_means=np.empty(0, dtype=np.float64),
+        x_scales=np.empty(0, dtype=np.float64),
+    )
+
+
+def terminal_train_fit_and_freeze(
+    x_train: pd.DataFrame,
+    y_train: pd.DataFrame,
+    *,
+    spec: FinalManuscriptArtifactsSpec,
+    contract_hash: str,
+) -> TerminalTrainFitResult:
+    """Run the terminal HC3/pruning/refit path without a holdout interface.
+
+    ``x_train`` is the already materialized typed candidate design surviving
+    sparse/stability selection. The function deliberately has no evaluation or
+    holdout parameter: it emits a verified model freeze before another process
+    may open those bytes.
+    """
+    _validate_final_manuscript_artifacts_spec(spec)
+    x_numeric = x_train.apply(pd.to_numeric, errors="raise")
+    y_numeric = y_train.apply(pd.to_numeric, errors="raise")
+    if x_numeric.empty or y_numeric.empty:
+        raise ValueError("terminal train fit requires non-empty training X and Y")
+    if not x_numeric.index.equals(y_numeric.index):
+        raise ValueError("terminal train fit requires exactly aligned training row IDs")
+    if x_numeric.columns.duplicated().any() or y_numeric.columns.duplicated().any():
+        raise ValueError("terminal train fit rejects duplicate feature or output IDs")
+    if (
+        not np.isfinite(x_numeric.to_numpy(dtype=float)).all()
+        or not np.isfinite(y_numeric.to_numpy(dtype=float)).all()
+    ):
+        raise ValueError("terminal train fit requires finite numeric values")
+
+    prefilter_names = tuple(str(name) for name in x_numeric.columns)
+    hc3_intervals, hc3_summary = _build_hc3_inferential_filter_tables(
+        x_numeric,
+        y_numeric,
+        alpha=spec.inferential_filter_alpha,
+        interval_method=spec.inferential_filter_interval_method,
+        output_subset_mode=spec.hc3_output_subset_mode,
+        output_fraction=spec.hc3_output_fraction,
+        output_names=spec.hc3_output_names,
+        max_outputs=spec.hc3_output_max_outputs,
+        random_seed=spec.hc3_output_random_seed,
+        subset_metric=spec.hc3_output_subset_metric,
+    )
+    hc3_names = tuple(_hc3_retained_feature_names(hc3_summary))
+    hc3_x = x_numeric.loc[:, list(hc3_names)]
+    hc3_fit = fit_final_ols(hc3_x, y_numeric)
+    support_metadata = pd.DataFrame(
+        {
+            "feature_name": list(hc3_names),
+            "feature_type": ["typed_candidate"] * len(hc3_names),
+            "origin": ["sparse_stability_support"] * len(hc3_names),
+        }
+    )
+    pruning_impact, _curve, pruning_summary = _build_feature_pruning_diagnostics(
+        final_fit=hc3_fit,
+        x_train=hc3_x,
+        y_train=y_numeric,
+        final_support_features=support_metadata,
+        spec=spec,
+    )
+    removed = set(
+        pruning_impact.loc[
+            pruning_impact["selected_by_effective_cutoff"].astype(bool),
+            "feature_name",
+        ].astype(str)
+    )
+    final_names = tuple(name for name in hc3_names if name not in removed)
+    if not final_names:
+        raise ValueError("terminal pruning removed every HC3-retained feature")
+    freeze_result = train_fit_and_freeze(
+        x_numeric.loc[:, list(final_names)].to_numpy(dtype=np.float64),
+        y_numeric.to_numpy(dtype=np.float64),
+        feature_names=list(final_names),
+        output_names=[str(name) for name in y_numeric.columns],
+        contract_hash=contract_hash,
+    )
+    return TerminalTrainFitResult(
+        freeze_result=freeze_result,
+        prefilter_feature_names=prefilter_names,
+        hc3_feature_names=hc3_names,
+        final_feature_names=final_names,
+        hc3_wald_intervals=hc3_intervals,
+        hc3_inferential_filter_summary=hc3_summary,
+        feature_pruning_impact=pruning_impact,
+        feature_pruning_summary=pruning_summary,
+    )
+
+
+def write_terminal_train_fit_and_freeze(
+    *, terminal: TerminalTrainFitResult, output_dir: Path
+) -> None:
+    """Persist a content-verified terminal training bundle."""
+    terminal.freeze_result.verify_freeze_hash()
+    output_dir.mkdir(parents=True, exist_ok=False)
+    model_dir = output_dir / "model"
+    write_train_fit_and_freeze(freeze_result=terminal.freeze_result, output_dir=model_dir)
+    tables = {
+        "hc3_wald_intervals.csv": terminal.hc3_wald_intervals,
+        "hc3_inferential_filter_summary.csv": terminal.hc3_inferential_filter_summary,
+        "feature_pruning_impact.csv": terminal.feature_pruning_impact,
+        "feature_pruning_summary.csv": terminal.feature_pruning_summary,
+    }
+    table_hashes: dict[str, str] = {}
+    for name, table in tables.items():
+        path = output_dir / name
+        table.to_csv(path, index=False)
+        table_hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    manifest = {
+        "schema_version": 1,
+        "freeze_hash": terminal.freeze_result.freeze_manifest.freeze_hash,
+        "prefilter_feature_names": list(terminal.prefilter_feature_names),
+        "hc3_feature_names": list(terminal.hc3_feature_names),
+        "final_feature_names": list(terminal.final_feature_names),
+        "model_manifest_sha256": hashlib.sha256(
+            (model_dir / "freeze_manifest.json").read_bytes()
+        ).hexdigest(),
+        "model_npz_sha256": hashlib.sha256(
+            (model_dir / "frozen_model.npz").read_bytes()
+        ).hexdigest(),
+        "table_sha256": table_hashes,
+    }
+    (output_dir / "terminal_manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+
+def write_train_fit_and_freeze(*, freeze_result: TrainFitAndFreezeResult, output_dir: Path) -> None:
+    """Persist one immutable training-only model bundle before holdout authorization."""
+    freeze_result.verify_freeze_hash()
+    output_dir.mkdir(parents=True, exist_ok=False)
+    model_path = output_dir / "frozen_model.npz"
+    np.savez_compressed(
+        model_path,
+        coef=np.asarray(freeze_result.coef, dtype=np.float64),
+        intercept=np.asarray(freeze_result.intercept, dtype=np.float64),
+        x_means=np.asarray(freeze_result.x_means, dtype=np.float64),
+        x_scales=np.asarray(freeze_result.x_scales, dtype=np.float64),
+    )
+    payload = asdict(freeze_result.freeze_manifest)
+    payload["model_npz_sha256"] = hashlib.sha256(model_path.read_bytes()).hexdigest()
+    (output_dir / "freeze_manifest.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+
+def _load_train_fit_and_freeze(freeze_dir: Path) -> TrainFitAndFreezeResult:
+    """Load and verify the frozen training bundle without accessing holdout paths."""
+    metadata_path = freeze_dir / "freeze_manifest.json"
+    model_path = freeze_dir / "frozen_model.npz"
+    payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    expected_npz_hash = str(payload.pop("model_npz_sha256"))
+    if hashlib.sha256(model_path.read_bytes()).hexdigest() != expected_npz_hash:
+        raise ModelFreezeAuthorizationError("Frozen model file checksum mismatch.")
+    manifest = ModelFreezeManifest(
+        freeze_hash=str(payload["freeze_hash"]),
+        contract_hash=str(payload["contract_hash"]),
+        feature_names=tuple(str(value) for value in payload["feature_names"]),
+        output_names=tuple(str(value) for value in payload["output_names"]),
+        n_train_rows=int(payload["n_train_rows"]),
+        y_train_min=tuple(float(value) for value in payload["y_train_min"]),
+        y_train_max=tuple(float(value) for value in payload["y_train_max"]),
+        y_train_mean=tuple(float(value) for value in payload["y_train_mean"]),
+        y_train_variance=tuple(float(value) for value in payload["y_train_variance"]),
+        x_means=tuple(float(value) for value in payload["x_means"]),
+        x_scales=tuple(float(value) for value in payload["x_scales"]),
+        model_digest=str(payload["model_digest"]),
+    )
+    manifest.verify_freeze_hash()
+    with np.load(model_path, allow_pickle=False) as arrays:
+        result = TrainFitAndFreezeResult(
+            freeze_manifest=manifest,
+            coef=np.asarray(arrays["coef"], dtype=np.float64),
+            intercept=np.asarray(arrays["intercept"], dtype=np.float64),
+            x_means=np.asarray(arrays["x_means"], dtype=np.float64),
+            x_scales=np.asarray(arrays["x_scales"], dtype=np.float64),
+        )
+    result.verify_freeze_hash()
+    return result
+
+
+def holdout_predict_from_files(
+    *,
+    freeze_dir: Path,
+    x_holdout_path: Path,
+    y_holdout_path: Path,
+    holdout_ids: tuple[str, ...],
+    strata: np.ndarray,
+) -> FrozenPredictionMatrices:
+    """Authorize a frozen model before opening either holdout artifact."""
+    freeze_result = _load_train_fit_and_freeze(freeze_dir)
+    # The preceding load verifies the manifest, model-file checksum, and model
+    # payload. Only this evaluator entry point opens holdout paths.
+    x_holdout = np.load(x_holdout_path, allow_pickle=False)
+    y_holdout = np.load(y_holdout_path, allow_pickle=False)
+    return holdout_predict(
+        freeze_result,
+        x_holdout,
+        y_holdout,
+        holdout_ids=holdout_ids,
+        strata=strata,
+    )
+
+
+def write_frozen_prediction_matrices(*, frozen: FrozenPredictionMatrices, output_dir: Path) -> None:
+    """Persist the only artifact type accepted by bootstrap workers.
+
+    The bundle contains no model, training design, or holdout feature matrix.
+    Its metadata binds the exact row/output identities and eligibility ledger to
+    a checksum of the numeric truth/prediction payload.
+    """
+    frozen.validate()
+    output_dir.mkdir(parents=True, exist_ok=False)
+    matrices_path = output_dir / "frozen_predictions.npz"
+    np.savez_compressed(
+        matrices_path,
+        y_holdout=np.asarray(frozen.y_holdout, dtype=np.float64),
+        y_pred=np.asarray(frozen.y_pred, dtype=np.float64),
+        y_train_min=np.asarray(frozen.y_train_min, dtype=np.float64),
+        y_train_max=np.asarray(frozen.y_train_max, dtype=np.float64),
+        y_train_mean=np.asarray(frozen.y_train_mean, dtype=np.float64),
+        y_train_variance=np.asarray(frozen.y_train_variance, dtype=np.float64),
+    )
+    metadata = {
+        "schema_version": 1,
+        "freeze_hash": frozen.freeze_hash,
+        "output_names": list(frozen.output_names),
+        "truth_ids": list(frozen.truth_ids),
+        "prediction_ids": list(frozen.prediction_ids),
+        "strata": list(frozen.strata),
+        "eligibility_ledger_columns": list(frozen.eligibility_ledger.columns),
+        "eligibility_ledger": frozen.eligibility_ledger.to_dict(orient="records"),
+        "matrices_npz_sha256": hashlib.sha256(matrices_path.read_bytes()).hexdigest(),
+    }
+    (output_dir / "frozen_predictions.json").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+
+def read_frozen_prediction_matrices(output_dir: Path) -> FrozenPredictionMatrices:
+    """Load and byte-verify a bootstrap-only frozen prediction bundle."""
+    metadata = json.loads((output_dir / "frozen_predictions.json").read_text(encoding="utf-8"))
+    if int(metadata.get("schema_version", -1)) != 1:
+        raise ValueError("unsupported frozen-prediction schema version")
+    matrices_path = output_dir / "frozen_predictions.npz"
+    actual_checksum = hashlib.sha256(matrices_path.read_bytes()).hexdigest()
+    if actual_checksum != metadata.get("matrices_npz_sha256"):
+        raise ValueError("frozen-prediction NPZ checksum mismatch")
+    with np.load(matrices_path, allow_pickle=False) as arrays:
+        frozen = FrozenPredictionMatrices(
+            freeze_hash=str(metadata["freeze_hash"]),
+            y_holdout=np.asarray(arrays["y_holdout"], dtype=np.float64),
+            y_pred=np.asarray(arrays["y_pred"], dtype=np.float64),
+            y_train_min=np.asarray(arrays["y_train_min"], dtype=np.float64),
+            y_train_max=np.asarray(arrays["y_train_max"], dtype=np.float64),
+            y_train_mean=np.asarray(arrays["y_train_mean"], dtype=np.float64),
+            y_train_variance=np.asarray(arrays["y_train_variance"], dtype=np.float64),
+            output_names=tuple(str(value) for value in metadata["output_names"]),
+            truth_ids=tuple(str(value) for value in metadata["truth_ids"]),
+            prediction_ids=tuple(str(value) for value in metadata["prediction_ids"]),
+            strata=tuple(str(value) for value in metadata["strata"]),
+            eligibility_ledger=pd.DataFrame.from_records(
+                metadata["eligibility_ledger"],
+                columns=metadata["eligibility_ledger_columns"],
+            ),
+        )
+    frozen.validate()
+    return frozen
 
 
 def holdout_predict(
@@ -2699,6 +3285,166 @@ def screen_manuscript_empirical_null_terms(
     )
 
 
+def score_screening_draw_block(
+    input_matrix: pd.DataFrame,
+    feature_catalog: pd.DataFrame,
+    holdout_assignments: pd.DataFrame,
+    pca_scores: pd.DataFrame,
+    spec: EmpiricalNullScreeningSpec,
+    *,
+    draw_start: int,
+    draw_end: int,
+) -> ScreeningNullBlock:
+    """Score one contiguous block from the shared screening permutation schedule."""
+    if not 0 <= draw_start < draw_end <= spec.permutation_count_B:
+        raise ValueError("screening draw range must be inside [0, permutation_count_B)")
+    first_order_catalog = _first_order_feature_catalog(feature_catalog)
+    design = build_manuscript_feature_design(input_matrix, first_order_catalog)
+    feature_names = tuple(str(column) for column in design.columns if column != "sample_id")
+    component_names = tuple(_component_columns(pca_scores))
+    train_ids = _train_sample_ids(holdout_assignments)
+    x_train = _align_table_by_sample_id(design, train_ids, list(feature_names), "feature design")
+    y_train = _align_table_by_sample_id(pca_scores, train_ids, list(component_names), "PCA scores")
+    x_scaled, feature_active = _standardize_for_screening(x_train)
+    y_scaled, component_active = _standardize_for_screening(y_train)
+    if not component_active.any():
+        raise ValueError("All retained PCA components have zero training variance.")
+    coefficients = (x_scaled.T @ y_scaled) / float(len(x_scaled))
+    observed = np.linalg.norm(coefficients, axis=1)
+    observed[~feature_active] = 0.0
+
+    rng = np.random.default_rng(spec.random_seed)
+    seeds = np.asarray(
+        [int(rng.integers(0, 2**31)) for _ in range(spec.permutation_count_B)],
+        dtype=np.int64,
+    )
+    null_rows = []
+    for draw_index in range(draw_start, draw_end):
+        local_rng = np.random.default_rng(int(seeds[draw_index]))
+        permuted = y_scaled[local_rng.permutation(len(y_scaled)), :]
+        null_rows.append(np.linalg.norm((x_scaled.T @ permuted) / float(len(x_scaled)), axis=1))
+    null_statistics = np.vstack(null_rows)
+    null_statistics[:, ~feature_active] = 0.0
+    schedule_hash = hashlib.sha256(seeds.tobytes()).hexdigest()
+    input_hash = hashlib.sha256(
+        (
+            _digest_array(x_scaled)
+            + _digest_array(y_scaled)
+            + json.dumps(
+                {
+                    "feature_names": feature_names,
+                    "component_names": component_names,
+                    "statistic": spec.statistic,
+                    "q": spec.bh_q_screen,
+                    "B": spec.permutation_count_B,
+                },
+                sort_keys=True,
+            )
+        ).encode("utf-8")
+    ).hexdigest()
+    block = ScreeningNullBlock(
+        draw_start=draw_start,
+        draw_end=draw_end,
+        n_training_rows=len(x_train),
+        feature_names=feature_names,
+        component_names=component_names,
+        observed_statistics=observed,
+        component_coefficients=coefficients,
+        feature_active=feature_active,
+        null_statistics=null_statistics,
+        schedule_hash=schedule_hash,
+        input_hash=input_hash,
+        artifact_hash="",
+    )
+    block = replace(block, artifact_hash=block._payload_hash())
+    block.validate()
+    return block
+
+
+def reduce_screening_draw_blocks(
+    blocks: list[ScreeningNullBlock],
+    *,
+    spec: EmpiricalNullScreeningSpec,
+) -> EmpiricalNullScreeningResult:
+    """Reduce complete, ordered screening draw blocks through the canonical BH decision."""
+    if not blocks:
+        raise ValueError("screening reduction requires at least one draw block")
+    reference = blocks[0]
+    expected_start = 0
+    null_blocks: list[np.ndarray] = []
+    for position, block in enumerate(blocks):
+        block.validate()
+        if block.draw_start != expected_start:
+            raise ValueError(
+                "screening draw blocks must provide contiguous ordered coverage; "
+                f"block {position} starts at {block.draw_start}, expected {expected_start}"
+            )
+        if (
+            block.feature_names != reference.feature_names
+            or block.component_names != reference.component_names
+            or block.schedule_hash != reference.schedule_hash
+            or block.input_hash != reference.input_hash
+            or not np.array_equal(block.observed_statistics, reference.observed_statistics)
+            or not np.array_equal(block.component_coefficients, reference.component_coefficients)
+            or not np.array_equal(block.feature_active, reference.feature_active)
+        ):
+            raise ValueError("screening draw blocks do not share one frozen identity")
+        null_blocks.append(block.null_statistics)
+        expected_start = block.draw_end
+    if expected_start != spec.permutation_count_B:
+        raise ValueError("screening draw blocks do not cover the complete permutation schedule")
+
+    null_statistics = np.concatenate(null_blocks, axis=0)
+    p_values = (1.0 + (null_statistics >= reference.observed_statistics[None, :]).sum(axis=0)) / (
+        spec.permutation_count_B + 1.0
+    )
+    retained, bh_rank, bh_critical = _benjamini_hochberg_retention(p_values, q=spec.bh_q_screen)
+    feature_stats = _build_feature_screening_statistics(
+        feature_names=list(reference.feature_names),
+        observed=reference.observed_statistics,
+        p_values=p_values,
+        retained=retained,
+        bh_rank=bh_rank,
+        bh_critical=bh_critical,
+        feature_active=reference.feature_active,
+    )
+    retained_terms = (
+        feature_stats.loc[feature_stats["retained"]]
+        .copy()
+        .sort_values(
+            ["empirical_p_value", "observed_statistic", "feature_name"],
+            ascending=[True, False, True],
+            ignore_index=True,
+        )
+    )
+    if spec.max_retained_terms is not None:
+        retained_terms = retained_terms.head(spec.max_retained_terms).reset_index(drop=True)
+        retained_names = set(retained_terms["feature_name"].astype(str))
+        feature_stats["retained"] = feature_stats["feature_name"].astype(str).isin(retained_names)
+    return EmpiricalNullScreeningResult(
+        feature_screening_statistics=feature_stats,
+        component_coefficients=_build_component_coefficients(
+            feature_names=list(reference.feature_names),
+            component_names=list(reference.component_names),
+            coefficients=reference.component_coefficients,
+        ),
+        permutation_null_summary=_build_permutation_null_summary(
+            list(reference.feature_names), null_statistics
+        ),
+        retained_terms=retained_terms,
+        provenance=_build_empirical_null_screening_provenance(spec),
+        summary=_build_empirical_null_screening_summary(
+            n_training_rows=reference.n_training_rows,
+            n_candidate_terms=len(reference.feature_names),
+            n_active_terms=int(reference.feature_active.sum()),
+            n_components=len(reference.component_names),
+            n_retained_terms=len(retained_terms),
+            min_p_value=float(p_values.min()),
+            spec=spec,
+        ),
+    )
+
+
 def write_empirical_null_screening_artifacts(
     result: EmpiricalNullScreeningResult,
     output_root: Path,
@@ -2853,7 +3599,7 @@ def interaction_discovery_spec_from_case_study_config(
         dask_workers=(int(dask_workers_raw) if dask_workers_raw is not None else None),
         dask_cores_per_worker=int(interaction.get("dask_cores_per_worker", 1)),
         dask_memory_per_worker=str(interaction.get("dask_memory_per_worker", "4 GB")),
-        selection_method=str(interaction.get("selection_method", "max_t")),
+        selection_method=str(interaction.get("selection_method", "max_stat_adjusted_p_mc")),
         selection_alpha=float(interaction.get("selection_alpha", 0.05)),
         condition_main_effects=bool(interaction.get("condition_main_effects", True)),
         main_effect_conditioning_degree=int(interaction.get("main_effect_conditioning_degree", 2)),
@@ -3204,6 +3950,7 @@ def score_interaction_draw_block(
     draw_start: int,
     draw_end: int,
     contract: CanonicalExecutionContract | None = None,
+    candidate_pair_names: tuple[str, ...] | None = None,
 ) -> ScoreOnlyInteractionArtifact:
     """Score the complete interaction family for one permutation-draw block.
 
@@ -3284,6 +4031,18 @@ def score_interaction_draw_block(
         minimum_count=0,
     )
     all_candidates = _generate_pairwise_interactions(retained_first_order)
+    if candidate_pair_names is not None:
+        if len(candidate_pair_names) != len(set(candidate_pair_names)):
+            raise ValueError("prespecified candidate pair names contain duplicates")
+        available = {
+            pair_name: (pair_name, left, right) for pair_name, left, right in all_candidates
+        }
+        missing = [pair_name for pair_name in candidate_pair_names if pair_name not in available]
+        if missing:
+            raise ValueError(
+                f"prespecified candidate pair is absent from the retained family: {missing[:5]}"
+            )
+        all_candidates = [available[pair_name] for pair_name in candidate_pair_names]
     component_names = _component_columns(pca_scores)
     train_ids = _train_sample_ids(holdout_assignments)
     y_train = _align_table_by_sample_id(pca_scores, train_ids, component_names, "PCA scores")
@@ -4886,6 +5645,298 @@ def select_manuscript_sparse_support(
         stability_resample_summary=resample_summary,
         stability_feature_summary=stability_feature_summary,
         final_stable_support=final_stable_support,
+        provenance=provenance,
+        summary=summary,
+    )
+
+
+def _sparse_full_fit_hash(artifact: SparseFullFitArtifact) -> str:
+    digest = hashlib.sha256()
+    digest.update(
+        json.dumps(
+            {
+                "candidate_names": artifact.candidate_names,
+                "component_names": artifact.component_names,
+                "n_training_rows": artifact.n_training_rows,
+                "input_hash": artifact.input_hash,
+                "component_model_selection": artifact.component_model_selection.to_dict(
+                    orient="records"
+                ),
+            },
+            sort_keys=True,
+        ).encode("utf-8")
+    )
+    for array in (
+        artifact.feature_active,
+        artifact.full_support_mask,
+        artifact.full_importance,
+        artifact.coefficient_matrix,
+    ):
+        digest.update(_digest_array(np.asarray(array)).encode("ascii"))
+    return digest.hexdigest()
+
+
+def _sparse_stability_block_hash(block: SparseStabilityBlock) -> str:
+    digest = hashlib.sha256()
+    digest.update(
+        json.dumps(
+            {
+                "resample_id": block.resample_id,
+                "full_fit_hash": block.full_fit_hash,
+                "summary": block.summary,
+            },
+            sort_keys=True,
+        ).encode("utf-8")
+    )
+    digest.update(_digest_array(block.support_mask).encode("ascii"))
+    digest.update(_digest_array(block.importance).encode("ascii"))
+    return digest.hexdigest()
+
+
+def _prepare_sparse_arrays(
+    input_matrix: pd.DataFrame,
+    feature_catalog: pd.DataFrame,
+    holdout_assignments: pd.DataFrame,
+    pca_scores: pd.DataFrame,
+    retained_terms: pd.DataFrame,
+    retained_interaction_pairs: pd.DataFrame,
+    retained_transformations: pd.DataFrame,
+    spec: SparseSelectionStabilitySpec,
+) -> tuple[list[str], pd.DataFrame, list[str], np.ndarray, np.ndarray, np.ndarray]:
+    _validate_sparse_selection_spec(spec)
+    candidate_names = _ordered_sparse_candidate_names(
+        feature_catalog=feature_catalog,
+        retained_terms=retained_terms,
+        retained_interaction_pairs=retained_interaction_pairs,
+        retained_transformations=retained_transformations,
+    )
+    candidate_names = _apply_sparse_candidate_cap(
+        ordered_candidates=candidate_names,
+        retained_terms=retained_terms,
+        retained_interaction_pairs=retained_interaction_pairs,
+        retained_transformations=retained_transformations,
+        max_candidate_terms=spec.max_candidate_terms,
+    )
+    candidate_catalog = _feature_catalog_subset(feature_catalog, candidate_names)
+    design = build_manuscript_feature_design(input_matrix, candidate_catalog)
+    component_names = _component_columns(pca_scores)
+    train_ids = _train_sample_ids(holdout_assignments)
+    x_train = _align_table_by_sample_id(design, train_ids, candidate_names, "candidate design")
+    y_train = _align_table_by_sample_id(pca_scores, train_ids, component_names, "PCA scores")
+    if len(x_train) < 4:
+        raise ValueError("Sparse selection requires at least four training rows.")
+    x_scaled, feature_active = _standardize_for_screening(x_train)
+    y_scaled, component_active = _standardize_for_screening(y_train)
+    if not component_active.any():
+        raise ValueError("All retained PCA components have zero training variance.")
+    x_scaled[:, ~feature_active] = 0.0
+    return (
+        candidate_names,
+        candidate_catalog,
+        component_names,
+        x_scaled,
+        y_scaled,
+        feature_active,
+    )
+
+
+def fit_sparse_full_selection_artifact(
+    input_matrix: pd.DataFrame,
+    feature_catalog: pd.DataFrame,
+    holdout_assignments: pd.DataFrame,
+    pca_scores: pd.DataFrame,
+    retained_terms: pd.DataFrame,
+    retained_interaction_pairs: pd.DataFrame,
+    retained_transformations: pd.DataFrame,
+    spec: SparseSelectionStabilitySpec,
+) -> SparseFullFitArtifact:
+    """Fit the full-data sparse model exactly once for distributed stability."""
+    candidate_names, _, component_names, x_scaled, y_scaled, feature_active = (
+        _prepare_sparse_arrays(
+            input_matrix,
+            feature_catalog,
+            holdout_assignments,
+            pca_scores,
+            retained_terms,
+            retained_interaction_pairs,
+            retained_transformations,
+            spec,
+        )
+    )
+    selected = _fit_sparse_l1_ebic_models(
+        x_scaled,
+        y_scaled,
+        feature_names=candidate_names,
+        component_names=component_names,
+        spec=spec,
+        active_features=feature_active,
+    )
+    coefficients = np.asarray(selected["coefficient_matrix"], dtype=float)
+    input_hash = hashlib.sha256(
+        (
+            _digest_array(x_scaled)
+            + _digest_array(y_scaled)
+            + json.dumps(candidate_names)
+            + json.dumps(component_names)
+        ).encode("utf-8")
+    ).hexdigest()
+    provisional = SparseFullFitArtifact(
+        candidate_names=tuple(candidate_names),
+        component_names=tuple(component_names),
+        n_training_rows=len(x_scaled),
+        feature_active=feature_active,
+        full_support_mask=np.any(np.abs(coefficients) > 0.0, axis=1),
+        full_importance=np.max(np.abs(coefficients), axis=1),
+        coefficient_matrix=coefficients,
+        component_model_selection=selected["component_model_selection"],
+        input_hash=input_hash,
+        artifact_hash="",
+    )
+    return replace(provisional, artifact_hash=_sparse_full_fit_hash(provisional))
+
+
+def score_sparse_stability_resample(
+    input_matrix: pd.DataFrame,
+    feature_catalog: pd.DataFrame,
+    holdout_assignments: pd.DataFrame,
+    pca_scores: pd.DataFrame,
+    retained_terms: pd.DataFrame,
+    retained_interaction_pairs: pd.DataFrame,
+    retained_transformations: pd.DataFrame,
+    spec: SparseSelectionStabilitySpec,
+    *,
+    full_fit: SparseFullFitArtifact,
+    resample_id: int,
+) -> SparseStabilityBlock:
+    """Score one stability resample without repeating the full-data fit."""
+    candidate_names, _, component_names, x_scaled, y_scaled, feature_active = (
+        _prepare_sparse_arrays(
+            input_matrix,
+            feature_catalog,
+            holdout_assignments,
+            pca_scores,
+            retained_terms,
+            retained_interaction_pairs,
+            retained_transformations,
+            spec,
+        )
+    )
+    input_hash = hashlib.sha256(
+        (
+            _digest_array(x_scaled)
+            + _digest_array(y_scaled)
+            + json.dumps(candidate_names)
+            + json.dumps(component_names)
+        ).encode("utf-8")
+    ).hexdigest()
+    if (
+        tuple(candidate_names) != full_fit.candidate_names
+        or tuple(component_names) != full_fit.component_names
+        or input_hash != full_fit.input_hash
+        or not np.array_equal(feature_active, full_fit.feature_active)
+    ):
+        raise ValueError("sparse stability work unit differs from its frozen full fit")
+    summary, supports, importances = _run_stability_resamples(
+        x_scaled=x_scaled,
+        y_scaled=y_scaled,
+        feature_names=candidate_names,
+        component_names=component_names,
+        full_support_mask=full_fit.full_support_mask,
+        full_importance=full_fit.full_importance,
+        spec=spec,
+        active_features=feature_active,
+        active_resample_indices={resample_id},
+    )
+    if len(summary) != 1 or int(summary.iloc[0]["resample_id"]) != resample_id:
+        raise ValueError("sparse stability worker did not produce its exact resample")
+    provisional = SparseStabilityBlock(
+        resample_id=resample_id,
+        full_fit_hash=full_fit.artifact_hash,
+        support_mask=supports[0],
+        importance=importances[0],
+        summary=summary.iloc[0].to_dict(),
+        artifact_hash="",
+    )
+    return replace(provisional, artifact_hash=_sparse_stability_block_hash(provisional))
+
+
+def reduce_sparse_stability_blocks(
+    full_fit: SparseFullFitArtifact,
+    blocks: list[SparseStabilityBlock],
+    *,
+    feature_catalog: pd.DataFrame,
+    retained_terms: pd.DataFrame,
+    retained_interaction_pairs: pd.DataFrame,
+    retained_transformations: pd.DataFrame,
+    spec: SparseSelectionStabilitySpec,
+) -> SparseSelectionStabilityResult:
+    """Combine exact resample coverage with one frozen full-data sparse fit."""
+    keyed = {block.resample_id: block for block in blocks}
+    if len(keyed) != len(blocks) or set(keyed) != set(range(1, spec.subsample_count + 1)):
+        raise ValueError("sparse stability blocks do not exactly cover all resamples")
+    ordered = [keyed[index] for index in range(1, spec.subsample_count + 1)]
+    if any(block.full_fit_hash != full_fit.artifact_hash for block in ordered):
+        raise ValueError("sparse stability block has a different full-fit identity")
+    supports = np.vstack([block.support_mask for block in ordered])
+    importances = np.vstack([block.importance for block in ordered])
+    summaries = pd.DataFrame([block.summary for block in ordered])
+    mean_jaccard = float(summaries["jaccard_with_full_support"].mean())
+    mean_spearman = float(summaries["spearman_with_full_importance"].mean())
+    candidate_names = list(full_fit.candidate_names)
+    candidate_catalog = _feature_catalog_subset(feature_catalog, candidate_names)
+    feature_summary = _build_stability_feature_summary(
+        feature_names=candidate_names,
+        feature_active=full_fit.feature_active,
+        full_support_mask=full_fit.full_support_mask,
+        full_importance=full_fit.full_importance,
+        resample_supports=supports,
+        resample_importances=importances,
+        mean_jaccard=mean_jaccard,
+        mean_spearman=mean_spearman,
+        spec=spec,
+    )
+    final_support = feature_summary.loc[feature_summary["final_stable_support"]].copy()
+    final_support = final_support.sort_values(
+        ["full_support_importance", "feature_name"],
+        ascending=[False, True],
+        ignore_index=True,
+    )
+    support_candidates = _build_sparse_support_candidates(
+        candidate_names=candidate_names,
+        candidate_catalog=candidate_catalog,
+        retained_terms=retained_terms,
+        retained_interaction_pairs=retained_interaction_pairs,
+        retained_transformations=retained_transformations,
+    )
+    component_coefficients = _build_sparse_component_coefficients(
+        candidate_names=candidate_names,
+        component_names=list(full_fit.component_names),
+        coefficients=full_fit.coefficient_matrix,
+    )
+    summary = _build_sparse_selection_summary(
+        n_training_rows=full_fit.n_training_rows,
+        n_candidate_terms=len(candidate_names),
+        n_active_candidate_terms=int(full_fit.feature_active.sum()),
+        n_components=len(full_fit.component_names),
+        n_full_support_terms=int(full_fit.full_support_mask.sum()),
+        n_final_stable_support_terms=len(final_support),
+        mean_jaccard=mean_jaccard,
+        mean_spearman=mean_spearman,
+        spec=spec,
+    )
+    provenance = _build_sparse_selection_provenance(
+        n_candidate_terms=len(candidate_names),
+        n_full_support_terms=int(full_fit.full_support_mask.sum()),
+        n_final_stable_support_terms=len(final_support),
+        spec=spec,
+    )
+    return SparseSelectionStabilityResult(
+        support_candidates=support_candidates,
+        component_model_selection=full_fit.component_model_selection,
+        component_coefficients=component_coefficients,
+        stability_resample_summary=summaries,
+        stability_feature_summary=feature_summary,
+        final_stable_support=final_support,
         provenance=provenance,
         summary=summary,
     )

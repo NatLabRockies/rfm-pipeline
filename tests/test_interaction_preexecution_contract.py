@@ -21,10 +21,10 @@ from rfm_pipeline.manuscript_stages import (
     discover_interaction_scores_only,
     reduce_score_only_interaction_artifacts,
 )
-from rfm_pipeline.recovery_study import _ols_eval_predictions
+from rfm_pipeline.recovery_study import ProductionRecoveryResult
 
 
-def _interaction_spec(*, draws: int = 199) -> InteractionDiscoverySpec:
+def _interaction_spec(*, draws: int = 999) -> InteractionDiscoverySpec:
     return InteractionDiscoverySpec(
         method="tree_shap_interaction_values",
         aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
@@ -32,9 +32,9 @@ def _interaction_spec(*, draws: int = 199) -> InteractionDiscoverySpec:
         retained_pairs_reference=0,
         permutation_count_B=draws,
         random_seed=17,
-        selection_method="max_t",
+        selection_method="max_stat_adjusted_p_mc",
         selection_alpha=0.5,
-        minimum_selection_draws=199,
+        minimum_selection_draws=999,
         enforce_permutation_adequacy=False,
     )
 
@@ -54,7 +54,7 @@ def _final_spec() -> FinalManuscriptArtifactsSpec:
 def _contract_and_snapshot(
     pair_names: tuple[str, ...],
     *,
-    draws: int = 199,
+    draws: int = 999,
 ):
     contract = canonical_execution_contract_from_specs(
         _interaction_spec(draws=draws),
@@ -114,10 +114,10 @@ dataset:
   type: synthetic_300_sample
 stages:
   interaction_discovery:
-    n_permutations: 201
-    selection_method: max_t
+    n_permutations: 1000
+    selection_method: max_stat_adjusted_p_mc
     selection_alpha: 0.10
-    minimum_selection_draws: 199
+    minimum_selection_draws: 999
   final_artifacts:
     hc3_output_subset_mode: target_list
     hc3_output_names: [y1]
@@ -131,7 +131,7 @@ output:
     )
 
     contract = load_canonical_execution_contract(config_path)
-    assert contract.interaction_controls["selection_method"] == "max_t"
+    assert contract.interaction_controls["selection_method"] == "max_stat_adjusted_p_mc"
     assert contract.interaction_controls["selection_alpha"] == pytest.approx(0.10)
     assert contract.terminal_controls["hc3_output_subset_mode"] == "target_list"
     assert contract.terminal_controls["pruning_remove_count_override"] == 2
@@ -193,6 +193,30 @@ def test_contract_preflights_terminal_controls_and_snapshot_dimensions() -> None
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "replacement", "message"),
+    [
+        ("stage_seed", 18, "stage seed"),
+        ("score_seed_schedule_sha256", "0" * 64, "score-seed schedule"),
+        (
+            "permutation_index_schedule_sha256",
+            "0" * 64,
+            "permutation-index schedule",
+        ),
+    ],
+)
+def test_control_snapshot_recomputes_seed_and_permutation_schedules(
+    field: str,
+    replacement: object,
+    message: str,
+) -> None:
+    """A syntactically valid but drifted schedule identity cannot be reused."""
+    contract, snapshot = _contract_and_snapshot(("x1:x2", "x1:x3"))
+
+    with pytest.raises(ValueError, match=message):
+        verify_control_snapshot(replace(snapshot, **{field: replacement}), contract)
+
+
 def test_generic_config_rejects_conflicting_terminal_pruning_overrides(tmp_path) -> None:
     """Explicit generic controls cannot silently choose between two pruning overrides."""
     config_path = tmp_path / "conflicting-pruning.yml"
@@ -214,7 +238,7 @@ stages:
 
 
 def test_legacy_exact_fwer_method_name_is_rejected_without_alias() -> None:
-    """Only the neutral ``max_t`` selector is accepted by the canonical contract."""
+    """Only the neutral Monte Carlo maximum-statistic identifier is accepted."""
     with pytest.raises(ValueError, match="selection_method"):
         replace(_interaction_spec(), selection_method="fwer_max_stat_exact")
 
@@ -222,8 +246,8 @@ def test_legacy_exact_fwer_method_name_is_rejected_without_alias() -> None:
 def test_persisted_score_only_artifact_and_memory_reducer_share_strict_contract(tmp_path) -> None:
     """Persisted and in-memory artifacts use one reducer and reject tampering."""
     contract, snapshot = _contract_and_snapshot(("x1:x2", "x1:x3"))
-    first = _artifact(snapshot, start=0, end=100)
-    second = _artifact(snapshot, start=100, end=199)
+    first = _artifact(snapshot, start=0, end=500)
+    second = _artifact(snapshot, start=500, end=999)
 
     first.write_to(tmp_path / "first")
     second.write_to(tmp_path / "second")
@@ -271,7 +295,7 @@ def test_hpc_reducer_uses_the_same_persisted_artifact_reducer(tmp_path, monkeypa
     output_root = tmp_path / "shards"
     merged = tmp_path / "merged"
     merged.mkdir()
-    artifacts = [_artifact(snapshot, start=0, end=100), _artifact(snapshot, start=100, end=199)]
+    artifacts = [_artifact(snapshot, start=0, end=500), _artifact(snapshot, start=500, end=999)]
     shard_results = []
     for index, artifact in enumerate(artifacts):
         shard_id = f"task-{index:04d}"
@@ -327,7 +351,7 @@ def test_one_pair_is_valid_and_empty_family_is_terminal() -> None:
     """A one-pair family reduces normally; a zero-pair family ends explicitly."""
     one_contract, one_snapshot = _contract_and_snapshot(("x1:x2",))
     one_result = reduce_score_only_interaction_artifacts(
-        [_artifact(one_snapshot, start=0, end=199)],
+        [_artifact(one_snapshot, start=0, end=999)],
         spec=_interaction_spec(),
         contract=one_contract,
     )
@@ -421,14 +445,21 @@ def test_score_only_execution_handles_one_pair_and_empty_family(monkeypatch) -> 
 
 
 def test_empty_support_never_silently_returns_null_predictions() -> None:
-    """A terminal recovery fit must fail rather than fabricate null predictions."""
-    with pytest.raises(ValueError, match="final support"):
-        _ols_eval_predictions(
-            input_matrix=np.array([]),  # type: ignore[arg-type]
-            Y_train=np.ones((4, 1)),
-            final_support=frozenset(),
-            train_ids=[1, 2, 3, 4],
-            eval_ids=[5],
-            n_eval=1,
-            n_outputs=1,
-        )
+    """An empty family is explicit and carries no fabricated prediction matrix."""
+    result = ProductionRecoveryResult(
+        screening_candidate_count=160,
+        screening_retained_set=frozenset(),
+        interaction_candidate_count=0,
+        interaction_retained_set=frozenset(),
+        nonlinear_candidate_count=0,
+        nonlinear_retained_set=frozenset(),
+        final_selected_support=frozenset(),
+        eval_predictions=np.empty((0, 0)),
+        terminal_status="empty_candidate_family",
+        contract_hash="0" * 64,
+        interaction_artifact_checksums=("1" * 64,),
+        model_freeze_hash=None,
+    )
+    assert result.terminal_status == "empty_candidate_family"
+    assert result.eval_predictions.size == 0
+    assert result.model_freeze_hash is None

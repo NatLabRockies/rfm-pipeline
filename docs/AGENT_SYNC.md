@@ -2367,3 +2367,22 @@ ______________________________________________________________________
   count. Pytest is also configured to retain only the most recent failed
   temporary run and to remove scratch from successful runs, rather than keeping
   three potentially multi-gigabyte campaign-package fixtures.
+
+## 2026-08-13 — Live pilot found and blocked ineffective interaction parallelism
+
+- Fresh run `g11-pilot-final-sizing-20260813a` passed same-day Kestrel
+  preflight at immutable RFM/BSM commits. Early stages completed successfully,
+  but the 80-CPU/100-draw interaction-score profile timed out after the shared
+  progress batching exposed only five concurrent scores. Live `sstat` showed
+  roughly 3.6 average CPU cores used, confirming an implementation scheduling
+  defect rather than method infeasibility.
+- Seven downstream dependency placeholders were canceled before starting;
+  `sacct` recorded zero elapsed time, nodes, and CPUs for each. Remaining
+  pre-fix profiles are rejected diagnostic evidence and cannot feed a resource
+  freeze or final-run forecast.
+- The production score-only kernel now makes its default interaction batch at
+  least as large as the requested worker count while retaining the explicit
+  progress-batch override, deterministic seeds, checkpoints, and output order.
+- Required next step: commit and deploy the fix, update the paired BSM RFM pin,
+  and run a new isolated complete pilot. Only successful post-fix telemetry may
+  size or authorize the resolution and final scientific campaign.

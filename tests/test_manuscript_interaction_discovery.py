@@ -289,6 +289,45 @@ def test_score_only_discovery_uses_configured_threading_backend(monkeypatch) -> 
     assert len(result.pair_scores) == 1
 
 
+def test_score_only_discovery_exposes_requested_parallel_workers(monkeypatch) -> None:
+    inputs, catalog, holdout, pca_scores, retained_terms = _fixture()
+    spec = _spec(draws=199, n_jobs=80, parallel_backend="threading")
+    batch_lengths: list[int] = []
+
+    class FakeParallel:
+        def __init__(self, n_jobs: int, **kwargs: object) -> None:
+            assert n_jobs == 80
+            assert kwargs["backend"] == "threading"
+
+        def __enter__(self) -> FakeParallel:
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> bool:  # noqa: ANN001
+            return False
+
+        def __call__(self, jobs):
+            materialized = list(jobs)
+            batch_lengths.append(len(materialized))
+            return [function(*args, **kwargs) for function, args, kwargs in materialized]
+
+    monkeypatch.setattr(manuscript_stages, "Parallel", FakeParallel)
+    monkeypatch.setattr(manuscript_stages, "_score_interaction_permutation", _fake_score)
+
+    score_interaction_draw_block(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        spec,
+        draw_start=0,
+        draw_end=100,
+        contract=canonical_execution_contract_from_specs(spec),
+    )
+
+    assert batch_lengths == [80, 21]
+
+
 def test_score_only_discovery_uses_dask_without_fallback(monkeypatch) -> None:
     """Dask dispatch is used directly and an executor error is not recovered."""
     inputs, catalog, holdout, pca_scores, retained_terms = _fixture()

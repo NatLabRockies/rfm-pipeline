@@ -441,6 +441,13 @@ def test_every_pilot_smoke_script_uses_debug_for_at_most_one_hour(tmp_path: Path
             assert hours * 3600 + minutes * 60 + seconds <= 3600
 
 
+def test_scheduler_diagnostic_can_start_the_pinned_environment(tmp_path: Path) -> None:
+    dag = _package(tmp_path)
+    stage = next(stage for stage in dag.stages if stage.name == "scheduler_diagnostic")
+
+    assert stage.worker_resources.requested_memory_gb >= 10
+
+
 def test_hash_completeness_is_fail_closed(tmp_path: Path) -> None:
     dag = _package(tmp_path)
     required_hashes = {

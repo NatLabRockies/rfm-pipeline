@@ -502,6 +502,30 @@ resolution, confirmatory production, and shared reserve.
 - Blocks submission: yes until the corrected commits are deployed and a fresh
   immutable pilot package/preflight is generated.
 
+## REVIEW-0018 — Interaction progress batches suppressed requested parallelism
+
+- Date: 2026-08-13
+- Severity: P0 / final-run feasibility and AU correctness
+- Status: fixed on `g11-integration-reconcile`; post-fix pilot required
+- Evidence: Kestrel pilot job `16148877` requested 80 CPUs for a 100-draw
+  interaction block but timed out at the debug limit after averaging only about
+  3.6 CPU cores. The shared score-only production kernel selected progress
+  batches as `total_scores // 20`, capped at eight, so the 100-draw profile
+  exposed only five concurrent tasks despite `n_jobs=80`; the 50- and 25-draw
+  profiles exposed only two and one, respectively.
+- Resolution: absent the explicit `RFM_PROGRESS_BATCH_SIZE` diagnostic override,
+  interaction batches now expose at least `min(total_scores, n_jobs)` tasks.
+  Seeds, score indices, checkpoint identities, deterministic result ordering,
+  estimands, and statistical controls are unchanged. A prospective regression
+  requires a 100-draw/80-worker block to dispatch batches of 80 and 21 scores.
+- Validation: the regression failed with 21 five-task batches before the fix;
+  it and all 16 interaction-discovery tests pass afterward. The 80 adjacent
+  G11 HPC, interaction-wiring, and shard-reducer tests also pass, as do Ruff
+  and `git diff --check`.
+- Blocks submission: yes. Pre-fix pilot evidence is retained as rejected
+  diagnostic history. The final resource freeze must come from a fresh package
+  and complete post-fix pilot bound to the new source hash.
+
 ## Independent review of alignment diff b96442b..e31fb15 (round 3 remediation)
 
 - REVIEW-R3-01 \[BLOCKING, fixed-by R3-S01\]: multiplicity_controlled_interaction_selection

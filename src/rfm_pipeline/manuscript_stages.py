@@ -4232,7 +4232,9 @@ def score_interaction_draw_block(
         )
 
     indexed_results: dict[int, tuple[np.ndarray, np.ndarray]] = {}
-    batch_size = _progress_batch_size(total_scores, 8)
+    batch_size = _progress_batch_size(total_scores, max(8, int(spec.n_jobs)))
+    if os.getenv("RFM_PROGRESS_BATCH_SIZE") is None:
+        batch_size = max(batch_size, min(total_scores, int(spec.n_jobs)))
     for batch_start in range(0, total_scores, batch_size):
         batch_stop = min(batch_start + batch_size, total_scores)
         batch_items = score_items[batch_start:batch_stop]

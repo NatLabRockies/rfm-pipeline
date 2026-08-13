@@ -441,7 +441,7 @@ package is rejected unless the whole projected campaign plus one shared 20%
 overrun/retry reserve fits the fixed 25,000-AU ceiling. Individual retry
 authorization remains limited to eligible infrastructure failures and the retry
 package rebuilds the audit/reducer dependency chain. The deterministic
-post-pilot test fixture projects 23,021 AUs including the completed pilot,
+post-pilot test fixture projects 23,025 AUs including the completed pilot,
 resolution, confirmatory production, and shared reserve.
 
 ## Independent review of alignment diff b96442b..e31fb15 (round 3 remediation)

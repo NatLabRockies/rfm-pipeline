@@ -37,7 +37,7 @@ def _spec(
         "permutation_count_B": draws,
         "random_seed": 123,
         "n_jobs": 1,
-        "selection_method": "max_t",
+        "selection_method": "max_stat_adjusted_p_mc",
         "selection_alpha": 0.05,
         "minimum_selection_draws": DRAW_COUNT,
     }

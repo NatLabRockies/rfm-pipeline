@@ -17,24 +17,45 @@
   validation requires atomic `_SUCCESS.json` markers; downstream dependency
   validation rejects missing/failed parent reducer markers. Reducer scripts
   bind contract config, contract hash, and expected shard ranges.
-- Dispatch remains explicitly blocked:
-  `scheduler_submission_permitted: false`. The user-approved
-  `allocation_quota: "16000"` is now explicit, as is Kestrel's
-  `allocation_unit: node_hour`. The corrected conservative envelope is
-  12,121.25 estimated and 15,152 requested node-hours, which is within the
-  approved 16,000-AU ceiling. The package exposes per-stage node-hour
-  contributions, telemetry schema, explicit pilot matrix, deterministic
-  post-pilot selector, a bounded one-GiB-per-worker pre-pilot storage cap,
-  inode count, and the contract's zero automatic-retry policy.
+- Budget correction (2026-08-13): the manuscript campaign has a hard 25,000-AU
+  ceiling. The earlier 438,589-AU number was a walltime stress bound produced by
+  assuming every worker used its complete request, every worker then retried,
+  and another 25% was added. It is not expected allocation use and is not an
+  appropriate admission criterion for scientific experiments. The pre-pilot
+  package now reports its 167,488-AU provisional walltime forecast only as a
+  diagnostic. Live smoke admits only the bounded pilot. Pilot telemetry then
+  selects minimum-projected-AU profiles, and the regenerated final package must
+  count the already-completed pilot and resolution together with confirmatory
+  production under one 25,000-AU ceiling and one shared 20% reserve for runtime
+  overrun and occasional infrastructure retries. The deterministic
+  resource-selection test fixture projects 23,021 AUs including all phases and
+  that reserve; live telemetry controls the actual go/no-go decision.
 - Validation passed:
-  `pixi run pytest -q tests/alignment/test_G11_HPC_S1_kestrel_package.py`
-  (13 passed after correcting AU accounting) and
-  `pixi run pytest -q tests/alignment/test_G11_G0_S1_campaign_contract.py`
-  and
-  `pixi run ruff check src/rfm_pipeline/hpc_campaign_package.py tests/alignment/test_G11_HPC_S1_kestrel_package.py`.
-  No scheduler submission, full gate, or commit occurred.
+  the focused HPC allocation/smoke/retry tests and Ruff checks after the final
+  whole-campaign accounting correction. The substantive integration also
+  passed `./test_repo.sh --check` before that narrow correction. No scheduler
+  submission or commit occurred.
 
 # Agent Sync
+
+## SESSION STATE — 2026-08-13 — Kestrel smoke preparation
+
+- The G11 campaign targets Kestrel account `nationalpfa`; every pilot profile
+  targets `debug` and requests no more than one hour.
+- `sbatch --test-only` confirmed the account/partition combination. Because
+  `aus_report` does not recognize `nationalpfa` as a project handle, live smoke
+  verifies the Slurm association with `sacctmgr` and binds the user-authorized
+  25,000-AU hard ceiling instead of inventing a remaining-allocation value.
+- Kestrel job `16131125` prepared the applied-data layout on a `debug` compute
+  node in 9m10s with exit code 0 and about 29.4 GiB peak RSS. The manifest byte
+  hash is `db88a36423da5d94f5ebdc9fd566f4b85df6ad1096950dba3eebf4d4bd1f134c`;
+  it records 30,000 rows, 28,500 adaptive rows, 1,500 sealed holdout rows, 158
+  continuous plus two binary inputs, and 23,495 outputs. Holdout response mode
+  is `000`.
+- The publication/HPC regression set passes, followed by repository Ruff,
+  format, and diff checks. The full repository gate reached 83% without a
+  reported assertion failure but was terminated after 48 minutes; it is not
+  recorded as passed.
 
 ## SESSION STATE — 2026-08-11 — G11-P-S1 train-freeze-predict (uncommitted)
 
@@ -2283,3 +2304,60 @@ ______________________________________________________________________
 - Stays 100% generic: data-driven (nunique\<=2), no case-study names, no config flag.
 - Next slice S-B: make exact interaction FWER selector the production default with >=999
   null draws; remove any permissive acceptance rule (handoff B).
+
+## 2026-08-12 — G11 HPC integration preparation (uncommitted, NO-SUBMIT)
+
+- Current branch: `g11-integration-reconcile`; the integration diff remains
+  uncommitted and scheduler submission remains prohibited.
+- Reconciled one typed G11 contract across the generic stages, recovery runner,
+  and Kestrel package: screening B=3,199; interaction B=999 pending the frozen
+  999/1,998 resolution choice; 250 trees; 50 stability subsamples; 158
+  continuous plus two binary predictors; five null, three strong, and four
+  stress regimes; 2,000 post-freeze bootstrap draws.
+- The production runner now accepts one immutable execution contract, uses
+  persisted screening/interaction draw blocks and global reducers, completes
+  nonlinear and sparse selection followed by HC3/pruning/final freeze, and
+  cannot inspect evaluation truth before the model-freeze boundary.
+- The Kestrel package is content-addressed and stage-native. Scientific
+  reducers require `afterok` on every worker and the `afterany` exact-coverage
+  audit. Phase execution rejects stale source, lock, contract, inventory,
+  preflight, resource-freeze, authorization, and packaged-prerequisite bytes
+  before any `sbatch` call.
+- Same-day preflight is tranche-specific (`pilot`, `development`, `gate_b`,
+  `gate_p`, or `gate_c`) and validates current remaining AU against the
+  tranche's estimated use plus a 20% reserve; it does not require remaining AU
+  to equal the fixed 25,000-AU campaign ceiling after prior phases consume AU.
+- Follow-up hardening binds the BSM recovery driver bytes in addition to the
+  adapter, DGP, and applied-data preparer, makes phase authorization run/source/lock/inventory/
+  preflight/prerequisite specific, scales 1,998-draw simulation walltimes, and
+  gives Gate-B null and strong records separate pilot-frozen resource arrays
+  while retaining one exact 5,600-record scientific reducer. Recovery
+  comparators run only for the 600 strong and 800 stress records, not the 5,000
+  null-calibration records.
+- Validation: `./test_repo.sh --check` passed in full, including unit tests,
+  workflow tests, manuscript reproduction smoke, all notebooks, docs, package
+  build, hygiene, and `git diff --check`. The notebook gate emitted only the
+  pre-existing missing-cell-ID warning.
+- External blockers intentionally remain explicit in
+  `configs/hpc/g11_kestrel_campaign.yml`: allocation quota, prepared
+  applied-data manifest hash, clean/pinned cluster checkouts, same-day storage/
+  inode evidence, and exact `sbatch --test-only` evidence. No scheduler command
+  was submitted.
+- A fail-closed `live-smoke` CLI now generates a fresh package into an empty
+  root and gathers same-day `aus_report`, clean Git/commit, Lustre project-
+  quota, scratch-capacity, and exact pilot `sbatch --test-only` evidence. It
+  has no ordinary-`sbatch` path and emits a hashed preflight packet only when
+  the pilot estimate plus shared 20% reserve fits. Pilot preflight now binds the BSM
+  adapter, recovery driver, DGP, and data preparer bytes, and full package
+  generation rejects nonempty destinations.
+- Local demo runtime storage is now bounded at both Python-context and notebook-
+  process boundaries. Each deterministic demo context owns its temporary
+  directory, and the notebook gate nests kernel scratch below a runner-owned
+  directory that is removed after every notebook even when Jupyter terminates
+  the kernel before finalizers run. This fixes the pre-existing accumulation of
+  roughly 65 MiB per runtime construction during laptop test runs; production
+  and HPC artifact retention are unchanged. The prospective cleanup tests and
+  a real notebook execution pass, with no increase in residual demo-directory
+  count. Pytest is also configured to retain only the most recent failed
+  temporary run and to remove scratch from successful runs, rather than keeping
+  three potentially multi-gigabyte campaign-package fixtures.

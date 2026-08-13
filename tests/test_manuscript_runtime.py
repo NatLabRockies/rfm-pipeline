@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 from pathlib import Path
 
 import pandas as pd
@@ -58,6 +59,38 @@ def test_demo_artifacts_validate_and_load(tmp_path: Path) -> None:
     assert tables["fixed_holdout_assignments"]["split"].tolist().count("holdout") == 16
     assert (inputs["x2"] > -1.0).all()
     assert abs(inputs["x1"].corr(inputs["x2"])) < 0.95
+
+
+def test_demo_runtime_directory_is_removed_when_context_is_released(
+    monkeypatch,
+) -> None:
+    placeholder = "/path/to/not-configured"
+    monkeypatch.setattr(
+        "rfm_pipeline.manuscript_runtime.load_manuscript_paths_template",
+        lambda _: {
+            "input_metadata": placeholder,
+            "output_metadata": placeholder,
+            "case_study_input_matrix": placeholder,
+            "case_study_output_matrix": placeholder,
+            "manuscript_feature_catalog": placeholder,
+            "fixed_holdout_assignments": placeholder,
+            "output_root": placeholder,
+        },
+    )
+    monkeypatch.setattr(
+        "rfm_pipeline.manuscript_runtime.load_manuscript_local_override",
+        lambda _: {},
+    )
+
+    context = resolve_manuscript_runtime(Path.cwd())
+    runtime_dir = context.runtime_dir
+    assert context.mode == "demo"
+    assert runtime_dir is not None and runtime_dir.is_dir()
+
+    del context
+    gc.collect()
+
+    assert not runtime_dir.exists()
 
 
 def test_notebook_context_and_summary_table_are_executable() -> None:

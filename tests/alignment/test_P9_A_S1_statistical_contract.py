@@ -156,7 +156,7 @@ def test_P9_A_S1_method_max_t_uses_padj_le_alpha():
     # Force obs[0]=10 to have no exceedances: min p = 1/10 = 0.1
     # Force obs[2]=1 to have many exceedances: p close to 1.
     selected, p_values, _ = multiplicity_controlled_interaction_selection(
-        obs, null, alpha=0.15, method="max_t"
+        obs, null, alpha=0.15, method="max_stat_adjusted_p_mc"
     )
     # All selected pairs must have p_adj <= 0.15.
     assert np.all(p_values[selected] <= 0.15 + 1e-12)

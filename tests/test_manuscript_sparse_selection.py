@@ -12,8 +12,13 @@ from rfm_pipeline.manuscript_runtime import (
     build_manuscript_notebook_context,
 )
 from rfm_pipeline.manuscript_stages import (
+    SparseFullFitArtifact,
     SparseSelectionStabilitySpec,
+    SparseStabilityBlock,
+    fit_sparse_full_selection_artifact,
+    reduce_sparse_stability_blocks,
     run_sparse_selection_stability_stage,
+    score_sparse_stability_resample,
     select_manuscript_sparse_support,
     write_sparse_selection_stability_artifacts,
 )
@@ -95,6 +100,50 @@ def test_sparse_selection_retains_stable_signal_feature_and_writes_artifacts(
     assert provenance.loc[0, "public_implementation_status"] == ("source_backed_public_surrogate")
     assert provenance.loc[0, "source_workflow_reference"] == "notebook_pca_debiased_lasso"
     assert provenance.loc[0, "source_workflow_equivalence_status"] == "not_yet_validated"
+
+    full_fit = fit_sparse_full_selection_artifact(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        retained_pairs,
+        retained_transformations,
+        spec,
+    )
+    full_path = tmp_path / "full_fit"
+    full_fit.write(full_path)
+    loaded_full = SparseFullFitArtifact.read(full_path)
+    blocks = []
+    for resample_id in range(1, spec.subsample_count + 1):
+        block = score_sparse_stability_resample(
+            inputs,
+            catalog,
+            holdout,
+            pca_scores,
+            retained_terms,
+            retained_pairs,
+            retained_transformations,
+            spec,
+            full_fit=loaded_full,
+            resample_id=resample_id,
+        )
+        block_path = tmp_path / f"block-{resample_id}"
+        block.write(block_path)
+        blocks.append(SparseStabilityBlock.read(block_path))
+    distributed = reduce_sparse_stability_blocks(
+        loaded_full,
+        blocks,
+        feature_catalog=catalog,
+        retained_terms=retained_terms,
+        retained_interaction_pairs=retained_pairs,
+        retained_transformations=retained_transformations,
+        spec=spec,
+    )
+    pd.testing.assert_frame_equal(
+        result.final_stable_support.reset_index(drop=True),
+        distributed.final_stable_support.reset_index(drop=True),
+    )
 
 
 def test_sparse_selection_materializes_dynamic_terms_absent_from_static_catalog() -> None:

@@ -61,6 +61,7 @@ import pytest
 
 from rfm_pipeline.manuscript_stages import (
     BootstrapMetricShard,
+    FinalManuscriptArtifactsSpec,
     FrozenPredictionMatrices,
     ModelFreezeAuthorizationError,
     ModelFreezeManifest,
@@ -68,9 +69,15 @@ from rfm_pipeline.manuscript_stages import (
     bootstrap_metric_block,
     build_g11_output_eligibility_ledger,
     holdout_predict,
+    holdout_predict_from_files,
+    read_frozen_prediction_matrices,
     reduce_bootstrap_metric_blocks,
+    terminal_train_fit_and_freeze,
     train_fit_and_freeze,
     validate_g11_production_eligibility_ledger,
+    write_frozen_prediction_matrices,
+    write_terminal_train_fit_and_freeze,
+    write_train_fit_and_freeze,
 )
 
 # ---------------------------------------------------------------------------
@@ -205,12 +212,123 @@ def test_holdout_is_structurally_unavailable_to_train_fit() -> None:
     }.intersection(inspect.signature(train_fit_and_freeze).parameters)
 
 
+def test_terminal_hc3_prune_fit_is_training_only_and_persisted(tmp_path) -> None:
+    spec = FinalManuscriptArtifactsSpec(
+        final_predictor_count_reference=1,
+        final_first_order_input_count_reference=1,
+        intermediate_penalized_holdout_nrmse_reference=1.0,
+        final_ols_holdout_nrmse_reference=1.0,
+        nrmse_denominator_definition="training_range",
+        nrmse_min_range=1.0e-12,
+        nrmse_reference_matrix="Y_train",
+        bootstrap_count=2,
+        pruning_remove_count_override=0,
+    )
+    x_train = pd.DataFrame(_X_TRAIN, columns=_FEATURE_NAMES)
+    y_train = pd.DataFrame(
+        {
+            "out0": 3.0 * x_train["f0"] + 0.01 * _Y_TRAIN[:, 0],
+            "out1": -2.0 * x_train["f1"] + 0.01 * _Y_TRAIN[:, 1],
+        }
+    )
+    assert not {
+        "x_holdout",
+        "y_holdout",
+        "holdout_ids",
+    }.intersection(inspect.signature(terminal_train_fit_and_freeze).parameters)
+    terminal = terminal_train_fit_and_freeze(
+        x_train,
+        y_train,
+        spec=spec,
+        contract_hash=_CONTRACT_HASH,
+    )
+    assert len(terminal.final_feature_names) >= 1
+    assert set(terminal.final_feature_names).issubset(_FEATURE_NAMES)
+    assert not terminal.hc3_wald_intervals.empty
+    output_dir = tmp_path / "terminal"
+    write_terminal_train_fit_and_freeze(terminal=terminal, output_dir=output_dir)
+    assert (output_dir / "model" / "freeze_manifest.json").is_file()
+    assert (output_dir / "terminal_manifest.json").is_file()
+
+
+def test_file_holdout_loader_verifies_freeze_before_reading_holdout(
+    tmp_path, monkeypatch, freeze_result: TrainFitAndFreezeResult
+) -> None:
+    freeze_dir = tmp_path / "freeze"
+    write_train_fit_and_freeze(freeze_result=freeze_result, output_dir=freeze_dir)
+    metadata = freeze_dir / "freeze_manifest.json"
+    payload = __import__("json").loads(metadata.read_text(encoding="utf-8"))
+    payload["freeze_hash"] = "0" * 64
+    metadata.write_text(__import__("json").dumps(payload), encoding="utf-8")
+    holdout_reads = []
+    original_load = np.load
+
+    def guarded_load(path, *args, **kwargs):
+        if str(path).endswith(("x_holdout.npy", "y_holdout.npy")):
+            holdout_reads.append(str(path))
+        return original_load(path, *args, **kwargs)
+
+    monkeypatch.setattr(np, "load", guarded_load)
+    with pytest.raises(ModelFreezeAuthorizationError):
+        holdout_predict_from_files(
+            freeze_dir=freeze_dir,
+            x_holdout_path=tmp_path / "x_holdout.npy",
+            y_holdout_path=tmp_path / "y_holdout.npy",
+            holdout_ids=_HOLDOUT_IDS,
+            strata=np.array(["a"] * 5 + ["b"] * 5),
+        )
+    assert holdout_reads == []
+
+
+def test_file_holdout_loader_predicts_after_valid_freeze(
+    tmp_path, freeze_result: TrainFitAndFreezeResult
+) -> None:
+    freeze_dir = tmp_path / "freeze"
+    write_train_fit_and_freeze(freeze_result=freeze_result, output_dir=freeze_dir)
+    x_path = tmp_path / "x_holdout.npy"
+    y_path = tmp_path / "y_holdout.npy"
+    np.save(x_path, _X_HOLDOUT)
+    np.save(y_path, _Y_HOLDOUT)
+    result = holdout_predict_from_files(
+        freeze_dir=freeze_dir,
+        x_holdout_path=x_path,
+        y_holdout_path=y_path,
+        holdout_ids=_HOLDOUT_IDS,
+        strata=np.array(["a"] * 5 + ["b"] * 5),
+    )
+    expected = holdout_predict(
+        freeze_result,
+        _X_HOLDOUT,
+        _Y_HOLDOUT,
+        holdout_ids=_HOLDOUT_IDS,
+        strata=np.array(["a"] * 5 + ["b"] * 5),
+    )
+    np.testing.assert_allclose(result.y_pred, expected.y_pred)
+
+
 def test_frozen_predictions_persist_and_validate_row_ids(
     frozen_matrices: FrozenPredictionMatrices,
 ) -> None:
     assert frozen_matrices.truth_ids == _HOLDOUT_IDS
     assert frozen_matrices.prediction_ids == _HOLDOUT_IDS
     frozen_matrices.validate()
+
+
+def test_frozen_predictions_round_trip_with_byte_verification(
+    tmp_path, frozen_matrices: FrozenPredictionMatrices
+) -> None:
+    output_dir = tmp_path / "frozen_predictions"
+    write_frozen_prediction_matrices(frozen=frozen_matrices, output_dir=output_dir)
+    restored = read_frozen_prediction_matrices(output_dir)
+    np.testing.assert_array_equal(restored.y_holdout, frozen_matrices.y_holdout)
+    np.testing.assert_array_equal(restored.y_pred, frozen_matrices.y_pred)
+    assert restored.truth_ids == frozen_matrices.truth_ids
+    pd.testing.assert_frame_equal(restored.eligibility_ledger, frozen_matrices.eligibility_ledger)
+
+    matrices_path = output_dir / "frozen_predictions.npz"
+    matrices_path.write_bytes(b"tampered")
+    with pytest.raises(ValueError, match="checksum"):
+        read_frozen_prediction_matrices(output_dir)
 
 
 def test_bootstrap_rejects_mismatched_truth_prediction_ids(

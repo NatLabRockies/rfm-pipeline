@@ -164,21 +164,21 @@ class ScreeningStageConfig:
 class InteractionStageConfig:
     """Interaction discovery parameters.
 
-    Defaults provide the canonical pre-execution maxT resolution:
+    Defaults provide the generic pre-execution maximum-statistic resolution:
     ``n_permutations=201`` (B=200 null draws plus the observed statistic),
     ``n_tree_estimators=250``, and ``max_tree_depth=5``.
     """
 
     p_threshold: float = 0.05
     """Interaction significance threshold."""
-    selection_method: str = "max_t"
-    """Canonical global interaction selector; only exact finite-permutation maxT is supported."""
+    selection_method: str = "max_stat_adjusted_p_mc"
+    """Canonical finite-B Monte Carlo maximum-statistic interaction selector."""
     selection_alpha: float = 0.05
-    """Family-wise error target for the canonical maxT selector."""
+    """Family-wise error target for the canonical maximum-statistic selector."""
     minimum_selection_draws: int = 199
     """Minimum null draws required by the pre-execution interaction contract."""
     n_permutations: int | None = 201
-    """Interaction null permutations (B+1); canonical exact-maxT baseline is B=200."""
+    """Interaction null permutations (B+1); generic baseline is B=200."""
     n_tree_estimators: int = 250
     """SHAP tree ensemble size; manuscript baseline is 250."""
     max_tree_depth: int = 5

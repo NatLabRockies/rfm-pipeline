@@ -14,6 +14,7 @@ import json
 import math
 from collections import Counter
 from dataclasses import asdict, dataclass
+from itertools import combinations
 from pathlib import Path
 from statistics import NormalDist
 from typing import Any
@@ -55,8 +56,42 @@ class CampaignContract:
     scenarios: tuple[ScenarioSpec, ...]
     retry_limit: int
     resolution_schedules: int
+    resolution_base_draws: int
+    resolution_max_multiplier: int
+    resolution_family_size: int
+    resolution_boundary_interval: tuple[float, float]
+    resolution_decision_sha256: str
     fixed_family_sizes: tuple[int, ...]
+    fixed_family_replicates: int
+    fixed_family_pair_order_sha256: str
+    bootstrap_draws: int
+    n_tree_estimators: int
+    n_stability_subsamples: int
+    stability_jaccard_threshold: float
+    stability_spearman_threshold: float
+    power_gate_lower_bound: float
+    pilot_repetitions: int
+    retryable_scheduler_states: tuple[str, ...]
+    recovery_comparators: tuple[str, ...]
+    comparator_cv_folds: int
+    elastic_net_alpha_grid: tuple[float, ...]
+    elastic_net_l1_ratio_grid: tuple[float, ...]
+    boosted_tree_candidate_grid: tuple[tuple[int, int, float], ...]
+    boosted_tree_response_components: int
+    comparator_tuning_metric: str
+    comparator_failure_action: str
     artifact_schema_version: int
+
+    def __post_init__(self) -> None:
+        """Reject invalid adaptive-resolution identity fields."""
+        low, high = self.resolution_boundary_interval
+        if not 0.0 <= low < self.alpha < high <= 1.0:
+            raise ValueError("resolution boundary interval must strictly bracket alpha")
+        if self.resolution_decision_sha256 != "PENDING" and (
+            len(self.resolution_decision_sha256) != 64
+            or any(value not in "0123456789abcdef" for value in self.resolution_decision_sha256)
+        ):
+            raise ValueError("resolution decision must be PENDING or a SHA-256 digest")
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +111,32 @@ class CampaignInventoryRow:
     seed: int
     contract_hash: str
     kind: str
+
+
+def _canonical_fixed_family_pair_order() -> tuple[str, ...]:
+    feature_names = tuple(f"x{index:03d}" for index in range(158)) + (
+        "binary_0",
+        "binary_1",
+    )
+    all_pairs = tuple(f"{left}:{right}" for left, right in combinations(feature_names, 2))
+    required_prefix = (
+        "x000:binary_0",
+        "binary_0:binary_1",
+        "x000:x001",
+    )
+    remaining = tuple(pair for pair in all_pairs if pair not in required_prefix)
+    return (required_prefix + remaining)[:1000]
+
+
+_FIXED_FAMILY_PAIR_ORDER = _canonical_fixed_family_pair_order()
+_FIXED_FAMILY_PAIR_ORDER_SHA256 = hashlib.sha256(
+    json.dumps(
+        list(_FIXED_FAMILY_PAIR_ORDER),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+).hexdigest()
 
 
 TERMINAL_ROW_SCHEMA: tuple[ArtifactFieldSpec, ...] = (
@@ -105,7 +166,7 @@ _G11_SCENARIOS: tuple[ScenarioSpec, ...] = (
         n_predictor_continuous=158,
         n_predictor_binary=2,
         n_response=4,
-        n_train=320,
+        n_train=160,
         n_eval=80,
         description="No signal of any kind.",
     ),
@@ -116,7 +177,7 @@ _G11_SCENARIOS: tuple[ScenarioSpec, ...] = (
         n_predictor_continuous=158,
         n_predictor_binary=2,
         n_response=4,
-        n_train=320,
+        n_train=160,
         n_eval=80,
         description="Continuous and nonlinear main effects without interactions.",
     ),
@@ -127,7 +188,7 @@ _G11_SCENARIOS: tuple[ScenarioSpec, ...] = (
         n_predictor_continuous=158,
         n_predictor_binary=2,
         n_response=4,
-        n_train=320,
+        n_train=160,
         n_eval=80,
         description="Correlated-input structure without interactions.",
     ),
@@ -138,7 +199,7 @@ _G11_SCENARIOS: tuple[ScenarioSpec, ...] = (
         n_predictor_continuous=158,
         n_predictor_binary=2,
         n_response=4,
-        n_train=320,
+        n_train=160,
         n_eval=80,
         description="Frozen heteroscedastic variance function without interactions.",
     ),
@@ -149,7 +210,7 @@ _G11_SCENARIOS: tuple[ScenarioSpec, ...] = (
         n_predictor_continuous=158,
         n_predictor_binary=2,
         n_response=4,
-        n_train=320,
+        n_train=160,
         n_eval=80,
         description="Binary main effects only; designed for >=90% nondegenerate families.",
     ),
@@ -159,9 +220,9 @@ _G11_SCENARIOS: tuple[ScenarioSpec, ...] = (
         n_replicates=200,
         n_predictor_continuous=158,
         n_predictor_binary=2,
-        n_response=4,
-        n_train=320,
-        n_eval=80,
+        n_response=40,
+        n_train=2000,
+        n_eval=500,
         description="Strong continuous-continuous planted interaction.",
     ),
     ScenarioSpec(
@@ -170,9 +231,9 @@ _G11_SCENARIOS: tuple[ScenarioSpec, ...] = (
         n_replicates=200,
         n_predictor_continuous=158,
         n_predictor_binary=2,
-        n_response=4,
-        n_train=320,
-        n_eval=80,
+        n_response=40,
+        n_train=2000,
+        n_eval=500,
         description="Strong binary-continuous planted interaction.",
     ),
     ScenarioSpec(
@@ -181,9 +242,9 @@ _G11_SCENARIOS: tuple[ScenarioSpec, ...] = (
         n_replicates=200,
         n_predictor_continuous=158,
         n_predictor_binary=2,
-        n_response=4,
-        n_train=320,
-        n_eval=80,
+        n_response=40,
+        n_train=2000,
+        n_eval=500,
         description="Strong binary-binary planted interaction.",
     ),
     ScenarioSpec(
@@ -192,9 +253,9 @@ _G11_SCENARIOS: tuple[ScenarioSpec, ...] = (
         n_replicates=200,
         n_predictor_continuous=158,
         n_predictor_binary=2,
-        n_response=4,
-        n_train=320,
-        n_eval=80,
+        n_response=40,
+        n_train=2000,
+        n_eval=500,
         description="Same hierarchical support as strong_cc with low SNR.",
     ),
     ScenarioSpec(
@@ -203,9 +264,9 @@ _G11_SCENARIOS: tuple[ScenarioSpec, ...] = (
         n_replicates=200,
         n_predictor_continuous=158,
         n_predictor_binary=2,
-        n_response=4,
-        n_train=320,
-        n_eval=80,
+        n_response=40,
+        n_train=2000,
+        n_eval=500,
         description="Dense active set with redundant correlated predictors.",
     ),
     ScenarioSpec(
@@ -214,9 +275,9 @@ _G11_SCENARIOS: tuple[ScenarioSpec, ...] = (
         n_replicates=200,
         n_predictor_continuous=158,
         n_predictor_binary=2,
-        n_response=4,
-        n_train=320,
-        n_eval=80,
+        n_response=40,
+        n_train=2000,
+        n_eval=500,
         description="Pure continuous-continuous interaction with negligible mains.",
     ),
     ScenarioSpec(
@@ -225,9 +286,9 @@ _G11_SCENARIOS: tuple[ScenarioSpec, ...] = (
         n_replicates=200,
         n_predictor_continuous=158,
         n_predictor_binary=2,
-        n_response=4,
-        n_train=320,
-        n_eval=80,
+        n_response=40,
+        n_train=2000,
+        n_eval=500,
         description="Nonlinear transform plus one out-of-library misspecification.",
     ),
     ScenarioSpec(
@@ -237,14 +298,14 @@ _G11_SCENARIOS: tuple[ScenarioSpec, ...] = (
         n_predictor_continuous=158,
         n_predictor_binary=2,
         n_response=4,
-        n_train=320,
+        n_train=160,
         n_eval=80,
         description="Development-only B versus 2B resolution fixture.",
     ),
 )
 
 G11_CONTRACT = CampaignContract(
-    schema_version="g11_campaign_contract_v1",
+    schema_version="g11_campaign_contract_v9",
     generation=11,
     method_name="max_stat_adjusted_p_mc",
     B_screen=3199,
@@ -255,10 +316,38 @@ G11_CONTRACT = CampaignContract(
     calibration_confidence=0.95,
     gate_value=0.09,
     scenarios=_G11_SCENARIOS,
-    retry_limit=0,
+    retry_limit=1,
     resolution_schedules=10,
+    resolution_base_draws=999,
+    resolution_max_multiplier=4,
+    resolution_family_size=100,
+    resolution_boundary_interval=(0.04, 0.06),
+    resolution_decision_sha256="PENDING",
     fixed_family_sizes=(10, 100, 1000),
-    artifact_schema_version=1,
+    fixed_family_replicates=1000,
+    fixed_family_pair_order_sha256=_FIXED_FAMILY_PAIR_ORDER_SHA256,
+    bootstrap_draws=2000,
+    n_tree_estimators=250,
+    n_stability_subsamples=50,
+    stability_jaccard_threshold=0.75,
+    stability_spearman_threshold=0.90,
+    power_gate_lower_bound=0.80,
+    pilot_repetitions=3,
+    retryable_scheduler_states=("BOOT_FAIL", "NODE_FAIL", "PREEMPTED"),
+    recovery_comparators=(
+        "proposed_terminal_workflow",
+        "oracle_ols",
+        "elastic_net_algebraic_library",
+        "raw_input_boosted_tree",
+    ),
+    comparator_cv_folds=3,
+    elastic_net_alpha_grid=(0.0001, 0.001, 0.01, 0.1, 1.0),
+    elastic_net_l1_ratio_grid=(0.1, 0.5, 0.9),
+    boosted_tree_candidate_grid=((100, 2, 0.05), (250, 3, 0.05)),
+    boosted_tree_response_components=4,
+    comparator_tuning_metric="training_cv_macro_nrmse",
+    comparator_failure_action="terminal_failure_no_retry",
+    artifact_schema_version=2,
 )
 
 
@@ -369,6 +458,15 @@ def build_campaign_inventory(
     return inventory
 
 
+def fixed_family_pair_order(contract: CampaignContract) -> tuple[str, ...]:
+    """Return and verify the frozen nested 1,000-pair fixed-family order."""
+    if max(contract.fixed_family_sizes) > len(_FIXED_FAMILY_PAIR_ORDER):
+        raise ValueError("fixed-family size exceeds the frozen pair order")
+    if contract.fixed_family_pair_order_sha256 != _FIXED_FAMILY_PAIR_ORDER_SHA256:
+        raise ValueError("fixed-family pair-order hash differs from the canonical order")
+    return _FIXED_FAMILY_PAIR_ORDER
+
+
 def _predictor_dimensions(contract: CampaignContract) -> tuple[int, int]:
     dims = {
         (scenario.n_predictor_continuous, scenario.n_predictor_binary)
@@ -424,6 +522,101 @@ def validate_contract_hash(contract: CampaignContract, stored_hash: str) -> None
         )
 
 
+def select_resolution_draw_count(
+    records: list[dict[str, Any]],
+    contract: CampaignContract,
+) -> dict[str, Any]:
+    """Choose the smallest stable nested interaction schedule or fail closed."""
+    from scipy.stats import spearmanr
+
+    fixtures = ("nondegenerate_null", "strong_planted")
+    expected = {
+        (fixture, schedule_index)
+        for fixture in fixtures
+        for schedule_index in range(contract.resolution_schedules)
+    }
+    keyed: dict[tuple[str, int], dict[str, Any]] = {}
+    for record in records:
+        key = (str(record.get("fixture_kind")), int(record.get("schedule_index", -1)))
+        if key in keyed:
+            raise ValueError(f"duplicate resolution record {key}")
+        keyed[key] = record
+    if set(keyed) != expected:
+        raise ValueError("resolution records do not exactly cover both frozen fixtures")
+
+    base = contract.resolution_base_draws
+    candidates = (base, 2 * base, contract.resolution_max_multiplier * base)
+    comparisons: dict[str, Any] = {}
+    for lower, upper in zip(candidates, candidates[1:], strict=True):
+        fixture_diagnostics: dict[str, Any] = {}
+        comparison_passes = True
+        for fixture in fixtures:
+            schedule_diagnostics = []
+            for schedule_index in range(contract.resolution_schedules):
+                record = keyed[(fixture, schedule_index)]
+                values = record.get("adjusted_p_values")
+                if not isinstance(values, dict):
+                    raise ValueError("resolution record lacks adjusted_p_values")
+                lower_p = np.asarray(values.get(str(lower)), dtype=float)
+                upper_p = np.asarray(values.get(str(upper)), dtype=float)
+                expected_shape = (contract.resolution_family_size,)
+                if (
+                    lower_p.shape != expected_shape
+                    or upper_p.shape != expected_shape
+                    or not np.isfinite(lower_p).all()
+                    or not np.isfinite(upper_p).all()
+                ):
+                    raise ValueError("resolution adjusted-p vectors have invalid shape or values")
+                lower_selected = lower_p <= contract.alpha
+                upper_selected = upper_p <= contract.alpha
+                boundary_low, boundary_high = contract.resolution_boundary_interval
+                decisive = (upper_p < boundary_low) | (upper_p > boundary_high)
+                agreement = lower_selected == upper_selected
+                lower_set = set(np.flatnonzero(lower_selected).tolist())
+                upper_set = set(np.flatnonzero(upper_selected).tolist())
+                union = lower_set | upper_set
+                jaccard = 1.0 if not union else len(lower_set & upper_set) / len(union)
+                correlation = float(spearmanr(lower_p, upper_p).statistic)
+                if not math.isfinite(correlation):
+                    correlation = 1.0 if np.array_equal(lower_p, upper_p) else -1.0
+                passed = bool(np.all(agreement[decisive]))
+                schedule_diagnostics.append(
+                    {
+                        "schedule_index": schedule_index,
+                        "jaccard": jaccard,
+                        "spearman": correlation,
+                        "decisive_pair_count": int(np.sum(decisive)),
+                        "near_boundary_pair_count": int(np.sum(~decisive)),
+                        "decisive_disagreement_count": int(np.sum(decisive & ~agreement)),
+                        "passed": passed,
+                    }
+                )
+            passing_fraction = sum(row["passed"] for row in schedule_diagnostics) / len(
+                schedule_diagnostics
+            )
+            fixture_passed = all(row["passed"] for row in schedule_diagnostics)
+            fixture_diagnostics[fixture] = {
+                "passing_fraction": passing_fraction,
+                "passed": fixture_passed,
+                "schedules": schedule_diagnostics,
+            }
+            comparison_passes &= fixture_passed
+        key = f"{lower}_vs_{upper}"
+        comparisons[key] = {
+            "lower": lower,
+            "upper": upper,
+            "passed": comparison_passes,
+            "fixtures": fixture_diagnostics,
+        }
+        if comparison_passes:
+            return {
+                "status": "ACCEPTED",
+                "selected_B_interaction": lower,
+                "comparisons": comparisons,
+            }
+    raise ValueError("no prespecified nested interaction draw comparison passed")
+
+
 def _parse_terminal_row_schema(raw_fields: Any) -> tuple[ArtifactFieldSpec, ...]:
     if not isinstance(raw_fields, list):
         raise ValueError("terminal_row_schema must be a list of typed field records")
@@ -452,7 +645,35 @@ def _contract_from_mapping(raw: dict[str, Any]) -> CampaignContract:
         scenarios=scenarios,
         retry_limit=int(raw["retry_limit"]),
         resolution_schedules=int(raw["resolution_schedules"]),
+        resolution_base_draws=int(raw["resolution_base_draws"]),
+        resolution_max_multiplier=int(raw["resolution_max_multiplier"]),
+        resolution_family_size=int(raw["resolution_family_size"]),
+        resolution_boundary_interval=tuple(
+            float(value) for value in raw["resolution_boundary_interval"]
+        ),
+        resolution_decision_sha256=str(raw["resolution_decision_sha256"]),
         fixed_family_sizes=tuple(int(value) for value in raw["fixed_family_sizes"]),
+        fixed_family_replicates=int(raw["fixed_family_replicates"]),
+        fixed_family_pair_order_sha256=str(raw["fixed_family_pair_order_sha256"]),
+        bootstrap_draws=int(raw["bootstrap_draws"]),
+        n_tree_estimators=int(raw["n_tree_estimators"]),
+        n_stability_subsamples=int(raw["n_stability_subsamples"]),
+        stability_jaccard_threshold=float(raw["stability_jaccard_threshold"]),
+        stability_spearman_threshold=float(raw["stability_spearman_threshold"]),
+        power_gate_lower_bound=float(raw["power_gate_lower_bound"]),
+        pilot_repetitions=int(raw["pilot_repetitions"]),
+        retryable_scheduler_states=tuple(str(value) for value in raw["retryable_scheduler_states"]),
+        recovery_comparators=tuple(str(value) for value in raw["recovery_comparators"]),
+        comparator_cv_folds=int(raw["comparator_cv_folds"]),
+        elastic_net_alpha_grid=tuple(float(value) for value in raw["elastic_net_alpha_grid"]),
+        elastic_net_l1_ratio_grid=tuple(float(value) for value in raw["elastic_net_l1_ratio_grid"]),
+        boosted_tree_candidate_grid=tuple(
+            (int(value[0]), int(value[1]), float(value[2]))
+            for value in raw["boosted_tree_candidate_grid"]
+        ),
+        boosted_tree_response_components=int(raw["boosted_tree_response_components"]),
+        comparator_tuning_metric=str(raw["comparator_tuning_metric"]),
+        comparator_failure_action=str(raw["comparator_failure_action"]),
         artifact_schema_version=int(raw["artifact_schema_version"]),
     )
 
@@ -569,9 +790,46 @@ def render_contract_toml(
         f"gate_value = {contract.gate_value}",
         f"retry_limit = {contract.retry_limit}",
         f"resolution_schedules = {contract.resolution_schedules}",
+        f"resolution_base_draws = {contract.resolution_base_draws}",
+        f"resolution_max_multiplier = {contract.resolution_max_multiplier}",
+        f"resolution_family_size = {contract.resolution_family_size}",
+        "resolution_boundary_interval = "
+        f"[{contract.resolution_boundary_interval[0]}, {contract.resolution_boundary_interval[1]}]",
+        f'resolution_decision_sha256 = "{contract.resolution_decision_sha256}"',
         "fixed_family_sizes = [{}]".format(
             ", ".join(str(value) for value in contract.fixed_family_sizes)
         ),
+        f"fixed_family_replicates = {contract.fixed_family_replicates}",
+        f'fixed_family_pair_order_sha256 = "{contract.fixed_family_pair_order_sha256}"',
+        f"bootstrap_draws = {contract.bootstrap_draws}",
+        f"n_tree_estimators = {contract.n_tree_estimators}",
+        f"n_stability_subsamples = {contract.n_stability_subsamples}",
+        f"stability_jaccard_threshold = {contract.stability_jaccard_threshold}",
+        f"stability_spearman_threshold = {contract.stability_spearman_threshold}",
+        f"power_gate_lower_bound = {contract.power_gate_lower_bound}",
+        f"pilot_repetitions = {contract.pilot_repetitions}",
+        "retryable_scheduler_states = [{}]".format(
+            ", ".join(f'"{value}"' for value in contract.retryable_scheduler_states)
+        ),
+        "recovery_comparators = [{}]".format(
+            ", ".join(f'"{value}"' for value in contract.recovery_comparators)
+        ),
+        f"comparator_cv_folds = {contract.comparator_cv_folds}",
+        "elastic_net_alpha_grid = [{}]".format(
+            ", ".join(str(value) for value in contract.elastic_net_alpha_grid)
+        ),
+        "elastic_net_l1_ratio_grid = [{}]".format(
+            ", ".join(str(value) for value in contract.elastic_net_l1_ratio_grid)
+        ),
+        "boosted_tree_candidate_grid = [{}]".format(
+            ", ".join(
+                f"[{estimators}, {depth}, {learning_rate}]"
+                for estimators, depth, learning_rate in contract.boosted_tree_candidate_grid
+            )
+        ),
+        f"boosted_tree_response_components = {contract.boosted_tree_response_components}",
+        f'comparator_tuning_metric = "{contract.comparator_tuning_metric}"',
+        f'comparator_failure_action = "{contract.comparator_failure_action}"',
         f"artifact_schema_version = {contract.artifact_schema_version}",
         "",
     ]
@@ -614,9 +872,11 @@ __all__ = [
     "compute_contract_hash",
     "compute_operating_characteristic_table",
     "derive_seed",
+    "fixed_family_pair_order",
     "largest_passing_wilson_count",
     "load_contract",
     "render_contract_toml",
+    "select_resolution_draw_count",
     "validate_campaign_inventory",
     "validate_contract_hash",
     "validate_predictor_design",

@@ -5,7 +5,7 @@
 Runs each of the 7 prespecified scenarios at a documented reduced scale,
 producing released aggregate tables, figure data, and a reproduction log.
 The empirical interaction-FWER is measured on the actual interaction-discovery
-+ ``max_t`` selection stage.
++ finite-B maximum-statistic adjusted-p selection stage.
 
 Quick mode (``--quick``) runs at a tiny scale for smoke testing; the reduced
 scale is documented in the reproduction log as a deliberate reduction that
@@ -72,7 +72,7 @@ _FULL_DESCRIPTION = (
     "multivariate responses (multi-output Y), PCA reduction of Y, "
     "structured interaction discovery (permutation null scoring), and "
     "train-only selection (holdout withheld during all tuning). "
-    "Candidate-family logic (BH screening, max_t selection) unchanged; "
+    "Candidate-family logic (BH screening, maximum-statistic selection) unchanged; "
     "scale chosen so the full study completes in minutes on a laptop."
 )
 
@@ -346,7 +346,7 @@ def _run_pipeline(
     observed_scores = np.zeros(0, dtype=np.float64)
     null_stats_arr = np.zeros((scale.B, 0), dtype=np.float64)
 
-    # Stage 3: interaction scoring + exact max_t selection
+    # Stage 3: interaction scoring + finite-B maximum-statistic selection
     if len(pair_names_list) >= 1 and scale.B >= 1:
         X_ret = X_train[:, retained_indices]
         # Hierarchical main-effect design: retained mains plus their nonlinear
@@ -360,7 +360,10 @@ def _run_pipeline(
             X_main, Y_pca, inter_columns, scale.B, rng
         )
         selected_bool, _p_adj, _threshold = multiplicity_controlled_interaction_selection(
-            observed_scores, null_stats_arr, scale.alpha, method="max_t"
+            observed_scores,
+            null_stats_arr,
+            scale.alpha,
+            method="max_stat_adjusted_p_mc",
         )
         selected_interactions = frozenset(
             tuple(sorted(pair_names_list[k].split(":", 1)))
@@ -560,7 +563,7 @@ def _write_reproduction_log(
         "- PCA reduction of Y before stage computations",
         "- Structured interaction discovery (permutation null scoring per pair)",
         "- Train-only selection (holdout withheld during all BH screening and FWER selection)",
-        "- Candidate-family logic unchanged (BH screening → max_t selection)",
+        "- Candidate-family logic unchanged (BH screening → maximum-statistic selection)",
         "",
         "## Scenario manifest",
         "",

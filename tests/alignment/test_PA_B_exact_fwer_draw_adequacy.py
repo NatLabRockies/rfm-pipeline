@@ -30,10 +30,10 @@ def _spec(**overrides: object) -> InteractionDiscoverySpec:
         "aggregation_rule": "max_over_components_of_mean_absolute_shap_interaction",
         "null_threshold_quantile": 0.995,
         "retained_pairs_reference": 0,
-        "permutation_count_B": 199,
-        "selection_method": "max_t",
+        "permutation_count_B": 999,
+        "selection_method": "max_stat_adjusted_p_mc",
         "selection_alpha": 0.05,
-        "minimum_selection_draws": 199,
+        "minimum_selection_draws": 999,
     }
     values.update(overrides)
     return InteractionDiscoverySpec(**values)
@@ -42,15 +42,15 @@ def _spec(**overrides: object) -> InteractionDiscoverySpec:
 def test_canonical_contract_rejects_draws_below_declared_minimum() -> None:
     with pytest.raises(ValueError, match="draw adequacy"):
         canonical_execution_contract_from_specs(
-            _spec(permutation_count_B=198),
+            _spec(permutation_count_B=998),
             _final_spec(),
         )
 
 
-def test_canonical_contract_accepts_199_draws() -> None:
+def test_canonical_contract_accepts_999_draws() -> None:
     contract = canonical_execution_contract_from_specs(_spec(), _final_spec())
-    assert contract.interaction_controls["permutation_count_B"] == 199
-    assert contract.interaction_controls["minimum_selection_draws"] == 199
+    assert contract.interaction_controls["permutation_count_B"] == 999
+    assert contract.interaction_controls["minimum_selection_draws"] == 999
 
 
 def test_canonical_spec_rejects_lowered_policy_floor() -> None:
@@ -71,15 +71,15 @@ def test_case_study_parser_uses_neutral_selection_fields() -> None:
                 "aggregation_rule": "max_over_components_of_mean_absolute_shap_interaction",
                 "null_threshold_quantile": 0.995,
                 "retained_pairs": 0,
-                "permutation_count_B": 199,
-                "selection_method": "max_t",
+                "permutation_count_B": 999,
+                "selection_method": "max_stat_adjusted_p_mc",
                 "selection_alpha": 0.05,
-                "minimum_selection_draws": 199,
+                "minimum_selection_draws": 999,
             }
         }
     }
     spec = interaction_discovery_spec_from_case_study_config(config)
-    assert spec.selection_method == "max_t"
+    assert spec.selection_method == "max_stat_adjusted_p_mc"
     assert spec.selection_alpha == pytest.approx(0.05)
 
 

@@ -10,7 +10,15 @@ Use `rfm_pipeline.resolve_manuscript_runtime(repo_root)` to determine notebook i
 - When `configs/local/manuscript_paths.local.yml` exists and every required artifact file is
   present, the runtime resolves to `mode = "real"`.
 - Otherwise the runtime falls back to `mode = "demo"` and writes a deterministic toy dataset to a
-  temporary directory.
+  temporary directory owned by the returned runtime context. Releasing that context removes both
+  the demo inputs and generated outputs, so repeated notebook/test runs do not accumulate local
+  scratch data. Keep the context alive for as long as its artifact paths are needed.
+- The repository notebook gate additionally places each kernel's demo directory below the
+  runner-owned notebook execution directory. The runner removes that complete directory after the
+  kernel exits, including when Jupyter terminates the kernel before Python object finalizers run.
+- Pytest retains at most the latest failed temporary run for diagnosis and removes successful-run
+  scratch. This prevents large generated campaign-package fixtures from retaining several
+  gigabytes across otherwise successful local test sessions.
 
 The deterministic demo path exists so the notebook gate can execute the full notebook stack without
 shipping the real BSM case-study files.

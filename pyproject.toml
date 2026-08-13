@@ -66,6 +66,8 @@ where = ["src"]
 pythonpath = ["src", "."]
 testpaths = ["tests"]
 addopts = "-q -p no:cacheprovider"
+tmp_path_retention_count = 1
+tmp_path_retention_policy = "failed"
 markers = ["slow: marks tests as slow-running (deselect with '-m \"not slow\"')"]
 
 [tool.ruff]

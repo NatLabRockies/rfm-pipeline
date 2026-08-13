@@ -16,11 +16,10 @@ case_study:
     source_of_truth_status: frozen_repo_decision
   empirical_null_screen:
     bh_q_screen: 0.05
-    permutation_count_B: 200
+    permutation_count_B: 3199
     permutation_count_status: frozen_source_derived_repo_decision
     public_implementation_method: coefficient_row_l2_permutation
     public_implementation_status: source_backed_public_surrogate
-    retained_terms: 69
     source_script_equivalence_status: not_yet_validated
     source_script_reference: private_delta_null_screening_script
     statistic: coefficient_row_l2_norm
@@ -29,26 +28,23 @@ case_study:
     interval_method: hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs
     interval_method_status: frozen_repo_decision
   final_model:
-    final_main_effect_count: 54
-    final_ols_holdout_nrmse: 0.0721
-    final_predictor_count: 132
-    intermediate_penalized_holdout_nrmse: 0.0709
     nrmse_definition_status: frozen_repo_decision_matching_live_code
     nrmse_denominator_definition: macro_average_rmse_divided_by_training_response_range
     nrmse_min_range: 1.0e-06
     nrmse_reference_matrix: Y_train
+    bootstrap_count: 2000
   interaction_discovery:
     aggregation_rule: max_over_components_of_mean_absolute_shap_interaction
     aggregation_rule_status: frozen_repo_decision
     method: tree_shap_interaction_values
-    minimum_selection_draws: 199
+    minimum_selection_draws: 999
     null_threshold_quantile: 0.995
-    permutation_count_B: 200
+    n_tree_estimators: 250
+    permutation_count_B: 999
     public_implementation_method: tree_shap_gradient_boosting
     public_implementation_status: manuscript_aligned
-    retained_pairs: 62
     selection_alpha: 0.05
-    selection_method: max_t
+    selection_method: max_stat_adjusted_p_mc
     source_workflow_equivalence_status: manuscript_aligned_via_shap_gradient_boosting
     source_workflow_reference: private_tree_shap_interaction_workflow
   interface:
@@ -73,8 +69,6 @@ case_study:
   nonlinear_discovery:
     curvature_rule: edf_gt_1_and_smooth_pvalue_lt_0p01
     curvature_rule_status: frozen_repo_decision
-    final_support_transformations: 29
-    identified_transformations: 41
     method: gam_plus_restricted_parametric_replacement
     public_implementation_method: gam_cubic_smoothing_spline
     public_implementation_status: manuscript_aligned
@@ -111,7 +105,6 @@ case_study:
     public_implementation_method: ebic_l1_component_union_with_subsample_stability
     public_implementation_status: source_backed_public_surrogate
     source_artifact: LASSO_to_OLS_v9.ipynb
-    source_selected_feature_count_reference: 172
     source_workflow_equivalence_status: not_yet_validated
     source_workflow_reference: notebook_pca_debiased_lasso
     support_aggregation_rule: union_nonzero_support_across_retained_components
@@ -119,7 +112,7 @@ case_study:
   stability:
     jaccard_threshold: 0.75
     jaccard_threshold_status: frozen_case_study_rule
-    resampling_scheme: 20_subsamples_of_80_percent_rows_without_replacement_seed_123
+    resampling_scheme: 50_subsamples_of_80_percent_rows_without_replacement_seed_123
     resampling_scheme_status: frozen_repo_decision
     spearman_threshold: 0.9
     spearman_threshold_status: frozen_repo_decision

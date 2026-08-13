@@ -132,6 +132,7 @@ def execute_notebook(notebook: Path, repo_root: Path, *, timeout: int) -> None:
     env["PYTHONPATH"] = os.pathsep.join(search_paths)
     with tempfile.TemporaryDirectory(prefix="bsm_notebook_exec_") as tmpdir:
         output_dir = Path(tmpdir)
+        env["RFM_MANUSCRIPT_DEMO_PARENT"] = str(output_dir / "demo_runtime")
         command = build_nbconvert_command(notebook, output_dir, timeout=timeout)
         subprocess.run(command, cwd=repo_root, check=True, env=env)
 

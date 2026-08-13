@@ -2,7 +2,7 @@
 
 Acceptance criteria:
 - discover_manuscript_interactions runs without raising when
-  selection_method="max_t".
+  selection_method="max_stat_adjusted_p_mc".
 - Planted-interaction pair is retained under the exact method.
 - Pure-null fixture retains 0 pairs at alpha=0.05 (fixed seed).
 - Unknown method still raises ValueError.
@@ -81,7 +81,7 @@ def _exact_spec(*, permutation_count_B: int = 999, seed: int = 42) -> Interactio
         permutation_count_B=permutation_count_B,
         random_seed=seed,
         n_jobs=1,
-        selection_method="max_t",
+        selection_method="max_stat_adjusted_p_mc",
         selection_alpha=0.05,
     )
 

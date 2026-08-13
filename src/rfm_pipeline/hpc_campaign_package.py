@@ -61,7 +61,7 @@ _PILOT_STAGES = (
 )
 _PILOT_PROFILE_GRID: dict[str, tuple[tuple[str, str, int, int, int, int, int], ...]] = {
     # profile_id, partition, estimated CPUs, GiB, seconds, task size, block size
-    "scheduler_diagnostic": (("p0", "debug", 1, 1, 120, 1, 1),),
+    "scheduler_diagnostic": (("p0", "debug", 1, 8, 120, 1, 1),),
     "pilot_conditioning": (
         ("p0", "debug", 8, 32, 2880, 23495, 500),
         ("p1", "debug", 16, 64, 2880, 23495, 1000),

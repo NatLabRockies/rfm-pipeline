@@ -996,6 +996,30 @@ def test_live_smoke_collects_current_evidence_without_submitting(
     assert all(command[1] == "--test-only" and len(command) == 3 for command in sbatch_commands)
 
 
+def test_project_capacity_uses_filesystem_when_kestrel_has_no_project_quota(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import rfm_pipeline.hpc_campaign_package as hpc
+
+    commands: list[list[str]] = []
+
+    def fake_command(command: list[str], **_: object) -> Namespace:
+        commands.append(command)
+        assert command == ["lfs", "project", "-d", "/projects/bsm"]
+        return Namespace(returncode=0, stdout="    0 - /projects/bsm\n", stderr="")
+
+    monkeypatch.setattr(hpc, "_filesystem_availability", lambda _: (123_456, 789))
+
+    available_bytes, available_inodes, audit = hpc._project_quota_availability(
+        "/projects/bsm",
+        run_command=fake_command,
+    )
+
+    assert (available_bytes, available_inodes) == (123_456, 789)
+    assert audit["quota_mode"] == "filesystem_available_no_project_quota"
+    assert commands == [["lfs", "project", "-d", "/projects/bsm"]]
+
+
 def test_live_smoke_rejects_unknown_allocation_before_any_probe(tmp_path: Path) -> None:
     dag = _package(tmp_path)
     dag = replace(dag, cluster=replace(dag.cluster, allocation_quota="UNKNOWN"))

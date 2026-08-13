@@ -22,6 +22,7 @@ from rfm_pipeline.hpc_campaign_package import (
     _execute_worker_operation,
     build_campaign_phase_plan,
     build_submission_plan,
+    collect_pilot_accounting,
     execute_campaign_phase_plan,
     execute_retry_submission_plan,
     execute_submission_plan,
@@ -352,6 +353,18 @@ def test_campaign_envelope_applies_kestrel_cpu_charge_factor(tmp_path: Path) -> 
     assert envelope.requested_au == math.ceil(envelope.estimated_au * 1.20)
 
 
+def test_campaign_envelope_counts_worker_audit_and_reducer_jobs(tmp_path: Path) -> None:
+    dag = _package(tmp_path)
+    stage = _stage(dag, "scheduler_diagnostic")
+    estimate = next(
+        row for row in dag.campaign_envelope.stage_allocations if row.stage_name == stage.name
+    )
+
+    # debug is exclusive: one worker plus one audit plus one reducer, each one node.
+    assert estimate.estimated_node_hours == pytest.approx((180 + 300 + 300) / 3600)
+    assert estimate.requested_node_hours == pytest.approx((225 + 375 + 375) / 3600)
+
+
 def test_pre_pilot_campaign_envelope_exposes_full_provisional_cost(tmp_path: Path) -> None:
     """A provisional pre-pilot forecast is diagnostic, not a quota admission gate."""
     dag = generate_campaign_package(
@@ -360,7 +373,7 @@ def test_pre_pilot_campaign_envelope_exposes_full_provisional_cost(tmp_path: Pat
         config_path=CONFIG_PATH,
     )
 
-    assert dag.campaign_envelope.requested_au == 167_488
+    assert dag.campaign_envelope.requested_au == 167_514
     assert dag.campaign_envelope.requested_au > 25_000
     gate_b = next(
         estimate
@@ -372,8 +385,8 @@ def test_pre_pilot_campaign_envelope_exposes_full_provisional_cost(tmp_path: Pat
         for estimate in dag.campaign_envelope.stage_allocations
         if estimate.stage_name == "recovery"
     )
-    assert math.ceil(gate_b.requested_au) == 140_002
-    assert math.ceil(gate_c.requested_au) == 30_002
+    assert math.ceil(gate_b.requested_au) == 140_003
+    assert math.ceil(gate_c.requested_au) == 30_003
     assert any(
         "production resources and block sizes are not frozen" in blocker
         for blocker in dag.readiness_blockers
@@ -570,6 +583,24 @@ def test_pilot_manifest_rows_bind_distinct_scheduler_resource_profiles(tmp_path:
         ) in text
 
 
+def test_pilot_work_units_match_production_dimensions(tmp_path: Path) -> None:
+    dag = _package(tmp_path)
+    bootstrap = [row for row in dag.pilot_matrix if row["stage"] == "pilot_bootstrap"]
+    assert [row["executed_work_units"] for row in bootstrap] == [125_000, 500_000, 2_000_000]
+
+    telemetry = _accepted_pilot_telemetry(dag)
+    freeze = select_pilot_resources(
+        pilot_matrix=dag.pilot_matrix,
+        telemetry=telemetry,
+        cluster=dag.cluster,
+        source_hash=dag.source_hash,
+        config_hash=dag.config_hash,
+        lock_hash=dag.lock_hash,
+    )
+    selected = freeze["selections"]["pilot_bootstrap"]
+    assert selected["production_target_work_units"] == selected["block_size"] * 23_495 * 5
+
+
 def test_holdout_and_bootstrap_pilot_repetitions_consume_matching_upstream_shards(
     tmp_path: Path,
 ) -> None:
@@ -620,6 +651,21 @@ def _accepted_pilot_telemetry(dag) -> list[dict[str, object]]:  # noqa: ANN001
                 "requested_memory_gb": profile["memory_gb"],
                 "requested_walltime_seconds": profile["walltime_seconds"],
                 "partition": profile["partition"],
+                "hostname": "x1000c0s0b0n0",
+                "slurm_job_id": str(100000 + len(rows)),
+                "slurm_array_job_id": None,
+                "slurm_array_task_id": None,
+                "scheduler_state": "COMPLETED",
+                "scheduler_exit_code": "0:0",
+                "scheduler_elapsed_seconds": int(
+                    10.0
+                    if profile["stage"] == "scheduler_diagnostic"
+                    else elapsed_by_profile[str(profile["profile_id"])]
+                ),
+                "allocated_nodes": 1,
+                "allocated_cpus": 104,
+                "allocated_tres": "billing=1024,cpu=104,node=1",
+                "scheduler_max_rss_bytes": 2 * 1024**3,
             }
         )
     return rows
@@ -647,7 +693,8 @@ def test_pilot_resource_selector_requires_complete_telemetry_and_minimizes_proje
             continue
         # The middle profile has the lowest elapsed time per completed block
         # under this fixture, hence the lowest projected AU per work unit.
-        assert selection["selected_profile_id"] == "p1"
+        expected_profile = "p2" if stage_name == "pilot_bootstrap" else "p1"
+        assert selection["selected_profile_id"] == expected_profile
         assert selection["requested_memory_gb"] >= 5
         assert selection["requested_walltime_seconds"] >= 450
 
@@ -660,6 +707,37 @@ def test_pilot_resource_selector_requires_complete_telemetry_and_minimizes_proje
             config_hash=dag.config_hash,
             lock_hash=dag.lock_hash,
         )
+
+
+def test_pilot_resource_selector_prices_exclusive_profiles_as_full_nodes(
+    tmp_path: Path,
+) -> None:
+    """Kestrel debug/short/standard jobs are exclusive whole-node charges."""
+    dag = _package(tmp_path)
+    telemetry = _accepted_pilot_telemetry(dag)
+    for row in telemetry:
+        if row["stage"] != "pilot_recovery":
+            continue
+        elapsed = {
+            "p0": 100.0,
+            "p1": 60.0,
+            "p2": 50.0,
+        }[str(row["profile_id"])]
+        row["elapsed_seconds"] = elapsed
+        row["scheduler_elapsed_seconds"] = int(elapsed)
+
+    freeze = select_pilot_resources(
+        pilot_matrix=dag.pilot_matrix,
+        telemetry=telemetry,
+        cluster=dag.cluster,
+        source_hash=dag.source_hash,
+        config_hash=dag.config_hash,
+        lock_hash=dag.lock_hash,
+    )
+
+    # Fractional CPU pricing incorrectly favors p0.  All three requests occupy
+    # one exclusive node, so p2 has the lowest elapsed node-seconds per run.
+    assert freeze["selections"]["pilot_recovery"]["selected_profile_id"] == "p2"
 
 
 @pytest.mark.parametrize(
@@ -777,6 +855,103 @@ def test_submission_client_materializes_exact_dependency_job_ids(tmp_path: Path)
     audit_step = plan["pilot_steps"][audit_index]
     dependency_ids = [job_ids[step_id] for step_id in audit_step["depends_on"]]
     assert f"--dependency=afterany:{':'.join(dependency_ids)}" in calls[audit_index]
+
+
+def test_pilot_accounting_joins_scheduler_rows_to_profile_telemetry(tmp_path: Path) -> None:
+    dag = _package(tmp_path)
+    stage = _stage(dag, "scheduler_diagnostic")
+    record = load_stage_manifest(stage.manifest_path)[0]
+    monkey_result = {
+        "schema_version": 2,
+        "stage": stage.name,
+        "shard_id": record["shard_id"],
+        "status": "completed",
+        "attempt": 1,
+        "elapsed_seconds": 0.25,
+        "total_cpu_seconds": 0.2,
+        "cpu_time_seconds": 0.2,
+        "max_rss_bytes": 1024,
+        "bytes_read": 0,
+        "bytes_written": 0,
+        "task_size": 1,
+        "block_size": 1,
+        "executed_work_units": 1,
+        "profile_id": "p0",
+        "partition": "debug",
+        "requested_cpus": 2,
+        "requested_memory_gb": 10,
+        "requested_walltime_seconds": 225,
+        "hostname": "x1000c0s0b0n0",
+        "slurm_job_id": "123456",
+        "slurm_array_job_id": None,
+        "slurm_array_task_id": None,
+        **{
+            field: record[field]
+            for field in (
+                "source_hash",
+                "config_hash",
+                "lock_hash",
+                "input_hash",
+                "schedule_hash",
+                "parent_hash",
+                "output_hash",
+            )
+        },
+    }
+    result_path = Path(record["output_dir"]) / "result.json"
+    result_path.parent.mkdir(parents=True)
+    result_path.write_text(json.dumps(monkey_result), encoding="utf-8")
+    marker = {
+        "schema_version": 2,
+        "stage": stage.name,
+        "shard_id": record["shard_id"],
+        "output_hash": record["output_hash"],
+        "artifact_sha256": hashlib.sha256(result_path.read_bytes()).hexdigest(),
+        "parent_hash": record["parent_hash"],
+        "attempt": 1,
+        "status": "completed",
+    }
+    (result_path.parent / "_SUCCESS.json").write_text(json.dumps(marker), encoding="utf-8")
+    submission = {
+        "scheduler_diagnostic:worker": "123456",
+        "scheduler_diagnostic:audit": "123457",
+        "scheduler_diagnostic:reduce": "123458",
+    }
+
+    def fake_sacct(command: list[str], **_: object) -> Namespace:
+        assert command[0] == "sacct"
+        return Namespace(
+            returncode=0,
+            stdout=(
+                "123456|g11-scheduler_diagnostic-worker|debug|COMPLETED|0:0|8|1|104|"
+                "2|10G|billing=1024,cpu=104,node=1|832|00:00:01||1K|2K\n"
+                "123456.batch|batch||COMPLETED|0:0|8|1|104|2|10G|"
+                "billing=1024,cpu=104,node=1|832|00:00:01|180M|1K|2K\n"
+                "123457|g11-scheduler_diagnostic-audit|debug|COMPLETED|0:0|5|1|104|"
+                "5|10G|billing=1024,cpu=104,node=1|520|00:00:01|||\n"
+                "123458|g11-scheduler_diagnostic-reduce|debug|COMPLETED|0:0|7|1|104|"
+                "5|10G|billing=1024,cpu=104,node=1|728|00:00:01|||\n"
+            ),
+            stderr="",
+        )
+
+    evidence = collect_pilot_accounting(
+        dag,
+        submission_job_ids=submission,
+        output_dir=tmp_path / "accounting",
+        run_command=fake_sacct,
+        stage_names=("scheduler_diagnostic",),
+    )
+
+    assert evidence["status"] == "COMPLETE"
+    assert evidence["observed_worker_au"] == pytest.approx(8 / 3600 * 10)
+    assert evidence["observed_total_au"] == pytest.approx((8 + 5 + 7) / 3600 * 10)
+    assert evidence["pilot_telemetry"][0]["scheduler_elapsed_seconds"] == 8
+    assert evidence["pilot_telemetry"][0]["allocated_nodes"] == 1
+    assert evidence["pilot_telemetry"][0]["allocated_cpus"] == 104
+    assert evidence["pilot_telemetry"][0]["scheduler_max_rss_bytes"] == 180 * 1024**2
+    assert (tmp_path / "accounting" / "sacct_raw.psv").is_file()
+    assert (tmp_path / "accounting" / "pilot_accounting.json").is_file()
 
 
 def test_phase_submission_rejects_source_or_lock_drift_before_sbatch(
@@ -1077,7 +1252,7 @@ def test_live_smoke_rejects_unknown_allocation_before_any_probe(tmp_path: Path) 
 def test_post_pilot_projection_fits_the_25k_campaign_budget(tmp_path: Path) -> None:
     _, _, _, _, final = _final_package(tmp_path)
 
-    assert final.campaign_envelope.requested_au == 23_022
+    assert final.campaign_envelope.requested_au == 10_243
     assert final.campaign_envelope.requested_au <= 25_000
     assert {"pilot_conditioning", "resolution"} <= {
         estimate.stage_name for estimate in final.campaign_envelope.stage_allocations
@@ -1089,9 +1264,9 @@ def test_post_pilot_gate_counts_pilot_and_resolution_against_whole_campaign_cap(
 ) -> None:
     with pytest.raises(
         ValueError,
-        match="telemetry-based whole-campaign projection exceeds allocation_quota: 23022 > 23000",
+        match="telemetry-based whole-campaign projection exceeds allocation_quota: 10243 > 10000",
     ):
-        _final_package(tmp_path, quota=23_000)
+        _final_package(tmp_path, quota=10_000)
 
 
 def test_live_smoke_cli_builds_a_fresh_pilot_package(
@@ -1467,10 +1642,15 @@ def test_telemetry_schema_supports_resource_selection(tmp_path: Path) -> None:
     }.issubset(names)
 
 
-def test_worker_writes_content_verified_result_and_success_marker(tmp_path: Path) -> None:
+def test_worker_writes_content_verified_result_and_success_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     dag = _package(tmp_path)
     stage = _stage(dag, "scheduler_diagnostic")
     record = load_stage_manifest(stage.manifest_path)[0]
+    monkeypatch.setenv("SLURM_JOB_ID", "123456")
+    monkeypatch.setenv("SLURM_ARRAY_JOB_ID", "123450")
+    monkeypatch.setenv("SLURM_ARRAY_TASK_ID", "6")
     result = _cli_worker(
         Namespace(
             manifest=stage.manifest_path,
@@ -1488,6 +1668,18 @@ def test_worker_writes_content_verified_result_and_success_marker(tmp_path: Path
     shard_dir = Path(record["output_dir"])
     assert (shard_dir / "result.json").is_file()
     assert (shard_dir / "_SUCCESS.json").is_file()
+    telemetry = json.loads((shard_dir / "result.json").read_text(encoding="utf-8"))
+    assert telemetry["status"] == "completed"
+    assert telemetry["attempt"] == 1
+    assert telemetry["source_hash"] == dag.source_hash
+    assert telemetry["config_hash"] == dag.config_hash
+    assert telemetry["lock_hash"] == dag.lock_hash
+    assert telemetry["parent_hash"] == record["parent_hash"]
+    assert telemetry["output_hash"] == record["output_hash"]
+    assert telemetry["slurm_job_id"] == "123456"
+    assert telemetry["slurm_array_job_id"] == "123450"
+    assert telemetry["slurm_array_task_id"] == "6"
+    assert telemetry["hostname"]
     assert validate_resume_artifacts(stage)["completed"] == 1
 
 

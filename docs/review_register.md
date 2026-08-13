@@ -441,7 +441,7 @@ package is rejected unless the whole projected campaign plus one shared 20%
 overrun/retry reserve fits the fixed 25,000-AU ceiling. Individual retry
 authorization remains limited to eligible infrastructure failures and the retry
 package rebuilds the audit/reducer dependency chain. The deterministic
-post-pilot test fixture projects 23,022 AUs including the completed pilot,
+post-pilot test fixture projects 10,243 AUs including the completed pilot,
 resolution, confirmatory production, and shared reserve.
 
 ## REVIEW-0016 — Kestrel project-storage imports made every task unusable
@@ -471,6 +471,36 @@ resolution, confirmatory production, and shared reserve.
   required before scheduler readiness is restored.
 - Blocks submission: until the new pinned commits are installed and the timed
   worker/audit/reducer smoke passes from the scratch runtime.
+
+## REVIEW-0017 — Pilot AU selector and campaign envelope omitted scheduler facts
+
+- Date: 2026-08-13
+- Severity: P0 / final-run allocation correctness
+- Status: fixed on `g11-integration-reconcile`
+- Evidence: Kestrel `debug`, `short`, and `standard` are `OverSubscribe=EXCLUSIVE`;
+  live job `16144435` requested two CPUs but `sacct` reported one node, 104
+  allocated CPUs, and `billing=1024`. The pilot selector nevertheless priced
+  most profiles as CPU/memory fractions. It used in-process elapsed/RSS without
+  requiring matching scheduler completion, and campaign forecasts counted one
+  reducer per stage while the submitted DAG runs both an audit and a reducer.
+- Resolution: pilot acceptance now requires complete, successful top-level
+  Slurm accounting joined to the exact worker job ID. Selection uses allocated
+  nodes times scheduler elapsed and the greater of process RSS or batch-step
+  MaxRSS. The retained accounting bundle hashes raw `sacct` rows, the complete
+  step-to-job map, joined telemetry, worker AU, and total pilot AU. Campaign
+  accounting now includes both audit and reducer jobs per stage.
+- The pilot kernels now match production dimensions that affect scaling: 367
+  enriched sparse/terminal candidates, five applied-model holdout/bootstrap
+  passes, and the scheduler-granted CPU count. Bootstrap work units encode
+  draws times outputs times models; resolution scaling counts the single nested
+  maximum-draw computation rather than double-counting its B and 2B prefixes.
+- Scientific impact: fixes profile choice, memory sizing, and whole-campaign AU
+  admission before the one-shot final run; it does not change scientific
+  estimands or methods.
+- Validation: prospective exclusive-node selection, scheduler-join, RSS, and
+  audit-accounting tests fail on the prior implementation and pass after repair.
+- Blocks submission: yes until the corrected commits are deployed and a fresh
+  immutable pilot package/preflight is generated.
 
 ## Independent review of alignment diff b96442b..e31fb15 (round 3 remediation)
 

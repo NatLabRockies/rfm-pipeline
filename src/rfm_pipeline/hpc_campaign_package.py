@@ -59,6 +59,9 @@ _PILOT_STAGES = (
     "pilot_holdout_predict",
     "pilot_bootstrap",
 )
+_PILOT_ENRICHED_CANDIDATE_COUNT = 367
+_PILOT_APPLIED_MODEL_COUNT = 5
+_PILOT_OUTPUT_COUNT_BY_PROFILE = {"p0": 500, "p1": 1000, "p2": 2000}
 _PILOT_PROFILE_GRID: dict[str, tuple[tuple[str, str, int, int, int, int, int], ...]] = {
     # profile_id, partition, estimated CPUs, GiB, seconds, task size, block size
     "scheduler_diagnostic": (("p0", "debug", 1, 8, 180, 1, 1),),
@@ -88,9 +91,9 @@ _PILOT_PROFILE_GRID: dict[str, tuple[tuple[str, str, int, int, int, int, int], .
         ("p2", "debug", 32, 96, 2880, 160, 40),
     ),
     "pilot_sparse_full": (
-        ("p0", "debug", 8, 32, 2880, 160, 40),
-        ("p1", "debug", 16, 64, 2880, 160, 80),
-        ("p2", "debug", 32, 128, 2880, 160, 160),
+        ("p0", "debug", 8, 32, 2880, _PILOT_ENRICHED_CANDIDATE_COUNT, 40),
+        ("p1", "debug", 16, 64, 2880, _PILOT_ENRICHED_CANDIDATE_COUNT, 80),
+        ("p2", "debug", 32, 128, 2880, _PILOT_ENRICHED_CANDIDATE_COUNT, 160),
     ),
     "pilot_sparse_resample": (
         ("p0", "debug", 8, 32, 2880, 50, 1),
@@ -135,6 +138,12 @@ _PILOT_FULL_TASK_STAGES = {
 
 
 def _pilot_executed_work_units(row: dict[str, Any]) -> int:
+    if str(row["stage"]) == "pilot_bootstrap":
+        return (
+            int(row["block_size"])
+            * _PILOT_OUTPUT_COUNT_BY_PROFILE[str(row["profile_id"])]
+            * _PILOT_APPLIED_MODEL_COUNT
+        )
     if str(row["stage"]) in _PILOT_FULL_TASK_STAGES:
         if row["stage"] in {"pilot_conditioning", "pilot_terminal_fit"}:
             return int(row["block_size"])
@@ -373,6 +382,17 @@ def generate_campaign_package(
             ("requested_cpus", "int"),
             ("requested_memory_gb", "int"),
             ("requested_walltime_seconds", "int"),
+            ("hostname", "str"),
+            ("slurm_job_id", "str"),
+            ("slurm_array_job_id", "str_or_null"),
+            ("slurm_array_task_id", "str_or_null"),
+            ("scheduler_state", "str"),
+            ("scheduler_exit_code", "str"),
+            ("scheduler_elapsed_seconds", "int"),
+            ("allocated_nodes", "int"),
+            ("allocated_cpus", "int"),
+            ("allocated_tres", "str"),
+            ("scheduler_max_rss_bytes", "int"),
             ("source_hash", "str"),
             ("config_hash", "str"),
             ("lock_hash", "str"),
@@ -1973,6 +1993,222 @@ def _select_post_pilot_profiles(
     }
 
 
+def collect_pilot_accounting(
+    dag: CampaignDAG,
+    *,
+    submission_job_ids: dict[str, str],
+    output_dir: str | Path,
+    run_command: Any | None = None,
+    stage_names: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Join verified worker results to complete top-level Slurm accounting."""
+    selected_names = set(_PILOT_STAGES if stage_names is None else stage_names)
+    if not selected_names or not selected_names <= set(_PILOT_STAGES):
+        raise ValueError("pilot accounting stage selection is empty or invalid")
+    plan_steps = [
+        step
+        for step in build_submission_plan(dag)["pilot_steps"]
+        if str(step["stage"]) in selected_names
+    ]
+    expected_step_ids = {str(step["step_id"]) for step in plan_steps}
+    if set(submission_job_ids) != expected_step_ids:
+        raise ValueError("pilot accounting job IDs do not exactly cover the selected plan")
+    if any(re.fullmatch(r"[0-9]+", str(value)) is None for value in submission_job_ids.values()):
+        raise ValueError("pilot accounting contains an invalid scheduler job ID")
+
+    destination = Path(output_dir).resolve()
+    if destination.exists() and any(destination.iterdir()):
+        raise ValueError("pilot accounting output directory must be empty")
+    destination.mkdir(parents=True, exist_ok=True)
+    runner = subprocess.run if run_command is None else run_command
+    field_names = (
+        "job_id",
+        "job_name",
+        "partition",
+        "scheduler_state",
+        "scheduler_exit_code",
+        "scheduler_elapsed_seconds",
+        "allocated_nodes",
+        "allocated_cpus",
+        "requested_cpus",
+        "requested_memory",
+        "allocated_tres",
+        "cpu_time_raw",
+        "total_cpu",
+        "max_rss",
+        "max_disk_read",
+        "max_disk_write",
+    )
+    job_ids = sorted(set(submission_job_ids.values()), key=int)
+    completed = runner(
+        [
+            "sacct",
+            "-j",
+            ",".join(job_ids),
+            "-nP",
+            "--format="
+            + ",".join(
+                (
+                    "JobIDRaw",
+                    "JobName",
+                    "Partition",
+                    "State",
+                    "ExitCode",
+                    "ElapsedRaw",
+                    "AllocNodes",
+                    "AllocCPUS",
+                    "ReqCPUS",
+                    "ReqMem",
+                    "AllocTRES%120",
+                    "CPUTimeRAW",
+                    "TotalCPU",
+                    "MaxRSS",
+                    "MaxDiskRead",
+                    "MaxDiskWrite",
+                )
+            ),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    raw_text = str(completed.stdout)
+    raw_path = destination / "sacct_raw.psv"
+    raw_path.write_text(raw_text, encoding="utf-8")
+    all_scheduler_rows: dict[str, dict[str, Any]] = {}
+    for line in raw_text.splitlines():
+        values = line.split("|")
+        if len(values) != len(field_names):
+            raise ValueError("pilot sacct output does not match the frozen field schema")
+        raw = dict(zip(field_names, values, strict=True))
+        job_id = str(raw["job_id"])
+        if job_id in all_scheduler_rows:
+            raise ValueError(f"pilot sacct output duplicates job row {job_id}")
+        try:
+            is_top_level = job_id in job_ids
+            all_scheduler_rows[job_id] = {
+                **raw,
+                "scheduler_elapsed_seconds": int(raw["scheduler_elapsed_seconds"]),
+                "allocated_nodes": int(raw["allocated_nodes"]),
+                "allocated_cpus": int(raw["allocated_cpus"]),
+                "requested_cpus": int(raw["requested_cpus"]) if is_top_level else 0,
+                "cpu_time_raw": int(raw["cpu_time_raw"]),
+            }
+        except ValueError as exc:
+            raise ValueError(f"pilot sacct row {job_id} has invalid numeric fields") from exc
+    scheduler_rows = {
+        job_id: all_scheduler_rows[job_id] for job_id in job_ids if job_id in all_scheduler_rows
+    }
+    if set(scheduler_rows) != set(job_ids):
+        raise ValueError("pilot sacct output lacks complete top-level job coverage")
+    for job_id, row in scheduler_rows.items():
+        if row["scheduler_state"] != "COMPLETED" or row["scheduler_exit_code"] != "0:0":
+            raise ValueError(f"pilot scheduler job {job_id} did not complete successfully")
+        if (
+            row["scheduler_elapsed_seconds"] <= 0
+            or row["allocated_nodes"] <= 0
+            or row["allocated_cpus"] <= 0
+            or not str(row["allocated_tres"]).strip()
+        ):
+            raise ValueError(f"pilot scheduler job {job_id} has incomplete allocation evidence")
+
+    def _slurm_memory_bytes(raw: str) -> int:
+        match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)([KMGTP]?)", raw.strip(), flags=re.IGNORECASE)
+        if match is None:
+            if not raw.strip():
+                return 0
+            raise ValueError(f"pilot sacct MaxRSS value is invalid: {raw}")
+        scale = 1024 ** ("KMGTP".find(match.group(2).upper()) + 1) if match.group(2) else 1
+        return math.ceil(float(match.group(1)) * scale)
+
+    telemetry: list[dict[str, Any]] = []
+    worker_job_ids: set[str] = set()
+    for stage in dag.stages:
+        if stage.name not in selected_names:
+            continue
+        validate_resume_artifacts(stage)
+        records = load_stage_manifest(stage.manifest_path)
+        worker_steps = [
+            step
+            for step in plan_steps
+            if step["stage"] == stage.name and step["action"] == "worker"
+        ]
+        if len(worker_steps) != len(records):
+            raise ValueError(f"pilot worker plan differs from manifest for {stage.name}")
+        for record, step in zip(records, worker_steps, strict=True):
+            job_id = str(submission_job_ids[str(step["step_id"])])
+            result_path = Path(record["output_dir"]) / "result.json"
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            if str(result.get("slurm_job_id", "")) != job_id:
+                raise ValueError(f"pilot worker result differs from submitted job ID {job_id}")
+            scheduler = scheduler_rows[job_id]
+            child_rss = max(
+                (
+                    _slurm_memory_bytes(str(row["max_rss"]))
+                    for child_id, row in all_scheduler_rows.items()
+                    if child_id.startswith(f"{job_id}.")
+                ),
+                default=0,
+            )
+            scheduler_max_rss_bytes = max(
+                _slurm_memory_bytes(str(scheduler["max_rss"])),
+                child_rss,
+            )
+            telemetry.append(
+                {
+                    **result,
+                    "scheduler_state": scheduler["scheduler_state"],
+                    "scheduler_exit_code": scheduler["scheduler_exit_code"],
+                    "scheduler_elapsed_seconds": scheduler["scheduler_elapsed_seconds"],
+                    "allocated_nodes": scheduler["allocated_nodes"],
+                    "allocated_cpus": scheduler["allocated_cpus"],
+                    "allocated_tres": scheduler["allocated_tres"],
+                    "scheduler_max_rss_bytes": scheduler_max_rss_bytes,
+                    "scheduler_cpu_time_raw": scheduler["cpu_time_raw"],
+                    "scheduler_total_cpu": scheduler["total_cpu"],
+                    "scheduler_max_rss": scheduler["max_rss"],
+                    "scheduler_max_disk_read": scheduler["max_disk_read"],
+                    "scheduler_max_disk_write": scheduler["max_disk_write"],
+                }
+            )
+            worker_job_ids.add(job_id)
+
+    def _observed_au(ids: set[str]) -> float:
+        return sum(
+            int(scheduler_rows[job_id]["scheduler_elapsed_seconds"])
+            / 3600.0
+            * int(scheduler_rows[job_id]["allocated_nodes"])
+            * dag.cluster.cpu_charge_factor
+            * dag.cluster.qos_factor
+            for job_id in ids
+        )
+
+    canonical_telemetry = sorted(
+        telemetry, key=lambda row: (str(row["stage"]), str(row["profile_id"]))
+    )
+    payload = {
+        "schema_version": 1,
+        "status": "COMPLETE",
+        "run_id": dag.run_id,
+        "source_hash": dag.source_hash,
+        "config_hash": dag.config_hash,
+        "lock_hash": dag.lock_hash,
+        "campaign_inventory_hash": dag.campaign_inventory_hash,
+        "submission_job_ids": dict(sorted(submission_job_ids.items())),
+        "sacct_raw_sha256": _hash_file(raw_path),
+        "pilot_telemetry": canonical_telemetry,
+        "pilot_telemetry_sha256": _stable_hash(canonical_telemetry),
+        "observed_worker_au": _observed_au(worker_job_ids),
+        "observed_total_au": _observed_au(set(job_ids)),
+    }
+    payload["pilot_accounting_sha256"] = _stable_hash(payload)
+    (destination / "pilot_accounting.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return payload
+
+
 def select_pilot_resources(
     *,
     pilot_matrix: tuple[dict[str, Any], ...],
@@ -2017,7 +2253,10 @@ def select_pilot_resources(
                 label = field.replace("_", " ")
                 raise ValueError(f"pilot {identity} {label} differs from its frozen profile")
         elapsed = float(row.get("elapsed_seconds", 0.0))
-        max_rss = int(row.get("max_rss_bytes", -1))
+        max_rss = max(
+            int(row.get("max_rss_bytes", -1)),
+            int(row.get("scheduler_max_rss_bytes", -1)),
+        )
         if not 0.0 < elapsed <= int(profile["walltime_seconds"]):
             raise ValueError(f"pilot {identity} elapsed time exceeds its walltime")
         if not 0 <= max_rss <= int(profile["memory_gb"]) * 1024**3:
@@ -2030,6 +2269,22 @@ def select_pilot_resources(
         ):
             if float(row.get(field, -1.0)) < 0.0:
                 raise ValueError(f"pilot {identity} has invalid {field}")
+        if row.get("scheduler_state") != "COMPLETED" or row.get("scheduler_exit_code") != "0:0":
+            raise ValueError(f"pilot {identity} scheduler job did not complete successfully")
+        scheduler_elapsed = int(row.get("scheduler_elapsed_seconds", 0))
+        allocated_nodes = int(row.get("allocated_nodes", 0))
+        allocated_cpus = int(row.get("allocated_cpus", 0))
+        if not 0 < scheduler_elapsed <= int(profile["walltime_seconds"]):
+            raise ValueError(f"pilot {identity} scheduler elapsed time exceeds its walltime")
+        if allocated_nodes < 1 or allocated_cpus < int(profile["cpus"]):
+            raise ValueError(f"pilot {identity} scheduler allocation is incomplete")
+        if re.fullmatch(r"[0-9]+", str(row.get("slurm_job_id", ""))) is None:
+            raise ValueError(f"pilot {identity} scheduler job ID is invalid")
+        if (
+            not str(row.get("hostname", "")).strip()
+            or not str(row.get("allocated_tres", "")).strip()
+        ):
+            raise ValueError(f"pilot {identity} scheduler identity is incomplete")
         observed[identity] = row
 
     missing = sorted(set(expected) - set(observed))
@@ -2049,16 +2304,10 @@ def select_pilot_resources(
 
         candidates: list[tuple[float, str, dict[str, Any], dict[str, Any]]] = []
         for profile, result in zip(profiles, evidence, strict=True):
-            node_fraction = max(
-                int(profile["cpus"]) / cluster.cpu_cores_per_node,
-                int(profile["memory_gb"]) / cluster.memory_per_node_gb,
-            )
-            if stage in {"pilot_gate_b_null", "pilot_recovery"}:
-                node_fraction = float(math.ceil(node_fraction))
             projected_au_per_work_unit = (
-                float(result["elapsed_seconds"])
+                float(result["scheduler_elapsed_seconds"])
                 / 3600.0
-                * node_fraction
+                * int(result["allocated_nodes"])
                 * cluster.cpu_charge_factor
                 * cluster.qos_factor
                 / int(profile["executed_work_units"])
@@ -2071,32 +2320,47 @@ def select_pilot_resources(
                     result,
                 )
             )
-        projected_au, selected_id, selected_profile, _ = min(
+        projected_au, selected_id, selected_profile, selected_result = min(
             candidates, key=lambda value: (value[0], value[1])
         )
         selected_block_size = int(selected_profile["block_size"])
-        target_work_units = (
-            int(selected_profile["task_size"])
-            if stage in _PILOT_FULL_TASK_STAGES
-            else selected_block_size
-        )
-        largest_scaled_rss_gb = max(
-            int(result["max_rss_bytes"])
-            / 1024**3
-            * target_work_units
-            / int(profile["executed_work_units"])
-            for profile, result in zip(profiles, evidence, strict=True)
-        )
+        if stage == "pilot_bootstrap":
+            target_work_units = selected_block_size * 23495 * _PILOT_APPLIED_MODEL_COUNT
+        else:
+            target_work_units = (
+                int(selected_profile["task_size"])
+                if stage in _PILOT_FULL_TASK_STAGES
+                else selected_block_size
+            )
+        if stage == "pilot_bootstrap":
+            largest_scaled_rss_gb = (
+                max(
+                    int(selected_result["max_rss_bytes"]),
+                    int(selected_result["scheduler_max_rss_bytes"]),
+                )
+                / 1024**3
+                * 23495
+                / _PILOT_OUTPUT_COUNT_BY_PROFILE[selected_id]
+            )
+        else:
+            largest_scaled_rss_gb = (
+                max(
+                    int(selected_result["max_rss_bytes"]),
+                    int(selected_result["scheduler_max_rss_bytes"]),
+                )
+                / 1024**3
+                * target_work_units
+                / int(selected_profile["executed_work_units"])
+            )
         requested_memory_gb = math.ceil(1.5 * largest_scaled_rss_gb + 2.0)
         if requested_memory_gb > cluster.memory_per_node_gb:
             raise ValueError(f"pilot {stage} memory bound crosses the standard node class")
-        worst_scaled_seconds = max(
-            float(result["elapsed_seconds"])
-            / int(profile["executed_work_units"])
+        selected_scaled_seconds = (
+            float(selected_result["scheduler_elapsed_seconds"])
+            / int(selected_profile["executed_work_units"])
             * target_work_units
-            for profile, result in zip(profiles, evidence, strict=True)
         )
-        requested_walltime_seconds = math.ceil(1.5 * worst_scaled_seconds + 300.0)
+        requested_walltime_seconds = math.ceil(1.5 * selected_scaled_seconds + 300.0)
         if requested_walltime_seconds <= 4 * 3600:
             partition = "short"
         elif requested_walltime_seconds <= 2 * 86400:
@@ -2115,6 +2379,10 @@ def select_pilot_resources(
             "block_size": selected_block_size,
             "production_target_work_units": target_work_units,
             "projected_au_per_work_unit": projected_au,
+            "observed_scheduler_elapsed_seconds": int(
+                observed[(stage, selected_id)]["scheduler_elapsed_seconds"]
+            ),
+            "observed_allocated_nodes": int(observed[(stage, selected_id)]["allocated_nodes"]),
         }
 
     canonical_telemetry = sorted(
@@ -2229,10 +2497,8 @@ def _apply_resource_freeze_to_stage_spec(
     if stage in {"resolution", "fixed_family_supplement"}:
         pilot_pair_draws = int(selection["block_size"]) * 12720
         target_pair_draws = (
-            sum(
-                contract.resolution_base_draws * multiplier
-                for multiplier in (1, 2, contract.resolution_max_multiplier)
-            )
+            contract.resolution_base_draws
+            * contract.resolution_max_multiplier
             * contract.resolution_family_size
             if stage == "resolution"
             else contract.B_interaction * max(contract.fixed_family_sizes)
@@ -2917,6 +3183,7 @@ def _allocation_estimate_from_resources(
         )
         * reducer_resources.estimated_walltime_seconds
         / 3600
+        * 2  # one exact-coverage audit plus one reducer
     )
     requested_node_hours += (
         _allocated_node_count(
@@ -2927,6 +3194,7 @@ def _allocation_estimate_from_resources(
         )
         * reducer_resources.requested_walltime_seconds
         / 3600
+        * 2  # one exact-coverage audit plus one reducer
     )
     charge = cluster.cpu_charge_factor * cluster.qos_factor
     return StageAllocationEstimate(
@@ -2982,11 +3250,11 @@ def _stage_allocation_estimate(
     )
     estimated_node_hours = (
         worker_estimated_node_hours
-        + reducer_estimated_nodes * stage.reducer_resources.estimated_walltime_seconds / 3600
+        + 2 * reducer_estimated_nodes * stage.reducer_resources.estimated_walltime_seconds / 3600
     )
     requested_node_hours = (
         worker_requested_node_hours
-        + reducer_requested_nodes * stage.reducer_resources.requested_walltime_seconds / 3600
+        + 2 * reducer_requested_nodes * stage.reducer_resources.requested_walltime_seconds / 3600
     )
     charge = cluster.cpu_charge_factor * cluster.qos_factor
     return StageAllocationEstimate(
@@ -4075,6 +4343,17 @@ def _cli_worker(args: argparse.Namespace) -> int:
             "requested_walltime_seconds": int(
                 record["worker_resources"]["requested_walltime_seconds"]
             ),
+            "status": "completed",
+            "attempt": int(record["attempt"]) + 1,
+            "hostname": platform.node(),
+            "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+            "slurm_array_job_id": os.environ.get("SLURM_ARRAY_JOB_ID"),
+            "slurm_array_task_id": os.environ.get("SLURM_ARRAY_TASK_ID"),
+            "source_hash": record["source_hash"],
+            "config_hash": record["config_hash"],
+            "lock_hash": record["lock_hash"],
+            "parent_hash": record["parent_hash"],
+            "output_hash": record["output_hash"],
         }
     )
     pending_result = shard_dir / "result.pending.json"
@@ -4231,6 +4510,11 @@ def _pilot_training_tables(
     return inputs, catalog, assignments, pca_scores
 
 
+def _pilot_worker_count() -> int:
+    """Use the scheduler-granted CPU count exactly as production specs do."""
+    return max(1, int(os.environ.get("SLURM_CPUS_PER_TASK", "1")))
+
+
 def _run_pilot_screening(record: dict[str, Any], shard_dir: Path) -> dict[str, Any]:
     from rfm_pipeline.manuscript_stages import (
         EmpiricalNullScreeningSpec,
@@ -4244,6 +4528,7 @@ def _run_pilot_screening(record: dict[str, Any], shard_dir: Path) -> dict[str, A
         bh_q_screen=G11_CONTRACT.q_screen,
         retained_terms_reference=0,
         random_seed=_pilot_seed(record),
+        n_jobs=_pilot_worker_count(),
     )
     draw_end = min(G11_CONTRACT.B_screen, max(1, int(record["block_size"])))
     block = score_screening_draw_block(
@@ -4321,7 +4606,7 @@ def _pilot_interaction_spec(record: dict[str, Any]) -> Any:
         n_tree_estimators=G11_CONTRACT.n_tree_estimators,
         max_tree_depth=3,
         max_shap_samples=500,
-        n_jobs=max(1, min(8, int(os.environ.get("SLURM_CPUS_PER_TASK", "1")))),
+        n_jobs=_pilot_worker_count(),
         selection_method="max_stat_adjusted_p_mc",
         selection_alpha=G11_CONTRACT.alpha,
         minimum_selection_draws=G11_CONTRACT.B_interaction,
@@ -4450,7 +4735,7 @@ def _run_pilot_nonlinear(record: dict[str, Any], shard_dir: Path) -> dict[str, A
             replacement_selection_rule="minimum_training_rmse_against_gam_smooth",
             identified_transformations_reference=0,
             final_support_transformations_reference=0,
-            n_jobs=max(1, min(8, int(os.environ.get("SLURM_CPUS_PER_TASK", "1")))),
+            n_jobs=_pilot_worker_count(),
         ),
         active_feature_indices=set(range(block_size)),
     )
@@ -4475,16 +4760,22 @@ def _pilot_sparse_spec() -> Any:
         jaccard_threshold=G11_CONTRACT.stability_jaccard_threshold,
         spearman_threshold=G11_CONTRACT.stability_spearman_threshold,
         random_seed=123,
-        n_jobs=max(1, min(8, int(os.environ.get("SLURM_CPUS_PER_TASK", "1")))),
+        n_jobs=_pilot_worker_count(),
     )
 
 
 def _pilot_sparse_inputs(record: dict[str, Any]) -> tuple[Any, ...]:
+    from itertools import combinations
+
     import pandas as pd
 
     inputs, catalog, assignments, pca_scores = _pilot_training_tables(record)
     retained = pd.DataFrame({"feature_name": catalog["feature_name"].astype(str)})
-    retained_pairs = pd.DataFrame({"pair_name": []})
+    feature_names = catalog["feature_name"].astype(str).tolist()
+    pair_names = [f"{left}:{right}" for left, right in combinations(feature_names, 2)][
+        : _PILOT_ENRICHED_CANDIDATE_COUNT - len(feature_names)
+    ]
+    retained_pairs = pd.DataFrame({"pair_name": pair_names})
     retained_transformations = pd.DataFrame({"feature_name": []})
     return (
         inputs,
@@ -4580,11 +4871,14 @@ def _run_pilot_terminal_fit(record: dict[str, Any], shard_dir: Path) -> dict[str
     )
 
     rng = np.random.default_rng(_pilot_seed(record))
-    x = rng.standard_normal((28_500, 160))
+    x = rng.standard_normal((28_500, _PILOT_ENRICHED_CANDIDATE_COUNT))
     n_outputs = max(2, int(record["block_size"]))
     coefficients = rng.normal(size=(10, n_outputs))
     y = x[:, :10] @ coefficients + rng.normal(scale=0.5, size=(28_500, n_outputs))
-    x_frame = pd.DataFrame(x, columns=[f"candidate_{index:03d}" for index in range(160)])
+    x_frame = pd.DataFrame(
+        x,
+        columns=[f"candidate_{index:03d}" for index in range(_PILOT_ENRICHED_CANDIDATE_COUNT)],
+    )
     y_frame = pd.DataFrame(
         y,
         columns=[f"output_{index:05d}" for index in range(n_outputs)],
@@ -4752,23 +5046,32 @@ def _run_pilot_holdout_predict(record: dict[str, Any], shard_dir: Path) -> dict[
     y_path = shard_dir / "y_holdout.npy"
     np.save(x_path, rng.standard_normal((n_rows, n_features)), allow_pickle=False)
     np.save(y_path, rng.standard_normal((n_rows, n_outputs)), allow_pickle=False)
-    frozen = holdout_predict_from_files(
-        freeze_dir=freeze_dir,
-        x_holdout_path=x_path,
-        y_holdout_path=y_path,
-        holdout_ids=tuple(f"pilot-holdout-{index:04d}" for index in range(n_rows)),
-        strata=np.asarray([f"scenario-{index % 4}" for index in range(n_rows)]),
-    )
+    frozen_by_model = []
+    for _model_index in range(_PILOT_APPLIED_MODEL_COUNT):
+        frozen_by_model.append(
+            holdout_predict_from_files(
+                freeze_dir=freeze_dir,
+                x_holdout_path=x_path,
+                y_holdout_path=y_path,
+                holdout_ids=tuple(f"pilot-holdout-{index:04d}" for index in range(n_rows)),
+                strata=np.asarray([f"scenario-{index % 4}" for index in range(n_rows)]),
+            )
+        )
     output_dir = shard_dir / "frozen_predictions"
-    write_frozen_prediction_matrices(frozen=frozen, output_dir=output_dir)
+    for model_index, frozen in enumerate(frozen_by_model):
+        write_frozen_prediction_matrices(
+            frozen=frozen,
+            output_dir=output_dir / f"model-{model_index}",
+        )
     return {
         "operation": "pilot_holdout_predict",
         "status": "completed",
         "kernel": "holdout_predict_from_files",
-        "freeze_hash": frozen.freeze_hash,
+        "freeze_hash": frozen_by_model[0].freeze_hash,
         "n_holdout_rows": n_rows,
         "n_outputs": n_outputs,
-        "artifact_sha256": _hash_file(output_dir / "frozen_predictions.npz"),
+        "model_count": len(frozen_by_model),
+        "artifact_sha256": _hash_file(output_dir / "model-0" / "frozen_predictions.npz"),
     }
 
 
@@ -4786,30 +5089,34 @@ def _run_pilot_bootstrap(record: dict[str, Any], shard_dir: Path) -> dict[str, A
         )
         / "frozen_predictions"
     )
-    frozen = read_frozen_prediction_matrices(source_dir)
     draw_end = min(G11_CONTRACT.bootstrap_draws, max(1, int(record["block_size"])))
-    block = bootstrap_metric_block(
-        frozen,
-        draw_start=0,
-        draw_end=draw_end,
-        random_seed=_pilot_seed(record),
-    )
-    block_path = shard_dir / "bootstrap_block.npz"
-    np.savez_compressed(
-        block_path,
-        per_draw_macro_nrmse=block.per_draw_macro_nrmse,
-        draw_ids=block.draw_ids,
-    )
+    blocks = []
+    for model_index in range(_PILOT_APPLIED_MODEL_COUNT):
+        frozen = read_frozen_prediction_matrices(source_dir / f"model-{model_index}")
+        block = bootstrap_metric_block(
+            frozen,
+            draw_start=0,
+            draw_end=draw_end,
+            random_seed=_pilot_seed(record),
+        )
+        block_path = shard_dir / f"model-{model_index}-bootstrap_block.npz"
+        np.savez_compressed(
+            block_path,
+            per_draw_macro_nrmse=block.per_draw_macro_nrmse,
+            draw_ids=block.draw_ids,
+        )
+        blocks.append(block)
     return {
         "operation": "pilot_bootstrap",
         "status": "completed",
         "kernel": "bootstrap_metric_block",
-        "freeze_hash": block.freeze_hash,
-        "bootstrap_schedule_hash": block.schedule_hash,
-        "draw_start": block.draw_start,
-        "draw_end": block.draw_end,
-        "eligible_count": block.eligible_count,
-        "artifact_sha256": _hash_file(block_path),
+        "freeze_hash": blocks[0].freeze_hash,
+        "bootstrap_schedule_hash": blocks[0].schedule_hash,
+        "draw_start": blocks[0].draw_start,
+        "draw_end": blocks[0].draw_end,
+        "eligible_count": blocks[0].eligible_count,
+        "model_count": len(blocks),
+        "artifact_sha256": _hash_file(shard_dir / "model-0-bootstrap_block.npz"),
     }
 
 
@@ -5079,6 +5386,7 @@ __all__ = [
     "StagePlan",
     "build_campaign_phase_plan",
     "build_submission_plan",
+    "collect_pilot_accounting",
     "execute_campaign_phase_plan",
     "execute_retry_submission_plan",
     "execute_submission_plan",

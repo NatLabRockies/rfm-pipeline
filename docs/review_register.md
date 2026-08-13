@@ -441,8 +441,36 @@ package is rejected unless the whole projected campaign plus one shared 20%
 overrun/retry reserve fits the fixed 25,000-AU ceiling. Individual retry
 authorization remains limited to eligible infrastructure failures and the retry
 package rebuilds the audit/reducer dependency chain. The deterministic
-post-pilot test fixture projects 23,025 AUs including the completed pilot,
+post-pilot test fixture projects 23,022 AUs including the completed pilot,
 resolution, confirmatory production, and shared reserve.
+
+## REVIEW-0016 — Kestrel project-storage imports made every task unusable
+
+- Date: 2026-08-13
+- Severity: P0 / allocation and execution availability
+- Status: fixed on `g11-integration-reconcile`
+- Evidence: a debug diagnostic using the locked environment under
+  `/projects/bsm/software/rfm-pipeline` failed to finish importing
+  `rfm_pipeline.hpc_campaign_package` after more than 15 minutes. A timed
+  import trace spent more than 120 seconds in basic standard-library imports
+  before reaching any scientific kernel. The same exact checkout and lock on
+  `/scratch` installed in 26.08 seconds and completed the full campaign-module
+  import in 8.96 seconds by direct Python invocation (5.35 seconds through
+  warm `pixi run`).
+- Resolution: campaign configuration now binds both immutable runtime
+  checkouts to `/scratch/dhetting/bsm_runtime/software`; generated worker,
+  audit, reducer, and retry scripts invoke the locked environment's Python
+  executable directly. A regression rejects `/projects` runtime roots or
+  generated `pixi run python` task launches. The scheduler diagnostic request
+  is reduced from 25 minutes to 3 minutes estimated / 3 minutes 45 seconds
+  requested.
+- Scientific impact: none. Source, lock, Git commit, adapter, config, and data
+  hashes remain preflight-bound; only runtime placement and process launch
+  changed.
+- Validation: full focused G11 test surface and live debug diagnostic chain
+  required before scheduler readiness is restored.
+- Blocks submission: until the new pinned commits are installed and the timed
+  worker/audit/reducer smoke passes from the scratch runtime.
 
 ## Independent review of alignment diff b96442b..e31fb15 (round 3 remediation)
 

@@ -26,8 +26,12 @@ hpc_campaign:
     qos_factor: 1.0
     # These are validated on Kestrel by the non-submitting preflight.  The
     # package cannot submit if any checkout, file hash, or data path differs.
-    rfm_repository_root: /projects/bsm/software/rfm-pipeline
-    bsm_repository_root: /projects/bsm/software/bsm-public-rf
+    # Kestrel /projects metadata latency made ordinary Python imports take
+    # minutes. Keep immutable runtime checkouts and the locked Pixi environment
+    # on /scratch so every worker starts promptly; preflight still binds the
+    # exact Git commits and source/lock/file hashes.
+    rfm_repository_root: /scratch/dhetting/bsm_runtime/software/rfm-pipeline
+    bsm_repository_root: /scratch/dhetting/bsm_runtime/software/bsm-public-rf
     scientific_adapter_relative_path: scripts/g11_campaign_adapter.py
     scientific_adapter_sha256: 48e9d42d59e6b0aa563b6c2d93714e58f3e483fb1afaffc5deaed8cee6d3f7b1
     bsm_recovery_driver_relative_path: scripts/run_bsm_recovery_study.py

@@ -61,7 +61,7 @@ _PILOT_STAGES = (
 )
 _PILOT_PROFILE_GRID: dict[str, tuple[tuple[str, str, int, int, int, int, int], ...]] = {
     # profile_id, partition, estimated CPUs, GiB, seconds, task size, block size
-    "scheduler_diagnostic": (("p0", "debug", 1, 8, 1200, 1, 1),),
+    "scheduler_diagnostic": (("p0", "debug", 1, 8, 180, 1, 1),),
     "pilot_conditioning": (
         ("p0", "debug", 8, 32, 2880, 23495, 500),
         ("p1", "debug", 16, 64, 2880, 23495, 1000),
@@ -3624,6 +3624,9 @@ def _render_worker_script(
         task_argument = f"$((SLURM_ARRAY_TASK_ID + {task_range_start}))"
     else:
         task_argument = "${SLURM_ARRAY_TASK_ID:-0}"
+    runtime_python = (
+        Path(cluster.rfm_repository_root) / ".pixi" / "envs" / "default" / "bin" / "python"
+    )
     return f"""#!/bin/bash
 #SBATCH --job-name=g11-{stage_name}-worker
 #SBATCH --account={cluster.account}
@@ -3643,10 +3646,11 @@ PROJECT_ROOT="{cluster.project_root}"
 SCRATCH_ROOT="{scratch_root}"
 MANIFEST_PATH="{manifest_path}"
 OUTPUT_ROOT="{output_root}"
+RUNTIME_PYTHON="{runtime_python}"
 
 cd "{cluster.rfm_repository_root}"
 
-pixi run python -m rfm_pipeline.hpc_campaign_package worker \\
+"$RUNTIME_PYTHON" -m rfm_pipeline.hpc_campaign_package worker \\
   --manifest "$MANIFEST_PATH" \\
   --stage "{stage_name}" \\
   --task-id "{task_argument}" \\
@@ -3674,6 +3678,9 @@ def _render_reducer_script(
     parent_hash: str,
     run_id: str,
 ) -> str:
+    runtime_python = (
+        Path(cluster.rfm_repository_root) / ".pixi" / "envs" / "default" / "bin" / "python"
+    )
     return f"""#!/bin/bash
 #SBATCH --job-name=g11-{stage_name}-reduce
 #SBATCH --account={cluster.account}
@@ -3689,10 +3696,11 @@ set -euo pipefail
 # NO-SUBMIT package: reducer script generated for review only.
 MANIFEST_PATH="{manifest_path}"
 REDUCER_OUTPUT_DIR="{reducer_output_dir}"
+RUNTIME_PYTHON="{runtime_python}"
 
 cd "{cluster.rfm_repository_root}"
 
-pixi run python -m rfm_pipeline.hpc_campaign_package reduce \\
+"$RUNTIME_PYTHON" -m rfm_pipeline.hpc_campaign_package reduce \\
   --manifest "$MANIFEST_PATH" \\
   --stage "{stage_name}" \\
   --output-root "$REDUCER_OUTPUT_DIR" \\
@@ -3716,6 +3724,9 @@ def _render_audit_script(
     contract_hash: str,
     run_id: str,
 ) -> str:
+    runtime_python = (
+        Path(cluster.rfm_repository_root) / ".pixi" / "envs" / "default" / "bin" / "python"
+    )
     return f"""#!/bin/bash
 #SBATCH --job-name=g11-{stage_name}-audit
 #SBATCH --account={cluster.account}
@@ -3729,9 +3740,10 @@ def _render_audit_script(
 set -euo pipefail
 
 # afterany failure audit and exact-coverage validator; it never performs science.
+RUNTIME_PYTHON="{runtime_python}"
 cd "{cluster.rfm_repository_root}"
 
-pixi run python -m rfm_pipeline.hpc_campaign_package audit \
+"$RUNTIME_PYTHON" -m rfm_pipeline.hpc_campaign_package audit \
   --manifest "{manifest_path}" \
   --stage "{stage_name}" \
   --output-root "{audit_output_dir}" \

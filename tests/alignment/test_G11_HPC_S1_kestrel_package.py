@@ -360,7 +360,7 @@ def test_pre_pilot_campaign_envelope_exposes_full_provisional_cost(tmp_path: Pat
         config_path=CONFIG_PATH,
     )
 
-    assert dag.campaign_envelope.requested_au == 167_491
+    assert dag.campaign_envelope.requested_au == 167_488
     assert dag.campaign_envelope.requested_au > 25_000
     gate_b = next(
         estimate
@@ -446,7 +446,31 @@ def test_scheduler_diagnostic_can_start_the_pinned_environment(tmp_path: Path) -
     stage = next(stage for stage in dag.stages if stage.name == "scheduler_diagnostic")
 
     assert stage.worker_resources.requested_memory_gb >= 10
-    assert 900 <= stage.worker_resources.requested_walltime_seconds <= 3600
+    assert 60 <= stage.worker_resources.requested_walltime_seconds <= 300
+
+
+def test_every_campaign_script_uses_the_direct_interpreter_from_fast_runtime_storage(
+    tmp_path: Path,
+) -> None:
+    """Array tasks must not import Python modules from metadata-heavy project storage."""
+    dag = _package(tmp_path)
+
+    assert dag.cluster.rfm_repository_root.startswith("/scratch/")
+    assert dag.cluster.bsm_repository_root.startswith("/scratch/")
+    for stage in dag.stages:
+        for script_path in (
+            *stage.worker_script_paths,
+            stage.audit_script_path,
+            stage.reducer_script_path,
+        ):
+            text = script_path.read_text(encoding="utf-8")
+            assert "pixi run python" not in text
+            assert f'cd "{dag.cluster.rfm_repository_root}"' in text
+            assert (
+                f'RUNTIME_PYTHON="{dag.cluster.rfm_repository_root}/.pixi/envs/default/bin/python"'
+                in text
+            )
+            assert '"$RUNTIME_PYTHON" -m rfm_pipeline.hpc_campaign_package' in text
 
 
 def test_hash_completeness_is_fail_closed(tmp_path: Path) -> None:
@@ -1053,7 +1077,7 @@ def test_live_smoke_rejects_unknown_allocation_before_any_probe(tmp_path: Path) 
 def test_post_pilot_projection_fits_the_25k_campaign_budget(tmp_path: Path) -> None:
     _, _, _, _, final = _final_package(tmp_path)
 
-    assert final.campaign_envelope.requested_au == 23_025
+    assert final.campaign_envelope.requested_au == 23_022
     assert final.campaign_envelope.requested_au <= 25_000
     assert {"pilot_conditioning", "resolution"} <= {
         estimate.stage_name for estimate in final.campaign_envelope.stage_allocations
@@ -1065,7 +1089,7 @@ def test_post_pilot_gate_counts_pilot_and_resolution_against_whole_campaign_cap(
 ) -> None:
     with pytest.raises(
         ValueError,
-        match="telemetry-based whole-campaign projection exceeds allocation_quota: 23025 > 23000",
+        match="telemetry-based whole-campaign projection exceeds allocation_quota: 23022 > 23000",
     ):
         _final_package(tmp_path, quota=23_000)
 

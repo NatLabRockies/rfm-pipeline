@@ -22,13 +22,13 @@
   assuming every worker used its complete request, every worker then retried,
   and another 25% was added. It is not expected allocation use and is not an
   appropriate admission criterion for scientific experiments. The pre-pilot
-  package now reports its 167,491-AU provisional walltime forecast only as a
+  package now reports its 167,488-AU provisional walltime forecast only as a
   diagnostic. Live smoke admits only the bounded pilot. Pilot telemetry then
   selects minimum-projected-AU profiles, and the regenerated final package must
   count the already-completed pilot and resolution together with confirmatory
   production under one 25,000-AU ceiling and one shared 20% reserve for runtime
   overrun and occasional infrastructure retries. The deterministic
-  resource-selection test fixture projects 23,025 AUs including all phases and
+  resource-selection test fixture projects 23,022 AUs including all phases and
   that reserve; live telemetry controls the actual go/no-go decision.
 - Validation passed:
   the focused HPC allocation/smoke/retry tests and Ruff checks after the final

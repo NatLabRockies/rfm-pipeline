@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -116,3 +117,71 @@ def test_evaluation_truth_is_not_materialized_before_terminal_freeze() -> None:
     terminal_freeze = source.index("write_terminal_train_fit_and_freeze(")
     assert intercept_freeze < truth_reads[0]
     assert terminal_freeze < truth_reads[1]
+
+
+def test_recovery_runner_records_persisted_interaction_payload_hashes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The production path must use the score artifact's canonical identity."""
+    import pandas as pd
+
+    payload_sha256 = "b" * 64
+
+    class PayloadOnlyArtifact:
+        def write_to(self, directory: Path) -> None:
+            directory.mkdir(parents=True)
+
+        @property
+        def payload_sha256(self) -> str:
+            return payload_sha256
+
+    monkeypatch.setattr(
+        recovery,
+        "condition_manuscript_outputs",
+        lambda *args, **kwargs: SimpleNamespace(
+            pca_scores=pd.DataFrame({"sample_id": range(24), "PC1": np.zeros(24)})
+        ),
+    )
+    monkeypatch.setattr(
+        recovery,
+        "screen_manuscript_empirical_null_terms",
+        lambda *args, **kwargs: SimpleNamespace(
+            retained_terms=pd.DataFrame(columns=["feature_name", "feature_type"]),
+            feature_screening_statistics=pd.DataFrame({"feature_name": ["x0"]}),
+        ),
+    )
+    monkeypatch.setattr(
+        recovery,
+        "score_interaction_draw_block",
+        lambda *args, **kwargs: PayloadOnlyArtifact(),
+    )
+    monkeypatch.setattr(
+        recovery.ScoreOnlyInteractionArtifact,
+        "read_from",
+        classmethod(lambda cls, directory: PayloadOnlyArtifact()),
+    )
+    monkeypatch.setattr(
+        recovery,
+        "reduce_score_only_interaction_artifacts",
+        lambda *args, **kwargs: SimpleNamespace(
+            retained_pairs=pd.DataFrame(columns=["pair_name"]),
+            pair_scores=pd.DataFrame(columns=["pair_name"]),
+        ),
+    )
+    freeze = SimpleNamespace(freeze_manifest=SimpleNamespace(freeze_hash="c" * 64))
+    monkeypatch.setattr(recovery, "train_fit_and_freeze", lambda *args, **kwargs: freeze)
+    monkeypatch.setattr(recovery, "write_train_fit_and_freeze", lambda *args, **kwargs: None)
+    frozen = SimpleNamespace(y_pred=np.zeros((8, 2)))
+    monkeypatch.setattr(recovery, "holdout_predict", lambda *args, **kwargs: frozen)
+    monkeypatch.setattr(
+        recovery,
+        "write_frozen_prediction_matrices",
+        lambda *args, **kwargs: None,
+    )
+
+    result = run_production_recovery_pipeline(
+        *_fixture(),
+        artifact_dir=tmp_path / "payload-hashes",
+    )
+
+    assert result.interaction_artifact_checksums == (payload_sha256,)

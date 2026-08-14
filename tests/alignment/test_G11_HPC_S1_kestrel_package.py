@@ -10,6 +10,7 @@ from argparse import Namespace
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -1702,6 +1703,60 @@ def test_screening_pilot_executes_and_persists_the_stage_native_kernel(tmp_path:
     assert result["draw_start"] == 0
     assert result["draw_end"] == 2
     assert (tmp_path / "screening_block" / "screening_block.npz").is_file()
+
+
+def test_interaction_score_pilot_reports_canonical_payload_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The worker must not reference a nonexistent compatibility checksum."""
+    import rfm_pipeline.hpc_campaign_package as campaign
+    import rfm_pipeline.interaction_contract as interaction_contract
+    import rfm_pipeline.manuscript_stages as manuscript_stages
+
+    payload_sha256 = "a" * 64
+
+    class PayloadOnlyArtifact:
+        pair_names = ("x000:x001",)
+
+        def write_to(self, directory: Path) -> None:
+            directory.mkdir(parents=True)
+
+        @property
+        def payload_sha256(self) -> str:
+            return payload_sha256
+
+    monkeypatch.setattr(
+        campaign,
+        "_pilot_training_tables",
+        lambda record: (None, None, None, None),
+    )
+    monkeypatch.setattr(
+        campaign,
+        "_pilot_interaction_spec",
+        lambda record: SimpleNamespace(n_tree_estimators=250),
+    )
+    monkeypatch.setattr(
+        interaction_contract,
+        "canonical_execution_contract_from_specs",
+        lambda spec: object(),
+    )
+    monkeypatch.setattr(
+        manuscript_stages,
+        "score_interaction_draw_block",
+        lambda *args, **kwargs: PayloadOnlyArtifact(),
+    )
+    record = {
+        "stage": "pilot_interaction_score",
+        "operation": "pilot_interaction_score",
+        "schedule_hash": "1" * 64,
+        "config_hash": "2" * 64,
+        "block_size": 2,
+    }
+
+    result = _execute_worker_operation(record, shard_dir=tmp_path)
+
+    assert result["artifact_checksum"] == payload_sha256
+    json.dumps(result, allow_nan=False)
 
 
 def test_resume_rejects_marker_that_does_not_hash_result_bytes(tmp_path: Path) -> None:

@@ -291,13 +291,17 @@ ______________________________________________________________________
   fit the ceiling. Do not reserve a second full campaign merely because one
   retry is permitted.
 - [x] Pass the complete repository gate: `./test_repo.sh --check`.
-- [ ] Commit the reviewed RFM and paired BSM integration diffs and install those
+- [x] Commit the reviewed RFM and paired BSM integration diffs and install those
   exact clean commits in the Kestrel checkouts.
-- [ ] Prepare the immutable applied train/holdout layout and bind its manifest
+- [x] Prepare the immutable applied train/holdout layout and bind its manifest
   hash in the campaign configuration; this is a production preflight task, not
   permission to read holdout responses during adaptive work.
-- [ ] Freeze same-day remaining AU, project/scratch byte and inode availability,
+- [x] Freeze same-day remaining AU, project/scratch byte and inode availability,
   and exact `sbatch --test-only` hashes for the tranche being authorized.
-- [ ] Run the bounded pilot only after the user separately authorizes scheduler
-  submission; use accepted telemetry to freeze production resources, then run
-  resolution. No confirmatory phase is authorized by this checkpoint.
+- [ ] Complete the bounded pilot after explicit scheduler authorization. The
+  first three isolated attempts remain rejected diagnostics: the latest
+  completed interaction scoring but failed during post-compute artifact
+  reporting. Deploy the payload-identity repair, generate a clean package and
+  preflight, and require exact `COMPLETED/0:0` coverage before using telemetry
+  to freeze production resources. No resolution or confirmatory phase is
+  authorized by this checkpoint.

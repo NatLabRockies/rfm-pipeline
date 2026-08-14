@@ -782,7 +782,7 @@ def run_production_recovery_pipeline(
         spec=interaction_spec,
         contract=canonical_contract,
     )
-    interaction_checksums = tuple(artifact.checksum for artifact in persisted_interactions)
+    interaction_checksums = tuple(artifact.payload_sha256 for artifact in persisted_interactions)
     retained_pairs = ix_result.retained_pairs
     interaction_candidate_count = len(ix_result.pair_scores)
     interaction_retained_set = frozenset(retained_pairs["pair_name"].astype(str))

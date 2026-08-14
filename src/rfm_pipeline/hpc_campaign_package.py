@@ -4644,7 +4644,7 @@ def _run_pilot_interaction_score(record: dict[str, Any], shard_dir: Path) -> dic
         "operation": "pilot_interaction_score",
         "status": "completed",
         "kernel": "score_interaction_draw_block",
-        "artifact_checksum": artifact.checksum,
+        "artifact_checksum": artifact.payload_sha256,
         "draw_start": 0,
         "draw_end": draw_end,
         "n_candidate_pairs": len(artifact.pair_names),

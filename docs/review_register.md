@@ -441,7 +441,7 @@ package is rejected unless the whole projected campaign plus one shared 20%
 overrun/retry reserve fits the fixed 25,000-AU ceiling. Individual retry
 authorization remains limited to eligible infrastructure failures and the retry
 package rebuilds the audit/reducer dependency chain. The deterministic
-post-pilot test fixture projects 10,243 AUs including the completed pilot,
+post-pilot test fixture projects 10,322 AUs including the completed pilot,
 resolution, confirmatory production, and shared reserve.
 
 ## REVIEW-0016 — Kestrel project-storage imports made every task unusable
@@ -525,6 +525,16 @@ resolution, confirmatory production, and shared reserve.
 - Blocks submission: yes. Pre-fix pilot evidence is retained as rejected
   diagnostic history. The final resource freeze must come from a fresh package
   and complete post-fix pilot bound to the new source hash.
+
+### 2026-08-13 live-pilot follow-up — interaction sizing is not a debug smoke test
+
+The post-parallelism-fix 24-CPU/25-draw profile used its requested workers but
+still hit Kestrel's one-hour debug limit. Interaction-score profile comparison
+is therefore a bounded scientific sizing experiment, not a login/import smoke
+test. Its three profiles now use `short` with a three-hour estimate and a
+3h45 request; every other pilot stage remains on `debug`. This changes no
+scientific control and raises the deterministic all-phase fixture only from
+10,243 to 10,322 AUs, still well inside the fixed 25,000-AU ceiling.
 
 ## Independent review of alignment diff b96442b..e31fb15 (round 3 remediation)
 

@@ -373,7 +373,7 @@ def test_pre_pilot_campaign_envelope_exposes_full_provisional_cost(tmp_path: Pat
         config_path=CONFIG_PATH,
     )
 
-    assert dag.campaign_envelope.requested_au == 167_514
+    assert dag.campaign_envelope.requested_au == 167_593
     assert dag.campaign_envelope.requested_au > 25_000
     gate_b = next(
         estimate
@@ -430,12 +430,14 @@ def test_scripts_bind_kestrel_account_partition_walltime_without_sbatch_executio
             assert not re.search(r"^\s*sbatch\b", text, flags=re.MULTILINE)
 
 
-def test_every_pilot_smoke_script_uses_debug_for_at_most_one_hour(tmp_path: Path) -> None:
+def test_pilot_smoke_uses_debug_but_interaction_sizing_uses_short(tmp_path: Path) -> None:
     dag = _package(tmp_path)
 
     assert dag.cluster.account == "nationalpfa"
     for stage in (stage for stage in dag.stages if stage.name in _PILOT_STAGES_FOR_TEST):
-        assert stage.partition == "debug"
+        expected_partition = "short" if stage.name == "pilot_interaction_score" else "debug"
+        maximum_walltime = 4 * 3600 if expected_partition == "short" else 3600
+        assert stage.partition == expected_partition
         for script_path in (
             *stage.worker_script_paths,
             stage.audit_script_path,
@@ -443,7 +445,7 @@ def test_every_pilot_smoke_script_uses_debug_for_at_most_one_hour(tmp_path: Path
         ):
             text = script_path.read_text(encoding="utf-8")
             assert "#SBATCH --account=nationalpfa" in text
-            assert "#SBATCH --partition=debug" in text
+            assert f"#SBATCH --partition={expected_partition}" in text
             match = re.search(
                 r"^#SBATCH --time=(\d{2}):(\d{2}):(\d{2})$",
                 text,
@@ -451,7 +453,11 @@ def test_every_pilot_smoke_script_uses_debug_for_at_most_one_hour(tmp_path: Path
             )
             assert match is not None
             hours, minutes, seconds = (int(value) for value in match.groups())
-            assert hours * 3600 + minutes * 60 + seconds <= 3600
+            assert hours * 3600 + minutes * 60 + seconds <= maximum_walltime
+
+    interaction = _stage(dag, "pilot_interaction_score")
+    assert interaction.worker_resources.estimated_walltime_seconds == 3 * 3600
+    assert interaction.worker_resources.requested_walltime_seconds == 3 * 3600 + 45 * 60
 
 
 def test_scheduler_diagnostic_can_start_the_pinned_environment(tmp_path: Path) -> None:
@@ -1252,7 +1258,7 @@ def test_live_smoke_rejects_unknown_allocation_before_any_probe(tmp_path: Path) 
 def test_post_pilot_projection_fits_the_25k_campaign_budget(tmp_path: Path) -> None:
     _, _, _, _, final = _final_package(tmp_path)
 
-    assert final.campaign_envelope.requested_au == 10_243
+    assert final.campaign_envelope.requested_au == 10_322
     assert final.campaign_envelope.requested_au <= 25_000
     assert {"pilot_conditioning", "resolution"} <= {
         estimate.stage_name for estimate in final.campaign_envelope.stage_allocations
@@ -1264,7 +1270,7 @@ def test_post_pilot_gate_counts_pilot_and_resolution_against_whole_campaign_cap(
 ) -> None:
     with pytest.raises(
         ValueError,
-        match="telemetry-based whole-campaign projection exceeds allocation_quota: 10243 > 10000",
+        match="telemetry-based whole-campaign projection exceeds allocation_quota: 10322 > 10000",
     ):
         _final_package(tmp_path, quota=10_000)
 

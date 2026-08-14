@@ -76,9 +76,9 @@ _PILOT_PROFILE_GRID: dict[str, tuple[tuple[str, str, int, int, int, int, int], .
         ("p2", "debug", 32, 48, 2880, G11_CONTRACT.B_screen, 400),
     ),
     "pilot_interaction_score": (
-        ("p0", "debug", 24, 64, 2880, G11_CONTRACT.B_interaction, 25),
-        ("p1", "debug", 52, 112, 2880, G11_CONTRACT.B_interaction, 50),
-        ("p2", "debug", 80, 160, 2880, G11_CONTRACT.B_interaction, 100),
+        ("p0", "short", 24, 64, 10_800, G11_CONTRACT.B_interaction, 25),
+        ("p1", "short", 52, 112, 10_800, G11_CONTRACT.B_interaction, 50),
+        ("p2", "short", 80, 160, 10_800, G11_CONTRACT.B_interaction, 100),
     ),
     "pilot_interaction_reduce": (
         ("p0", "debug", 4, 12, 600, G11_CONTRACT.B_interaction, 25),

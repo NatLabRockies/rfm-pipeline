@@ -4480,11 +4480,12 @@ def _pilot_training_tables(
     *,
     n_rows: int = 28_500,
     n_components: int = 17,
+    seed: int | None = None,
 ) -> tuple[Any, Any, Any, Any]:
     """Return a deterministic typed 158-continuous/2-binary pilot fixture."""
     import pandas as pd
 
-    rng = np.random.default_rng(_pilot_seed(record))
+    rng = np.random.default_rng(_pilot_seed(record) if seed is None else seed)
     continuous = rng.standard_normal((n_rows, 158))
     binary = rng.integers(0, 2, size=(n_rows, 2), dtype=np.int8)
     values = np.column_stack([continuous, binary])
@@ -4764,12 +4765,27 @@ def _pilot_sparse_spec() -> Any:
     )
 
 
-def _pilot_sparse_inputs(record: dict[str, Any]) -> tuple[Any, ...]:
+def _pilot_sparse_inputs(
+    record: dict[str, Any],
+    *,
+    n_rows: int = 28_500,
+    n_components: int = 17,
+) -> tuple[Any, ...]:
     from itertools import combinations
 
     import pandas as pd
 
-    inputs, catalog, assignments, pca_scores = _pilot_training_tables(record)
+    fixture_seed = derive_seed(
+        str(record["config_hash"]),
+        "pilot_sparse_fixture",
+        int(record["pilot_repetition"]),
+    )
+    inputs, catalog, assignments, pca_scores = _pilot_training_tables(
+        record,
+        n_rows=n_rows,
+        n_components=n_components,
+        seed=fixture_seed,
+    )
     retained = pd.DataFrame({"feature_name": catalog["feature_name"].astype(str)})
     feature_names = catalog["feature_name"].astype(str).tolist()
     pair_names = [f"{left}:{right}" for left, right in combinations(feature_names, 2)][

@@ -21,6 +21,7 @@ from rfm_pipeline.hpc_campaign_package import (
     _cli_worker,
     _execute_scientific_reduce,
     _execute_worker_operation,
+    _pilot_sparse_inputs,
     build_campaign_phase_plan,
     build_submission_plan,
     collect_pilot_accounting,
@@ -626,6 +627,25 @@ def test_holdout_and_bootstrap_pilot_repetitions_consume_matching_upstream_shard
         "task-0001",
         "task-0002",
     ]
+
+
+def test_sparse_resample_reconstructs_matching_upstream_sparse_fixture(tmp_path: Path) -> None:
+    """A sparse resample must score the exact fixture used by its frozen full fit."""
+    dag = _package(tmp_path)
+    full_records = load_stage_manifest(_stage(dag, "pilot_sparse_full").manifest_path)
+    resample_records = load_stage_manifest(_stage(dag, "pilot_sparse_resample").manifest_path)
+
+    fixtures = []
+    for full_record, resample_record in zip(full_records, resample_records, strict=True):
+        full_fixture = _pilot_sparse_inputs(full_record, n_rows=32, n_components=3)
+        resample_fixture = _pilot_sparse_inputs(resample_record, n_rows=32, n_components=3)
+        assert all(
+            left.equals(right)
+            for left, right in zip(full_fixture[:4], resample_fixture[:4], strict=True)
+        )
+        fixtures.append(full_fixture)
+
+    assert not fixtures[0][0].equals(fixtures[1][0])
 
 
 def _accepted_pilot_telemetry(dag) -> list[dict[str, object]]:  # noqa: ANN001

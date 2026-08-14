@@ -1,3 +1,27 @@
+## SESSION STATE — 2026-08-14 — Sparse pilot fixture identity repair
+
+- Pilot `g11-pilot-final-sizing-20260814d` stopped fail-closed at
+  `pilot_sparse_resample` job `16221146`; its two same-stage siblings were
+  cancelled and no downstream stage started. The failed run is diagnostic only
+  and cannot contribute telemetry to resource selection.
+- Sparse full-fit and resample manifests correctly paired each timing profile,
+  but the pilot fixture generator seeded data from each stage-specific schedule
+  hash. A resample therefore reconstructed different input/PCA bytes than its
+  paired frozen full fit and correctly failed the production identity guard.
+- Sparse pilot fixtures now use a contract-derived seed shared by the paired
+  full/resample records for one pilot repetition. Profiles remain distinct, and
+  all other pilot stages retain schedule-derived fixture seeds. Scientific
+  estimands, production data paths, and identity checks are unchanged.
+- Failure evidence was preserved and hashed under
+  `/projects/bsm/g11_authorizations/g11-pilot-final-sizing-20260814d/`
+  `failure_pilot_sparse_resample_16221146_20260814T202344Z`. The replacement
+  pilot must use a new content-addressed package/run and exact successful Slurm
+  telemetry. This failed attempt consumed 72.619444 AUs and remains included
+  only in the 114.630556-AU cumulative sunk campaign accounting.
+- Validation passed: the prospective sparse cross-stage fixture regression;
+  focused G11 HPC, sparse-selection, train/freeze/predict, and recovery-
+  comparator tests; targeted Ruff and format checks; and `git diff --check`.
+
 ## SESSION STATE — 2026-08-14 — Pilot post-compute artifact identity repair
 
 - Pilot `g11-pilot-final-sizing-20260813c` stopped fail-closed at interaction

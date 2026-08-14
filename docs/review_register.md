@@ -567,6 +567,36 @@ scientific control and raises the deterministic all-phase fixture only from
   `COMPLETED/0:0` coverage for every stage. The unrelated full repository gate
   was stopped at 53% without a reported failure at the maintainer's direction.
 
+## REVIEW-0020 — Sparse pilot stages generated mismatched work units
+
+- Date: 2026-08-14
+- Severity: P0 / pilot completion and resource-freeze validity
+- Status: fixed on `g11-integration-reconcile`; replacement pilot required
+- Evidence: Kestrel `pilot_sparse_resample` job `16221146` exited `FAILED/1:0`
+  with `ValueError: sparse stability work unit differs from its frozen full fit`. The stage-paced controller cancelled the two same-stage siblings and
+  submitted no downstream work.
+- Root cause: full-fit and resample records were paired by pilot repetition,
+  but `_pilot_training_tables` seeded each synthetic pilot fixture from its
+  stage-specific schedule hash. The production identity guard therefore saw
+  different scaled inputs and PCA responses for every nominally paired record.
+- Resolution: sparse pilot fixture generation derives one seed from the frozen
+  config hash, a `pilot_sparse_fixture` domain separator, and the pilot
+  repetition. Paired full/resample stages now reconstruct identical fixtures,
+  while p0/p1/p2 remain independent. Other stages retain their existing
+  schedule-derived seeds; production scientific paths and fail-closed sparse
+  identity validation are unchanged.
+- Validation: a prospective package regression failed before implementation
+  because no cross-stage fixture contract existed and now requires byte-equal
+  sparse inputs/PCA tables for matched records plus distinct fixtures across
+  profiles. The focused G11 HPC, sparse-selection, train/freeze/predict, and
+  recovery-comparator gates plus targeted Ruff/format checks pass.
+- Preserved evidence: immutable failure bundle
+  `/projects/bsm/g11_authorizations/g11-pilot-final-sizing-20260814d/`
+  `failure_pilot_sparse_resample_16221146_20260814T202344Z` includes raw Slurm
+  facts, controller state, package manifests/scripts, logs, and SHA-256 ledger.
+- Blocks submission: yes until corrected pinned commits are deployed and a new
+  isolated pilot completes every step exactly `COMPLETED/0:0`.
+
 ## Independent review of alignment diff b96442b..e31fb15 (round 3 remediation)
 
 - REVIEW-R3-01 \[BLOCKING, fixed-by R3-S01\]: multiplicity_controlled_interaction_selection

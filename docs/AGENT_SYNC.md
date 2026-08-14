@@ -1,3 +1,20 @@
+## SESSION STATE — 2026-08-14 — Pilot post-compute artifact identity repair
+
+- Pilot `g11-pilot-final-sizing-20260813c` stopped fail-closed at interaction
+  score job `16160079`. The complete 25-draw, 12,720-pair score artifact passed
+  its own payload/NPZ verification, but the wrapper then referenced nonexistent
+  `ScoreOnlyInteractionArtifact.checksum` and Slurm correctly recorded
+  `FAILED/1:0`; no downstream pilot job was submitted.
+- The same invalid attribute was present in the persisted-interaction boundary
+  of `run_production_recovery_pipeline`. Both callers now use the artifact's
+  canonical `payload_sha256` without adding a compatibility alias or changing
+  scientific controls. Prospective payload-only tests reproduced both failures
+  before the repair and pass afterward.
+- The failed run is diagnostic only and cannot enter resource selection. Its
+  17.058333 AUs plus 24.952778 AUs from earlier rejected pilot attempts remain
+  sunk campaign usage. A new isolated pilot and exact `COMPLETED/0:0` scheduler
+  evidence are required before resource freezing.
+
 ## SESSION STATE — 2026-08-11 — G11-HPC-S1 NO-SUBMIT Kestrel package (uncommitted)
 
 - Implemented only G11-HPC-S1 in isolated worktree

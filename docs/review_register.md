@@ -536,6 +536,37 @@ test. Its three profiles now use `short` with a three-hour estimate and a
 scientific control and raises the deterministic all-phase fixture only from
 10,243 to 10,322 AUs, still well inside the fixed 25,000-AU ceiling.
 
+## REVIEW-0019 — Completed interaction scoring crashed during artifact reporting
+
+- Date: 2026-08-14
+- Severity: P0 / pilot completion and downstream recovery availability
+- Status: fixed on `g11-integration-reconcile`; replacement pilot required
+- Evidence: Kestrel pilot job `16160079` completed all 25 interaction null
+  draws over the full 12,720-pair family and wrote a self-verifying
+  `ScoreOnlyInteractionArtifact`, then exited 1 when the pilot wrapper read
+  nonexistent `artifact.checksum`. The same stale attribute access remained in
+  `run_production_recovery_pipeline`, so Gate-B/recovery would have failed at
+  the next persisted-interaction boundary even if the sizing job had passed.
+- Root cause: `ScoreOnlyInteractionArtifact` deliberately exposes the canonical
+  score-block identity as `payload_sha256`; it has never provided a generic
+  `checksum` compatibility alias. Two callers were written against an assumed
+  interface and the pilot wrapper lacked a direct completion-path regression.
+- Resolution: both callers now use `payload_sha256` while retaining their
+  existing result-field names. Prospective tests use payload-only artifacts and
+  require the pilot result to remain JSON serializable and the recovery result
+  to retain the persisted payload identities. No compatibility shim or
+  scientific-method change was added.
+- Preserved evidence: the failed artifact independently verifies with payload
+  SHA-256 `770e4d9e071bb638afcc276254989528d94b83ac73cee9cc81aee54ec7c15faa`;
+  the failed attempt is excluded from resource selection because Slurm reports
+  `FAILED/1:0`. Its 17.058333 AUs remain included in campaign allocation
+  accounting.
+- Blocks submission: yes until exact commits pass the affected G11 interaction,
+  recovery, artifact, reducer, and HPC package gates, are deployed to both
+  pinned Kestrel runtimes, and a clean replacement pilot reaches exact
+  `COMPLETED/0:0` coverage for every stage. The unrelated full repository gate
+  was stopped at 53% without a reported failure at the maintainer's direction.
+
 ## Independent review of alignment diff b96442b..e31fb15 (round 3 remediation)
 
 - REVIEW-R3-01 \[BLOCKING, fixed-by R3-S01\]: multiplicity_controlled_interaction_selection

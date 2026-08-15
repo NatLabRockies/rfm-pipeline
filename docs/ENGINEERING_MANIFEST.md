@@ -269,6 +269,14 @@ ______________________________________________________________________
 
 ## 2026-08-12 G11 integration checkpoint
 
+- [x] Reproduce the recovery pilot's inconsistent `x3` versus `x003` naming
+  boundary with a prospective local regression.
+- [x] Pass one canonical 158-continuous/2-binary named fixture through both the
+  production recovery runner and algebraic comparator materializer.
+- [x] Audit the production BSM recovery driver and downstream pilot paths for
+  the same defect; no additional occurrence was found.
+- [ ] Deploy the corrected content-addressed RFM/BSM revisions and complete a
+  fresh isolated 63-step pilot with exact `COMPLETED/0:0` coverage.
 - [x] Implement the full typed G11 scientific contract and stage-native
   recovery/applied execution path on `g11-integration-reconcile`.
 - [x] Generate fail-closed content-addressed pilot, resolution, Gate-B,

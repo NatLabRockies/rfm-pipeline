@@ -1,3 +1,29 @@
+## SESSION STATE — 2026-08-14 — Pilot recovery feature-name repair
+
+- Pilot `g11-pilot-final-sizing-20260814e` stopped fail-closed at
+  `pilot_recovery` job `16238305` with `FAILED/1:0`; the controller cancelled
+  its unfinished same-stage siblings and submitted no audit, reducer, or
+  downstream stage. The rejected run is diagnostic only.
+- The pilot wrapper passed unnamed NumPy arrays to the production recovery
+  runner, which therefore generated algebraic names such as `x3`, but later
+  tried to materialize those names against separately constructed columns such
+  as `x003`. Recovery completed its scientific pipeline, then failed before
+  comparator fitting at this inconsistent naming boundary.
+- The pilot now constructs the canonical 158-continuous/2-binary named
+  DataFrames once and passes the same frames to the production runner and the
+  comparator materializer. The production BSM recovery driver already follows
+  this contract; downstream holdout/bootstrap pilot paths do not reconstruct
+  the algebraic library and are unaffected.
+- Failure evidence and raw `sacct` rows are preserved under
+  `/projects/bsm/g11_authorizations/g11-pilot-final-sizing-20260814e/`.
+  `failure_evidence_sha256.txt` hashes 88 files and has SHA-256
+  `49f6b2257b13b2367335ccf2bab609205b351ea974ad71299f42a88bfc413e30`.
+  This rejected attempt consumed exactly 77.91944444444445 AUs, bringing
+  cumulative sunk campaign usage to exactly 192.55 AUs.
+- Validation passed: the prospective pilot-recovery naming regression; the
+  focused G11 HPC package, recovery-comparator, and production recovery-runner
+  tests; targeted Ruff/format checks; and `git diff --check`.
+
 ## SESSION STATE — 2026-08-14 — Sparse pilot fixture identity repair
 
 - Pilot `g11-pilot-final-sizing-20260814d` stopped fail-closed at

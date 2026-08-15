@@ -4943,22 +4943,24 @@ def _run_pilot_recovery(record: dict[str, Any], shard_dir: Path) -> dict[str, An
     y_eval += (x_eval[:, 0] * x_eval[:, 1])[:, None] * interaction_coef
     y_train += rng.normal(scale=0.5, size=y_train.shape)
     y_eval += rng.normal(scale=0.5, size=y_eval.shape)
+    feature_names = [f"x{index:03d}" for index in range(158)] + [
+        "binary_0",
+        "binary_1",
+    ]
+    train_feature_frame = pd.DataFrame(x_train, columns=feature_names)
+    eval_feature_frame = pd.DataFrame(x_eval, columns=feature_names)
     result = run_production_recovery_pipeline(
-        x_train,
+        train_feature_frame,
         y_train,
-        x_eval,
+        eval_feature_frame,
         y_eval,
         execution_contract=G11_CONTRACT,
         artifact_dir=shard_dir / "recovery_pipeline",
         seed=_pilot_seed(record),
     )
-    feature_names = [f"x{index:03d}" for index in range(158)] + [
-        "binary_0",
-        "binary_1",
-    ]
-    train_inputs = pd.DataFrame(x_train, columns=feature_names)
+    train_inputs = train_feature_frame.copy()
     train_inputs.insert(0, "sample_id", np.arange(len(x_train)))
-    eval_inputs = pd.DataFrame(x_eval, columns=feature_names)
+    eval_inputs = eval_feature_frame.copy()
     eval_inputs.insert(0, "sample_id", np.arange(len(x_eval)))
     algebraic_catalog = pd.DataFrame({"feature_name": list(result.algebraic_candidate_names)})
     algebraic_train = build_manuscript_feature_design(

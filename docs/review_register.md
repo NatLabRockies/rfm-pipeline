@@ -597,6 +597,37 @@ scientific control and raises the deterministic all-phase fixture only from
 - Blocks submission: yes until corrected pinned commits are deployed and a new
   isolated pilot completes every step exactly `COMPLETED/0:0`.
 
+## REVIEW-0021 — Pilot recovery used inconsistent synthetic feature names
+
+- Date: 2026-08-14
+- Severity: P0 / pilot completion and recovery resource selection
+- Status: fixed on `g11-integration-reconcile`; replacement pilot required
+- Evidence: Kestrel `pilot_recovery` job `16238305` completed the production
+  recovery pipeline, then exited `FAILED/1:0` while building its algebraic
+  comparator design: feature `x3` was absent from a frame whose corresponding
+  column was named `x003`. The controller cancelled jobs `16238303` and
+  `16238304` and submitted no downstream work.
+- Root cause: the pilot passed unnamed arrays to
+  `run_production_recovery_pipeline`, which assigns `x0` through `x159`, then
+  independently constructed comparator frames with `x000` through `x157` and
+  explicit `binary_0`/`binary_1` columns. No test exercised this post-pipeline
+  comparator boundary.
+- Resolution: construct the canonical named pilot frames once and pass those
+  same frames to both production recovery and algebraic materialization. A
+  prospective regression requires direct, interaction, transformation, and
+  binary candidates to materialize identically for training and evaluation.
+  The production BSM driver was audited and already passes its exact feature
+  names through both boundaries; later pilot stages do not repeat this logic.
+- Preserved evidence: raw scheduler evidence and an 88-file hash ledger are at
+  `/projects/bsm/g11_authorizations/g11-pilot-final-sizing-20260814e/`;
+  the ledger SHA-256 is
+  `49f6b2257b13b2367335ccf2bab609205b351ea974ad71299f42a88bfc413e30`.
+  Rejected-attempt use is 77.91944444444445 AUs; cumulative sunk campaign use
+  is 192.55 AUs.
+- Blocks submission: yes until the corrected exact commits and updated
+  content-addressed package pass focused validation, are deployed cleanly to
+  Kestrel, and a fresh isolated pilot reaches exact `COMPLETED/0:0` coverage.
+
 ## Independent review of alignment diff b96442b..e31fb15 (round 3 remediation)
 
 - REVIEW-R3-01 \[BLOCKING, fixed-by R3-S01\]: multiplicity_controlled_interaction_selection

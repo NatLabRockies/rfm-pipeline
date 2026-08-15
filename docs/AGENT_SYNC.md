@@ -1,3 +1,20 @@
+## SESSION STATE — 2026-08-15 — Confirmatory admission accounting repair
+
+- A prospective B=999 final-package build failed closed at 25,215 AUs even
+  though exact campaign accounting, which replaces completed pilot and
+  development estimates with observed charges, bounded the campaign at
+  24,929.82 AUs. No scheduler job was submitted.
+- Confirmatory package generation now has an explicit, confirmatory-only
+  admission path: observed AUs for completed work plus the shared 20% reserve
+  on unexecuted confirmatory stages plus the bounded postprocessing reserve.
+  Full/development package behavior is unchanged, invalid or negative values
+  fail closed, and a true overrun still raises before package completion.
+- Prospective acceptance and overrun regressions pass. The complete repository
+  gate also passes, including unit tests, manuscript reproduction, all nine
+  notebooks, docs, package build, hygiene, and diff checks. Deployment and a
+  fresh Kestrel B=999/B=1,998 no-submit replay remain required before any
+  scientific submission.
+
 ## SESSION STATE — 2026-08-14 — Pilot recovery feature-name repair
 
 - Pilot `g11-pilot-final-sizing-20260814e` stopped fail-closed at

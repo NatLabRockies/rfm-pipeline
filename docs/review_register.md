@@ -628,6 +628,30 @@ scientific control and raises the deterministic all-phase fixture only from
   content-addressed package pass focused validation, are deployed cleanly to
   Kestrel, and a fresh isolated pilot reaches exact `COMPLETED/0:0` coverage.
 
+## REVIEW-0022 — Confirmatory admission double-counted completed work
+
+- Date: 2026-08-15
+- Severity: P0 / final-run allocation admission
+- Status: fixed on `g11-integration-reconcile`; Kestrel replay required
+- Evidence: a prospective B=999 confirmatory package stopped with
+  `telemetry-based whole-campaign projection exceeds allocation_quota: 25215 > 25000`, before the exact 24,929.82-AU BSM certificate could be generated. No
+  scheduler job was submitted.
+- Root cause: the generic package envelope retained estimated pilot and
+  resolution charges after those phases had completed. The downstream BSM
+  certificate correctly replaced them with observed AUs, but the earlier gate
+  made that certificate unreachable.
+- Resolution: the confirmatory-only admission path accepts immutable observed
+  charges for completed work and the bounded postprocessing reserve, then adds
+  the shared 20% reserve only to stages present in the confirmatory package.
+  Legacy package modes retain their existing admission rule. Invalid inputs
+  and actual quota overruns remain fail-closed.
+- Validation: prospective B=999 admission and true-overrun regressions pass;
+  the complete repository gate passes, including all manuscript notebooks,
+  docs, package build, hygiene, and diff checks.
+- Blocks submission: yes until exact commits are pushed/deployed and fresh
+  Kestrel diagnostics admit B=999, reject B=1,998, and pass `sbatch --test-only` for every unique production script without creating a scheduler
+  job.
+
 ## Independent review of alignment diff b96442b..e31fb15 (round 3 remediation)
 
 - REVIEW-R3-01 \[BLOCKING, fixed-by R3-S01\]: multiplicity_controlled_interaction_selection

@@ -297,6 +297,8 @@ def generate_campaign_package(
     contract: CampaignContract = G11_CONTRACT,
     resource_freeze: dict[str, Any] | None = None,
     package_mode: str = "full",
+    completed_observed_au_for_admission: float | None = None,
+    postprocessing_reserved_au_for_admission: float = 0.0,
 ) -> CampaignDAG:
     """Build manifests, scripts, hashes, telemetry, and readiness artifacts."""
     if package_mode not in {"full", "development", "confirmatory"}:
@@ -311,6 +313,21 @@ def generate_campaign_package(
         resource_freeze is None or contract.resolution_decision_sha256 == "PENDING"
     ):
         raise ValueError("confirmatory package requires frozen resources and resolution bytes")
+    if completed_observed_au_for_admission is not None:
+        if package_mode != "confirmatory":
+            raise ValueError("observed completed allocation admission is confirmatory-only")
+        if not math.isfinite(completed_observed_au_for_admission) or (
+            completed_observed_au_for_admission < 0
+        ):
+            raise ValueError("completed observed admission AUs must be nonnegative")
+        if not math.isfinite(postprocessing_reserved_au_for_admission) or (
+            postprocessing_reserved_au_for_admission < 0
+        ):
+            raise ValueError("postprocessing admission reserve must be nonnegative")
+    elif postprocessing_reserved_au_for_admission != 0:
+        raise ValueError(
+            "postprocessing admission reserve requires observed completed allocation AUs"
+        )
     resolved_repo_root = (
         Path(repo_root).resolve() if repo_root is not None else Path(__file__).resolve().parents[2]
     )
@@ -489,15 +506,28 @@ def generate_campaign_package(
             ) from exc
         if allocation_quota <= 0:
             raise ValueError("allocation_quota must be a positive integer AU limit.")
-        if resource_freeze is None and allocation_quota < campaign_envelope.requested_au:
+        admission_requested_au = float(campaign_envelope.requested_au)
+        admission_error = "telemetry-based whole-campaign projection"
+        if completed_observed_au_for_admission is not None:
+            remaining_estimated_au = sum(
+                _stage_allocation_estimate(stage, cluster=cluster).estimated_au for stage in stages
+            )
+            reserve_fraction = 0.20 if contract.retry_limit else 0.0
+            admission_requested_au = (
+                completed_observed_au_for_admission
+                + math.ceil(remaining_estimated_au * (1.0 + reserve_fraction))
+                + postprocessing_reserved_au_for_admission
+            )
+            admission_error = "observed-prior confirmatory projection"
+        if resource_freeze is None and allocation_quota < admission_requested_au:
             readiness_blockers.append(
                 "provisional pre-pilot forecast exceeds the campaign AU budget; "
                 "run the bounded pilot and require the telemetry-based final package to fit"
             )
-        if resource_freeze is not None and allocation_quota < campaign_envelope.requested_au:
+        if resource_freeze is not None and allocation_quota < admission_requested_au:
             raise ValueError(
-                "telemetry-based whole-campaign projection exceeds allocation_quota: "
-                f"{campaign_envelope.requested_au} > {allocation_quota}"
+                f"{admission_error} exceeds allocation_quota: "
+                f"{admission_requested_au:g} > {allocation_quota}"
             )
     dag = CampaignDAG(
         run_id=raw_config["run_id"],

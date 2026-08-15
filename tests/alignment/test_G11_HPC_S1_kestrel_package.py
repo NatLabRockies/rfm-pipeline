@@ -1390,6 +1390,78 @@ def test_post_pilot_gate_counts_pilot_and_resolution_against_whole_campaign_cap(
         _final_package(tmp_path, quota=10_000)
 
 
+def test_confirmatory_gate_uses_observed_completed_au_for_final_admission(
+    tmp_path: Path,
+) -> None:
+    base = _package(tmp_path / "base")
+    freeze = select_pilot_resources(
+        pilot_matrix=base.pilot_matrix,
+        telemetry=_accepted_pilot_telemetry(base),
+        cluster=base.cluster,
+        source_hash=base.source_hash,
+        config_hash=base.config_hash,
+        lock_hash=base.lock_hash,
+    )
+    selected = replace(
+        G11_CONTRACT,
+        B_interaction=999,
+        resolution_decision_sha256="a" * 64,
+    )
+
+    final = generate_campaign_package(
+        output_dir=tmp_path / "final" / "package",
+        repo_root=REPO_ROOT,
+        config_path=_config_with_quota(tmp_path / "final", 10_000),
+        contract=selected,
+        resource_freeze=freeze,
+        package_mode="confirmatory",
+        completed_observed_au_for_admission=50.0,
+        postprocessing_reserved_au_for_admission=5.0,
+    )
+
+    remaining_stage_names = {stage.name for stage in final.stages}
+    remaining_estimated = sum(
+        allocation.estimated_au
+        for allocation in final.campaign_envelope.stage_allocations
+        if allocation.stage_name in remaining_stage_names
+    )
+    assert 50.0 + math.ceil(remaining_estimated * 1.20) + 5.0 <= 10_000
+
+
+def test_confirmatory_observed_admission_still_rejects_a_real_overrun(
+    tmp_path: Path,
+) -> None:
+    base = _package(tmp_path / "base")
+    freeze = select_pilot_resources(
+        pilot_matrix=base.pilot_matrix,
+        telemetry=_accepted_pilot_telemetry(base),
+        cluster=base.cluster,
+        source_hash=base.source_hash,
+        config_hash=base.config_hash,
+        lock_hash=base.lock_hash,
+    )
+    selected = replace(
+        G11_CONTRACT,
+        B_interaction=999,
+        resolution_decision_sha256="a" * 64,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="observed-prior confirmatory projection exceeds allocation_quota",
+    ):
+        generate_campaign_package(
+            output_dir=tmp_path / "final" / "package",
+            repo_root=REPO_ROOT,
+            config_path=_config_with_quota(tmp_path / "final", 10_000),
+            contract=selected,
+            resource_freeze=freeze,
+            package_mode="confirmatory",
+            completed_observed_au_for_admission=9_999.0,
+            postprocessing_reserved_au_for_admission=5.0,
+        )
+
+
 def test_live_smoke_cli_builds_a_fresh_pilot_package(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

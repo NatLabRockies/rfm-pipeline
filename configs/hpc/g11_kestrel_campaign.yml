@@ -31,11 +31,11 @@ hpc_campaign:
     # on /scratch so every worker starts promptly; preflight still binds the
     # exact Git commits and source/lock/file hashes.
     rfm_repository_root: /scratch/dhetting/bsm_runtime/software/rfm-pipeline
-    bsm_repository_root: /scratch/dhetting/bsm_runtime/software/bsm-public-rf
+    bsm_repository_root: /scratch/dhetting/bsm_runtime/software/bsm-public-rf-d7d5f32
     scientific_adapter_relative_path: scripts/g11_campaign_adapter.py
     scientific_adapter_sha256: 48e9d42d59e6b0aa563b6c2d93714e58f3e483fb1afaffc5deaed8cee6d3f7b1
     bsm_recovery_driver_relative_path: scripts/run_bsm_recovery_study.py
-    bsm_recovery_driver_sha256: f8aee6fca141666e8e061762d3fa930e5fe494449b99c78316c19702fdeeee46
+    bsm_recovery_driver_sha256: 8ccd44a7187007be5cba571be0da487478018e312f951b9b606c3001515ea5e4
     bsm_dgp_contract_relative_path: configs/bsm_dgp_contract.yaml
     bsm_dgp_contract_sha256: 4c035f618dbc86708f3568139648101173799e518f068b56523317aad93decaf
     applied_data_preparer_relative_path: scripts/prepare_g11_applied_data.py

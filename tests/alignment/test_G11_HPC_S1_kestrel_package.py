@@ -650,13 +650,21 @@ def test_sparse_resample_reconstructs_matching_upstream_sparse_fixture(tmp_path:
 
 def _accepted_pilot_telemetry(dag) -> list[dict[str, object]]:  # noqa: ANN001
     elapsed_by_profile = {"p0": 400.0, "p1": 100.0, "p2": 300.0}
+    execution_schedule_hashes = {
+        (stage.name, str(record["profile_id"])): str(record["schedule_hash"])
+        for stage in dag.stages
+        if stage.name in _PILOT_STAGES_FOR_TEST
+        for record in load_stage_manifest(stage.manifest_path)
+    }
     rows: list[dict[str, object]] = []
     for profile in dag.pilot_matrix:
+        identity = (str(profile["stage"]), str(profile["profile_id"]))
         rows.append(
             {
                 "stage": profile["stage"],
                 "profile_id": profile["profile_id"],
-                "schedule_hash": profile["schedule_hash"],
+                "schedule_hash": execution_schedule_hashes[identity],
+                "profile_schedule_hash": profile["schedule_hash"],
                 "status": "completed",
                 "source_hash": dag.source_hash,
                 "config_hash": dag.config_hash,
@@ -771,7 +779,8 @@ def test_pilot_resource_selector_prices_exclusive_profiles_as_full_nodes(
     ("mutation", "message"),
     [
         ({"status": "failed"}, "did not complete"),
-        ({"schedule_hash": "0" * 64}, "schedule hash"),
+        ({"profile_schedule_hash": "0" * 64}, "profile schedule hash"),
+        ({"schedule_hash": "invalid"}, "execution schedule hash"),
         ({"block_size": 999999}, "block size"),
         ({"max_rss_bytes": 10**15}, "memory"),
     ],
@@ -977,6 +986,12 @@ def test_pilot_accounting_joins_scheduler_rows_to_profile_telemetry(tmp_path: Pa
     assert evidence["pilot_telemetry"][0]["allocated_nodes"] == 1
     assert evidence["pilot_telemetry"][0]["allocated_cpus"] == 104
     assert evidence["pilot_telemetry"][0]["scheduler_max_rss_bytes"] == 180 * 1024**2
+    assert evidence["pilot_telemetry"][0]["schedule_hash"] == record["schedule_hash"]
+    assert evidence["pilot_telemetry"][0]["profile_schedule_hash"] == next(
+        row["schedule_hash"]
+        for row in dag.pilot_matrix
+        if row["stage"] == stage.name and row["profile_id"] == "p0"
+    )
     assert (tmp_path / "accounting" / "sacct_raw.psv").is_file()
     assert (tmp_path / "accounting" / "pilot_accounting.json").is_file()
 

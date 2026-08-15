@@ -2010,6 +2010,11 @@ def collect_pilot_accounting(
         for step in build_submission_plan(dag)["pilot_steps"]
         if str(step["stage"]) in selected_names
     ]
+    pilot_profiles = {
+        (str(row["stage"]), str(row["profile_id"])): row
+        for row in dag.pilot_matrix
+        if str(row["stage"]) in selected_names
+    }
     expected_step_ids = {str(step["step_id"]) for step in plan_steps}
     if set(submission_job_ids) != expected_step_ids:
         raise ValueError("pilot accounting job IDs do not exactly cover the selected plan")
@@ -2141,6 +2146,28 @@ def collect_pilot_accounting(
             result = json.loads(result_path.read_text(encoding="utf-8"))
             if str(result.get("slurm_job_id", "")) != job_id:
                 raise ValueError(f"pilot worker result differs from submitted job ID {job_id}")
+            for field in (
+                "stage",
+                "shard_id",
+                "profile_id",
+                "source_hash",
+                "config_hash",
+                "lock_hash",
+                "input_hash",
+                "schedule_hash",
+                "parent_hash",
+                "output_hash",
+            ):
+                if result.get(field) != record.get(field):
+                    raise ValueError(
+                        f"pilot worker result {field} differs from manifest for {job_id}"
+                    )
+            profile_identity = (stage.name, str(record["profile_id"]))
+            profile = pilot_profiles.get(profile_identity)
+            if profile is None:
+                raise ValueError(
+                    f"pilot manifest profile is absent from matrix: {profile_identity}"
+                )
             scheduler = scheduler_rows[job_id]
             child_rss = max(
                 (
@@ -2157,6 +2184,7 @@ def collect_pilot_accounting(
             telemetry.append(
                 {
                     **result,
+                    "profile_schedule_hash": profile["schedule_hash"],
                     "scheduler_state": scheduler["scheduler_state"],
                     "scheduler_exit_code": scheduler["scheduler_exit_code"],
                     "scheduler_elapsed_seconds": scheduler["scheduler_elapsed_seconds"],
@@ -2238,8 +2266,10 @@ def select_pilot_resources(
             or row.get("lock_hash") != lock_hash
         ):
             raise ValueError(f"pilot {identity} source, contract, or lock identity differs")
-        if row.get("schedule_hash") != profile["schedule_hash"]:
-            raise ValueError(f"pilot {identity} schedule hash differs from its profile")
+        if row.get("profile_schedule_hash") != profile["schedule_hash"]:
+            raise ValueError(f"pilot {identity} profile schedule hash differs")
+        if re.fullmatch(r"[0-9a-f]{64}", str(row.get("schedule_hash", ""))) is None:
+            raise ValueError(f"pilot {identity} execution schedule hash is malformed")
         for field, telemetry_field in (
             ("block_size", "block_size"),
             ("executed_work_units", "executed_work_units"),

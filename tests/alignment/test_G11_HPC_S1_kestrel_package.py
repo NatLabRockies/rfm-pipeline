@@ -247,6 +247,7 @@ def test_development_package_contains_and_budgets_only_resolution(
     assert development.package_mode == "development"
     assert [stage.name for stage in development.stages] == ["resolution"]
     assert development.stages[0].parent_stage_name is None
+    assert development.stages[0].partition == "shared"
     assert len(development.campaign_envelope.stage_allocations) == 1
     assert development.campaign_envelope.requested_au <= 25_000
     phase_plan = build_campaign_phase_plan(development, phase="development")
@@ -257,6 +258,7 @@ def test_development_package_contains_and_budgets_only_resolution(
         "reduce",
     ]
     assert phase_plan["steps"][0]["array_task_count"] == 20
+    assert phase_plan["steps"][0]["shared_node_equivalent"] is not None
     assert all(step["array_task_count"] == 0 for step in phase_plan["steps"][1:])
     assert all(_HEX64.fullmatch(step["script_sha256"]) for step in phase_plan["steps"])
 
@@ -1371,7 +1373,7 @@ def test_live_smoke_rejects_unknown_allocation_before_any_probe(tmp_path: Path) 
 def test_post_pilot_projection_fits_the_25k_campaign_budget(tmp_path: Path) -> None:
     _, _, _, _, final = _final_package(tmp_path)
 
-    assert final.campaign_envelope.requested_au == 10_322
+    assert final.campaign_envelope.requested_au == 10_308
     assert final.campaign_envelope.requested_au <= 25_000
     assert {"pilot_conditioning", "resolution"} <= {
         estimate.stage_name for estimate in final.campaign_envelope.stage_allocations
@@ -1383,7 +1385,7 @@ def test_post_pilot_gate_counts_pilot_and_resolution_against_whole_campaign_cap(
 ) -> None:
     with pytest.raises(
         ValueError,
-        match="telemetry-based whole-campaign projection exceeds allocation_quota: 10322 > 10000",
+        match="telemetry-based whole-campaign projection exceeds allocation_quota: 10308 > 10000",
     ):
         _final_package(tmp_path, quota=10_000)
 

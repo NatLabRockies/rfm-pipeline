@@ -2623,6 +2623,11 @@ def _apply_resource_freeze_to_stage_spec(
     partition, worker_resources = _frozen_resource_envelope(
         selection, walltime_scale=walltime_scale
     )
+    if stage == "resolution":
+        # Resolution uses less than one Kestrel node and the shared partition
+        # supports this frozen CPU/memory/walltime envelope. Preserve the
+        # measured resources without paying for idle exclusive-node capacity.
+        partition = "shared"
     updated = {**spec, "partition": partition, "worker_resources": worker_resources}
     if stage == "gate_b":
         null_partition, null_resources = _frozen_resource_envelope(

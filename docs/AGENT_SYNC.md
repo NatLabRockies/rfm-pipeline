@@ -2453,3 +2453,20 @@ ______________________________________________________________________
 - Required next step: commit and deploy the fix, update the paired BSM RFM pin,
   and run a new isolated complete pilot. Only successful post-fix telemetry may
   size or authorize the resolution and final scientific campaign.
+
+## 2026-08-15 — Final-campaign submission hardening
+
+- Added an explicit `development` package mode that contains only the 20-record
+  resolution stage. Its allocation envelope, inventory, phase plan, and
+  preflight can no longer accidentally include the full pre-resolution
+  campaign.
+- Every generated worker, audit, and reducer script now writes to a package-
+  local log directory created before preflight, unsets Python import overrides,
+  and invokes the accepted scientific checkout's direct locked interpreter.
+- Submission plans bind every script SHA-256, exact array-task count, and the
+  shared-partition charged-node fraction. Phase authorizations bind the plan
+  hash, and submission rechecks every script before the first `sbatch` call.
+- These controller-only changes do not alter scientific worker algorithms or
+  the accepted `fd12fd5` source identity. Focused G11 HPC package tests cover
+  resolution-only scoping, script drift, launch-directory existence, clean
+  imports, split Gate-B arrays, retry packages, and dependency ordering.

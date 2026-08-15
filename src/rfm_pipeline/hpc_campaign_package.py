@@ -299,8 +299,14 @@ def generate_campaign_package(
     package_mode: str = "full",
 ) -> CampaignDAG:
     """Build manifests, scripts, hashes, telemetry, and readiness artifacts."""
-    if package_mode not in {"full", "confirmatory"}:
-        raise ValueError("package_mode must be full or confirmatory")
+    if package_mode not in {"full", "development", "confirmatory"}:
+        raise ValueError("package_mode must be full, development, or confirmatory")
+    if package_mode == "development" and (
+        resource_freeze is None or contract.resolution_decision_sha256 != "PENDING"
+    ):
+        raise ValueError(
+            "development package requires frozen resources and the unresolved base contract"
+        )
     if package_mode == "confirmatory" and (
         resource_freeze is None or contract.resolution_decision_sha256 == "PENDING"
     ):
@@ -593,8 +599,13 @@ def validate_hpc_preflight(
         raise ValueError(
             "preflight target_phase must be pilot, development, gate_b, gate_p, or gate_c"
         )
-    if target_phase in {"pilot", "development"} and dag.package_mode != "full":
-        raise ValueError("pilot/development preflight requires a full package")
+    if target_phase == "pilot" and dag.package_mode != "full":
+        raise ValueError("pilot preflight requires a full package")
+    if target_phase == "development" and dag.package_mode not in {
+        "full",
+        "development",
+    }:
+        raise ValueError("development preflight requires a development package")
     if target_phase in {"gate_b", "gate_p", "gate_c"} and dag.package_mode != "confirmatory":
         raise ValueError("confirmatory preflight requires a post-resolution confirmatory package")
     required = {
@@ -728,6 +739,17 @@ def validate_hpc_preflight(
     if evidence["sbatch_test_only"] != expected_scripts:
         raise ValueError("sbatch --test-only evidence does not exactly cover packaged scripts")
     for stage in selected_stages:
+        log_dirs = {
+            path.parent / "logs"
+            for path in (
+                *stage.worker_script_paths,
+                stage.audit_script_path,
+                stage.reducer_script_path,
+            )
+        }
+        for log_dir in log_dirs:
+            if not log_dir.is_dir() or any(log_dir.iterdir()):
+                raise ValueError(f"HPC scheduler log directory is absent or nonempty: {log_dir}")
         for path in (stage.output_root, stage.reducer_output_dir, stage.audit_output_dir):
             if path.exists() and any(path.iterdir()):
                 raise ValueError(f"HPC output root is not empty: {path}")
@@ -751,6 +773,11 @@ def validate_hpc_preflight(
     ]
     if unresolved:
         raise ValueError(f"HPC package retains readiness blockers: {unresolved}")
+    submission_plan = (
+        build_submission_plan(dag)
+        if target_phase == "pilot"
+        else build_campaign_phase_plan(dag, phase=target_phase)
+    )
     payload = {
         "schema_version": 1,
         "status": "HPC_SUBMISSION_READY",
@@ -760,6 +787,7 @@ def validate_hpc_preflight(
         "config_hash": dag.config_hash,
         "lock_hash": dag.lock_hash,
         "campaign_inventory_hash": dag.campaign_inventory_hash,
+        "submission_plan_sha256": submission_plan["submission_plan_sha256"],
         "readiness_blockers": list(dag.readiness_blockers),
         "resource_freeze_sha256": next(
             str(record["resource_freeze_sha256"])
@@ -1118,6 +1146,7 @@ def write_phase_authorization(
     preflight_identity = {
         key: value for key, value in preflight.items() if key != "preflight_sha256"
     }
+    phase_plan = build_campaign_phase_plan(dag, phase=phase)
     if (
         preflight.get("status") != "HPC_SUBMISSION_READY"
         or preflight.get("config_hash") != dag.config_hash
@@ -1126,6 +1155,7 @@ def write_phase_authorization(
         or preflight.get("campaign_inventory_hash") != dag.campaign_inventory_hash
         or preflight.get("observed_date") != date.today().isoformat()
         or preflight.get("resource_freeze_sha256") != resource_hash
+        or preflight.get("submission_plan_sha256") != phase_plan.get("submission_plan_sha256")
         or preflight.get("preflight_sha256") != _stable_hash(preflight_identity)
     ):
         raise ValueError("phase authorization preflight identity differs")
@@ -1234,6 +1264,7 @@ def write_phase_authorization(
         "lock_hash": dag.lock_hash,
         "campaign_inventory_hash": dag.campaign_inventory_hash,
         "preflight_sha256": str(preflight["preflight_sha256"]),
+        "submission_plan_sha256": phase_plan["submission_plan_sha256"],
         "prerequisite_sha256": {
             str(item["operation"]): _hash_file(Path(path))
             for path, item in zip(prerequisite_paths, prerequisites, strict=True)
@@ -1351,6 +1382,45 @@ def validate_stage_dependencies(dag: CampaignDAG, stage_name: str) -> None:
         _validate_scientific_artifacts(scientific, allowed_root=parent.reducer_output_dir)
 
 
+def _submission_step_accounting(script_path: Path, *, cluster: ClusterConfig) -> dict[str, Any]:
+    """Extract exact array coverage and shared-node charge from one script."""
+    text = script_path.read_text(encoding="utf-8")
+
+    def _single(pattern: str, label: str) -> str:
+        matches = re.findall(pattern, text, flags=re.MULTILINE)
+        if len(matches) != 1:
+            raise ValueError(f"Slurm script does not contain exactly one {label}: {script_path}")
+        return str(matches[0])
+
+    partition = _single(r"^#SBATCH --partition=([^\s]+)$", "partition")
+    cpus = int(_single(r"^#SBATCH --cpus-per-task=([0-9]+)$", "CPU request"))
+    memory_gb = int(_single(r"^#SBATCH --mem=([0-9]+)G$", "memory request"))
+    arrays = re.findall(
+        r"^#SBATCH --array=([0-9]+)-([0-9]+)(?:%[0-9]+)?$",
+        text,
+        flags=re.MULTILINE,
+    )
+    if len(arrays) > 1:
+        raise ValueError(f"Slurm script contains multiple array directives: {script_path}")
+    array_task_count = 0
+    if arrays:
+        start, end = (int(value) for value in arrays[0])
+        if start != 0 or end < start:
+            raise ValueError(f"Slurm array must use one zero-based contiguous range: {script_path}")
+        array_task_count = end - start + 1
+    shared_node_equivalent = None
+    if partition == "shared":
+        shared_node_equivalent = max(
+            cpus / cluster.cpu_cores_per_node,
+            memory_gb / cluster.memory_per_node_gb,
+        )
+    return {
+        "array_task_count": array_task_count,
+        "shared_node_equivalent": shared_node_equivalent,
+        "script_sha256": _hash_file(script_path),
+    }
+
+
 def build_submission_plan(dag: CampaignDAG) -> dict[str, Any]:
     """Build an exact, ordered NO-SUBMIT plan with fail-closed dependencies."""
     pilot_steps: list[dict[str, Any]] = []
@@ -1389,6 +1459,7 @@ def build_submission_plan(dag: CampaignDAG) -> dict[str, Any]:
                     "depends_on": parent_steps,
                     "locked": locked,
                     "unlock_requirement": unlock_requirement,
+                    **_submission_step_accounting(script_path, cluster=dag.cluster),
                 }
             )
         audit_step_id = f"{stage.name}:audit"
@@ -1402,6 +1473,7 @@ def build_submission_plan(dag: CampaignDAG) -> dict[str, Any]:
                 "depends_on": worker_step_ids,
                 "locked": locked,
                 "unlock_requirement": unlock_requirement,
+                **_submission_step_accounting(stage.audit_script_path, cluster=dag.cluster),
             }
         )
         reducer_step_id = f"{stage.name}:reduce"
@@ -1415,6 +1487,7 @@ def build_submission_plan(dag: CampaignDAG) -> dict[str, Any]:
                 "depends_on": [*worker_step_ids, audit_step_id],
                 "locked": locked,
                 "unlock_requirement": unlock_requirement,
+                **_submission_step_accounting(stage.reducer_script_path, cluster=dag.cluster),
             }
         )
         reducer_step_by_stage[stage.name] = reducer_step_id
@@ -1456,6 +1529,7 @@ def execute_submission_plan(
         or preflight.get("config_hash") != plan.get("config_hash")
         or preflight.get("lock_hash") != plan.get("lock_hash")
         or preflight.get("campaign_inventory_hash") != plan.get("campaign_inventory_hash")
+        or preflight.get("submission_plan_sha256") != plan.get("submission_plan_sha256")
         or preflight.get("observed_date") != date.today().isoformat()
         or preflight.get("preflight_sha256") != _stable_hash(preflight_identity)
     ):
@@ -1490,8 +1564,8 @@ def execute_submission_plan(
 
 def build_campaign_phase_plan(dag: CampaignDAG, *, phase: str) -> dict[str, Any]:
     """Build one independently gated development or confirmatory tranche."""
-    if phase == "development" and dag.package_mode != "full":
-        raise ValueError("development phase plan requires a full package")
+    if phase == "development" and dag.package_mode not in {"full", "development"}:
+        raise ValueError("development phase plan requires a development package")
     if phase != "development" and dag.package_mode != "confirmatory":
         raise ValueError("confirmatory phase plan requires a confirmatory package")
     stage_predicate = {
@@ -1559,6 +1633,7 @@ def execute_campaign_phase_plan(
         or preflight.get("config_hash") != plan.get("config_hash")
         or preflight.get("lock_hash") != plan.get("lock_hash")
         or preflight.get("campaign_inventory_hash") != plan.get("campaign_inventory_hash")
+        or preflight.get("submission_plan_sha256") != plan.get("submission_plan_sha256")
         or preflight.get("observed_date") != date.today().isoformat()
         or preflight.get("preflight_sha256") != _stable_hash(preflight_identity)
     ):
@@ -1576,12 +1651,18 @@ def execute_campaign_phase_plan(
         or phase_authorization.get("lock_hash") != plan.get("lock_hash")
         or phase_authorization.get("campaign_inventory_hash") != plan.get("campaign_inventory_hash")
         or phase_authorization.get("preflight_sha256") != preflight.get("preflight_sha256")
+        or phase_authorization.get("submission_plan_sha256") != plan.get("submission_plan_sha256")
         or phase_authorization.get("execution_permitted") is not True
         or phase_authorization.get("resource_freeze_sha256")
         != preflight.get("resource_freeze_sha256")
         or phase_authorization.get("authorization_sha256") != _stable_hash(authorization_identity)
     ):
         raise PermissionError("campaign phase authorization is stale or differs")
+
+    for step in plan["steps"]:
+        script_path = Path(str(step["command"][-1]))
+        if not script_path.is_file() or _hash_file(script_path) != step.get("script_sha256"):
+            raise ValueError(f"campaign script bytes changed after planning: {step['step_id']}")
 
     job_ids: dict[str, str] = {}
     for step in plan["steps"]:
@@ -1661,6 +1742,8 @@ def prepare_stage_retry_package(
     if destination.exists() and any(destination.iterdir()):
         raise ValueError("retry package output directory must be empty")
     destination.mkdir(parents=True, exist_ok=True)
+    log_dir = destination / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = destination / "retry_manifest.jsonl"
     _write_jsonl(manifest_path, merged)
     script_paths: list[Path] = []
@@ -1674,6 +1757,7 @@ def prepare_stage_retry_package(
                 stage_name=stage.name,
                 partition=str(record.get("partition", stage.partition)),
                 cluster=dag.cluster,
+                log_dir=log_dir,
                 resources=resources,
                 manifest_path=manifest_path,
                 output_root=stage.output_root,
@@ -1699,6 +1783,7 @@ def prepare_stage_retry_package(
             stage_name=stage.name,
             partition=stage.partition,
             cluster=dag.cluster,
+            log_dir=log_dir,
             resources=stage.reducer_resources,
             manifest_path=manifest_path,
             audit_output_dir=retry_audit_output_dir,
@@ -1712,6 +1797,7 @@ def prepare_stage_retry_package(
             stage_name=stage.name,
             partition=stage.partition,
             cluster=dag.cluster,
+            log_dir=log_dir,
             resources=stage.reducer_resources,
             manifest_path=manifest_path,
             reducer_output_dir=stage.reducer_output_dir,
@@ -2829,7 +2915,13 @@ def _build_stage_plans(
             else spec
             for spec in stage_specs
         )
-    if package_mode == "confirmatory":
+    if package_mode == "development":
+        stage_specs = tuple(
+            {**spec, "parent_stage_name": None}
+            for spec in stage_specs
+            if spec["name"] == "resolution"
+        )
+    elif package_mode == "confirmatory":
         stage_specs = tuple(
             {
                 **spec,
@@ -2852,6 +2944,8 @@ def _build_stage_plans(
             raise ValueError(f"stage {spec['name']} exceeds Kestrel MaxArraySize")
 
         stage_dir = output_dir / "stages" / str(spec["name"])
+        log_dir = stage_dir / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = stage_dir / "manifest.jsonl"
         worker_script_path = stage_dir / "worker.slurm"
         reducer_script_path = stage_dir / "reduce.slurm"
@@ -2914,6 +3008,7 @@ def _build_stage_plans(
                         stage_name=str(spec["name"]),
                         partition=str(record["partition"]),
                         cluster=cluster,
+                        log_dir=log_dir,
                         resources=task_resources,
                         manifest_path=manifest_path,
                         output_root=output_root,
@@ -2938,6 +3033,7 @@ def _build_stage_plans(
                         stage_name=str(spec["name"]),
                         partition=str(resource_class["partition"]),
                         cluster=cluster,
+                        log_dir=log_dir,
                         resources=resource_class["worker_resources"],
                         manifest_path=manifest_path,
                         output_root=output_root,
@@ -2959,6 +3055,7 @@ def _build_stage_plans(
                     stage_name=str(spec["name"]),
                     partition=str(spec["partition"]),
                     cluster=cluster,
+                    log_dir=log_dir,
                     resources=spec["worker_resources"],
                     manifest_path=manifest_path,
                     output_root=output_root,
@@ -2976,6 +3073,7 @@ def _build_stage_plans(
                 stage_name=str(spec["name"]),
                 partition=str(spec["partition"]),
                 cluster=cluster,
+                log_dir=log_dir,
                 resources=spec["reducer_resources"],
                 manifest_path=manifest_path,
                 audit_output_dir=audit_output_dir,
@@ -2989,6 +3087,7 @@ def _build_stage_plans(
                 stage_name=str(spec["name"]),
                 partition=str(spec["partition"]),
                 cluster=cluster,
+                log_dir=log_dir,
                 resources=spec["reducer_resources"],
                 manifest_path=manifest_path,
                 reducer_output_dir=reducer_output_dir,
@@ -3847,7 +3946,10 @@ def validate_campaign_table(
         "applied_holdout_predict": 23495,
         "applied_bootstrap": contract.bootstrap_draws,
     }
+    packaged_stage_names = {stage.name for stage in dag.stages}
     for stage_name, expected_end in block_totals.items():
+        if stage_name not in packaged_stage_names:
+            continue
         stage_blocks = sorted(
             (row for row in workers if row.get("stage") == stage_name),
             key=lambda row: int(row["block_start"]),
@@ -3867,24 +3969,27 @@ def validate_campaign_table(
                 f"expected {expected_end}"
             )
 
-    scientific = [row for row in workers if row.get("stage") in {"gate_b", "recovery"}]
-    contract_hash = compute_contract_hash(contract)
-    expected_scientific = build_campaign_inventory(contract, contract_hash)
-    expected_identity = {
-        (row.scenario_id, row.replicate_index, row.seed) for row in expected_scientific
-    }
-    observed_identity = {
-        (str(row["scenario_id"]), int(row["replicate_index"]), int(row["seed"]))
-        for row in scientific
-    }
-    if len(scientific) != 6400 or observed_identity != expected_identity:
-        raise ValueError("campaign inventory does not exactly cover all 6400 scientific records")
-    if any(
-        tuple(row.get("recovery_comparators", ()))
-        != (contract.recovery_comparators if row.get("scenario_kind") != "null" else ())
-        for row in scientific
-    ):
-        raise ValueError("campaign inventory recovery comparator contract differs")
+    if dag.package_mode != "development":
+        scientific = [row for row in workers if row.get("stage") in {"gate_b", "recovery"}]
+        contract_hash = compute_contract_hash(contract)
+        expected_scientific = build_campaign_inventory(contract, contract_hash)
+        expected_identity = {
+            (row.scenario_id, row.replicate_index, row.seed) for row in expected_scientific
+        }
+        observed_identity = {
+            (str(row["scenario_id"]), int(row["replicate_index"]), int(row["seed"]))
+            for row in scientific
+        }
+        if len(scientific) != 6400 or observed_identity != expected_identity:
+            raise ValueError(
+                "campaign inventory does not exactly cover all 6400 scientific records"
+            )
+        if any(
+            tuple(row.get("recovery_comparators", ()))
+            != (contract.recovery_comparators if row.get("scenario_kind") != "null" else ())
+            for row in scientific
+        ):
+            raise ValueError("campaign inventory recovery comparator contract differs")
 
 
 def _render_worker_script(
@@ -3892,6 +3997,7 @@ def _render_worker_script(
     stage_name: str,
     partition: str,
     cluster: ClusterConfig,
+    log_dir: Path,
     resources: ResourceEnvelope,
     manifest_path: Path,
     output_root: Path,
@@ -3933,10 +4039,12 @@ def _render_worker_script(
 #SBATCH --cpus-per-task={resources.requested_cpu_cores}
 #SBATCH --mem={resources.requested_memory_gb}G
 {array_directive}
-#SBATCH --output={cluster.project_root}/{run_id}/logs/{output_pattern}
+#SBATCH --output={log_dir}/{output_pattern}
 #SBATCH --signal=USR1@{_kill_wait_seconds(cluster.kill_wait)}
 #SBATCH --no-requeue
 set -euo pipefail
+unset PYTHONPATH PYTHONHOME
+export PYTHONNOUSERSITE=1
 
 # NO-SUBMIT package: script generation only; manual review required before any scheduler action.
 RUN_ID="{run_id}"
@@ -3966,6 +4074,7 @@ def _render_reducer_script(
     stage_name: str,
     partition: str,
     cluster: ClusterConfig,
+    log_dir: Path,
     resources: ResourceEnvelope,
     manifest_path: Path,
     reducer_output_dir: Path,
@@ -3986,10 +4095,12 @@ def _render_reducer_script(
 #SBATCH --time={resources.requested_walltime_hms}
 #SBATCH --cpus-per-task={resources.requested_cpu_cores}
 #SBATCH --mem={resources.requested_memory_gb}G
-#SBATCH --output={cluster.project_root}/{run_id}/logs/{stage_name}-reduce-%j.out
+#SBATCH --output={log_dir}/{stage_name}-reduce-%j.out
 #SBATCH --signal=USR1@{_kill_wait_seconds(cluster.kill_wait)}
 #SBATCH --no-requeue
 set -euo pipefail
+unset PYTHONPATH PYTHONHOME
+export PYTHONNOUSERSITE=1
 
 # NO-SUBMIT package: reducer script generated for review only.
 MANIFEST_PATH="{manifest_path}"
@@ -4016,6 +4127,7 @@ def _render_audit_script(
     stage_name: str,
     partition: str,
     cluster: ClusterConfig,
+    log_dir: Path,
     resources: ResourceEnvelope,
     manifest_path: Path,
     audit_output_dir: Path,
@@ -4032,10 +4144,12 @@ def _render_audit_script(
 #SBATCH --time={resources.requested_walltime_hms}
 #SBATCH --cpus-per-task={resources.requested_cpu_cores}
 #SBATCH --mem={resources.requested_memory_gb}G
-#SBATCH --output={cluster.project_root}/{run_id}/logs/{stage_name}-audit-%j.out
+#SBATCH --output={log_dir}/{stage_name}-audit-%j.out
 #SBATCH --signal=USR1@{_kill_wait_seconds(cluster.kill_wait)}
 #SBATCH --no-requeue
 set -euo pipefail
+unset PYTHONPATH PYTHONHOME
+export PYTHONNOUSERSITE=1
 
 # afterany failure audit and exact-coverage validator; it never performs science.
 RUNTIME_PYTHON="{runtime_python}"

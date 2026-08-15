@@ -82,6 +82,7 @@ def _config_with_quota(tmp_path: Path, quota: int) -> Path:
 
 
 def _pilot_preflight(dag) -> dict[str, object]:  # noqa: ANN001
+    plan = build_submission_plan(dag)
     payload: dict[str, object] = {
         "schema_version": 1,
         "status": "HPC_SUBMISSION_READY",
@@ -91,6 +92,7 @@ def _pilot_preflight(dag) -> dict[str, object]:  # noqa: ANN001
         "config_hash": dag.config_hash,
         "lock_hash": dag.lock_hash,
         "campaign_inventory_hash": dag.campaign_inventory_hash,
+        "submission_plan_sha256": plan["submission_plan_sha256"],
         "resource_freeze_sha256": "PENDING",
         "observed_date": date.today().isoformat(),
         "remaining_au": 1_000_000,
@@ -111,6 +113,7 @@ def _phase_preflight(
     phase: str,
     resource_freeze_sha256: str,  # noqa: ANN001
 ) -> dict[str, object]:
+    plan = build_campaign_phase_plan(dag, phase=phase)
     payload: dict[str, object] = {
         "schema_version": 1,
         "status": "HPC_SUBMISSION_READY",
@@ -120,6 +123,7 @@ def _phase_preflight(
         "config_hash": dag.config_hash,
         "lock_hash": dag.lock_hash,
         "campaign_inventory_hash": dag.campaign_inventory_hash,
+        "submission_plan_sha256": plan["submission_plan_sha256"],
         "readiness_blockers": list(dag.readiness_blockers),
         "resource_freeze_sha256": resource_freeze_sha256,
         "observed_date": date.today().isoformat(),
@@ -143,6 +147,7 @@ def _signed_authorization(
     *,
     preflight_sha256: str,
 ) -> dict[str, object]:
+    plan = build_campaign_phase_plan(dag, phase=phase)
     identity: dict[str, object] = {
         "schema_version": 2,
         "status": "ACCEPTED",
@@ -153,6 +158,7 @@ def _signed_authorization(
         "lock_hash": dag.lock_hash,
         "campaign_inventory_hash": dag.campaign_inventory_hash,
         "preflight_sha256": preflight_sha256,
+        "submission_plan_sha256": plan["submission_plan_sha256"],
         "prerequisite_sha256": {},
         "execution_permitted": True,
         "resource_freeze_sha256": resource_freeze_sha256,
@@ -215,6 +221,44 @@ def test_full_package_requires_an_empty_destination(tmp_path: Path) -> None:
             repo_root=REPO_ROOT,
             config_path=_config_with_quota(tmp_path, 1_000_000),
         )
+
+
+def test_development_package_contains_and_budgets_only_resolution(
+    tmp_path: Path,
+) -> None:
+    base = _package(tmp_path / "base")
+    freeze = select_pilot_resources(
+        pilot_matrix=base.pilot_matrix,
+        telemetry=_accepted_pilot_telemetry(base),
+        cluster=base.cluster,
+        source_hash=base.source_hash,
+        config_hash=base.config_hash,
+        lock_hash=base.lock_hash,
+    )
+
+    development = generate_campaign_package(
+        output_dir=tmp_path / "development" / "package",
+        repo_root=REPO_ROOT,
+        config_path=_config_with_quota(tmp_path / "development", 25_000),
+        resource_freeze=freeze,
+        package_mode="development",
+    )
+
+    assert development.package_mode == "development"
+    assert [stage.name for stage in development.stages] == ["resolution"]
+    assert development.stages[0].parent_stage_name is None
+    assert len(development.campaign_envelope.stage_allocations) == 1
+    assert development.campaign_envelope.requested_au <= 25_000
+    phase_plan = build_campaign_phase_plan(development, phase="development")
+    assert {step["stage"] for step in phase_plan["steps"]} == {"resolution"}
+    assert [step["action"] for step in phase_plan["steps"]] == [
+        "worker",
+        "audit",
+        "reduce",
+    ]
+    assert phase_plan["steps"][0]["array_task_count"] == 20
+    assert all(step["array_task_count"] == 0 for step in phase_plan["steps"][1:])
+    assert all(_HEX64.fullmatch(step["script_sha256"]) for step in phase_plan["steps"])
 
 
 def test_malformed_manifest_rejection(tmp_path: Path) -> None:
@@ -492,6 +536,11 @@ def test_every_campaign_script_uses_the_direct_interpreter_from_fast_runtime_sto
                 in text
             )
             assert '"$RUNTIME_PYTHON" -m rfm_pipeline.hpc_campaign_package' in text
+            assert "unset PYTHONPATH PYTHONHOME" in text
+            assert "export PYTHONNOUSERSITE=1" in text
+            log_dir = script_path.parent / "logs"
+            assert log_dir.is_dir()
+            assert f"#SBATCH --output={log_dir}/" in text
 
 
 def test_hash_completeness_is_fail_closed(tmp_path: Path) -> None:
@@ -1029,6 +1078,34 @@ def test_phase_submission_rejects_source_or_lock_drift_before_sbatch(
                 phase_authorization=authorization,
             )
         assert calls == []
+
+
+def test_phase_submission_rejects_script_drift_after_authorization(
+    tmp_path: Path,
+) -> None:
+    _, freeze, _, _, dag = _final_package(tmp_path)
+    plan = build_campaign_phase_plan(dag, phase="gate_b")
+    preflight = _phase_preflight(dag, "gate_b", str(freeze["resource_freeze_sha256"]))
+    authorization = _signed_authorization(
+        dag,
+        "gate_b",
+        str(freeze["resource_freeze_sha256"]),
+        preflight_sha256=str(preflight["preflight_sha256"]),
+    )
+    script = Path(plan["steps"][0]["command"][-1])
+    script.write_text(script.read_text(encoding="utf-8") + "# drift\n", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    with pytest.raises(ValueError, match="script bytes"):
+        execute_campaign_phase_plan(
+            plan,
+            run_command=lambda command: calls.append(command),
+            authorize=True,
+            preflight=preflight,
+            phase_authorization=authorization,
+        )
+
+    assert calls == []
 
 
 def test_preflight_accepts_current_remaining_allocation_above_phase_envelope(

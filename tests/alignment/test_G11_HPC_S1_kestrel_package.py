@@ -2098,7 +2098,7 @@ def test_every_production_record_binds_adapter_dgp_data_and_phase_authorization(
             assert record["applied_data_preparer_path"].endswith("prepare_g11_applied_data.py")
             assert _HEX64.fullmatch(record["applied_data_preparer_sha256"])
             assert record["execution_authorization_path"].endswith(
-                f"/{dag.run_id}/{record['phase']}.json"
+                f"/{dag.run_id}/{record['phase']}/authorization.json"
             )
             assert record["rfm_repository_root"] == dag.cluster.rfm_repository_root
             assert record["bsm_repository_root"] == dag.cluster.bsm_repository_root

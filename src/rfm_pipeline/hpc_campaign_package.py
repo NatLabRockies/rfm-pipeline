@@ -3753,7 +3753,10 @@ def _build_manifest_records(
                     "applied_data_root": cluster.applied_data_root,
                     "applied_data_manifest_sha256": cluster.applied_data_manifest_sha256,
                     "execution_authorization_path": str(
-                        Path(cluster.authorization_root) / run_id / f"{descriptor['phase']}.json"
+                        Path(cluster.authorization_root)
+                        / run_id
+                        / str(descriptor["phase"])
+                        / "authorization.json"
                     ),
                 }
             )

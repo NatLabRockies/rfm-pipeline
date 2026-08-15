@@ -652,6 +652,27 @@ scientific control and raises the deterministic all-phase fixture only from
   Kestrel diagnostics admit B=999, reject B=1,998, and pass `sbatch --test-only` for every unique production script without creating a scheduler
   job.
 
+## REVIEW-0023 — Scientific isolation broke the Kestrel allocation probe
+
+- Date: 2026-08-15
+- Severity: P0 / live preflight execution
+- Status: fixed on `g11-integration-reconcile`; fresh Kestrel replay required
+- Evidence: the first exact same-day preflight raised
+  `CalledProcessError: aus_report returned non-zero exit status 1` before phase
+  authorization. Reproduction showed inherited `PYTHONNOUSERSITE=1` prevented
+  the NREL utility from importing its user-site `jwt` dependency. With that one
+  variable absent, `aus_report` returns normally. No scheduler job,
+  authorization, or submission journal was created.
+- Resolution: remove `PYTHONNOUSERSITE` only from the external `aus_report`
+  subprocess environment. Scientific controller and worker Python isolation is
+  unchanged, and every generated worker still clears `PYTHONPATH`/
+  `PYTHONHOME` and sets `PYTHONNOUSERSITE=1`.
+- Validation: a prospective regression failed before the change and now passes;
+  focused live-smoke, capacity, observed-AU admission, Ruff, and diff checks
+  pass.
+- Blocks submission: yes until a new controller revision and new immutable
+  control root complete same-day live preflight and independent evidence review.
+
 ## Independent review of alignment diff b96442b..e31fb15 (round 3 remediation)
 
 - REVIEW-R3-01 \[BLOCKING, fixed-by R3-S01\]: multiplicity_controlled_interaction_selection

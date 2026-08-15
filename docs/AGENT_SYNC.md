@@ -1,3 +1,20 @@
+## SESSION STATE — 2026-08-15 — Kestrel site-utility environment repair
+
+- The first same-day live preflight under the exact isolated scientific Python
+  environment stopped before authorization because inherited
+  `PYTHONNOUSERSITE=1` also reached NREL's external `aus_report` utility. That
+  site utility imports `jwt` from the login user's site packages and therefore
+  exited before emitting allocation evidence. No scheduler job, authorization,
+  or submission journal was created.
+- Live smoke now removes `PYTHONNOUSERSITE` only from the subprocess environment
+  of `aus_report`. Scientific Python and every generated Slurm script retain
+  `PYTHONNOUSERSITE=1` and continue to clear `PYTHONPATH`/`PYTHONHOME`; no worker
+  import isolation is weakened. A regression asserts the administrative probe
+  receives the repaired environment.
+- Focused live-smoke, capacity, and allocation-admission tests plus Ruff and
+  diff checks pass. A fresh content-addressed controller deployment and control
+  root are required; the failed preflight root cannot be reused.
+
 ## SESSION STATE — 2026-08-15 — Confirmatory admission accounting repair
 
 - A prospective B=999 final-package build failed closed at 25,215 AUs even

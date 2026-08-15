@@ -991,11 +991,18 @@ def run_hpc_live_smoke(
     if int(remaining_au) <= 0:
         raise ValueError("live-smoke remaining AU must be positive")
 
+    aus_report_environment = os.environ.copy()
+    # ``aus_report`` is an NREL site utility whose Python dependencies are
+    # installed in the login user's site packages.  Scientific workers disable
+    # user-site imports, but propagating that isolation flag to this external
+    # administrative probe makes the utility fail before returning evidence.
+    aus_report_environment.pop("PYTHONNOUSERSITE", None)
     aus_report = runner(
         ["aus_report"],
         check=True,
         capture_output=True,
         text=True,
+        env=aus_report_environment,
     )
     if not aus_report.stdout.strip():
         raise ValueError("aus_report returned no allocation evidence")

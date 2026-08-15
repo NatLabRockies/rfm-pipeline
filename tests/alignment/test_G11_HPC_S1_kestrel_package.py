@@ -1241,10 +1241,13 @@ def test_live_smoke_collects_current_evidence_without_submitting(
 
     dag = _package(tmp_path)
     commands: list[list[str]] = []
+    aus_report_environment: dict[str, str] | None = None
 
-    def fake_read_only_command(command: list[str], **_: object) -> Namespace:
+    def fake_read_only_command(command: list[str], **kwargs: object) -> Namespace:
+        nonlocal aus_report_environment
         commands.append(command)
         if command == ["aus_report"]:
+            aus_report_environment = dict(kwargs["env"])  # type: ignore[arg-type]
             return Namespace(
                 returncode=0,
                 stdout="allocation bsm remaining 5183 AU\n",
@@ -1319,6 +1322,8 @@ def test_live_smoke_collects_current_evidence_without_submitting(
     assert (tmp_path / "live-smoke" / "preflight.json").is_file()
     assert (tmp_path / "live-smoke" / "aus_report.txt").is_file()
     assert any(command[0] == "sacctmgr" for command in commands)
+    assert aus_report_environment is not None
+    assert "PYTHONNOUSERSITE" not in aus_report_environment
     sbatch_commands = [command for command in commands if command[0] == "sbatch"]
     assert sbatch_commands
     assert all(command[1] == "--test-only" and len(command) == 3 for command in sbatch_commands)

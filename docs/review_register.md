@@ -673,6 +673,28 @@ scientific control and raises the deterministic all-phase fixture only from
 - Blocks submission: yes until a new controller revision and new immutable
   control root complete same-day live preflight and independent evidence review.
 
+## REVIEW-0024 — Final adapter used a nonexistent score-artifact checksum
+
+- Date: 2026-08-15
+- Severity: P0 / final campaign continuation
+- Status: paired BSM fix committed; updated runtime pin under validation
+- Evidence: every task in final resolution array `16278789` completed its
+  persisted score block, then failed when the BSM adapter read
+  `ScoreOnlyInteractionArtifact.checksum`. The generic artifact contract
+  exposes `payload_sha256`; the equivalent pilot-wrapper defect was already
+  fixed in REVIEW-0019.
+- Resolution: paired BSM commit `67fe881` uses the canonical payload identity
+  in all three affected paths and adds content-bound promotion of completed
+  resolution scores into a fresh run. This RFM change updates only the reviewed
+  BSM runtime path and adapter digest; the accepted scientific RFM source and
+  lock remain unchanged.
+- Acceptance: the direct-runtime regression requires the exact BSM checkout
+  suffix and adapter SHA-256. The complete G11 package gate, clean deployment,
+  independent no-submit audit, and exact live cache-promotion replay remain
+  required before continuation submission.
+- Blocks submission: yes until the updated pin is committed/deployed and those
+  gates pass.
+
 ## Independent review of alignment diff b96442b..e31fb15 (round 3 remediation)
 
 - REVIEW-R3-01 \[BLOCKING, fixed-by R3-S01\]: multiplicity_controlled_interaction_selection

@@ -2504,3 +2504,19 @@ ______________________________________________________________________
   the accepted `fd12fd5` source identity. Focused G11 HPC package tests cover
   resolution-only scoping, script drift, launch-directory existence, clean
   imports, split Gate-B arrays, retry packages, and dependency ordering.
+
+## 2026-08-15 — Resolution-cache continuation pin
+
+- Final run `g11-final-manuscript-20260815k` is rejected after all 20 workers
+  wrote valid score-only artifacts but failed during BSM terminal JSON
+  construction. Exact failure evidence and 311.08165064102566 cumulative sunk
+  AUs are preserved separately; failed-job telemetry remains diagnostic-only.
+- Paired BSM commit `67fe881` replaces the three stale generic checksum reads
+  with `payload_sha256` and promotes only exact, self-verifying resolution
+  artifacts into a fresh post-preflight run. Fresh workers validate and exit
+  without repeating permutation scoring; normal audit/reduction still run.
+- `configs/hpc/g11_kestrel_campaign.yml` now pins
+  `/scratch/dhetting/bsm_runtime/software/bsm-public-rf-67fe881` and adapter
+  SHA-256 `76aa7476cb81ae745251643017d919d757b90f3230e0d09dc6fb88e7ad6afeae`.
+  Scientific RFM `fd12fd5`, its lock, and every non-adapter BSM scientific
+  digest remain unchanged.

@@ -524,7 +524,11 @@ def test_every_campaign_script_uses_the_direct_interpreter_from_fast_runtime_sto
 
     assert dag.cluster.rfm_repository_root.startswith("/scratch/")
     assert dag.cluster.bsm_repository_root.startswith("/scratch/")
-    assert dag.cluster.bsm_repository_root.endswith("/bsm-public-rf-d7d5f32")
+    assert dag.cluster.bsm_repository_root.endswith("/bsm-public-rf-67fe881")
+    assert (
+        dag.cluster.scientific_adapter_sha256
+        == "76aa7476cb81ae745251643017d919d757b90f3230e0d09dc6fb88e7ad6afeae"
+    )
     assert (
         dag.cluster.bsm_recovery_driver_sha256
         == "8ccd44a7187007be5cba571be0da487478018e312f951b9b606c3001515ea5e4"

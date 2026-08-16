@@ -441,14 +441,16 @@ def test_pre_pilot_campaign_envelope_exposes_full_provisional_cost(tmp_path: Pat
     )
 
 
-def test_configured_allocation_quota_is_the_25k_campaign_ceiling(tmp_path: Path) -> None:
+def test_configured_allocation_quota_includes_authorized_small_overage(
+    tmp_path: Path,
+) -> None:
     dag = generate_campaign_package(
         output_dir=tmp_path / "package",
         repo_root=REPO_ROOT,
         config_path=CONFIG_PATH,
     )
     assert dag.campaign_envelope.allocation_quota_readiness_blocker is False
-    assert int(dag.cluster.allocation_quota) == 25_000
+    assert int(dag.cluster.allocation_quota) == 25_100
     assert any("provisional pre-pilot forecast" in blocker for blocker in dag.readiness_blockers)
 
 

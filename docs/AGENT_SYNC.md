@@ -1,3 +1,17 @@
+## SESSION STATE — 2026-08-15 — Authorized allocation-contingency alignment
+
+- The fresh continuation's prospective B=999 package correctly failed closed
+  because the outer controller allowed the user's 25,100-AU contingency while
+  the canonical Kestrel config still imposed 25,000 AUs. No job was submitted.
+- The canonical admission ceiling is now 25,100 AUs: the smallest explicit
+  contingency that admits the 25,048.4-AU conservative envelope after the
+  already-accounted failed resolution attempt. The scientific design, stage
+  resources, 20% reserve, and 5-AU publication reserve are unchanged.
+- Because `nationalpfa` is absent from `aus_report`, live preflight continues to
+  use the site/configured 25,100-AU ceiling after this alignment. The expected
+  post-cache projection remains below 25,000 AUs; this is a fail-closed
+  accounting allowance, not authorization for additional scientific work.
+
 ## SESSION STATE — 2026-08-15 — Kestrel site-utility environment repair
 
 - The first same-day live preflight under the exact isolated scientific Python

@@ -23,6 +23,20 @@ Agents use this file to convert review findings into planned work instead of lea
 
 ## Findings
 
+### REVIEW-0013 — Campaign contingency differed between controller and package config
+
+- Status: fixed
+- Severity: high
+- Category: correctness
+- Disposition: blocker
+- Source: fresh continuation prospective-package audit
+- Evidence: B=999 stopped before submission at 25,048.4 AUs because the outer controller used the user-authorized 25,100-AU contingency while the canonical package config still enforced 25,000 AUs
+- Affected files: `configs/hpc/g11_kestrel_campaign.yml`, `tests/alignment/test_G11_HPC_S1_kestrel_package.py`
+- Required action: align the canonical admission ceiling and its regression to 25,100 AUs; preserve all scientific settings and reserves
+- Blocks merge: no
+- Destination: resolved in the continuation controller repin
+- Notes: expected post-cache actual projection remains below 25,000 AUs; no scheduler job was submitted by the failed audit
+
 ### REVIEW-0001 — Template placeholder
 
 - Status: deferred

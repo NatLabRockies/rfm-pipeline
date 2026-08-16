@@ -47,6 +47,7 @@ hpc_campaign:
     # splitting; UNKNOWN keeps every non-pilot phase locked.
     applied_data_manifest_sha256: db88a36423da5d94f5ebdc9fd566f4b85df6ad1096950dba3eebf4d4bd1f134c
     authorization_root: /projects/bsm/g11_authorizations
-    # Hard whole-campaign ceiling for this manuscript version. The live-smoke
-    # CLI separately accepts the current remaining AU from same-day aus_report.
-    allocation_quota: "25000"
+    # Hard whole-campaign admission ceiling, including the explicitly authorized
+    # 100-AU contingency above the original 25,000-AU target. The live-smoke CLI
+    # separately accepts the 25,000-AU site ceiling when aus_report omits the account.
+    allocation_quota: "25100"

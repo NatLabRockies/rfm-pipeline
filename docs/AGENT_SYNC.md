@@ -11,6 +11,10 @@
   use the site/configured 25,100-AU ceiling after this alignment. The expected
   post-cache projection remains below 25,000 AUs; this is a fail-closed
   accounting allowance, not authorization for additional scientific work.
+- The subsequent cache audit also found that offline validation must reconstruct
+  the Slurm-bound 65-CPU interaction contract rather than the login node's
+  one-CPU environment. BSM `dfa8599` fixes that identity reconstruction and is
+  pinned here by exact checkout path and adapter hash.
 
 ## SESSION STATE — 2026-08-15 — Kestrel site-utility environment repair
 

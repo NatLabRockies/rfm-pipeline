@@ -37,6 +37,20 @@ Agents use this file to convert review findings into planned work instead of lea
 - Destination: resolved in the continuation controller repin
 - Notes: expected post-cache actual projection remains below 25,000 AUs; no scheduler job was submitted by the failed audit
 
+### REVIEW-0014 — Cache validation inherited the login-node CPU count
+
+- Status: fixed
+- Severity: high
+- Category: correctness
+- Disposition: blocker
+- Source: independent cache compatibility audit
+- Evidence: cached Slurm snapshots bind 65 workers, but the initial offline validator reconstructed one worker from the login-node environment and correctly rejected the checksum
+- Affected files: BSM cache promotion; exact BSM path/hash pins in `configs/hpc/g11_kestrel_campaign.yml`
+- Required action: reconstruct from manifest-bound worker resources, test with a deliberately different login environment, and repin exact BSM bytes
+- Blocks merge: no
+- Destination: resolved by BSM `dfa8599` and this controller repin
+- Notes: score artifacts and scientific settings are unchanged; no job was submitted
+
 ### REVIEW-0001 — Template placeholder
 
 - Status: deferred

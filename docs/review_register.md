@@ -48,7 +48,7 @@ Agents use this file to convert review findings into planned work instead of lea
 - Affected files: BSM cache promotion; exact BSM path/hash pins in `configs/hpc/g11_kestrel_campaign.yml`
 - Required action: reconstruct from manifest-bound worker resources, test with a deliberately different login environment, and repin exact BSM bytes
 - Blocks merge: no
-- Destination: resolved by BSM `dfa8599` and this controller repin
+- Destination: resolved by BSM `1a2e597` and this controller repin
 - Notes: score artifacts and scientific settings are unchanged; no job was submitted
 
 ### REVIEW-0001 — Template placeholder

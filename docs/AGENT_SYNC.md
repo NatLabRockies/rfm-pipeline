@@ -13,7 +13,8 @@
   accounting allowance, not authorization for additional scientific work.
 - The subsequent cache audit also found that offline validation must reconstruct
   the Slurm-bound 65-CPU interaction contract rather than the login node's
-  one-CPU environment. BSM `dfa8599` fixes that identity reconstruction and is
+  one-CPU environment. BSM `1a2e597` fixes that identity reconstruction and
+  verifies snapshots against the immutable scientific RFM tree; it is
   pinned here by exact checkout path and adapter hash.
 
 ## SESSION STATE — 2026-08-15 — Kestrel site-utility environment repair

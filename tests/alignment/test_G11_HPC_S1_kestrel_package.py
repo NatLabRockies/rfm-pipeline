@@ -526,7 +526,7 @@ def test_every_campaign_script_uses_the_direct_interpreter_from_fast_runtime_sto
 
     assert dag.cluster.rfm_repository_root.startswith("/scratch/")
     assert dag.cluster.bsm_repository_root.startswith("/scratch/")
-    assert dag.cluster.bsm_repository_root.endswith("/bsm-public-rf-dfa8599")
+    assert dag.cluster.bsm_repository_root.endswith("/bsm-public-rf-1a2e597")
     assert (
         dag.cluster.scientific_adapter_sha256
         == "9874261b47a53431dbb469056e7ace344c38e460634c40deaf0389c0d4deff9c"

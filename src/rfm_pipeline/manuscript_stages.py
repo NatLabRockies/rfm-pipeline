@@ -4723,8 +4723,6 @@ def discover_manuscript_nonlinear_transformations(
         input_matrix,
         transform_library=spec.transform_library,
     )
-    if not candidates:
-        raise ValueError("feature_catalog does not contain supported nonlinear candidates.")
     component_names = _component_columns(pca_scores)
     train_ids = _train_sample_ids(holdout_assignments)
     y_train = _align_table_by_sample_id(pca_scores, train_ids, component_names, "PCA scores")
@@ -4733,6 +4731,42 @@ def discover_manuscript_nonlinear_transformations(
     y_scaled, component_active = _standardize_for_screening(y_train)
     if not component_active.any():
         raise ValueError("All retained PCA components have zero training variance.")
+    if not candidates:
+        score_columns = [
+            "feature_name",
+            "base_feature",
+            "transformation_family",
+            "curvature_score",
+            "gam_p_value",
+            "best_component",
+            "replacement_training_rmse",
+            "active_transform",
+            "empirical_null_retained",
+            "retained",
+            "curvature_rule",
+            "replacement_selection_rule",
+        ]
+        empty_scores = pd.DataFrame(columns=score_columns)
+        summary = _build_nonlinear_discovery_summary(
+            n_training_rows=len(y_train),
+            n_candidate_transformations=0,
+            n_active_transformations=0,
+            n_empirical_null_retained_transformations=0,
+            n_retained_transformations=0,
+            n_components=len(component_names),
+            max_curvature_score=0.0,
+            spec=spec,
+        )
+        summary.insert(1, "status", "empty_candidate_family")
+        return NonlinearDiscoveryResult(
+            transformation_scores=empty_scores,
+            component_transformation_scores=pd.DataFrame(
+                columns=["feature_name", "component", "smooth_edf", "gam_p_value"]
+            ),
+            retained_transformations=empty_scores.copy(),
+            provenance=_build_nonlinear_provenance(spec),
+            summary=summary,
+        )
 
     # Extract training rows for feature materialization.
     indexed = input_matrix.set_index("sample_id", drop=False)

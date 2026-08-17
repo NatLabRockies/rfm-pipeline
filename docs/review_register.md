@@ -23,6 +23,20 @@ Agents use this file to convert review findings into planned work instead of lea
 
 ## Findings
 
+### REVIEW-0015 — Empty nonlinear families failed valid recovery replicates
+
+- Status: fixed
+- Severity: high
+- Category: correctness
+- Disposition: blocker
+- Source: canonical scheduler/log audit of Gate-B tasks 4040, 4054, 4124, 4220, 4304, 4466, and 4467
+- Evidence: empirical screening retained only binary first-order terms, the supported transform generator returned an empty family, and nonlinear discovery raised `feature_catalog does not contain supported nonlinear candidates`
+- Affected files: `src/rfm_pipeline/manuscript_stages.py`, `tests/test_manuscript_nonlinear_discovery.py`
+- Required action: emit a validated schema-complete `empty_candidate_family` result for this vacuous stage while preserving fail-closed input validation
+- Blocks merge: no
+- Destination: fixed on the G11 integration branch; the live continuation retains the accepted RFM identity and applies the equivalent content-addressed adapter correction only to missing tasks
+- Notes: completed scientific artifacts are unaffected and remain reusable; failed-job telemetry is diagnostic only
+
 ### REVIEW-0013 — Campaign contingency differed between controller and package config
 
 - Status: fixed

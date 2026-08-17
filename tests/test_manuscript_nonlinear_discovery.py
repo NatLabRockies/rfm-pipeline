@@ -60,6 +60,43 @@ def test_nonlinear_candidates_skip_binary_and_degenerate_features() -> None:
     )
 
 
+def test_nonlinear_discovery_returns_empty_family_for_binary_only_retained_terms() -> None:
+    """A valid binary-only screen has no nonlinear candidates and must terminate cleanly."""
+    sample_ids = list(range(1, 41))
+    binary = [0.0, 1.0] * 20
+    inputs = pd.DataFrame({"sample_id": sample_ids, "x_bin": binary})
+    catalog = pd.DataFrame({"feature_name": ["x_bin"], "feature_type": ["first_order"]})
+    holdout = pd.DataFrame({"sample_id": sample_ids, "split": ["train"] * 32 + ["holdout"] * 8})
+    pca_scores = pd.DataFrame(
+        {"sample_id": sample_ids, "PC1": [float(index % 5) for index in sample_ids]}
+    )
+    retained_terms = pd.DataFrame({"feature_name": ["x_bin"], "feature_type": ["first_order"]})
+    spec = NonlinearDiscoverySpec(
+        method="gam_plus_restricted_parametric_replacement",
+        curvature_rule="edf_gt_1_and_smooth_pvalue_lt_0p01",
+        replacement_selection_rule="minimum_training_rmse_against_gam_smooth",
+        identified_transformations_reference=0,
+        final_support_transformations_reference=0,
+        transform_library=[QUADRATIC],
+    )
+
+    result = discover_manuscript_nonlinear_transformations(
+        inputs,
+        catalog,
+        holdout,
+        pca_scores,
+        retained_terms,
+        spec,
+    )
+
+    assert result.transformation_scores.empty
+    assert result.component_transformation_scores.empty
+    assert result.retained_transformations.empty
+    assert result.summary.loc[0, "status"] == "empty_candidate_family"
+    assert result.summary.loc[0, "n_candidate_transformations"] == 0
+    assert result.summary.loc[0, "n_retained_transformations"] == 0
+
+
 def test_hpc_nonlinear_partition_uses_supported_base_features() -> None:
     input_matrix = pd.DataFrame(
         {

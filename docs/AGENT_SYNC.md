@@ -1,3 +1,21 @@
+## SESSION STATE — 2026-08-16 — Empty nonlinear candidate family
+
+- Seven live Gate-B binary-null replicates reached a scientifically valid
+  screen containing only two-point binary first-order terms. The nonlinear
+  stage correctly generated no supported non-collinear transforms but then
+  raised instead of emitting a vacuous terminal result.
+- `discover_manuscript_nonlinear_transformations` now validates the training
+  rows and active PCA components, then returns schema-complete empty score,
+  component, retained-transform, provenance, and summary artifacts with status
+  `empty_candidate_family`. Non-empty families and invalid input errors retain
+  their existing behavior.
+- The binary-only regression failed at the live exception before the change and
+  passes afterward. Focused nonlinear, production recovery, G11 package, pilot
+  recovery, comparator, and recovery-study tests pass, and the full repository
+  gate passes. The live continuation uses a separately content-addressed BSM
+  adapter so the accepted worker RFM identity remains unchanged while prior
+  valid results are reused.
+
 ## SESSION STATE — 2026-08-15 — Authorized allocation-contingency alignment
 
 - The fresh continuation's prospective B=999 package correctly failed closed

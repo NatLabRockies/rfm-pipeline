@@ -465,6 +465,8 @@ def test_production_permutation_uses_one_joint_row_order(monkeypatch) -> None:
         active_comp_indices=[0, 1, 2],
         pair_to_indices={"x1:x2": (0, 1)},
         candidates=[("x1:x2", "x1", "x2")],
+        pair_detectors=("tree_shap",),
+        binary_binary_minimum_cell_count=2,
         n_estimators=1,
         max_depth=1,
         max_shap_samples=8,

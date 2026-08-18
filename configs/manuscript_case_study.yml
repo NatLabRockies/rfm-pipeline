@@ -34,19 +34,24 @@ case_study:
     nrmse_reference_matrix: Y_train
     bootstrap_count: 2000
   interaction_discovery:
-    aggregation_rule: max_over_components_of_mean_absolute_shap_interaction
+    aggregation_rule: max_over_components_by_detector
     aggregation_rule_status: frozen_repo_decision
-    method: tree_shap_interaction_values
+    method: type_aware_tree_shap_binary_factorial
+    family_partition_method: bonferroni_partitioned_max_stat
+    tree_family_alpha: 0.025
+    binary_binary_family_alpha: 0.025
+    binary_binary_method: studentized_factorial_contrast_hc3
+    binary_binary_minimum_cell_count: 2
     minimum_selection_draws: 999
     null_threshold_quantile: 0.995
     n_tree_estimators: 250
     permutation_count_B: 999
-    public_implementation_method: tree_shap_gradient_boosting
-    public_implementation_status: manuscript_aligned
+    public_implementation_method: type_aware_tree_shap_and_binary_factorial
+    public_implementation_status: prospective_gate_b_correction
     selection_alpha: 0.05
     selection_method: max_stat_adjusted_p_mc
-    source_workflow_equivalence_status: manuscript_aligned_via_shap_gradient_boosting
-    source_workflow_reference: private_tree_shap_interaction_workflow
+    source_workflow_equivalence_status: confirmation_required_on_new_gate_b_seeds
+    source_workflow_reference: gate_b_binary_factorial_method_amendment
   interface:
     holdout_fraction: 0.05
     holdout_random_seed: 123

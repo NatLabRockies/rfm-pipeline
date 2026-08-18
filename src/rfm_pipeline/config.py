@@ -177,6 +177,16 @@ class InteractionStageConfig:
     """Family-wise error target for the canonical maximum-statistic selector."""
     minimum_selection_draws: int = 199
     """Minimum null draws required by the pre-execution interaction contract."""
+    family_partition_method: str = "bonferroni_partitioned_max_stat"
+    """Predeclared split of error control across detector-specific maxT families."""
+    tree_family_alpha: float = 0.025
+    """FWER allocation for continuous--continuous and binary--continuous TreeSHAP pairs."""
+    binary_binary_family_alpha: float = 0.025
+    """FWER allocation for studentized binary--binary factorial contrasts."""
+    binary_binary_method: str = "studentized_factorial_contrast_hc3"
+    """Detector used for the sole nonadditive degree of freedom in a 2x2 table."""
+    binary_binary_minimum_cell_count: int = 2
+    """Minimum training observations required in each binary--binary cell."""
     n_permutations: int | None = 201
     """Interaction null permutations (B+1); generic baseline is B=200."""
     n_tree_estimators: int = 250

@@ -1,3 +1,22 @@
+## SESSION STATE — 2026-08-18 — Gate-B binary-factorial correction preflight
+
+- Scope is limited to a prospective, type-aware Gate-B correction and its
+  publication documentation. No scheduler submission, downstream execution,
+  commit, push, or reuse of the failed Gate-B decision is authorized by this
+  slice.
+- The accepted continuous--continuous and binary--continuous detector remains
+  main-effect-conditioned TreeSHAP. Binary--binary candidates will use a
+  studentized saturated 2x2 factorial contrast, because the failed strong-BB
+  experiment demonstrated the parity/XOR blind spot of greedy tree splitting.
+- The two detector families will be calibrated independently with shared-
+  response permutations and frozen 0.025/0.025 maximum-statistic alpha
+  allocations, preserving an overall 0.05 family-wise bound by the union bound.
+- Test-first work will cover detector assignment, the HC3 factorial statistic,
+  four-cell adequacy, permutation/draw-block identity, partitioned maxT,
+  artifact tamper detection, and the G11 adapter wiring. A fresh 5,600-task
+  confirmation on new seeds remains mandatory after validation and separate
+  AU review; the previous 5,600 tasks remain immutable development evidence.
+
 ## SESSION STATE — 2026-08-14 — Pilot recovery feature-name repair
 
 - Pilot `g11-pilot-final-sizing-20260814e` stopped fail-closed at

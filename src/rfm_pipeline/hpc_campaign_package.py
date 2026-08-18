@@ -4598,8 +4598,8 @@ def _pilot_interaction_spec(record: dict[str, Any]) -> Any:
     from rfm_pipeline.manuscript_stages import InteractionDiscoverySpec
 
     return InteractionDiscoverySpec(
-        method="tree_shap_interaction_values",
-        aggregation_rule="max_over_components_of_mean_absolute_shap_interaction",
+        method=G11_CONTRACT.interaction_detector_method,
+        aggregation_rule="max_over_components_by_detector",
         null_threshold_quantile=0.95,
         retained_pairs_reference=0,
         permutation_count_B=G11_CONTRACT.B_interaction,
@@ -4610,6 +4610,11 @@ def _pilot_interaction_spec(record: dict[str, Any]) -> Any:
         n_jobs=_pilot_worker_count(),
         selection_method="max_stat_adjusted_p_mc",
         selection_alpha=G11_CONTRACT.alpha,
+        tree_family_alpha=G11_CONTRACT.tree_family_alpha,
+        binary_binary_family_alpha=G11_CONTRACT.binary_binary_family_alpha,
+        family_partition_method=G11_CONTRACT.family_partition_method,
+        binary_binary_method=G11_CONTRACT.binary_binary_method,
+        binary_binary_minimum_cell_count=G11_CONTRACT.binary_binary_minimum_cell_count,
         minimum_selection_draws=G11_CONTRACT.B_interaction,
     )
 
@@ -4668,11 +4673,20 @@ def _run_pilot_interaction_reduce(record: dict[str, Any], shard_dir: Path) -> di
     pairs = tuple(f"{left}:{right}" for left, right in combinations(names, 2))
     spec = _pilot_interaction_spec(record)
     contract = canonical_execution_contract_from_specs(spec)
+    feature_matrix = rng.standard_normal((160, len(names)))
+    feature_matrix[:, -2:] = rng.integers(0, 2, size=(160, 2))
+    pair_detectors = tuple(
+        "studentized_binary_factorial"
+        if left.startswith("binary_") and right.startswith("binary_")
+        else "tree_shap"
+        for left, right in combinations(names, 2)
+    )
     snapshot = build_control_snapshot(
         contract,
         candidate_pair_names=pairs,
+        candidate_pair_detectors=pair_detectors,
         training_sample_ids=np.arange(160, dtype=np.int64),
-        feature_matrix=rng.standard_normal((160, len(names))),
+        feature_matrix=feature_matrix,
         response_matrix=rng.standard_normal((160, 4)),
         component_names=("PC1", "PC2", "PC3", "PC4"),
     )

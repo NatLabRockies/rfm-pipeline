@@ -382,6 +382,13 @@ def config_to_legacy_case_study(workflow_config: WorkflowConfig) -> dict[str, An
     interaction_discovery["selection_method"] = str(itr.selection_method)
     interaction_discovery["selection_alpha"] = float(itr.selection_alpha)
     interaction_discovery["minimum_selection_draws"] = int(itr.minimum_selection_draws)
+    interaction_discovery["family_partition_method"] = str(itr.family_partition_method)
+    interaction_discovery["tree_family_alpha"] = float(itr.tree_family_alpha)
+    interaction_discovery["binary_binary_family_alpha"] = float(itr.binary_binary_family_alpha)
+    interaction_discovery["binary_binary_method"] = str(itr.binary_binary_method)
+    interaction_discovery["binary_binary_minimum_cell_count"] = int(
+        itr.binary_binary_minimum_cell_count
+    )
     if itr.n_permutations is not None:
         interaction_discovery["permutation_count_B"] = itr.n_permutations - 1
     interaction_discovery["n_tree_estimators"] = itr.n_tree_estimators

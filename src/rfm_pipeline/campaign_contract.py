@@ -46,6 +46,12 @@ class CampaignContract:
     schema_version: str
     generation: int
     method_name: str
+    interaction_detector_method: str
+    family_partition_method: str
+    tree_family_alpha: float
+    binary_binary_family_alpha: float
+    binary_binary_method: str
+    binary_binary_minimum_cell_count: int
     B_screen: int
     B_interaction: int
     alpha: float
@@ -84,6 +90,25 @@ class CampaignContract:
 
     def __post_init__(self) -> None:
         """Reject invalid adaptive-resolution identity fields."""
+        if self.interaction_detector_method != "type_aware_tree_shap_binary_factorial":
+            raise ValueError("G11 requires the type-aware interaction detector method")
+        if self.family_partition_method != "bonferroni_partitioned_max_stat":
+            raise ValueError("G11 requires the frozen detector-family maxT partition")
+        if self.binary_binary_method != "studentized_factorial_contrast_hc3":
+            raise ValueError("G11 requires the studentized HC3 binary factorial contrast")
+        if self.binary_binary_minimum_cell_count != 2:
+            raise ValueError("G11 freezes exactly two observations as the minimum per BB cell")
+        if not math.isclose(self.tree_family_alpha, 0.025, rel_tol=0.0, abs_tol=1.0e-12):
+            raise ValueError("G11 freezes the TreeSHAP family alpha at 0.025")
+        if not math.isclose(
+            self.binary_binary_family_alpha,
+            0.025,
+            rel_tol=0.0,
+            abs_tol=1.0e-12,
+        ):
+            raise ValueError("G11 freezes the binary-factorial family alpha at 0.025")
+        if self.tree_family_alpha + self.binary_binary_family_alpha > self.alpha + 1.0e-12:
+            raise ValueError("G11 detector-family alpha allocations exceed overall alpha")
         low, high = self.resolution_boundary_interval
         if not 0.0 <= low < self.alpha < high <= 1.0:
             raise ValueError("resolution boundary interval must strictly bracket alpha")
@@ -305,9 +330,15 @@ _G11_SCENARIOS: tuple[ScenarioSpec, ...] = (
 )
 
 G11_CONTRACT = CampaignContract(
-    schema_version="g11_campaign_contract_v9",
+    schema_version="g11_campaign_contract_v10",
     generation=11,
     method_name="max_stat_adjusted_p_mc",
+    interaction_detector_method="type_aware_tree_shap_binary_factorial",
+    family_partition_method="bonferroni_partitioned_max_stat",
+    tree_family_alpha=0.025,
+    binary_binary_family_alpha=0.025,
+    binary_binary_method="studentized_factorial_contrast_hc3",
+    binary_binary_minimum_cell_count=2,
     B_screen=3199,
     B_interaction=999,
     alpha=0.05,
@@ -347,7 +378,7 @@ G11_CONTRACT = CampaignContract(
     boosted_tree_response_components=4,
     comparator_tuning_metric="training_cv_macro_nrmse",
     comparator_failure_action="terminal_failure_no_retry",
-    artifact_schema_version=2,
+    artifact_schema_version=3,
 )
 
 
@@ -635,6 +666,12 @@ def _contract_from_mapping(raw: dict[str, Any]) -> CampaignContract:
         schema_version=raw["schema_version"],
         generation=int(raw["generation"]),
         method_name=raw["method_name"],
+        interaction_detector_method=str(raw["interaction_detector_method"]),
+        family_partition_method=str(raw["family_partition_method"]),
+        tree_family_alpha=float(raw["tree_family_alpha"]),
+        binary_binary_family_alpha=float(raw["binary_binary_family_alpha"]),
+        binary_binary_method=str(raw["binary_binary_method"]),
+        binary_binary_minimum_cell_count=int(raw["binary_binary_minimum_cell_count"]),
         B_screen=int(raw["B_screen"]),
         B_interaction=int(raw["B_interaction"]),
         alpha=float(raw["alpha"]),
@@ -781,6 +818,12 @@ def render_contract_toml(
         f'status = "{status}"',
         f'contract_hash = "{contract_hash}"',
         f'method_name = "{contract.method_name}"',
+        f'interaction_detector_method = "{contract.interaction_detector_method}"',
+        f'family_partition_method = "{contract.family_partition_method}"',
+        f"tree_family_alpha = {contract.tree_family_alpha}",
+        f"binary_binary_family_alpha = {contract.binary_binary_family_alpha}",
+        f'binary_binary_method = "{contract.binary_binary_method}"',
+        f"binary_binary_minimum_cell_count = {contract.binary_binary_minimum_cell_count}",
         f"B_screen = {contract.B_screen}",
         f"B_interaction = {contract.B_interaction}",
         f"alpha = {contract.alpha}",

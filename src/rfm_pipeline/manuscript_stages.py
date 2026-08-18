@@ -894,6 +894,62 @@ def multiplicity_controlled_interaction_selection(
     return selected, p_values, None
 
 
+def _partitioned_multiplicity_controlled_interaction_selection(
+    observed_scores: np.ndarray,
+    null_statistics: np.ndarray,
+    pair_detectors: tuple[str, ...],
+    *,
+    tree_family_alpha: float,
+    binary_binary_family_alpha: float,
+    method: str,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Apply maxT independently within the frozen detector families.
+
+    TreeSHAP magnitudes and studentized factorial statistics are not on a common
+    scale. Each detector therefore receives its own shared-permutation row
+    maximum and its prespecified alpha allocation. The union of the two
+    selected sets has FWER no greater than the sum of those allocations.
+    """
+    if observed_scores.ndim != 1:
+        raise ValueError("observed_scores must be a 1-D array.")
+    if null_statistics.ndim != 2 or null_statistics.shape[1] != len(observed_scores):
+        raise ValueError("null_statistics must have shape (B, len(observed_scores)).")
+    if len(pair_detectors) != len(observed_scores):
+        raise ValueError("pair detector count must match the candidate-pair count.")
+    detector_alphas = {
+        "tree_shap": float(tree_family_alpha),
+        "studentized_binary_factorial": float(binary_binary_family_alpha),
+    }
+    unknown = sorted(set(pair_detectors) - set(detector_alphas))
+    if unknown:
+        raise ValueError(f"Unknown interaction detector identities: {unknown}.")
+
+    selected = np.zeros(len(observed_scores), dtype=bool)
+    p_values = np.ones(len(observed_scores), dtype=float)
+    thresholds = np.full(len(observed_scores), np.nan, dtype=float)
+    family_alphas = np.empty(len(observed_scores), dtype=float)
+    detector_array = np.asarray(pair_detectors, dtype=object)
+    for detector, family_alpha in detector_alphas.items():
+        indices = np.flatnonzero(detector_array == detector)
+        if indices.size == 0:
+            continue
+        family_selected, family_p_values, family_threshold = (
+            multiplicity_controlled_interaction_selection(
+                observed_scores[indices],
+                null_statistics[:, indices],
+                alpha=family_alpha,
+                method=method,
+            )
+        )
+        if family_threshold is None:
+            raise ValueError("Partitioned interaction selection requires maxT thresholds.")
+        selected[indices] = family_selected
+        p_values[indices] = family_p_values
+        thresholds[indices] = family_threshold
+        family_alphas[indices] = family_alpha
+    return selected, p_values, thresholds, family_alphas
+
+
 @dataclass(frozen=True)
 class InteractionDiscoverySpec:
     """Frozen interaction-discovery settings from the manuscript contract.
@@ -972,6 +1028,11 @@ class InteractionDiscoverySpec:
     condition_main_effects: bool = True
     main_effect_conditioning_degree: int = 2
     minimum_selection_draws: int = 199
+    family_partition_method: str = "bonferroni_partitioned_max_stat"
+    tree_family_alpha: float = 0.025
+    binary_binary_family_alpha: float = 0.025
+    binary_binary_method: str = "studentized_factorial_contrast_hc3"
+    binary_binary_minimum_cell_count: int = 2
 
     def __post_init__(self) -> None:
         """Validate the neutral exact maxT controls without accepting aliases."""
@@ -988,6 +1049,36 @@ class InteractionDiscoverySpec:
                 "minimum_selection_draws must be at least 199 for the generic "
                 "finite-B Monte Carlo maximum-statistic contract."
             )
+        if self.method == "type_aware_tree_shap_binary_factorial":
+            if self.aggregation_rule != "max_over_components_by_detector":
+                raise ValueError(
+                    "The type-aware interaction method requires "
+                    "aggregation_rule='max_over_components_by_detector'."
+                )
+            if self.family_partition_method != "bonferroni_partitioned_max_stat":
+                raise ValueError(
+                    "The type-aware interaction method requires the frozen "
+                    "bonferroni_partitioned_max_stat family partition."
+                )
+            if self.binary_binary_method != "studentized_factorial_contrast_hc3":
+                raise ValueError(
+                    "The type-aware interaction method requires "
+                    "binary_binary_method='studentized_factorial_contrast_hc3'."
+                )
+            for field_name, alpha in (
+                ("tree_family_alpha", self.tree_family_alpha),
+                ("binary_binary_family_alpha", self.binary_binary_family_alpha),
+            ):
+                if not 0.0 < alpha < 1.0:
+                    raise ValueError(f"{field_name} must be in the open interval (0, 1).")
+            if self.tree_family_alpha + self.binary_binary_family_alpha > (
+                self.selection_alpha + 1.0e-12
+            ):
+                raise ValueError(
+                    "Detector-family alpha allocations must sum to no more than selection_alpha."
+                )
+            if self.binary_binary_minimum_cell_count < 2:
+                raise ValueError("binary_binary_minimum_cell_count must be at least 2.")
 
 
 @dataclass(frozen=True)
@@ -3604,6 +3695,17 @@ def interaction_discovery_spec_from_case_study_config(
         condition_main_effects=bool(interaction.get("condition_main_effects", True)),
         main_effect_conditioning_degree=int(interaction.get("main_effect_conditioning_degree", 2)),
         minimum_selection_draws=int(interaction.get("minimum_selection_draws", 199)),
+        family_partition_method=str(
+            interaction.get("family_partition_method", "bonferroni_partitioned_max_stat")
+        ),
+        tree_family_alpha=float(interaction.get("tree_family_alpha", 0.025)),
+        binary_binary_family_alpha=float(interaction.get("binary_binary_family_alpha", 0.025)),
+        binary_binary_method=str(
+            interaction.get("binary_binary_method", "studentized_factorial_contrast_hc3")
+        ),
+        binary_binary_minimum_cell_count=int(
+            interaction.get("binary_binary_minimum_cell_count", 2)
+        ),
     )
 
 
@@ -3881,7 +3983,10 @@ def discover_manuscript_interactions(
         return _discover_elasticnet_interactions(
             input_matrix, holdout_assignments, pca_scores, retained_terms, spec
         )
-    if spec.method != "tree_shap_interaction_values":
+    if spec.method not in {
+        "tree_shap_interaction_values",
+        "type_aware_tree_shap_binary_factorial",
+    }:
         raise ValueError(f"Unsupported interaction-discovery method: {spec.method}")
     if contract is None:
         contract = canonical_execution_contract_from_specs(spec)
@@ -3990,13 +4095,20 @@ def score_interaction_draw_block(
         block null-score matrix, draw IDs, and the verified canonical control
         snapshot. No retention decision is made.
     """
-    if spec.method != "tree_shap_interaction_values":
+    supported_methods = {
+        "tree_shap_interaction_values",
+        "type_aware_tree_shap_binary_factorial",
+    }
+    if spec.method not in supported_methods:
         raise ValueError(
-            f"score_interaction_draw_block only supports "
-            f"method='tree_shap_interaction_values'; got {spec.method!r}. "
-            "Distributed score-only sharding is not implemented for other methods."
+            "score_interaction_draw_block does not support interaction method "
+            f"{spec.method!r}. Expected one of {sorted(supported_methods)}."
         )
-    expected_rule = "max_over_components_of_mean_absolute_shap_interaction"
+    expected_rule = (
+        "max_over_components_by_detector"
+        if spec.method == "type_aware_tree_shap_binary_factorial"
+        else "max_over_components_of_mean_absolute_shap_interaction"
+    )
     if spec.aggregation_rule != expected_rule:
         raise ValueError(f"Unsupported interaction aggregation rule: {spec.aggregation_rule}")
     if spec.permutation_count_B < 1:
@@ -4071,9 +4183,21 @@ def score_interaction_draw_block(
         if full_feature_names
         else np.empty((len(train_rows), 0), dtype=float)
     )
+    feature_names = full_feature_names
+    pair_to_indices = {
+        pair_name: (feature_names.index(left), feature_names.index(right))
+        for pair_name, left, right in all_candidates
+    }
+    pair_detectors = _interaction_pair_detectors(
+        x_full,
+        all_candidates,
+        pair_to_indices,
+        method=spec.method,
+    )
     control_snapshot = build_control_snapshot(
         contract,
         candidate_pair_names=tuple(pair_name for pair_name, _, _ in all_candidates),
+        candidate_pair_detectors=pair_detectors,
         training_sample_ids=train_ids.to_numpy(),
         feature_matrix=x_full,
         response_matrix=y_scaled,
@@ -4083,11 +4207,6 @@ def score_interaction_draw_block(
     if not all_candidates:
         return ScoreOnlyInteractionArtifact.empty_terminal(control_snapshot)
 
-    feature_names = full_feature_names
-    pair_to_indices = {
-        pair_name: (feature_names.index(left), feature_names.index(right))
-        for pair_name, left, right in all_candidates
-    }
     start = int(draw_start)
     end = int(draw_end)
     if start < 0 or end > spec.permutation_count_B or end <= start:
@@ -4140,6 +4259,8 @@ def score_interaction_draw_block(
         active_comp_indices=active_comp_indices,
         pair_to_indices=pair_to_indices,
         candidates=candidates,
+        pair_detectors=pair_detectors,
+        binary_binary_minimum_cell_count=spec.binary_binary_minimum_cell_count,
         n_estimators=spec.n_tree_estimators,
         max_depth=spec.max_tree_depth,
         max_shap_samples=effective_max_shap_samples,
@@ -4450,10 +4571,13 @@ def reduce_score_only_interaction_artifacts(
                 "right_feature",
                 "interaction_score",
                 "null_threshold",
+                "selection_threshold",
                 "empirical_p_value",
                 "retained",
                 "empirical_null_retained",
                 "aggregation_rule",
+                "detector_method",
+                "detector_family_alpha",
             ]
         )
         empty_summary = _build_interaction_discovery_summary(
@@ -4472,7 +4596,14 @@ def reduce_score_only_interaction_artifacts(
                 columns=["pair_name", "component_name", "interaction_score"]
             ),
             interaction_null_summary=pd.DataFrame(
-                columns=["pair_name", "null_mean_score", "null_std_score"]
+                columns=[
+                    "pair_name",
+                    "detector_method",
+                    "detector_family_alpha",
+                    "selection_threshold",
+                    "null_mean_score",
+                    "null_std_score",
+                ]
             ),
             retained_pairs=empty_pair_scores.copy(),
             provenance=_build_interaction_provenance(spec),
@@ -4489,12 +4620,29 @@ def reduce_score_only_interaction_artifacts(
     if not np.isfinite(all_observed).all() or not np.isfinite(global_null).all():
         raise ValueError("Score-only reduction rejects non-finite observed or null scores.")
 
-    selected, p_values, _selection_threshold = multiplicity_controlled_interaction_selection(
-        all_observed,
-        global_null,
-        alpha=spec.selection_alpha,
-        method=spec.selection_method,
-    )
+    pair_detectors = reference_snapshot.candidate_pair_detectors
+    if spec.method == "type_aware_tree_shap_binary_factorial":
+        selected, p_values, selection_thresholds, detector_family_alphas = (
+            _partitioned_multiplicity_controlled_interaction_selection(
+                all_observed,
+                global_null,
+                pair_detectors,
+                tree_family_alpha=spec.tree_family_alpha,
+                binary_binary_family_alpha=spec.binary_binary_family_alpha,
+                method=spec.selection_method,
+            )
+        )
+    else:
+        selected, p_values, selection_threshold = multiplicity_controlled_interaction_selection(
+            all_observed,
+            global_null,
+            alpha=spec.selection_alpha,
+            method=spec.selection_method,
+        )
+        if selection_threshold is None:
+            raise ValueError("Score-only interaction reduction requires a maxT threshold.")
+        selection_thresholds = np.full(len(canonical_pairs), selection_threshold, dtype=float)
+        detector_family_alphas = np.full(len(canonical_pairs), spec.selection_alpha, dtype=float)
     thresholds = np.quantile(global_null, spec.null_threshold_quantile, axis=0)
     empirical_null_retained = {
         name
@@ -4515,9 +4663,12 @@ def reduce_score_only_interaction_artifacts(
         candidates=candidates,
         observed_scores=all_observed,
         thresholds=thresholds,
+        selection_thresholds=selection_thresholds,
         p_values=p_values,
         retained=selected,
         retained_term_names=empirical_null_retained,
+        pair_detectors=pair_detectors,
+        detector_family_alphas=detector_family_alphas,
         spec=spec,
     )
     retained_pairs = pair_scores.loc[pair_scores["retained"]].copy()
@@ -4529,6 +4680,9 @@ def reduce_score_only_interaction_artifacts(
     null_summary = pd.DataFrame(
         {
             "pair_name": canonical_pairs,
+            "detector_method": pair_detectors,
+            "detector_family_alpha": detector_family_alphas,
+            "selection_threshold": selection_thresholds,
             "null_mean_score": global_null.mean(axis=0),
             "null_std_score": global_null.std(axis=0),
         }
@@ -9757,6 +9911,118 @@ def _shap_mean_abs_interaction_matrix(
     return sym
 
 
+def _binary_indicator(values: np.ndarray, *, label: str) -> np.ndarray:
+    """Return a coding-invariant zero/one indicator for one binary feature."""
+    array = np.asarray(values, dtype=float)
+    if array.ndim != 1 or not np.isfinite(array).all():
+        raise ValueError(f"{label} must be a finite one-dimensional binary feature.")
+    levels = np.unique(array)
+    if levels.size != 2:
+        raise ValueError(f"{label} must contain exactly two observed levels.")
+    return (array == levels[1]).astype(float)
+
+
+def _studentized_binary_factorial_component_scores(
+    left: np.ndarray,
+    right: np.ndarray,
+    response: np.ndarray,
+    *,
+    active_component_indices: list[int],
+    minimum_cell_count: int,
+) -> np.ndarray:
+    """Return absolute HC3 t statistics for the saturated 2x2 interaction term.
+
+    The coefficient on ``left * right`` is the difference-in-differences after
+    coding the two observed levels as zero and one. Its absolute studentized
+    value is invariant to level relabeling and pair order. Requiring all four
+    cells before scoring keeps the saturated contrast identified and its HC3
+    variance estimable.
+    """
+    if minimum_cell_count < 2:
+        raise ValueError("binary factorial minimum cell count must be at least 2.")
+    y = np.asarray(response, dtype=float)
+    if y.ndim != 2 or not np.isfinite(y).all():
+        raise ValueError("binary factorial response must be a finite two-dimensional matrix.")
+    left_indicator = _binary_indicator(left, label="left binary feature")
+    right_indicator = _binary_indicator(right, label="right binary feature")
+    if y.shape[0] != left_indicator.size or y.shape[0] != right_indicator.size:
+        raise ValueError("binary factorial features and response must have the same row count.")
+    cell_index = (2 * left_indicator + right_indicator).astype(int)
+    cell_counts = np.bincount(cell_index, minlength=4)
+    if np.count_nonzero(cell_counts) != 4:
+        raise ValueError("binary factorial scoring requires all four 2x2 cells.")
+    if int(cell_counts.min()) < minimum_cell_count:
+        raise ValueError("binary factorial cell count is below binary_binary_minimum_cell_count.")
+
+    design = np.column_stack(
+        [
+            np.ones(left_indicator.size, dtype=float),
+            left_indicator,
+            right_indicator,
+            left_indicator * right_indicator,
+        ]
+    )
+    xtx_inverse = np.linalg.inv(design.T @ design)
+    leverage = np.einsum("ij,jk,ik->i", design, xtx_inverse, design)
+    if np.any(leverage >= 1.0):
+        raise ValueError("binary factorial HC3 leverage is not estimable.")
+
+    scores = np.zeros(y.shape[1], dtype=float)
+    for component_index in active_component_indices:
+        if component_index < 0 or component_index >= y.shape[1]:
+            raise ValueError("active binary factorial component index is out of range.")
+        component = y[:, component_index]
+        coefficient = xtx_inverse @ design.T @ component
+        residual = component - design @ coefficient
+        hc3_residual = residual / (1.0 - leverage)
+        weighted_design = design * hc3_residual[:, None]
+        covariance = xtx_inverse @ (weighted_design.T @ weighted_design) @ xtx_inverse
+        variance = max(0.0, float(covariance[3, 3]))
+        standard_error = float(np.sqrt(variance))
+        interaction = abs(float(coefficient[3]))
+        numerical_floor = np.finfo(float).eps * max(
+            1.0,
+            float(np.linalg.norm(component)),
+            interaction,
+        )
+        if standard_error <= numerical_floor:
+            scores[component_index] = (
+                0.0 if interaction <= numerical_floor else interaction / numerical_floor
+            )
+        else:
+            scores[component_index] = interaction / standard_error
+    return scores
+
+
+def _interaction_pair_detectors(
+    feature_matrix: np.ndarray,
+    candidates: list[tuple[str, str, str]],
+    pair_to_indices: dict[str, tuple[int, int]],
+    *,
+    method: str,
+) -> tuple[str, ...]:
+    """Freeze one detector identity for every ordered candidate pair."""
+    if method == "tree_shap_interaction_values":
+        return tuple("tree_shap" for _ in candidates)
+    if method != "type_aware_tree_shap_binary_factorial":
+        raise ValueError(f"Unsupported interaction-discovery method: {method!r}.")
+    matrix = np.asarray(feature_matrix, dtype=float)
+    if matrix.ndim != 2 or not np.isfinite(matrix).all():
+        raise ValueError("Interaction feature matrix must be finite and two-dimensional.")
+    binary_columns = {
+        index for index in range(matrix.shape[1]) if np.unique(matrix[:, index]).size == 2
+    }
+    detectors: list[str] = []
+    for pair_name, _, _ in candidates:
+        left_index, right_index = pair_to_indices[pair_name]
+        detectors.append(
+            "studentized_binary_factorial"
+            if left_index in binary_columns and right_index in binary_columns
+            else "tree_shap"
+        )
+    return tuple(detectors)
+
+
 def _score_interaction_permutation(
     y_base: np.ndarray,
     permute_response: bool,
@@ -9766,6 +10032,8 @@ def _score_interaction_permutation(
     active_comp_indices: list[int],
     pair_to_indices: dict[str, tuple[int, int]],
     candidates: list[tuple[str, str, str]],
+    pair_detectors: tuple[str, ...],
+    binary_binary_minimum_cell_count: int,
     n_estimators: int,
     max_depth: int,
     max_shap_samples: int,
@@ -9782,8 +10050,29 @@ def _score_interaction_permutation(
         y_mat = y_base[row_order, :]
     else:
         y_mat = y_base
+    if len(pair_detectors) != n_pairs:
+        raise ValueError("Interaction detector count must match n_pairs.")
     scores = np.zeros((n_pairs, n_comp))
+    tree_pair_indices = [
+        index for index, detector in enumerate(pair_detectors) if detector == "tree_shap"
+    ]
+    for pair_index, detector in enumerate(pair_detectors):
+        if detector == "tree_shap":
+            continue
+        if detector != "studentized_binary_factorial":
+            raise ValueError(f"Unsupported interaction detector: {detector!r}.")
+        pair_name = candidates[pair_index][0]
+        left_index, right_index = pair_to_indices[pair_name]
+        scores[pair_index, :] = _studentized_binary_factorial_component_scores(
+            x_feat[:, left_index],
+            x_feat[:, right_index],
+            y_mat,
+            active_component_indices=active_comp_indices,
+            minimum_cell_count=binary_binary_minimum_cell_count,
+        )
     for comp_idx in active_comp_indices:
+        if not tree_pair_indices:
+            break
         y_comp = y_mat[:, comp_idx]
         model = _fit_tree_for_shap(
             x_feat,
@@ -9795,9 +10084,9 @@ def _score_interaction_permutation(
         shap_mat = _shap_mean_abs_interaction_matrix(
             model, x_feat, max_samples=max_shap_samples, rng=rng
         )
-        for i, (_, _, _) in enumerate(candidates):
-            li, ri = pair_to_indices[candidates[i][0]]
-            scores[i, comp_idx] = shap_mat[li, ri]
+        for pair_index in tree_pair_indices:
+            li, ri = pair_to_indices[candidates[pair_index][0]]
+            scores[pair_index, comp_idx] = shap_mat[li, ri]
     return np.max(scores, axis=1), scores
 
 
@@ -9825,8 +10114,25 @@ def _build_interaction_pair_scores(
     retained: np.ndarray,
     retained_term_names: set[str],
     spec: InteractionDiscoverySpec,
+    selection_thresholds: np.ndarray | None = None,
+    pair_detectors: tuple[str, ...] | None = None,
+    detector_family_alphas: np.ndarray | None = None,
 ) -> pd.DataFrame:
     """Build the pair-level interaction-discovery score table."""
+    n_candidates = len(candidates)
+    if selection_thresholds is None:
+        selection_thresholds = thresholds
+    if pair_detectors is None:
+        pair_detectors = tuple("tree_shap" for _ in candidates)
+    if detector_family_alphas is None:
+        detector_family_alphas = np.full(n_candidates, spec.selection_alpha, dtype=float)
+    if not (
+        len(selection_thresholds)
+        == len(pair_detectors)
+        == len(detector_family_alphas)
+        == n_candidates
+    ):
+        raise ValueError("Interaction score metadata must match the candidate-pair count.")
     rows = []
     for index, (pair_name, left, right) in enumerate(candidates):
         rows.append(
@@ -9836,10 +10142,13 @@ def _build_interaction_pair_scores(
                 "right_feature": right,
                 "interaction_score": float(observed_scores[index]),
                 "null_threshold": float(thresholds[index]),
+                "selection_threshold": float(selection_thresholds[index]),
                 "empirical_p_value": float(p_values[index]),
                 "retained": bool(retained[index]),
                 "empirical_null_retained": pair_name in retained_term_names,
                 "aggregation_rule": spec.aggregation_rule,
+                "detector_method": pair_detectors[index],
+                "detector_family_alpha": float(detector_family_alphas[index]),
             }
         )
     return pd.DataFrame.from_records(rows).sort_values(
@@ -9894,6 +10203,11 @@ def _build_interaction_provenance(spec: InteractionDiscoverySpec) -> pd.DataFram
                 "source_workflow_reference": spec.source_workflow_reference,
                 "source_workflow_equivalence_status": spec.source_workflow_equivalence_status,
                 "manuscript_retained_pairs_reference": int(spec.retained_pairs_reference),
+                "family_partition_method": spec.family_partition_method,
+                "tree_family_alpha": float(spec.tree_family_alpha),
+                "binary_binary_family_alpha": float(spec.binary_binary_family_alpha),
+                "binary_binary_method": spec.binary_binary_method,
+                "binary_binary_minimum_cell_count": int(spec.binary_binary_minimum_cell_count),
             }
         ]
     )
@@ -9919,6 +10233,11 @@ def _build_interaction_discovery_summary(
                 "public_implementation_status": spec.implementation_status,
                 "source_workflow_equivalence_status": spec.source_workflow_equivalence_status,
                 "aggregation_rule": spec.aggregation_rule,
+                "family_partition_method": spec.family_partition_method,
+                "tree_family_alpha": float(spec.tree_family_alpha),
+                "binary_binary_family_alpha": float(spec.binary_binary_family_alpha),
+                "binary_binary_method": spec.binary_binary_method,
+                "binary_binary_minimum_cell_count": int(spec.binary_binary_minimum_cell_count),
                 "n_training_rows": int(n_training_rows),
                 "n_candidate_pairs": int(n_candidate_pairs),
                 "n_empirical_null_retained_pairs": int(n_empirical_null_retained_pairs),

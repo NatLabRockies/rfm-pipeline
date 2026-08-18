@@ -117,6 +117,31 @@ class CanonicalExecutionContract:
                 "Canonical interaction controls cannot resolve selection_alpha with the "
                 "configured finite permutation draw count."
             )
+        if self.interaction_controls.get("method") == ("type_aware_tree_shap_binary_factorial"):
+            if self.interaction_controls.get("family_partition_method") != (
+                "bonferroni_partitioned_max_stat"
+            ):
+                raise ValueError(
+                    "Canonical type-aware interaction controls require the frozen "
+                    "bonferroni_partitioned_max_stat family partition."
+                )
+            family_alphas = (
+                float(self.interaction_controls.get("tree_family_alpha", 0.0)),
+                float(self.interaction_controls.get("binary_binary_family_alpha", 0.0)),
+            )
+            if any(not 0.0 < family_alpha < 1.0 for family_alpha in family_alphas):
+                raise ValueError(
+                    "Canonical detector-family alpha allocations must each be in (0, 1)."
+                )
+            if sum(family_alphas) > alpha + 1.0e-12:
+                raise ValueError(
+                    "Canonical detector-family alpha allocations must sum to no more than "
+                    "selection_alpha."
+                )
+            if any(1.0 / (draws + 1) > family_alpha for family_alpha in family_alphas):
+                raise ValueError(
+                    "Canonical permutation draws cannot resolve each detector-family alpha."
+                )
         terminal = self.terminal_controls
         if terminal.get("refit_method") != "ordinary_least_squares_after_pruning":
             raise ValueError(
@@ -273,6 +298,8 @@ class ControlSnapshot:
     permutation_index_schedule_sha256: str
     candidate_pair_names: tuple[str, ...]
     candidate_family_sha256: str
+    candidate_pair_detectors: tuple[str, ...]
+    candidate_detector_sha256: str
     training_sample_ids_sha256: str
     feature_matrix_sha256: str
     response_matrix_sha256: str
@@ -292,12 +319,27 @@ class ControlSnapshot:
             raise ValueError(
                 "Control snapshot candidate-family checksum does not match pair order."
             )
+        if len(self.candidate_pair_detectors) != len(self.candidate_pair_names):
+            raise ValueError(
+                "Control snapshot candidate-family detector count does not match pair count."
+            )
+        allowed_detectors = {"tree_shap", "studentized_binary_factorial"}
+        unknown_detectors = sorted(set(self.candidate_pair_detectors) - allowed_detectors)
+        if unknown_detectors:
+            raise ValueError(
+                f"Control snapshot contains unsupported interaction detectors: {unknown_detectors}."
+            )
+        if self.candidate_detector_sha256 != _sha256_names(self.candidate_pair_detectors):
+            raise ValueError(
+                "Control snapshot candidate detector checksum does not match detector order."
+            )
         for name, value in (
             ("contract_sha256", self.contract_sha256),
             ("implementation_source_sha256", self.implementation_source_sha256),
             ("dependency_lock_sha256", self.dependency_lock_sha256),
             ("score_seed_schedule_sha256", self.score_seed_schedule_sha256),
             ("permutation_index_schedule_sha256", self.permutation_index_schedule_sha256),
+            ("candidate_detector_sha256", self.candidate_detector_sha256),
         ):
             if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
                 raise ValueError(f"Control snapshot {name} is not a SHA-256 digest.")
@@ -314,6 +356,8 @@ class ControlSnapshot:
             "permutation_index_schedule_sha256": self.permutation_index_schedule_sha256,
             "candidate_pair_names": list(self.candidate_pair_names),
             "candidate_family_sha256": self.candidate_family_sha256,
+            "candidate_pair_detectors": list(self.candidate_pair_detectors),
+            "candidate_detector_sha256": self.candidate_detector_sha256,
             "training_sample_ids_sha256": self.training_sample_ids_sha256,
             "feature_matrix_sha256": self.feature_matrix_sha256,
             "response_matrix_sha256": self.response_matrix_sha256,
@@ -335,6 +379,8 @@ class ControlSnapshot:
             "permutation_index_schedule_sha256",
             "candidate_pair_names",
             "candidate_family_sha256",
+            "candidate_pair_detectors",
+            "candidate_detector_sha256",
             "training_sample_ids_sha256",
             "feature_matrix_sha256",
             "response_matrix_sha256",
@@ -355,6 +401,8 @@ class ControlSnapshot:
             permutation_index_schedule_sha256=str(data["permutation_index_schedule_sha256"]),
             candidate_pair_names=tuple(str(name) for name in data["candidate_pair_names"]),
             candidate_family_sha256=str(data["candidate_family_sha256"]),
+            candidate_pair_detectors=tuple(str(name) for name in data["candidate_pair_detectors"]),
+            candidate_detector_sha256=str(data["candidate_detector_sha256"]),
             training_sample_ids_sha256=str(data["training_sample_ids_sha256"]),
             feature_matrix_sha256=str(data["feature_matrix_sha256"]),
             response_matrix_sha256=str(data["response_matrix_sha256"]),
@@ -373,6 +421,7 @@ def build_control_snapshot(
     contract: CanonicalExecutionContract,
     *,
     candidate_pair_names: tuple[str, ...],
+    candidate_pair_detectors: tuple[str, ...] | None = None,
     training_sample_ids: np.ndarray,
     feature_matrix: np.ndarray,
     response_matrix: np.ndarray,
@@ -405,16 +454,24 @@ def build_control_snapshot(
         n_training_rows=int(training_ids.size),
     )
     source_hash, lock_hash = _current_source_and_lock_hashes()
+    pair_names = tuple(str(name) for name in candidate_pair_names)
+    pair_detectors = (
+        tuple("tree_shap" for _ in pair_names)
+        if candidate_pair_detectors is None
+        else tuple(str(name) for name in candidate_pair_detectors)
+    )
     return ControlSnapshot(
-        schema_version=1,
+        schema_version=2,
         contract_sha256=contract.checksum,
         implementation_source_sha256=source_hash,
         dependency_lock_sha256=lock_hash,
         stage_seed=stage_seed,
         score_seed_schedule_sha256=score_seed_hash,
         permutation_index_schedule_sha256=permutation_schedule_hash,
-        candidate_pair_names=tuple(str(name) for name in candidate_pair_names),
-        candidate_family_sha256=_sha256_names(tuple(str(name) for name in candidate_pair_names)),
+        candidate_pair_names=pair_names,
+        candidate_family_sha256=_sha256_names(pair_names),
+        candidate_pair_detectors=pair_detectors,
+        candidate_detector_sha256=_sha256_names(pair_detectors),
         training_sample_ids_sha256=_sha256_array(training_ids),
         feature_matrix_sha256=_sha256_array(features),
         response_matrix_sha256=_sha256_array(response),
@@ -429,7 +486,7 @@ def verify_control_snapshot(
     contract: CanonicalExecutionContract,
 ) -> None:
     """Reject a snapshot whose controls or identity drift from the contract."""
-    if snapshot.schema_version != 1:
+    if snapshot.schema_version != 2:
         raise ValueError(f"Unsupported control snapshot schema: {snapshot.schema_version}")
     if snapshot.contract_sha256 != contract.checksum:
         raise ValueError(
@@ -464,6 +521,11 @@ def verify_control_snapshot(
     expected_family_checksum = _sha256_names(snapshot.candidate_pair_names)
     if snapshot.candidate_family_sha256 != expected_family_checksum:
         raise ValueError("Control snapshot candidate-family checksum does not match pair order.")
+    expected_detector_checksum = _sha256_names(snapshot.candidate_pair_detectors)
+    if snapshot.candidate_detector_sha256 != expected_detector_checksum:
+        raise ValueError(
+            "Control snapshot candidate detector checksum does not match detector order."
+        )
 
 
 def _readonly_array(value: np.ndarray, *, dtype: np.dtype[Any]) -> np.ndarray:
@@ -494,7 +556,7 @@ class ScoreOnlyInteractionArtifact:
 
     _STATUS_COMPLETED = "score_only_completed"
     _STATUS_EMPTY = "empty_candidate_family"
-    _SCHEMA_VERSION = 2
+    _SCHEMA_VERSION = 3
     _NPZ_NAME = "score_only_interaction.npz"
     _METADATA_NAME = "score_only_interaction.json"
 

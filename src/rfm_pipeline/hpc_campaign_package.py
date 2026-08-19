@@ -210,7 +210,8 @@ class CampaignEnvelope:
     """Whole-campaign allocation forecast with a shared 20% reserve.
 
     The pre-pilot estimate is diagnostic.  Once pilot telemetry freezes the
-    resource profile, this forecast becomes the 25,000-AU admission gate.
+    resource profile, this forecast becomes the configured whole-campaign AU
+    admission gate.
 
     The storage cap is a package admission guard (one GiB per worker
     artifact), not a claim about an available Kestrel filesystem quota.
@@ -3161,7 +3162,7 @@ def _completed_adaptive_allocation_estimates(
     """Reconstruct pilot and resolution use omitted from a confirmatory package.
 
     A confirmatory package is created only after these adaptive phases finish,
-    but their allocation still counts against the manuscript's 25,000-AU cap.
+    but their allocation still counts against the manuscript's configured AU cap.
     """
     estimates: list[StageAllocationEstimate] = []
     worker_count = 0

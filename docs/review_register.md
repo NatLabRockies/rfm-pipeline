@@ -647,3 +647,43 @@ scientific control and raises the deterministic all-phase fixture only from
   summary instead of NaN/None.
 - Verified-correct (no action): S07 adequacy math, S08 bh_fdr/fwer standalone, S04/S05/S11 sealed
   guard + leakage-free support selection, S09 provenance retained-set, M3 stratified bootstrap.
+
+## REVIEW-0022 — Phase authorization omitted its submission-plan binding
+
+- Date: 2026-08-19
+- Severity: P0 / downstream pre-execution availability and provenance
+- Status: fixed locally on `codex/g11-bb-factorial`; deployment validation pending
+- Evidence: corrected Gate-B task `16345848_0` failed before scientific compute because the
+  schema-v2 authorization produced by `write_phase_authorization` omitted
+  `submission_plan_sha256`, which the pinned BSM recovery driver requires. The failed task cost
+  0.0305555556 AU and wrote no scientific artifact. The active replacement Gate-B authorization
+  was repaired independently and its compute-node validator passed before workers were released.
+- Root cause: `build_submission_plan` and `build_campaign_phase_plan` self-hashed their plans,
+  but the phase-authorization writer neither copied the phase-plan hash into the authorization nor
+  required the execution client to compare the authorization to the submitted phase plan. Tests
+  constructed the same incomplete authorization shape, leaving the RFM/BSM integration boundary
+  uncovered.
+- Resolution: phase authorization now binds the deterministic phase-specific plan hash, and
+  `execute_campaign_phase_plan` rejects any otherwise valid plan whose hash differs from the
+  authorization before invoking Slurm. A prospective regression observed the missing field, then
+  passed after the fix and also proves that a re-signed tampered plan produces zero scheduler
+  calls.
+- Downstream audit: the immutable readiness report at
+  `/projects/bsm/g11_authorizations/g11-final-manuscript-20260815p/`
+  `gate_b_hybrid_confirmation_20260818a/run3/`
+  `downstream_readiness_audit_20260819T124000Z/report.json` has self-hash
+  `7f3b18986ce6ffbb422a8ac213e37d77ed1e12bd48d1c49f593b297fa0d00445`.
+  It validates 15 manifests, the content-bound runtimes, pristine downstream output roots, the
+  full dependency chain, and 45 of 46 normal-QoS `sbatch --test-only` checks. The one untested
+  Gate-B null script is already accepted as active job `16356929`; the duplicate dry-run was
+  temporarily rejected only by the per-user active-job limit.
+- Additional repair: the stale package's 1,000-task fixed-family supplement drove its estimate to
+  48,414.674145 AU. The approved publication amendment already changes only that count to 200.
+  A downstream-only package mode now omits Gate B, starts at the 200-task fixed-family stage, and
+  requires an independently self-hashed adoption of the completed Gate-B decision across exactly
+  that amendment. Focused tests prove the resulting plan contains no Gate-B work and cannot submit
+  without the adopted prerequisite.
+- Environment finding: the paired BSM environment pins an older RFM revision and therefore cannot
+  validate the repaired authorization contract or hybrid detector fields. Commit the RFM repair,
+  update the BSM pin and generated lock, run both repository gates, deploy clean content-addressed
+  runtimes, and generate a fresh immutable downstream package before any downstream submission.

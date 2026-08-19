@@ -297,14 +297,35 @@ def generate_campaign_package(
     contract: CampaignContract = G11_CONTRACT,
     resource_freeze: dict[str, Any] | None = None,
     package_mode: str = "full",
+    completed_observed_au_for_admission: float | None = None,
+    postprocessing_reserved_au_for_admission: float = 0.0,
 ) -> CampaignDAG:
     """Build manifests, scripts, hashes, telemetry, and readiness artifacts."""
-    if package_mode not in {"full", "confirmatory"}:
-        raise ValueError("package_mode must be full or confirmatory")
-    if package_mode == "confirmatory" and (
+    if package_mode not in {"full", "confirmatory", "downstream"}:
+        raise ValueError("package_mode must be full, confirmatory, or downstream")
+    if package_mode in {"confirmatory", "downstream"} and (
         resource_freeze is None or contract.resolution_decision_sha256 == "PENDING"
     ):
-        raise ValueError("confirmatory package requires frozen resources and resolution bytes")
+        raise ValueError(
+            "confirmatory and downstream packages require frozen resources and resolution bytes"
+        )
+    if completed_observed_au_for_admission is not None:
+        if package_mode not in {"confirmatory", "downstream"}:
+            raise ValueError(
+                "observed completed allocation admission is confirmatory/downstream-only"
+            )
+        if not math.isfinite(completed_observed_au_for_admission) or (
+            completed_observed_au_for_admission < 0
+        ):
+            raise ValueError("completed observed admission AUs must be nonnegative")
+        if not math.isfinite(postprocessing_reserved_au_for_admission) or (
+            postprocessing_reserved_au_for_admission < 0
+        ):
+            raise ValueError("postprocessing admission reserve must be nonnegative")
+    elif postprocessing_reserved_au_for_admission != 0:
+        raise ValueError(
+            "postprocessing admission reserve requires observed completed allocation AUs"
+        )
     resolved_repo_root = (
         Path(repo_root).resolve() if repo_root is not None else Path(__file__).resolve().parents[2]
     )
@@ -483,15 +504,28 @@ def generate_campaign_package(
             ) from exc
         if allocation_quota <= 0:
             raise ValueError("allocation_quota must be a positive integer AU limit.")
-        if resource_freeze is None and allocation_quota < campaign_envelope.requested_au:
+        admission_requested_au = float(campaign_envelope.requested_au)
+        admission_error = "telemetry-based whole-campaign projection"
+        if completed_observed_au_for_admission is not None:
+            remaining_estimated_au = sum(
+                _stage_allocation_estimate(stage, cluster=cluster).estimated_au for stage in stages
+            )
+            reserve_fraction = 0.20 if contract.retry_limit else 0.0
+            admission_requested_au = (
+                completed_observed_au_for_admission
+                + math.ceil(remaining_estimated_au * (1.0 + reserve_fraction))
+                + postprocessing_reserved_au_for_admission
+            )
+            admission_error = "observed-prior confirmatory projection"
+        if resource_freeze is None and allocation_quota < admission_requested_au:
             readiness_blockers.append(
                 "provisional pre-pilot forecast exceeds the campaign AU budget; "
                 "run the bounded pilot and require the telemetry-based final package to fit"
             )
-        if resource_freeze is not None and allocation_quota < campaign_envelope.requested_au:
+        if resource_freeze is not None and allocation_quota < admission_requested_au:
             raise ValueError(
-                "telemetry-based whole-campaign projection exceeds allocation_quota: "
-                f"{campaign_envelope.requested_au} > {allocation_quota}"
+                f"{admission_error} exceeds allocation_quota: "
+                f"{admission_requested_au:g} > {allocation_quota}"
             )
     dag = CampaignDAG(
         run_id=raw_config["run_id"],
@@ -795,6 +829,8 @@ def _selected_stages_for_phase(dag: CampaignDAG, target_phase: str) -> list[Stag
         return [
             stage for stage in dag.stages if stage.name in {"gate_b", "fixed_family_supplement"}
         ]
+    if target_phase == "fixed_family":
+        return [stage for stage in dag.stages if stage.name == "fixed_family_supplement"]
     if target_phase == "gate_p":
         return [stage for stage in dag.stages if stage.name.startswith("applied_")]
     if target_phase == "gate_c":
@@ -1100,13 +1136,13 @@ def write_phase_authorization(
     output_path: str | Path,
 ) -> dict[str, Any]:
     """Write the exact BSM authorization schema only after phase gates pass."""
-    if phase not in {"development", "gate_b", "gate_p", "gate_c"}:
+    if phase not in {"development", "gate_b", "fixed_family", "gate_p", "gate_c"}:
         raise ValueError("unknown campaign authorization phase")
     freeze = json.loads(Path(resource_freeze_path).read_text(encoding="utf-8"))
     _validate_resource_freeze(freeze)
     resource_hash = str(freeze["resource_freeze_sha256"])
     freeze_contract_matches = freeze.get("config_hash") == dag.config_hash
-    if dag.package_mode == "confirmatory":
+    if dag.package_mode in {"confirmatory", "downstream"}:
         freeze_contract_matches = freeze.get("config_hash") == compute_contract_hash(G11_CONTRACT)
     if (
         freeze.get("source_hash") != dag.source_hash
@@ -1138,6 +1174,7 @@ def write_phase_authorization(
     expected_operations = {
         "development": set(),
         "gate_b": {"resolution"},
+        "fixed_family": {"gate_b"},
         "gate_p": {"gate_b", "fixed_family_supplement"},
         "gate_c": {"gate_b", "fixed_family_supplement", "applied_bootstrap"},
     }[phase]
@@ -1157,6 +1194,7 @@ def write_phase_authorization(
     if phase != "development":
         expected_stage = {
             "gate_b": "resolution",
+            "fixed_family": {"gate_b": "gate_b"},
             "gate_p": {
                 "gate_b": "gate_b",
                 "fixed_family_supplement": "fixed_family_supplement",
@@ -1170,6 +1208,24 @@ def write_phase_authorization(
         for path, item in zip(prerequisite_paths, prerequisites, strict=True):
             operation = str(item["operation"])
             if operation == "resolution":
+                continue
+            if phase == "fixed_family" and operation == "gate_b":
+                adoption_identity = {
+                    key: value for key, value in item.items() if key != "adoption_sha256"
+                }
+                if (
+                    item.get("adoption_sha256") != _stable_hash(adoption_identity)
+                    or item.get("adopted_from_contract_hash") == dag.config_hash
+                    or not re.fullmatch(
+                        r"[0-9a-f]{64}",
+                        str(item.get("adopted_gate_b_decision_sha256", "")),
+                    )
+                    or not re.fullmatch(
+                        r"[0-9a-f]{64}",
+                        str(item.get("contract_amendment_sha256", "")),
+                    )
+                ):
+                    raise ValueError("fixed-family Gate-B adoption evidence differs")
                 continue
             stage_name = str(expected_stage[operation])
             stage = _stage_by_name(dag, stage_name)
@@ -1224,6 +1280,7 @@ def write_phase_authorization(
         ):
             raise ValueError("Gate-B authorization resolution selection differs from the contract")
 
+    phase_plan = build_campaign_phase_plan(dag, phase=phase)
     identity = {
         "schema_version": 2,
         "status": "ACCEPTED",
@@ -1233,6 +1290,7 @@ def write_phase_authorization(
         "source_hash": dag.source_hash,
         "lock_hash": dag.lock_hash,
         "campaign_inventory_hash": dag.campaign_inventory_hash,
+        "submission_plan_sha256": str(phase_plan["submission_plan_sha256"]),
         "preflight_sha256": str(preflight["preflight_sha256"]),
         "prerequisite_sha256": {
             str(item["operation"]): _hash_file(Path(path))
@@ -1492,16 +1550,17 @@ def build_campaign_phase_plan(dag: CampaignDAG, *, phase: str) -> dict[str, Any]
     """Build one independently gated development or confirmatory tranche."""
     if phase == "development" and dag.package_mode != "full":
         raise ValueError("development phase plan requires a full package")
-    if phase != "development" and dag.package_mode != "confirmatory":
-        raise ValueError("confirmatory phase plan requires a confirmatory package")
+    if phase != "development" and dag.package_mode not in {"confirmatory", "downstream"}:
+        raise ValueError("confirmatory phase plan requires a confirmatory/downstream package")
     stage_predicate = {
         "development": lambda name: name == "resolution",
         "gate_b": lambda name: name in {"gate_b", "fixed_family_supplement"},
+        "fixed_family": lambda name: name == "fixed_family_supplement",
         "gate_p": lambda name: name.startswith("applied_"),
         "gate_c": lambda name: name == "recovery",
     }.get(phase)
     if stage_predicate is None:
-        raise ValueError("phase must be development, gate_b, gate_p, or gate_c")
+        raise ValueError("phase must be development, gate_b, fixed_family, gate_p, or gate_c")
     full = build_submission_plan(dag)
     selected = [
         dict(step) for step in full["production_steps"] if stage_predicate(str(step["stage"]))
@@ -1575,6 +1634,7 @@ def execute_campaign_phase_plan(
         or phase_authorization.get("source_hash") != plan.get("source_hash")
         or phase_authorization.get("lock_hash") != plan.get("lock_hash")
         or phase_authorization.get("campaign_inventory_hash") != plan.get("campaign_inventory_hash")
+        or phase_authorization.get("submission_plan_sha256") != plan.get("submission_plan_sha256")
         or phase_authorization.get("preflight_sha256") != preflight.get("preflight_sha256")
         or phase_authorization.get("execution_permitted") is not True
         or phase_authorization.get("resource_freeze_sha256")
@@ -2810,6 +2870,17 @@ def _build_stage_plans(
             for spec in stage_specs
             if spec["name"] not in {*_PILOT_STAGES, "resolution"}
         )
+    elif package_mode == "downstream":
+        stage_specs = tuple(
+            {
+                **spec,
+                "parent_stage_name": (
+                    None if spec["name"] == "fixed_family_supplement" else spec["parent_stage_name"]
+                ),
+            }
+            for spec in stage_specs
+            if spec["name"] not in {*_PILOT_STAGES, "resolution", "gate_b"}
+        )
 
     plans: list[StagePlan] = []
     reducer_hash_by_stage: dict[str, str] = {}
@@ -2872,6 +2943,7 @@ def _build_stage_plans(
             stage_manifest_root=output_dir / "stages",
             campaign_inventory_path=output_dir / "campaign_inventory.jsonl",
             worker_resources_by_scenario_kind=spec.get("worker_resources_by_scenario_kind"),
+            package_mode=package_mode,
         )
         _write_jsonl(manifest_path, records)
         if str(spec["name"]) in _PILOT_STAGES:
@@ -3330,6 +3402,7 @@ def _build_manifest_records(
     stage_manifest_root: Path,
     campaign_inventory_path: Path,
     worker_resources_by_scenario_kind: dict[str, dict[str, Any]] | None,
+    package_mode: str,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if stage_name in _PILOT_STAGES:
@@ -3543,7 +3616,9 @@ def _build_manifest_records(
             phase_by_stage = {
                 "resolution": "development",
                 "gate_b": "gate_b",
-                "fixed_family_supplement": "gate_b",
+                "fixed_family_supplement": (
+                    "fixed_family" if package_mode == "downstream" else "gate_b"
+                ),
                 "recovery": "gate_c",
             }
             descriptor.setdefault("phase", phase_by_stage.get(stage_name, "gate_p"))
@@ -3840,6 +3915,8 @@ def validate_campaign_table(
     scientific = [row for row in workers if row.get("stage") in {"gate_b", "recovery"}]
     contract_hash = compute_contract_hash(contract)
     expected_scientific = build_campaign_inventory(contract, contract_hash)
+    if dag.package_mode == "downstream":
+        expected_scientific = [row for row in expected_scientific if row.kind == "stress"]
     expected_identity = {
         (row.scenario_id, row.replicate_index, row.seed) for row in expected_scientific
     }
@@ -3847,8 +3924,8 @@ def validate_campaign_table(
         (str(row["scenario_id"]), int(row["replicate_index"]), int(row["seed"]))
         for row in scientific
     }
-    if len(scientific) != 6400 or observed_identity != expected_identity:
-        raise ValueError("campaign inventory does not exactly cover all 6400 scientific records")
+    if len(scientific) != len(expected_scientific) or observed_identity != expected_identity:
+        raise ValueError("campaign inventory does not exactly cover its scientific records")
     if any(
         tuple(row.get("recovery_comparators", ()))
         != (contract.recovery_comparators if row.get("scenario_kind") != "null" else ())

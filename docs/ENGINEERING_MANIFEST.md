@@ -313,3 +313,18 @@ ______________________________________________________________________
   preflight, and require exact `COMPLETED/0:0` coverage before using telemetry
   to freeze production resources. No resolution or confirmatory phase is
   authorized by this checkpoint.
+
+## 2026-08-19 — Corrected Gate-B downstream-readiness checkpoint
+
+- [x] Bind every schema-v2 phase authorization to its exact phase submission-plan hash and reject
+  plan drift before any scheduler call.
+- [x] Audit all generated manifests, content-bound runtimes, dependency edges, output roots, and
+  normal-QoS Slurm scripts while corrected Gate-B waits in queue.
+- [x] Add a downstream-only package mode that excludes Gate B, starts with exactly 200
+  fixed-family tasks, and accepts only a self-hashed Gate-B adoption across the signed amendment
+  whose sole scientific change is `fixed_family_replicates: 1000 -> 200`.
+- [x] Admit the downstream package from exact observed completed AUs plus a 20% reserve on only
+  unexecuted work and the five-AU publication reserve; reject a true projected overrun.
+- [ ] Commit/deploy the repaired RFM generator, update the paired BSM RFM pin and lock, then
+  generate and independently scheduler-dry-run audit the immutable downstream package. Do not
+  submit it until the active Gate-B reducer records PASS.

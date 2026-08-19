@@ -2472,3 +2472,32 @@ ______________________________________________________________________
 - Required next step: commit and deploy the fix, update the paired BSM RFM pin,
   and run a new isolated complete pilot. Only successful post-fix telemetry may
   size or authorize the resolution and final scientific campaign.
+
+## 2026-08-19 — Gate-B/downstream readiness audit and authorization repair
+
+- Active corrected Gate-B jobs are `16356929`/`16356930`, with audit `16356931` and reducer
+  `16356932`, all normal QoS. Compute-node authorization validator `16356928` completed 0:0 with
+  a PASS result before the workers became eligible. The only prior attempt failed before science
+  because its authorization omitted the required submission-plan hash; its empty task directory
+  is safe for the fresh run.
+- A read-only audit validated all 15 packaged manifests, content hashes, runtime paths, DAG parent
+  bindings, pristine downstream output roots, and 45/46 scheduler dry-runs. The remaining dry-run
+  was blocked only because the already-submitted 5,000-task null array occupies the current submit
+  limit. Evidence is in `downstream_readiness_audit_20260819T124000Z/report.json` with audit
+  self-hash `7f3b18986ce6ffbb422a8ac213e37d77ed1e12bd48d1c49f593b297fa0d00445`.
+- Prospective test `test_phase_authorization_binds_unchanged_submission_plan` failed on the
+  deployed writer, which omitted `submission_plan_sha256`. The local repair binds the exact
+  phase-specific plan and makes the execution client reject a different plan before Slurm.
+- No downstream job was submitted. The stale package contains 1,000 fixed-family tasks, conflicts
+  with the approved 200-task confidence-bound design, and inflates the estimate to 48,414.674145
+  AU versus the approximate 30,000-AU target.
+- The local repair adds a downstream-only package mode that omits Gate B, starts with exactly 200
+  fixed-family tasks, and carries the already completed Gate-B PASS across the signed publication
+  amendment whose only contract change is `fixed_family_replicates: 1000 -> 200`. It also restores
+  observed-spend admission accounting so completed work is charged exactly and only unexecuted
+  work receives the 20% reserve. Focused tests prove that no Gate-B worker is regenerated and that
+  the fixed-family plan is bound to the adopted Gate-B decision.
+- The paired BSM workflow now accepts the independently hashed Gate-B adoption record for the new
+  `fixed_family` phase. Its environment still pins an older RFM revision, so the RFM repair must be
+  committed and the BSM pin/lock updated before the immutable downstream package is generated and
+  scheduler-dry-run audited. Gate-B remains the only submitted scientific phase.

@@ -152,6 +152,9 @@ def _signed_authorization(
         "source_hash": dag.source_hash,
         "lock_hash": dag.lock_hash,
         "campaign_inventory_hash": dag.campaign_inventory_hash,
+        "submission_plan_sha256": build_campaign_phase_plan(dag, phase=phase)[
+            "submission_plan_sha256"
+        ],
         "preflight_sha256": preflight_sha256,
         "prerequisite_sha256": {},
         "execution_permitted": True,
@@ -161,6 +164,200 @@ def _signed_authorization(
     return {
         **identity,
         "authorization_sha256": hashlib.sha256(canonical.encode()).hexdigest(),
+    }
+
+
+def test_phase_authorization_binds_unchanged_submission_plan(tmp_path: Path) -> None:
+    _, freeze, freeze_path, decision_path, dag = _final_package(tmp_path)
+    preflight = _phase_preflight(dag, "gate_b", str(freeze["resource_freeze_sha256"]))
+    preflight_path = tmp_path / "preflight.json"
+    preflight_path.write_text(json.dumps(preflight), encoding="utf-8")
+    plan = build_campaign_phase_plan(dag, phase="gate_b")
+
+    authorization = write_phase_authorization(
+        dag,
+        phase="gate_b",
+        resource_freeze_path=freeze_path,
+        preflight_path=preflight_path,
+        prerequisite_paths=(decision_path,),
+        output_path=tmp_path / "authorization.json",
+    )
+
+    assert authorization["submission_plan_sha256"] == plan["submission_plan_sha256"]
+
+    plan["steps"][0]["command"][-1] = "/tmp/tampered-worker.slurm"
+    plan_identity = {key: value for key, value in plan.items() if key != "submission_plan_sha256"}
+    canonical = json.dumps(plan_identity, sort_keys=True, separators=(",", ":"))
+    plan["submission_plan_sha256"] = hashlib.sha256(canonical.encode()).hexdigest()
+    calls: list[list[str]] = []
+
+    def must_not_submit(command: list[str]) -> Namespace:
+        calls.append(command)
+        return Namespace(returncode=0, stdout="1001\n", stderr="")
+
+    with pytest.raises(PermissionError, match="authorization"):
+        execute_campaign_phase_plan(
+            plan,
+            run_command=must_not_submit,
+            authorize=True,
+            preflight=preflight,
+            phase_authorization=authorization,
+        )
+    assert calls == []
+
+
+def test_confirmatory_gate_uses_observed_completed_au_for_final_admission(
+    tmp_path: Path,
+) -> None:
+    base = _package(tmp_path / "base")
+    freeze = select_pilot_resources(
+        pilot_matrix=base.pilot_matrix,
+        telemetry=_accepted_pilot_telemetry(base),
+        cluster=base.cluster,
+        source_hash=base.source_hash,
+        config_hash=base.config_hash,
+        lock_hash=base.lock_hash,
+    )
+    selected = replace(
+        G11_CONTRACT,
+        B_interaction=999,
+        resolution_decision_sha256="a" * 64,
+    )
+
+    final = generate_campaign_package(
+        output_dir=tmp_path / "final" / "package",
+        repo_root=REPO_ROOT,
+        config_path=_config_with_quota(tmp_path / "final", 10_000),
+        contract=selected,
+        resource_freeze=freeze,
+        package_mode="confirmatory",
+        completed_observed_au_for_admission=50.0,
+        postprocessing_reserved_au_for_admission=5.0,
+    )
+
+    remaining_stage_names = {stage.name for stage in final.stages}
+    remaining_estimated = sum(
+        allocation.estimated_au
+        for allocation in final.campaign_envelope.stage_allocations
+        if allocation.stage_name in remaining_stage_names
+    )
+    assert 50.0 + math.ceil(remaining_estimated * 1.20) + 5.0 <= 10_000
+
+
+def test_confirmatory_observed_admission_still_rejects_a_real_overrun(
+    tmp_path: Path,
+) -> None:
+    base = _package(tmp_path / "base")
+    freeze = select_pilot_resources(
+        pilot_matrix=base.pilot_matrix,
+        telemetry=_accepted_pilot_telemetry(base),
+        cluster=base.cluster,
+        source_hash=base.source_hash,
+        config_hash=base.config_hash,
+        lock_hash=base.lock_hash,
+    )
+    selected = replace(
+        G11_CONTRACT,
+        B_interaction=999,
+        resolution_decision_sha256="a" * 64,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="observed-prior confirmatory projection exceeds allocation_quota",
+    ):
+        generate_campaign_package(
+            output_dir=tmp_path / "final" / "package",
+            repo_root=REPO_ROOT,
+            config_path=_config_with_quota(tmp_path / "final", 10_000),
+            contract=selected,
+            resource_freeze=freeze,
+            package_mode="confirmatory",
+            completed_observed_au_for_admission=9_999.0,
+            postprocessing_reserved_au_for_admission=5.0,
+        )
+
+
+def test_downstream_package_starts_at_approved_fixed_family_without_gate_b_rerun(
+    tmp_path: Path,
+) -> None:
+    base = _package(tmp_path / "base")
+    freeze = select_pilot_resources(
+        pilot_matrix=base.pilot_matrix,
+        telemetry=_accepted_pilot_telemetry(base),
+        cluster=base.cluster,
+        source_hash=base.source_hash,
+        config_hash=base.config_hash,
+        lock_hash=base.lock_hash,
+    )
+    selected = replace(
+        G11_CONTRACT,
+        B_interaction=999,
+        resolution_decision_sha256="a" * 64,
+        fixed_family_replicates=200,
+    )
+
+    downstream = generate_campaign_package(
+        output_dir=tmp_path / "downstream" / "package",
+        repo_root=REPO_ROOT,
+        config_path=_config_with_quota(tmp_path / "downstream", 30_000),
+        contract=selected,
+        resource_freeze=freeze,
+        package_mode="downstream",
+        completed_observed_au_for_admission=500.0,
+        postprocessing_reserved_au_for_admission=5.0,
+    )
+
+    assert downstream.package_mode == "downstream"
+    assert "gate_b" not in {stage.name for stage in downstream.stages}
+    fixed = _stage(downstream, "fixed_family_supplement")
+    assert fixed.parent_stage_name is None
+    records = load_stage_manifest(fixed.manifest_path)
+    assert len(records) == 200
+    assert {record["phase"] for record in records} == {"fixed_family"}
+    plan = build_campaign_phase_plan(downstream, phase="fixed_family")
+    assert {step["stage"] for step in plan["steps"]} == {"fixed_family_supplement"}
+    worker = next(step for step in plan["steps"] if step["action"] == "worker")
+    assert worker["depends_on"] == []
+
+    freeze_path = tmp_path / "downstream" / "resource_freeze.json"
+    freeze_path.write_text(json.dumps(freeze), encoding="utf-8")
+    preflight = _phase_preflight(downstream, "fixed_family", str(freeze["resource_freeze_sha256"]))
+    preflight_path = tmp_path / "downstream" / "preflight.json"
+    preflight_path.write_text(json.dumps(preflight), encoding="utf-8")
+    adoption_identity = {
+        "schema_version": 1,
+        "operation": "gate_b",
+        "status": "completed",
+        "decision": "PASS",
+        "contract_hash": downstream.config_hash,
+        "terminal_record_count": 5600,
+        "adoption_rule": "fixed_family_replicates_only_1000_to_200",
+        "adopted_from_contract_hash": base.config_hash,
+        "adopted_gate_b_decision_sha256": "b" * 64,
+        "contract_amendment_sha256": "c" * 64,
+    }
+    adoption = {
+        **adoption_identity,
+        "adoption_sha256": hashlib.sha256(
+            json.dumps(adoption_identity, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
+    }
+    adoption_path = tmp_path / "downstream" / "gate_b_adoption.json"
+    adoption_path.write_text(json.dumps(adoption), encoding="utf-8")
+
+    authorization = write_phase_authorization(
+        downstream,
+        phase="fixed_family",
+        resource_freeze_path=freeze_path,
+        preflight_path=preflight_path,
+        prerequisite_paths=(adoption_path,),
+        output_path=tmp_path / "downstream" / "fixed_family.authorization.json",
+    )
+
+    assert authorization["phase"] == "fixed_family"
+    assert authorization["prerequisite_sha256"] == {
+        "gate_b": hashlib.sha256(adoption_path.read_bytes()).hexdigest()
     }
 
 
@@ -1619,6 +1816,7 @@ def test_one_campaign_table_proves_exact_worker_reducer_and_scientific_coverage(
         for row in rows
         if row["record_type"] == "worker" and row["stage"] == "fixed_family_supplement"
     ]
+    assert len(fixed_family) == G11_CONTRACT.fixed_family_replicates
     assert len({row["family_order_sha256"] for row in fixed_family}) == 1
     fixed_order_path = Path(fixed_family[0]["family_order_path"])
     assert fixed_order_path.is_file()

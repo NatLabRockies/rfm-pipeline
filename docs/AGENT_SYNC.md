@@ -2501,3 +2501,16 @@ ______________________________________________________________________
   `fixed_family` phase. Its environment still pins an older RFM revision, so the RFM repair must be
   committed and the BSM pin/lock updated before the immutable downstream package is generated and
   scheduler-dry-run audited. Gate-B remains the only submitted scientific phase.
+
+## 2026-08-19 — Corrected-run allocation binding
+
+- The tracked Kestrel configuration now binds the user's explicit 30,000-AU ceiling for the
+  corrected manuscript confirmation and downstream continuation. This replaces the earlier
+  25,000-AU scheduler admission value without changing scientific methods, seeds, schedules,
+  resources, or QoS.
+- Package admission still uses exact observed AUs for completed work, a single 20% reserve only on
+  unexecuted work, and the separate 5-AU publication reserve. The configured ceiling and the
+  independently generated campaign budget certificate must agree before any downstream preflight.
+- The paired BSM byte bindings were refreshed for the hybrid adapter, fixed-family-aware recovery
+  driver, and current applied configuration. Deployment must still rewrite repository roots to the
+  clean content-addressed Kestrel checkouts before the no-submit downstream dry run.

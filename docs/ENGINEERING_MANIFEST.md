@@ -292,7 +292,8 @@ ______________________________________________________________________
   empty package/evidence roots, captures same-day AU/Git/Lustre evidence, runs
   exact `sbatch --test-only`, and validates retry-aware capacity without any
   ordinary `sbatch` path.
-- [x] Enforce the author-supplied 25,000-AU whole-campaign ceiling. Admit the
+- [x] Enforce the author-supplied whole-campaign ceiling (originally 25,000 AU;
+  explicitly raised to 30,000 AU for the corrected confirmation on 2026-08-18). Admit the
   bounded pilot independently, select minimum-projected-AU profiles from its
   telemetry, and reject the regenerated final package unless the already-run
   pilot and resolution plus confirmatory production and one shared 20% reserve

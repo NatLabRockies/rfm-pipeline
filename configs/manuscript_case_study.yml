@@ -38,8 +38,8 @@ case_study:
     aggregation_rule_status: frozen_repo_decision
     method: type_aware_tree_shap_binary_factorial
     family_partition_method: bonferroni_partitioned_max_stat
-    tree_family_alpha: 0.025
-    binary_binary_family_alpha: 0.025
+    tree_family_alpha: 0.020
+    binary_binary_family_alpha: 0.020
     binary_binary_method: studentized_factorial_contrast_hc3
     binary_binary_minimum_cell_count: 2
     minimum_selection_draws: 999

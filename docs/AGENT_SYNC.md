@@ -1,3 +1,22 @@
+## SESSION STATE — 2026-08-22 — G11 generation-12 calibration amendment
+
+- Generation 11 failed its fixed-family publication gate at 12/200 events in
+  the 100-pair family (one-sided Wilson upper 0.0939310661 versus the unchanged
+  0.09 limit). The failure is not rounded or accepted, and the limit is not
+  raised after observing the result.
+- The companion BSM adapter also violated the scientific contract by pooling
+  raw TreeSHAP and binary-factorial statistics in one maxT family and comparing
+  them with overall alpha 0.05. The adapter correction evaluates each detector
+  family independently at its contract alpha.
+- G11-v11/generation 12 prospectively freezes 0.020/0.020 detector-family
+  alphas. Development-only diagnostics of the failed bytes showed passing
+  10/100/1,000-pair calibration counts and retained 200/200 strong CC, BC, and
+  BB power at this allocation; those reused outputs are not confirmation.
+- Publication confirmation now requires a fresh contract-hash-derived
+  5,600-task Gate B and exactly 300 fresh fixed-family replicates, with zero
+  seed overlap against generation 11. The 0.09 gate and all model/DGP settings
+  remain unchanged. No downstream phase may adopt the older Gate-B PASS.
+
 ## SESSION STATE — 2026-08-18 — Gate-B binary-factorial correction preflight
 
 - Scope is limited to a prospective, type-aware Gate-B correction and its

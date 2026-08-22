@@ -23,6 +23,29 @@ Agents use this file to convert review findings into planned work instead of lea
 
 ## Findings
 
+### REVIEW-0023 — G11 fixed-family calibration failed after adapter contract drift
+
+- Status: in_progress
+- Severity: high
+- Category: scientific_correctness
+- Disposition: blocker
+- Source: generation-11 fixed-family reducer and production adapter audit
+- Evidence: 12/200 events in the 100-pair family gave Wilson upper
+  0.0939310661 above the frozen 0.09 gate; the BSM adapter pooled TreeSHAP and
+  binary-factorial score scales under overall alpha 0.05 instead of applying
+  detector-partitioned maxT.
+- Affected files: `src/rfm_pipeline/campaign_contract.py`,
+  `configs/manuscript_case_study.yml`, G11 contract/alignment tests, and the
+  companion BSM adapter/config/package.
+- Required action: freeze G11 v11/generation 12 at 0.020/0.020, preserve the
+  unchanged 0.09 gate, precommit 300 fixed-family replicates, verify complete
+  repository gates and independent review, then require fresh zero-overlap
+  5,600-task Gate B plus 300-task fixed-family confirmation.
+- Blocks merge: yes until validation and independent review pass
+- Destination: paired G11 generation-12 calibration branches
+- Notes: development reuse supports design choice only; generation-11 Gate B
+  and fixed-family outputs cannot be adopted as publication confirmation.
+
 ### REVIEW-0001 — Template placeholder
 
 - Status: deferred

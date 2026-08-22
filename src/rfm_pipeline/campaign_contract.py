@@ -98,15 +98,15 @@ class CampaignContract:
             raise ValueError("G11 requires the studentized HC3 binary factorial contrast")
         if self.binary_binary_minimum_cell_count != 2:
             raise ValueError("G11 freezes exactly two observations as the minimum per BB cell")
-        if not math.isclose(self.tree_family_alpha, 0.025, rel_tol=0.0, abs_tol=1.0e-12):
-            raise ValueError("G11 freezes the TreeSHAP family alpha at 0.025")
+        if not math.isclose(self.tree_family_alpha, 0.020, rel_tol=0.0, abs_tol=1.0e-12):
+            raise ValueError("G11 freezes the TreeSHAP family alpha at 0.020")
         if not math.isclose(
             self.binary_binary_family_alpha,
-            0.025,
+            0.020,
             rel_tol=0.0,
             abs_tol=1.0e-12,
         ):
-            raise ValueError("G11 freezes the binary-factorial family alpha at 0.025")
+            raise ValueError("G11 freezes the binary-factorial family alpha at 0.020")
         if self.tree_family_alpha + self.binary_binary_family_alpha > self.alpha + 1.0e-12:
             raise ValueError("G11 detector-family alpha allocations exceed overall alpha")
         low, high = self.resolution_boundary_interval
@@ -330,13 +330,13 @@ _G11_SCENARIOS: tuple[ScenarioSpec, ...] = (
 )
 
 G11_CONTRACT = CampaignContract(
-    schema_version="g11_campaign_contract_v10",
-    generation=11,
+    schema_version="g11_campaign_contract_v11",
+    generation=12,
     method_name="max_stat_adjusted_p_mc",
     interaction_detector_method="type_aware_tree_shap_binary_factorial",
     family_partition_method="bonferroni_partitioned_max_stat",
-    tree_family_alpha=0.025,
-    binary_binary_family_alpha=0.025,
+    tree_family_alpha=0.020,
+    binary_binary_family_alpha=0.020,
     binary_binary_method="studentized_factorial_contrast_hc3",
     binary_binary_minimum_cell_count=2,
     B_screen=3199,

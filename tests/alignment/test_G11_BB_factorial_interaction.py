@@ -300,8 +300,8 @@ def test_type_aware_alpha_partition_must_preserve_overall_fwer() -> None:
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("tree_family_alpha", 0.02),
-        ("binary_binary_family_alpha", 0.02),
+        ("tree_family_alpha", 0.015),
+        ("binary_binary_family_alpha", 0.015),
         ("binary_binary_minimum_cell_count", 3),
     ],
 )
@@ -309,5 +309,16 @@ def test_g11_contract_rejects_drift_from_frozen_family_controls(
     field: str,
     value: float | int,
 ) -> None:
-    with pytest.raises(ValueError, match="frozen|0.025|exactly two"):
+    with pytest.raises(ValueError, match="frozen|0.020|exactly two"):
         replace(G11_CONTRACT, **{field: value})
+
+
+def test_g11_amended_detector_alphas_target_reliable_fixed_family_calibration() -> None:
+    """The amended contract spends 0.04 FWER while preserving strong-signal power."""
+    assert G11_CONTRACT.schema_version == "g11_campaign_contract_v11"
+    assert G11_CONTRACT.generation == 12
+    assert G11_CONTRACT.tree_family_alpha == pytest.approx(0.020)
+    assert G11_CONTRACT.binary_binary_family_alpha == pytest.approx(0.020)
+    assert (
+        G11_CONTRACT.tree_family_alpha + G11_CONTRACT.binary_binary_family_alpha
+    ) == pytest.approx(0.04)

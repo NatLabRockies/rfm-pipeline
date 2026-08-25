@@ -1,3 +1,41 @@
+## SESSION STATE — 2026-08-25 — G12 recovery empty-HC3 repair validated
+
+- Recovery execution stopped fail-closed after preserving exactly 593/800
+  successful replicates. Tasks 576, 577, and 580 deterministically reached an
+  empty HC3-retained support and then failed because the manuscript terminal
+  path requires at least one retained feature; tasks 206 and 291 separately
+  timed out without artifacts.
+- This slice is limited to representing empty HC3 support as a valid recovery
+  outcome with a training-mean frozen predictor. The production manuscript
+  terminal gate must remain strict, and accepted seeds, methods, thresholds,
+  parents, and successful replicate bytes must not change.
+- Work starts from the exact production RFM commit
+  `fb8b57f180ac24aba9ed6df01726cb1f380ee65f` in an isolated worktree because
+  the primary worktree contains unrelated changes. Tests will be written and
+  observed failing before implementation; no scheduler resubmission is allowed
+  until full validation, independent review, an immutable repair package, and
+  exact zero-duplicate proof pass.
+- The focused regression test was observed failing at import before the
+  recovery-only helper existed. The implementation now freezes the training
+  response mean when recovery yields empty HC3 support, records an empty final
+  support and explicit `completed_empty_hc3_support` status, and preserves the
+  public manuscript terminal path's nonempty-support failure.
+- Validation passed: the focused alignment module (11 tests), a 30-test
+  terminal/recovery/interaction suite, Ruff formatting and lint checks,
+  `git diff --check`, and the authoritative `./test_repo.sh --check` gate. The
+  full gate included all unit and workflow tests, execution of all nine
+  manuscript notebooks, the documentation build, package builds, repository
+  hygiene, and final diff checks.
+- Independent review passed with no blocking findings. The reviewer separately
+  ran four focused tests plus a persisted-bundle reload/hash/zero-column
+  prediction probe, confirmed freeze-before-evaluation ordering, and verified
+  that the public manuscript terminal gate remains strict.
+- Kestrel and Teleport became unreachable during local validation (Kestrel SSH
+  timeout; Teleport proxy DNS resolution failure). The recovery scheduler chain
+  was already stopped before that connectivity loss. No resubmission may occur
+  until connectivity is restored and the immutable repair-package preflight
+  passes.
+
 ## SESSION STATE — 2026-08-22 — G11 generation-12 calibration amendment
 
 - Generation 11 failed its fixed-family publication gate at 12/200 events in

@@ -2161,6 +2161,24 @@ def terminal_train_fit_and_freeze(
     holdout parameter: it emits a verified model freeze before another process
     may open those bytes.
     """
+    return _terminal_train_fit_and_freeze(
+        x_train,
+        y_train,
+        spec=spec,
+        contract_hash=contract_hash,
+        allow_empty_hc3_support=False,
+    )
+
+
+def _terminal_train_fit_and_freeze(
+    x_train: pd.DataFrame,
+    y_train: pd.DataFrame,
+    *,
+    spec: FinalManuscriptArtifactsSpec,
+    contract_hash: str,
+    allow_empty_hc3_support: bool,
+) -> TerminalTrainFitResult:
+    """Run the terminal fit with an explicit recovery-only empty-support policy."""
     _validate_final_manuscript_artifacts_spec(spec)
     x_numeric = x_train.apply(pd.to_numeric, errors="raise")
     y_numeric = y_train.apply(pd.to_numeric, errors="raise")
@@ -2189,6 +2207,59 @@ def terminal_train_fit_and_freeze(
         random_seed=spec.hc3_output_random_seed,
         subset_metric=spec.hc3_output_subset_metric,
     )
+    if not bool(hc3_summary["hc3_retained_after_filter"].any()):
+        if not allow_empty_hc3_support:
+            _hc3_retained_feature_names(hc3_summary)
+        freeze_result = train_mean_and_freeze(
+            y_numeric.to_numpy(dtype=np.float64),
+            output_names=[str(name) for name in y_numeric.columns],
+            contract_hash=contract_hash,
+        )
+        pruning_impact = pd.DataFrame(
+            columns=[
+                "feature_name",
+                "baseline_macro_nrmse",
+                "noref_drop_macro_nrmse",
+                "delta_nrmse_when_feature_removed",
+                "delta_nrmse_nonnegative",
+                "delta_nrmse_abs",
+                "remove_rank",
+                "retained_features",
+                "removed_fraction",
+                "cumulative_delta_upper_bound",
+                "approx_macro_nrmse_upper_bound",
+                "utility_score",
+                "selected_by_auto_cutoff",
+                "selected_by_effective_cutoff",
+            ]
+        )
+        pruning_summary = pd.DataFrame(
+            [
+                {
+                    "stage": "feature_pruning_diagnostics",
+                    "status": "not_run_empty_hc3_support",
+                    "method": "not_run",
+                    "n_features_total": 0,
+                    "n_outputs_total": int(y_numeric.shape[1]),
+                    "n_outputs_included_in_macro": 0,
+                    "auto_remove_count": 0,
+                    "auto_retained_features": 0,
+                    "override_source": "not_applicable",
+                    "effective_remove_count": 0,
+                    "effective_retained_features": 0,
+                }
+            ]
+        )
+        return TerminalTrainFitResult(
+            freeze_result=freeze_result,
+            prefilter_feature_names=prefilter_names,
+            hc3_feature_names=(),
+            final_feature_names=(),
+            hc3_wald_intervals=hc3_intervals,
+            hc3_inferential_filter_summary=hc3_summary,
+            feature_pruning_impact=pruning_impact,
+            feature_pruning_summary=pruning_summary,
+        )
     hc3_names = tuple(_hc3_retained_feature_names(hc3_summary))
     hc3_x = x_numeric.loc[:, list(hc3_names)]
     hc3_fit = fit_final_ols(hc3_x, y_numeric)
@@ -10526,11 +10597,6 @@ def _build_hc3_inferential_filter_tables(
 
     intervals = pd.DataFrame(interval_rows)
     summary = pd.DataFrame(feature_rows)
-    if not bool(summary["hc3_retained_after_filter"].any()):
-        raise ValueError(
-            "The HC3 final inferential filter removed every sparse/stable feature. "
-            "The final manuscript OLS stage requires at least one retained term."
-        )
     return intervals, summary
 
 

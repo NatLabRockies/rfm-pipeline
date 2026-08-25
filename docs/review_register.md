@@ -23,6 +23,30 @@ Agents use this file to convert review findings into planned work instead of lea
 
 ## Findings
 
+### REVIEW-0024 — G12 recovery empty-HC3 repair independently accepted
+
+- Status: fixed
+- Severity: low
+- Category: scientific_correctness
+- Disposition: no_action
+- Source: independent reviewer agent on the isolated
+  `codex/g12-recovery-empty-support` worktree
+- Evidence: review found no blocking issues; four focused tests, persisted
+  terminal-bundle reload/hash verification, zero-column prediction, and
+  `git diff --check` all passed. Recovery alone may record empty HC3 support
+  using a frozen training-mean predictor, while the public manuscript terminal
+  path continues to reject empty support.
+- Affected files: `src/rfm_pipeline/manuscript_stages.py`,
+  `src/rfm_pipeline/recovery_study.py`, and
+  `tests/alignment/test_R4_S02_production_pipeline_runner.py`
+- Required action: completed; preserve the reviewed behavior in the immutable
+  repair package and rerun only the exact complement of successful recovery
+  task IDs after production preflight.
+- Blocks merge: no
+- Destination: G12 recovery repair package and missing-task resubmission
+- Notes: the reviewer made no worktree changes and found no changes to methods,
+  thresholds, seeds, parents, successful artifacts, or scheduler state.
+
 ### REVIEW-0023 — G11 fixed-family calibration failed after adapter contract drift
 
 - Status: in_progress

@@ -40,6 +40,7 @@ from .manuscript_stages import (
     NonlinearDiscoverySpec,
     OutputConditioningSpec,
     SparseSelectionStabilitySpec,
+    _terminal_train_fit_and_freeze,
     build_manuscript_feature_design,
     condition_manuscript_outputs,
     discover_manuscript_nonlinear_transformations,
@@ -48,7 +49,6 @@ from .manuscript_stages import (
     score_interaction_draw_block,
     screen_manuscript_empirical_null_terms,
     select_manuscript_sparse_support,
-    terminal_train_fit_and_freeze,
     train_fit_and_freeze,
     write_frozen_prediction_matrices,
     write_terminal_train_fit_and_freeze,
@@ -906,11 +906,12 @@ def run_production_recovery_pipeline(
         pruning_error_scale_quantile=0.95,
         n_jobs=1,
     )
-    terminal = terminal_train_fit_and_freeze(
+    terminal = _terminal_train_fit_and_freeze(
         x_train_frame,
         y_train_frame,
         spec=final_spec,
         contract_hash=contract_hash,
+        allow_empty_hc3_support=True,
     )
     terminal_root = artifact_dir / "terminal_train_fit"
     write_terminal_train_fit_and_freeze(terminal=terminal, output_dir=terminal_root)
@@ -953,7 +954,7 @@ def run_production_recovery_pipeline(
         nonlinear_retained_set=nonlinear_retained_set,
         final_selected_support=final_selected_support,
         eval_predictions=eval_predictions,
-        terminal_status="completed",
+        terminal_status=("completed" if final_selected_support else "completed_empty_hc3_support"),
         contract_hash=contract_hash,
         interaction_artifact_checksums=interaction_checksums,
         model_freeze_hash=terminal.freeze_result.freeze_manifest.freeze_hash,

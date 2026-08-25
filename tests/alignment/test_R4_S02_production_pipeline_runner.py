@@ -8,10 +8,17 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pandas as pd
 import pytest
 
 import rfm_pipeline.recovery_study as recovery
 from rfm_pipeline.campaign_contract import G11_CONTRACT
+from rfm_pipeline.manuscript_stages import (
+    FinalManuscriptArtifactsSpec,
+    _terminal_train_fit_and_freeze,
+    terminal_train_fit_and_freeze,
+    write_terminal_train_fit_and_freeze,
+)
 from rfm_pipeline.recovery_study import run_production_recovery_pipeline
 
 
@@ -102,6 +109,77 @@ def test_recovery_runner_source_uses_persisted_global_reducer_and_terminal_freez
         assert symbol in source
     assert "discover_manuscript_interactions" not in source
     assert "except" not in source
+    assert "completed_empty_hc3_support" in source
+
+
+def _terminal_spec() -> FinalManuscriptArtifactsSpec:
+    return FinalManuscriptArtifactsSpec(
+        final_predictor_count_reference=0,
+        final_first_order_input_count_reference=0,
+        intermediate_penalized_holdout_nrmse_reference=0.0,
+        final_ols_holdout_nrmse_reference=0.0,
+        nrmse_denominator_definition="training_response_range",
+        nrmse_min_range=1.0e-12,
+        nrmse_reference_matrix="Y_train",
+        bootstrap_count=2,
+        inferential_filter_alpha=0.05,
+        n_jobs=1,
+    )
+
+
+def test_recovery_terminal_freezes_training_mean_for_empty_hc3_support(
+    tmp_path: Path,
+) -> None:
+    """An empty recovery support is a measured outcome, not a failed replicate."""
+    index = pd.Index(range(12), name="sample_id")
+    x_train = pd.DataFrame({"x0": np.zeros(12)}, index=index)
+    y_train = pd.DataFrame(
+        {
+            "y0": np.linspace(-1.0, 1.0, 12),
+            "y1": np.linspace(2.0, 3.0, 12),
+        },
+        index=index,
+    )
+
+    terminal = _terminal_train_fit_and_freeze(
+        x_train,
+        y_train,
+        spec=_terminal_spec(),
+        contract_hash="a" * 64,
+        allow_empty_hc3_support=True,
+    )
+
+    assert terminal.prefilter_feature_names == ("x0",)
+    assert terminal.hc3_feature_names == ()
+    assert terminal.final_feature_names == ()
+    assert terminal.freeze_result.freeze_manifest.feature_names == ()
+    np.testing.assert_allclose(
+        terminal.freeze_result.intercept,
+        y_train.to_numpy(dtype=float).mean(axis=0),
+    )
+    assert not terminal.hc3_inferential_filter_summary["hc3_retained_after_filter"].any()
+    assert terminal.feature_pruning_impact.empty
+    assert terminal.feature_pruning_summary.loc[0, "status"] == "not_run_empty_hc3_support"
+
+    output_dir = tmp_path / "empty-hc3-terminal"
+    write_terminal_train_fit_and_freeze(terminal=terminal, output_dir=output_dir)
+    assert (output_dir / "terminal_manifest.json").exists()
+    assert (output_dir / "model" / "freeze_manifest.json").exists()
+
+
+def test_manuscript_terminal_still_rejects_empty_hc3_support() -> None:
+    """Recovery handling must not weaken the publication terminal gate."""
+    index = pd.Index(range(12), name="sample_id")
+    x_train = pd.DataFrame({"x0": np.zeros(12)}, index=index)
+    y_train = pd.DataFrame({"y0": np.linspace(-1.0, 1.0, 12)}, index=index)
+
+    with pytest.raises(ValueError, match="retained no final features"):
+        terminal_train_fit_and_freeze(
+            x_train,
+            y_train,
+            spec=_terminal_spec(),
+            contract_hash="b" * 64,
+        )
 
 
 def test_evaluation_truth_is_not_materialized_before_terminal_freeze() -> None:

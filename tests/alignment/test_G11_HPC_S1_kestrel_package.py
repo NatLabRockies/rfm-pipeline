@@ -2462,13 +2462,31 @@ def test_reconciliation_rejects_truncated_recovery_contract_coverage(tmp_path: P
         hpc._cli_reconcile_audit(Namespace(plan=plan_path, output_root=tmp_path / "audit"))
 
 
+def test_frozen_reconciliation_inventory_uses_the_plan_contract() -> None:
+    selected = replace(G11_CONTRACT, resolution_decision_sha256="a" * 64)
+    descriptors = hpc._replicate_descriptors({"stress"}, operation="recovery", contract=selected)
+    records = [
+        {"parent_hash": "parent", "shard_id": f"task-{index:04d}", **descriptor}
+        for index, descriptor in enumerate(descriptors)
+    ]
+
+    hpc._validate_frozen_replicate_inventory(
+        records,
+        kinds={"stress"},
+        operation="recovery",
+        expected_count=800,
+        label="recovery reconciliation",
+        contract=selected,
+    )
+
+
 def test_frozen_replicate_inventory_rejects_descriptor_or_parent_drift(tmp_path: Path) -> None:
     dag = _package(tmp_path / "campaign")
     recovery_records = hpc.load_stage_manifest(_stage(dag, "recovery").manifest_path)
-    hpc._validate_frozen_recovery_identity(recovery_records)
+    hpc._validate_frozen_recovery_identity(recovery_records, contract=G11_CONTRACT)
     recovery_records[0]["n_train"] += 1
     with pytest.raises(ValueError, match="frozen contract inventory"):
-        hpc._validate_frozen_recovery_identity(recovery_records)
+        hpc._validate_frozen_recovery_identity(recovery_records, contract=G11_CONTRACT)
 
     gate_b_records = hpc.load_stage_manifest(_stage(dag, "gate_b").manifest_path)
     gate_b_records[1]["parent_hash"] = "0" * 64
@@ -2479,6 +2497,7 @@ def test_frozen_replicate_inventory_rejects_descriptor_or_parent_drift(tmp_path:
             operation="gate_b",
             expected_count=5600,
             label="Gate-B evidence",
+            contract=G11_CONTRACT,
         )
 
 
@@ -2541,7 +2560,7 @@ def test_reconciliation_full_recovery_requires_byte_bound_gate_b_evidence(tmp_pa
         "decision_sha256": hashlib.sha256(placeholder.read_bytes()).hexdigest(),
     }
     with pytest.raises(ValueError, match="Gate-B manifest bytes differ"):
-        hpc._validate_gate_b_evidence(gate_b, contract_hash=dag.config_hash)
+        hpc._validate_gate_b_evidence(gate_b, contract_hash=dag.config_hash, contract=G11_CONTRACT)
 
 
 def test_gate_b_evidence_accepts_complete_chain_and_rejects_semantic_tampering(
@@ -2549,7 +2568,9 @@ def test_gate_b_evidence_accepts_complete_chain_and_rejects_semantic_tampering(
 ) -> None:
     evidence, contract_hash = _write_valid_gate_b_evidence(tmp_path)
 
-    assert hpc._validate_gate_b_evidence(evidence, contract_hash=contract_hash) == {
+    assert hpc._validate_gate_b_evidence(
+        evidence, contract_hash=contract_hash, contract=G11_CONTRACT
+    ) == {
         "manifest_sha256": evidence["manifest_sha256"],
         "audit_result_sha256": evidence["audit_result_sha256"],
         "reduced_result_sha256": evidence["reduced_result_sha256"],
@@ -2582,7 +2603,7 @@ def test_gate_b_evidence_accepts_complete_chain_and_rejects_semantic_tampering(
     )
     evidence["audit_success_sha256"] = hashlib.sha256(audit_success_path.read_bytes()).hexdigest()
     with pytest.raises(ValueError, match="Gate-B attempt ledger differs"):
-        hpc._validate_gate_b_evidence(evidence, contract_hash=contract_hash)
+        hpc._validate_gate_b_evidence(evidence, contract_hash=contract_hash, contract=G11_CONTRACT)
 
     ledger_path.write_bytes(original_ledger)
     audit_result_path.write_bytes(original_audit_result)
@@ -2631,7 +2652,7 @@ def test_gate_b_evidence_accepts_complete_chain_and_rejects_semantic_tampering(
         reducer_success_path.read_bytes()
     ).hexdigest()
     with pytest.raises(ValueError, match="Gate-B null decision metrics differ"):
-        hpc._validate_gate_b_evidence(evidence, contract_hash=contract_hash)
+        hpc._validate_gate_b_evidence(evidence, contract_hash=contract_hash, contract=G11_CONTRACT)
 
 
 def test_reconciliation_rejects_contract_bytes_or_scientific_fields(tmp_path: Path) -> None:

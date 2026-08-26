@@ -5358,9 +5358,10 @@ def _validate_frozen_replicate_inventory(
     operation: str,
     expected_count: int,
     label: str,
+    contract: CampaignContract,
 ) -> None:
     """Bind every replicate field to the complete frozen contract descriptor."""
-    expected = _replicate_descriptors(kinds, operation=operation, contract=G11_CONTRACT)
+    expected = _replicate_descriptors(kinds, operation=operation, contract=contract)
     if len(expected) != expected_count or len(records) != expected_count:
         raise ValueError(f"{label} requires exactly {expected_count} frozen shards")
     if len({str(record.get("parent_hash", "")) for record in records}) != 1:
@@ -5371,7 +5372,9 @@ def _validate_frozen_replicate_inventory(
             raise ValueError(f"{label} differs from the frozen contract inventory")
 
 
-def _validate_frozen_recovery_identity(records: list[dict[str, Any]]) -> None:
+def _validate_frozen_recovery_identity(
+    records: list[dict[str, Any]], *, contract: CampaignContract
+) -> None:
     """Bind recovery reconciliation to the contract's exact 800 stress replicates."""
     _validate_frozen_replicate_inventory(
         records,
@@ -5379,6 +5382,7 @@ def _validate_frozen_recovery_identity(records: list[dict[str, Any]]) -> None:
         operation="recovery",
         expected_count=800,
         label="recovery reconciliation",
+        contract=contract,
     )
 
 
@@ -5524,7 +5528,9 @@ def _validate_record_runtime_components(records: list[dict[str, Any]]) -> None:
             raise ValueError(f"runtime {path_field} bytes differ")
 
 
-def _validate_gate_b_evidence(raw: Any, *, contract_hash: str) -> dict[str, Any]:
+def _validate_gate_b_evidence(
+    raw: Any, *, contract_hash: str, contract: CampaignContract
+) -> dict[str, Any]:
     """Revalidate the complete sealed Gate-B prerequisite evidence chain."""
     required = {
         "manifest",
@@ -5571,6 +5577,7 @@ def _validate_gate_b_evidence(raw: Any, *, contract_hash: str) -> dict[str, Any]
         operation="gate_b",
         expected_count=5600,
         label="Gate-B evidence",
+        contract=contract,
     )
     if any(
         record["stage"] != "gate_b" or record["config_hash"] != contract_hash for record in records
@@ -5753,7 +5760,7 @@ def _load_reconciled_records(
     contract_path = Path(str(plan["contract_config"]))
     if _hash_file(contract_path) != str(plan["contract_config_sha256"]):
         raise ValueError("reconciliation contract bytes differ")
-    _, loaded_contract_hash = load_contract(contract_path)
+    contract, loaded_contract_hash = load_contract(contract_path)
     if loaded_contract_hash != contract_hash:
         raise ValueError("reconciliation contract identity differs")
 
@@ -5779,7 +5786,7 @@ def _load_reconciled_records(
     ):
         raise ValueError("reconciliation baseline contract path differs from the plan")
     if stage == "recovery":
-        _validate_frozen_recovery_identity(baseline_records)
+        _validate_frozen_recovery_identity(baseline_records, contract=contract)
 
     raw_cohorts = plan["cohorts"]
     if not isinstance(raw_cohorts, list) or len(raw_cohorts) < 2:
@@ -5843,9 +5850,9 @@ def _load_reconciled_records(
         )
     ordered = [selected[str(record["shard_id"])] for record in baseline_records]
     if stage == "recovery":
-        _validate_frozen_recovery_identity(ordered)
+        _validate_frozen_recovery_identity(ordered, contract=contract)
         plan["validated_gate_b_evidence"] = _validate_gate_b_evidence(
-            plan["gate_b_evidence"], contract_hash=contract_hash
+            plan["gate_b_evidence"], contract_hash=contract_hash, contract=contract
         )
     elif plan["gate_b_evidence"] is not None:
         raise ValueError("non-recovery reconciliation must not bind Gate-B evidence")

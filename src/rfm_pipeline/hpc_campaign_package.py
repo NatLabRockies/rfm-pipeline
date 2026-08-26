@@ -12,6 +12,7 @@ import platform
 import re
 import resource
 import subprocess
+import tempfile
 import time
 from dataclasses import asdict, dataclass, replace
 from datetime import date
@@ -31,6 +32,7 @@ from rfm_pipeline.campaign_contract import (
     fixed_family_pair_order,
     load_contract,
     render_contract_toml,
+    wilson_upper_bound,
 )
 
 _HASH_FIELDS = (
@@ -43,6 +45,23 @@ _HASH_FIELDS = (
     "output_hash",
 )
 _PLACEHOLDER_TOKENS = ("{TODO", "TBD", "<PLACEHOLDER>", "{user}", "{run_id}")
+_RECONCILIATION_PROVENANCE_FIELDS = frozenset(
+    {
+        "attempt",
+        "campaign_inventory_path",
+        "execution_authorization_path",
+        "input_hash",
+        "output_hash",
+        "partition",
+        "resource_freeze_sha256",
+        "rfm_repository_root",
+        "schedule_hash",
+        "source_hash",
+        "status",
+        "success_marker",
+        "worker_resources",
+    }
+)
 _RESOLUTION_FIXTURES = ("nondegenerate_null", "strong_planted")
 _PILOT_STAGES = (
     "scheduler_diagnostic",
@@ -4292,6 +4311,11 @@ def _hash_python_tree(path: Path) -> str:
 
 def _validate_runtime_identity(records: list[dict[str, Any]]) -> None:
     """Bind every worker, audit, and reducer to the packaged checkout bytes."""
+    _validate_runtime_identity_at(records, checkout=Path.cwd())
+
+
+def _validate_runtime_identity_at(records: list[dict[str, Any]], *, checkout: str | Path) -> None:
+    """Bind one uniform manifest cohort to an explicit immutable checkout."""
     if not records:
         raise ValueError("runtime identity requires at least one manifest record")
     expected_source = str(records[0]["source_hash"])
@@ -4301,10 +4325,10 @@ def _validate_runtime_identity(records: list[dict[str, Any]]) -> None:
         for record in records
     ):
         raise ValueError("manifest mixes source or lock identities")
-    checkout = Path.cwd().resolve()
-    if _hash_python_tree(checkout / "src" / "rfm_pipeline") != expected_source:
+    checkout_path = Path(checkout).resolve()
+    if _hash_python_tree(checkout_path / "src" / "rfm_pipeline") != expected_source:
         raise ValueError("runtime RFM source tree differs from the manifest")
-    if _hash_file(checkout / "pixi.lock") != expected_lock:
+    if _hash_file(checkout_path / "pixi.lock") != expected_lock:
         raise ValueError("runtime RFM lock file differs from the manifest")
 
 
@@ -4502,6 +4526,96 @@ def _execute_scientific_reduce(
     result = reduce_stage(records, output_dir)
     if not isinstance(result, dict) or result.get("status") != "completed":
         raise RuntimeError("scientific adapter did not return a completed reduction")
+    _validate_scientific_artifacts(result, allowed_root=output_dir)
+    return result
+
+
+def _execute_scientific_reduce_at_runtime(
+    records: list[dict[str, Any]],
+    *,
+    runtime_root: Path,
+    replay_root: Path,
+) -> dict[str, Any]:
+    """Replay a reducer in the exact isolated Pixi runtime bound to its manifest."""
+    if not records:
+        raise ValueError("isolated scientific reducer requires manifest records")
+    runtime_root = runtime_root.resolve(strict=True)
+    runtime_source = (runtime_root / "src").resolve(strict=True)
+    runtime_python = runtime_root / ".pixi" / "envs" / "default" / "bin" / "python"
+    if not runtime_python.is_file() or not os.access(runtime_python, os.X_OK):
+        raise ValueError("validated runtime has no executable Pixi Python")
+    adapter_path = Path(str(records[0].get("scientific_adapter_path", ""))).resolve(strict=True)
+    adapter_hash = str(records[0].get("scientific_adapter_sha256", ""))
+    if (
+        any(
+            Path(str(record.get("scientific_adapter_path", ""))).resolve(strict=True)
+            != adapter_path
+            or str(record.get("scientific_adapter_sha256", "")) != adapter_hash
+            for record in records
+        )
+        or _hash_file(adapter_path) != adapter_hash
+    ):
+        raise ValueError("isolated scientific reducer adapter identity differs")
+    manifest_path = replay_root / "manifest.jsonl"
+    output_dir = replay_root / "output"
+    result_path = replay_root / "replay_result.json"
+    _write_jsonl(manifest_path, records)
+    output_dir.mkdir(parents=True)
+    script = """
+import importlib.util
+import json
+import pathlib
+import sys
+
+manifest_path = pathlib.Path(sys.argv[1])
+adapter_path = pathlib.Path(sys.argv[2])
+output_dir = pathlib.Path(sys.argv[3])
+result_path = pathlib.Path(sys.argv[4])
+expected_source = pathlib.Path(sys.argv[5]).resolve()
+import rfm_pipeline
+loaded_source = pathlib.Path(rfm_pipeline.__file__).resolve().parents[1]
+if loaded_source != expected_source:
+    raise RuntimeError(f"isolated replay imported {loaded_source}, expected {expected_source}")
+records = [json.loads(line) for line in manifest_path.read_text().splitlines() if line.strip()]
+spec = importlib.util.spec_from_file_location("_isolated_scientific_adapter", adapter_path)
+if spec is None or spec.loader is None:
+    raise RuntimeError("could not load isolated scientific adapter")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+reduce_stage = getattr(module, "reduce_scientific_stage", None)
+if not callable(reduce_stage):
+    raise RuntimeError("isolated scientific adapter lacks reduce_scientific_stage")
+result = reduce_stage(records, output_dir)
+result_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\\n")
+"""
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(runtime_source)
+    environment["PYTHONNOUSERSITE"] = "1"
+    completed = subprocess.run(
+        [
+            str(runtime_python),
+            "-c",
+            script,
+            str(manifest_path),
+            str(adapter_path),
+            str(output_dir),
+            str(result_path),
+            str(runtime_source),
+        ],
+        cwd=runtime_root,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0 or not result_path.is_file():
+        raise RuntimeError(
+            "isolated scientific reducer replay failed: "
+            f"stdout={completed.stdout!r}, stderr={completed.stderr!r}"
+        )
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    if not isinstance(result, dict) or result.get("status") != "completed":
+        raise RuntimeError("isolated scientific adapter did not complete")
     _validate_scientific_artifacts(result, allowed_root=output_dir)
     return result
 
@@ -5230,6 +5344,765 @@ def _run_pilot_bootstrap(record: dict[str, Any], shard_dir: Path) -> dict[str, A
     }
 
 
+def _reconciliation_scientific_identity(record: dict[str, Any]) -> dict[str, Any]:
+    """Return fields that must not change across a runtime-only repair."""
+    return {
+        key: value for key, value in record.items() if key not in _RECONCILIATION_PROVENANCE_FIELDS
+    }
+
+
+def _validate_frozen_replicate_inventory(
+    records: list[dict[str, Any]],
+    *,
+    kinds: set[str],
+    operation: str,
+    expected_count: int,
+    label: str,
+) -> None:
+    """Bind every replicate field to the complete frozen contract descriptor."""
+    expected = _replicate_descriptors(kinds, operation=operation, contract=G11_CONTRACT)
+    if len(expected) != expected_count or len(records) != expected_count:
+        raise ValueError(f"{label} requires exactly {expected_count} frozen shards")
+    if len({str(record.get("parent_hash", "")) for record in records}) != 1:
+        raise ValueError(f"{label} parent identity differs")
+    for index, (record, descriptor) in enumerate(zip(records, expected, strict=True)):
+        expected_identity = {"shard_id": f"task-{index:04d}", **descriptor}
+        if any(record.get(key) != value for key, value in expected_identity.items()):
+            raise ValueError(f"{label} differs from the frozen contract inventory")
+
+
+def _validate_frozen_recovery_identity(records: list[dict[str, Any]]) -> None:
+    """Bind recovery reconciliation to the contract's exact 800 stress replicates."""
+    _validate_frozen_replicate_inventory(
+        records,
+        kinds={"stress"},
+        operation="recovery",
+        expected_count=800,
+        label="recovery reconciliation",
+    )
+
+
+def _validate_gate_b_decision(decision: dict[str, Any], *, contract_hash: str) -> None:
+    """Validate the accepted Gate-B decision semantically, not merely by hash."""
+    required = {
+        "operation",
+        "status",
+        "decision",
+        "contract_hash",
+        "terminal_record_count",
+        "scenarios",
+    }
+    if set(decision) != required or (
+        decision.get("operation") != "gate_b"
+        or decision.get("status") != "completed"
+        or decision.get("decision") != "PASS"
+        or decision.get("contract_hash") != contract_hash
+        or decision.get("terminal_record_count") != 5600
+    ):
+        raise ValueError("Gate-B decision semantics differ")
+    scenarios = decision.get("scenarios")
+    expected = {
+        scenario.id: scenario
+        for scenario in G11_CONTRACT.scenarios
+        if scenario.kind in {"null", "strong"}
+    }
+    if not isinstance(scenarios, dict) or set(scenarios) != set(expected):
+        raise ValueError("Gate-B decision scenario coverage differs")
+    for scenario_id, scenario in expected.items():
+        row = scenarios[scenario_id]
+        if not isinstance(row, dict) or row.get("denominator") != scenario.n_replicates:
+            raise ValueError("Gate-B decision scenario denominator differs")
+        if scenario.kind == "null":
+            fields = {
+                "denominator",
+                "false_selection_events",
+                "fwer",
+                "one_sided_wilson_upper",
+                "passes_calibration",
+            }
+            if scenario_id != "global_null":
+                fields |= {
+                    "nondegenerate_count",
+                    "nondegenerate_rate",
+                    "passes_nondegeneracy",
+                }
+            events = int(row.get("false_selection_events", -1))
+            expected_upper = wilson_upper_bound(
+                events,
+                scenario.n_replicates,
+                G11_CONTRACT.calibration_confidence,
+            )
+            expected_calibration = expected_upper <= G11_CONTRACT.gate_value
+            if (
+                set(row) != fields
+                or not 0 <= events <= scenario.n_replicates
+                or not math.isclose(
+                    float(row.get("fwer", -1.0)),
+                    events / scenario.n_replicates,
+                    rel_tol=0.0,
+                    abs_tol=1e-15,
+                )
+                or not math.isclose(
+                    float(row.get("one_sided_wilson_upper", -1.0)),
+                    expected_upper,
+                    rel_tol=0.0,
+                    abs_tol=1e-15,
+                )
+                or row.get("passes_calibration") is not expected_calibration
+                or not expected_calibration
+            ):
+                raise ValueError("Gate-B null decision metrics differ")
+            if scenario_id != "global_null":
+                nondegenerate = int(row.get("nondegenerate_count", -1))
+                expected_rate = nondegenerate / scenario.n_replicates
+                expected_nondegeneracy = expected_rate >= 0.90
+                if (
+                    not 0 <= nondegenerate <= scenario.n_replicates
+                    or not math.isclose(
+                        float(row.get("nondegenerate_rate", -1.0)),
+                        expected_rate,
+                        rel_tol=0.0,
+                        abs_tol=1e-15,
+                    )
+                    or row.get("passes_nondegeneracy") is not expected_nondegeneracy
+                    or not expected_nondegeneracy
+                ):
+                    raise ValueError("Gate-B nondegeneracy decision metrics differ")
+        else:
+            fields = {
+                "denominator",
+                "discovery_events",
+                "power",
+                "one_sided_wilson_lower",
+                "passes_power",
+            }
+            events = int(row.get("discovery_events", -1))
+            expected_lower = 1.0 - wilson_upper_bound(
+                scenario.n_replicates - events,
+                scenario.n_replicates,
+                G11_CONTRACT.calibration_confidence,
+            )
+            expected_power = expected_lower >= G11_CONTRACT.power_gate_lower_bound
+            if (
+                set(row) != fields
+                or not 0 <= events <= scenario.n_replicates
+                or not math.isclose(
+                    float(row.get("power", -1.0)),
+                    events / scenario.n_replicates,
+                    rel_tol=0.0,
+                    abs_tol=1e-15,
+                )
+                or not math.isclose(
+                    float(row.get("one_sided_wilson_lower", -1.0)),
+                    expected_lower,
+                    rel_tol=0.0,
+                    abs_tol=1e-15,
+                )
+                or row.get("passes_power") is not expected_power
+                or not expected_power
+            ):
+                raise ValueError("Gate-B strong decision metrics differ")
+
+
+def _validate_record_runtime_components(records: list[dict[str, Any]]) -> None:
+    """Bind every BSM production component used by Gate-B worker and reducer code."""
+    components = (
+        ("scientific_adapter_path", "scientific_adapter_sha256"),
+        ("bsm_recovery_driver_path", "bsm_recovery_driver_sha256"),
+        ("bsm_dgp_contract_path", "bsm_dgp_contract_sha256"),
+        ("applied_config_path", "applied_config_sha256"),
+        ("applied_data_preparer_path", "applied_data_preparer_sha256"),
+    )
+    for path_field, hash_field in components:
+        identities = {
+            (str(record.get(path_field, "")), str(record.get(hash_field, ""))) for record in records
+        }
+        if len(identities) != 1:
+            raise ValueError(f"manifest mixes {path_field} identities")
+        path_text, expected_hash = identities.pop()
+        if _hash_file(Path(path_text)) != expected_hash:
+            raise ValueError(f"runtime {path_field} bytes differ")
+
+
+def _validate_gate_b_evidence(raw: Any, *, contract_hash: str) -> dict[str, Any]:
+    """Revalidate the complete sealed Gate-B prerequisite evidence chain."""
+    required = {
+        "manifest",
+        "manifest_sha256",
+        "runtime_root",
+        "audit_success",
+        "audit_success_sha256",
+        "audit_result",
+        "audit_result_sha256",
+        "attempt_ledger",
+        "attempt_ledger_sha256",
+        "reducer_success",
+        "reducer_success_sha256",
+        "reduced_result",
+        "reduced_result_sha256",
+        "decision",
+        "decision_sha256",
+    }
+    if not isinstance(raw, dict) or set(raw) != required:
+        raise ValueError("recovery reconciliation requires sealed Gate-B evidence")
+
+    paths = {
+        key: Path(str(raw[key]))
+        for key in (
+            "manifest",
+            "audit_success",
+            "audit_result",
+            "attempt_ledger",
+            "reducer_success",
+            "reduced_result",
+            "decision",
+        )
+    }
+    for key, path in paths.items():
+        if _hash_file(path) != str(raw[f"{key}_sha256"]):
+            raise ValueError(f"Gate-B {key} bytes differ")
+
+    records = load_stage_manifest(paths["manifest"])
+    _validate_runtime_identity_at(records, checkout=str(raw["runtime_root"]))
+    _validate_record_runtime_components(records)
+    _validate_frozen_replicate_inventory(
+        records,
+        kinds={"null", "strong"},
+        operation="gate_b",
+        expected_count=5600,
+        label="Gate-B evidence",
+    )
+    if any(
+        record["stage"] != "gate_b" or record["config_hash"] != contract_hash for record in records
+    ):
+        raise ValueError("Gate-B manifest differs from the frozen contract inventory")
+
+    artifact_hashes = [_validate_reconciled_artifact(record) for record in records]
+    audit_marker = json.loads(paths["audit_success"].read_text(encoding="utf-8"))
+    audit_result = json.loads(paths["audit_result"].read_text(encoding="utf-8"))
+    if (
+        set(audit_result)
+        != {
+            "stage",
+            "status",
+            "coverage",
+            "contract_hash",
+            "manifest_sha256",
+            "attempt_ledger_sha256",
+        }
+        or audit_marker
+        != {
+            "stage": "gate_b",
+            "status": "completed",
+            "artifact_sha256": str(raw["audit_result_sha256"]),
+        }
+        or audit_result.get("stage") != "gate_b"
+        or audit_result.get("status") != "completed"
+        or audit_result.get("coverage") != {"completed": 5600, "failed": 0, "pending": 0}
+        or audit_result.get("contract_hash") != contract_hash
+        or audit_result.get("manifest_sha256") != str(raw["manifest_sha256"])
+        or audit_result.get("attempt_ledger_sha256") != str(raw["attempt_ledger_sha256"])
+    ):
+        raise ValueError("Gate-B audit evidence differs")
+    audit_ledger = [
+        json.loads(line)
+        for line in paths["attempt_ledger"].read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    if len(audit_ledger) != 5600 or any(
+        set(row)
+        != {
+            "stage",
+            "shard_id",
+            "attempt",
+            "state",
+            "input_hash",
+            "schedule_hash",
+            "retry_permitted",
+            "retry_reason",
+        }
+        or row.get("stage") != "gate_b"
+        or row.get("shard_id") != record["shard_id"]
+        or int(row.get("attempt", -1)) != int(record["attempt"]) + 1
+        or row.get("state") != "COMPLETED"
+        or row.get("input_hash") != record["input_hash"]
+        or row.get("schedule_hash") != record["schedule_hash"]
+        or row.get("retry_permitted") is not False
+        or row.get("retry_reason") != "requires separately validated scheduler infrastructure state"
+        for row, record in zip(audit_ledger, records, strict=True)
+    ):
+        raise ValueError("Gate-B attempt ledger differs from worker evidence")
+
+    reducer_marker = json.loads(paths["reducer_success"].read_text(encoding="utf-8"))
+    reduced = json.loads(paths["reduced_result"].read_text(encoding="utf-8"))
+    scientific = reduced.get("scientific_reduction")
+    expected_reducer_output_hash = _stable_hash(
+        {
+            "stage": "gate_b",
+            "job_count": 5600,
+            "parent_hash": records[0]["parent_hash"],
+            "source_hash": records[0]["source_hash"],
+            "config_hash": records[0]["config_hash"],
+            "lock_hash": records[0]["lock_hash"],
+        }
+    )
+    if (
+        reducer_marker
+        != {
+            "schema_version": 2,
+            "stage": "gate_b",
+            "status": "completed",
+            "output_hash": expected_reducer_output_hash,
+            "artifact_sha256": str(raw["reduced_result_sha256"]),
+        }
+        or set(reduced)
+        != {
+            "schema_version",
+            "stage",
+            "records",
+            "contract_hash",
+            "parent_hash",
+            "artifact_hashes",
+            "status",
+            "scientific_reduction",
+        }
+        or reduced.get("stage") != "gate_b"
+        or reduced.get("status") != "completed"
+        or reduced.get("records") != 5600
+        or reduced.get("contract_hash") != contract_hash
+        or reduced.get("parent_hash") != records[0]["parent_hash"]
+        or reduced.get("artifact_hashes") != artifact_hashes
+        or not isinstance(scientific, dict)
+        or scientific.get("status") != "completed"
+        or scientific.get("decision") != "PASS"
+        or scientific.get("artifact_sha256") != str(raw["decision_sha256"])
+        or scientific.get("artifact_path") != str(paths["decision"])
+    ):
+        raise ValueError("Gate-B reducer evidence differs")
+    decision = json.loads(paths["decision"].read_text(encoding="utf-8"))
+    if set(scientific) != {
+        "operation",
+        "status",
+        "decision",
+        "contract_hash",
+        "terminal_record_count",
+        "scenarios",
+        "artifact_path",
+        "artifact_sha256",
+        "scientific_artifacts",
+    } or any(scientific.get(key) != value for key, value in decision.items()):
+        raise ValueError("Gate-B decision wrapper differs from decision bytes")
+    _validate_gate_b_decision(decision, contract_hash=contract_hash)
+    _validate_scientific_artifacts(scientific, allowed_root=paths["reduced_result"].parent)
+    with tempfile.TemporaryDirectory(prefix="rfm-gate-b-replay-") as replay_root:
+        replay = _execute_scientific_reduce_at_runtime(
+            records,
+            runtime_root=Path(str(raw["runtime_root"])),
+            replay_root=Path(replay_root),
+        )
+        replay_payload = {key: replay.get(key) for key in decision}
+        if (
+            set(replay)
+            != set(decision) | {"artifact_path", "artifact_sha256", "scientific_artifacts"}
+            or replay_payload != decision
+        ):
+            raise ValueError("Gate-B decision differs from exact reducer replay")
+    return {
+        "manifest_sha256": str(raw["manifest_sha256"]),
+        "audit_result_sha256": str(raw["audit_result_sha256"]),
+        "reduced_result_sha256": str(raw["reduced_result_sha256"]),
+        "decision_sha256": str(raw["decision_sha256"]),
+        "records": 5600,
+        "decision": "PASS",
+    }
+
+
+def _load_reconciled_records(
+    plan_path: str | Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Load and validate one exact, disjoint multi-runtime stage union."""
+    path = Path(plan_path)
+    if not path.is_file():
+        raise ValueError("reconciliation plan does not exist")
+    plan = json.loads(path.read_text(encoding="utf-8"))
+    required = {
+        "schema_version",
+        "stage",
+        "expected_shard_count",
+        "contract_hash",
+        "contract_config",
+        "contract_config_sha256",
+        "expected_parent_hash",
+        "baseline_manifest",
+        "baseline_manifest_sha256",
+        "cohorts",
+        "gate_b_evidence",
+        "plan_sha256",
+    }
+    if not isinstance(plan, dict) or set(plan) != required:
+        raise ValueError("reconciliation plan has an invalid schema")
+    identity = {key: value for key, value in plan.items() if key != "plan_sha256"}
+    if plan.get("schema_version") != 1 or plan.get("plan_sha256") != _stable_hash(identity):
+        raise ValueError("reconciliation plan identity differs")
+    stage = str(plan["stage"])
+    contract_hash = str(plan["contract_hash"])
+    parent_hash = str(plan["expected_parent_hash"])
+    expected_count = int(plan["expected_shard_count"])
+    if expected_count <= 0:
+        raise ValueError("reconciliation expected shard count must be positive")
+    contract_path = Path(str(plan["contract_config"]))
+    if _hash_file(contract_path) != str(plan["contract_config_sha256"]):
+        raise ValueError("reconciliation contract bytes differ")
+    _, loaded_contract_hash = load_contract(contract_path)
+    if loaded_contract_hash != contract_hash:
+        raise ValueError("reconciliation contract identity differs")
+
+    baseline_path = Path(str(plan["baseline_manifest"]))
+    if _hash_file(baseline_path) != str(plan["baseline_manifest_sha256"]):
+        raise ValueError("reconciliation baseline manifest bytes differ")
+    baseline_records = load_stage_manifest(baseline_path)
+    baseline_by_shard = {str(record["shard_id"]): record for record in baseline_records}
+    if len(baseline_by_shard) != len(baseline_records):
+        raise ValueError("reconciliation baseline contains duplicate shard IDs")
+    if len(baseline_records) != expected_count:
+        raise ValueError("reconciliation baseline shard count differs")
+    if any(
+        record["stage"] != stage
+        or record["config_hash"] != contract_hash
+        or record["parent_hash"] != parent_hash
+        for record in baseline_records
+    ):
+        raise ValueError("reconciliation baseline identity differs from the plan")
+    if any(
+        Path(str(record["contract_config_path"])).resolve() != contract_path.resolve()
+        for record in baseline_records
+    ):
+        raise ValueError("reconciliation baseline contract path differs from the plan")
+    if stage == "recovery":
+        _validate_frozen_recovery_identity(baseline_records)
+
+    raw_cohorts = plan["cohorts"]
+    if not isinstance(raw_cohorts, list) or len(raw_cohorts) < 2:
+        raise ValueError("reconciliation requires at least two provenance cohorts")
+    selected: dict[str, dict[str, Any]] = {}
+    cohort_evidence: list[dict[str, Any]] = []
+    for cohort_index, raw_cohort in enumerate(raw_cohorts):
+        cohort_required = {"manifest", "manifest_sha256", "runtime_root", "shard_ids"}
+        if not isinstance(raw_cohort, dict) or set(raw_cohort) != cohort_required:
+            raise ValueError("reconciliation cohort has an invalid schema")
+        manifest_path = Path(str(raw_cohort["manifest"]))
+        manifest_sha256 = str(raw_cohort["manifest_sha256"])
+        if _hash_file(manifest_path) != manifest_sha256:
+            raise ValueError("reconciliation cohort manifest bytes differ")
+        records = load_stage_manifest(manifest_path)
+        _validate_runtime_identity_at(records, checkout=str(raw_cohort["runtime_root"]))
+        by_shard = {str(record["shard_id"]): record for record in records}
+        if len(by_shard) != len(records):
+            raise ValueError("reconciliation cohort manifest contains duplicate shard IDs")
+        shard_ids = raw_cohort["shard_ids"]
+        if (
+            not isinstance(shard_ids, list)
+            or not shard_ids
+            or any(not isinstance(value, str) or not value for value in shard_ids)
+            or len(set(shard_ids)) != len(shard_ids)
+        ):
+            raise ValueError("reconciliation cohort shard IDs are invalid")
+        missing = sorted(set(shard_ids).difference(by_shard))
+        if missing:
+            raise ValueError(f"reconciliation cohort references unknown shards: {missing}")
+        for shard_id in shard_ids:
+            if shard_id in selected:
+                raise ValueError(f"reconciliation duplicate shard assignment: {shard_id}")
+            record = by_shard[shard_id]
+            baseline = baseline_by_shard.get(shard_id)
+            if baseline is None:
+                raise ValueError(f"reconciliation shard is absent from baseline: {shard_id}")
+            if _reconciliation_scientific_identity(record) != (
+                _reconciliation_scientific_identity(baseline)
+            ):
+                raise ValueError(f"reconciliation scientific identity drift: {shard_id}")
+            selected[shard_id] = record
+        cohort_evidence.append(
+            {
+                "cohort_index": cohort_index,
+                "manifest": str(manifest_path),
+                "manifest_sha256": manifest_sha256,
+                "runtime_root": str(Path(str(raw_cohort["runtime_root"])).resolve()),
+                "source_hash": str(records[0]["source_hash"]),
+                "lock_hash": str(records[0]["lock_hash"]),
+                "record_count": len(shard_ids),
+                "shard_ids_sha256": _stable_hash(shard_ids),
+            }
+        )
+    expected_shards = set(baseline_by_shard)
+    if set(selected) != expected_shards:
+        missing = sorted(expected_shards.difference(selected))
+        extra = sorted(set(selected).difference(expected_shards))
+        raise ValueError(
+            f"reconciliation cohort coverage is not exact; missing={missing}, extra={extra}"
+        )
+    ordered = [selected[str(record["shard_id"])] for record in baseline_records]
+    if stage == "recovery":
+        _validate_frozen_recovery_identity(ordered)
+        plan["validated_gate_b_evidence"] = _validate_gate_b_evidence(
+            plan["gate_b_evidence"], contract_hash=contract_hash
+        )
+    elif plan["gate_b_evidence"] is not None:
+        raise ValueError("non-recovery reconciliation must not bind Gate-B evidence")
+    adapter_identities = {
+        (
+            str(record.get("scientific_adapter_path", "")),
+            str(record.get("scientific_adapter_sha256", "")),
+        )
+        for record in ordered
+    }
+    if len(adapter_identities) != 1:
+        raise ValueError("reconciliation scientific adapter identity differs")
+    return plan, ordered, cohort_evidence
+
+
+def _validate_reconciled_artifact(record: dict[str, Any]) -> str:
+    """Validate one selected shard against its owning manifest record."""
+    shard_id = str(record["shard_id"])
+    shard_dir = Path(str(record["output_dir"]))
+    success_path = shard_dir / "_SUCCESS.json"
+    failed_path = shard_dir / "_FAILED.json"
+    artifact_path = shard_dir / "result.json"
+    if failed_path.exists() and success_path.exists():
+        raise ValueError(f"reconciliation shard has success and failure markers: {shard_id}")
+    if not success_path.is_file() or not artifact_path.is_file():
+        raise ValueError(f"reconciliation shard is incomplete: {shard_id}")
+    marker = json.loads(success_path.read_text(encoding="utf-8"))
+    artifact_hash = _hash_file(artifact_path)
+    if (
+        set(marker)
+        != {
+            "schema_version",
+            "stage",
+            "shard_id",
+            "output_hash",
+            "artifact_sha256",
+            "parent_hash",
+            "attempt",
+            "status",
+        }
+        or marker.get("schema_version") != 2
+        or marker.get("stage") != record["stage"]
+        or marker.get("shard_id") != shard_id
+        or marker.get("artifact_sha256") != artifact_hash
+        or marker.get("output_hash") != record["output_hash"]
+        or marker.get("parent_hash") != record["parent_hash"]
+        or marker.get("status") != "completed"
+        or int(marker.get("attempt", -1)) != int(record["attempt"]) + 1
+    ):
+        raise ValueError(f"reconciliation rejected shard identity: {shard_id}")
+    result = json.loads(artifact_path.read_text(encoding="utf-8"))
+    required_result_identity = {
+        "schema_version": 2,
+        "stage": record["stage"],
+        "shard_id": shard_id,
+        "operation": record["operation"],
+        "status": "completed",
+        "input_hash": record["input_hash"],
+        "schedule_hash": record["schedule_hash"],
+        "source_hash": record["source_hash"],
+        "config_hash": record["config_hash"],
+        "lock_hash": record["lock_hash"],
+        "parent_hash": record["parent_hash"],
+        "output_hash": record["output_hash"],
+        "attempt": int(record["attempt"]) + 1,
+    }
+    if any(result.get(key) != value for key, value in required_result_identity.items()):
+        raise ValueError(f"reconciliation result identity differs: {shard_id}")
+    operation = str(record.get("operation", ""))
+    if operation != "scheduler_diagnostic" and not operation.startswith("pilot_"):
+        _validate_scientific_artifacts(result, allowed_root=shard_dir)
+    return artifact_hash
+
+
+def _cli_reconcile_audit(args: argparse.Namespace) -> int:
+    """Audit an exact stage union whose shards span immutable runtime repairs."""
+    plan, records, cohorts = _load_reconciled_records(args.plan)
+    artifact_hashes = [_validate_reconciled_artifact(record) for record in records]
+    output_root = Path(args.output_root)
+    if output_root.exists() and any(output_root.iterdir()):
+        raise ValueError("reconciliation audit output directory must be empty")
+    output_root.mkdir(parents=True, exist_ok=True)
+    ownership = {
+        str(shard_id): (cohort_index, str(cohort["manifest_sha256"]))
+        for cohort_index, cohort in enumerate(plan["cohorts"])
+        for shard_id in cohort["shard_ids"]
+    }
+    ledger = []
+    for record, artifact_hash in zip(records, artifact_hashes, strict=True):
+        cohort_index, manifest_sha256 = ownership[str(record["shard_id"])]
+        ledger.append(
+            {
+                "stage": record["stage"],
+                "shard_id": record["shard_id"],
+                "cohort_index": cohort_index,
+                "manifest_sha256": manifest_sha256,
+                "attempt": int(record["attempt"]) + 1,
+                "source_hash": record["source_hash"],
+                "lock_hash": record["lock_hash"],
+                "input_hash": record["input_hash"],
+                "schedule_hash": record["schedule_hash"],
+                "output_hash": record["output_hash"],
+                "artifact_sha256": artifact_hash,
+                "state": "COMPLETED",
+            }
+        )
+    ledger_path = output_root / "attempt_ledger.jsonl"
+    _write_jsonl(ledger_path, ledger)
+    result = {
+        "schema_version": 1,
+        "stage": plan["stage"],
+        "status": "completed",
+        "coverage": {"completed": len(records), "failed": 0, "pending": 0},
+        "contract_hash": plan["contract_hash"],
+        "parent_hash": plan["expected_parent_hash"],
+        "plan_sha256": plan["plan_sha256"],
+        "baseline_manifest_sha256": plan["baseline_manifest_sha256"],
+        "cohorts": cohorts,
+        "gate_b_evidence": plan.get("validated_gate_b_evidence"),
+        "attempt_ledger_sha256": _hash_file(ledger_path),
+    }
+    result_path = output_root / "audit_result.json"
+    result_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    marker = {
+        "schema_version": 1,
+        "stage": plan["stage"],
+        "status": "completed",
+        "plan_sha256": plan["plan_sha256"],
+        "artifact_sha256": _hash_file(result_path),
+    }
+    (output_root / "_SUCCESS.json").write_text(
+        json.dumps(marker, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(json.dumps(marker, sort_keys=True))
+    return 0
+
+
+def _cli_reconcile_reduce(args: argparse.Namespace) -> int:
+    """Reduce an independently audited multi-runtime stage union."""
+    plan, records, cohorts = _load_reconciled_records(args.plan)
+    if str(args.contract_hash) != str(plan["contract_hash"]):
+        raise ValueError("reconciliation reducer contract identity differs")
+    audit_success = Path(args.audit_success)
+    audit_result = audit_success.parent / "audit_result.json"
+    audit_ledger = audit_success.parent / "attempt_ledger.jsonl"
+    if not audit_success.is_file() or not audit_result.is_file() or not audit_ledger.is_file():
+        raise ValueError("reconciliation reducer requires completed audit evidence")
+    audit_marker = json.loads(audit_success.read_text(encoding="utf-8"))
+    audited = json.loads(audit_result.read_text(encoding="utf-8"))
+    expected_audit_keys = {
+        "schema_version",
+        "stage",
+        "status",
+        "coverage",
+        "contract_hash",
+        "parent_hash",
+        "plan_sha256",
+        "baseline_manifest_sha256",
+        "cohorts",
+        "gate_b_evidence",
+        "attempt_ledger_sha256",
+    }
+    if (
+        set(audited) != expected_audit_keys
+        or audit_marker.get("schema_version") != 1
+        or audit_marker.get("stage") != plan["stage"]
+        or audit_marker.get("status") != "completed"
+        or audit_marker.get("plan_sha256") != plan["plan_sha256"]
+        or audit_marker.get("artifact_sha256") != _hash_file(audit_result)
+        or audited.get("plan_sha256") != plan["plan_sha256"]
+        or audited.get("coverage") != {"completed": len(records), "failed": 0, "pending": 0}
+        or audited.get("contract_hash") != plan["contract_hash"]
+        or audited.get("parent_hash") != plan["expected_parent_hash"]
+        or audited.get("baseline_manifest_sha256") != plan["baseline_manifest_sha256"]
+        or audited.get("cohorts") != cohorts
+        or audited.get("gate_b_evidence") != plan.get("validated_gate_b_evidence")
+        or audited.get("attempt_ledger_sha256") != _hash_file(audit_ledger)
+    ):
+        raise ValueError("reconciliation reducer rejected audit evidence")
+    artifact_hashes = [_validate_reconciled_artifact(record) for record in records]
+    ownership = {
+        str(shard_id): (cohort_index, str(cohort["manifest_sha256"]))
+        for cohort_index, cohort in enumerate(plan["cohorts"])
+        for shard_id in cohort["shard_ids"]
+    }
+    ledger = [
+        json.loads(line)
+        for line in audit_ledger.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    if len(ledger) != len(records) or any(
+        row
+        != {
+            "stage": record["stage"],
+            "shard_id": record["shard_id"],
+            "cohort_index": ownership[str(record["shard_id"])][0],
+            "manifest_sha256": ownership[str(record["shard_id"])][1],
+            "attempt": int(record["attempt"]) + 1,
+            "source_hash": record["source_hash"],
+            "lock_hash": record["lock_hash"],
+            "input_hash": record["input_hash"],
+            "schedule_hash": record["schedule_hash"],
+            "output_hash": record["output_hash"],
+            "artifact_sha256": artifact_hash,
+            "state": "COMPLETED",
+        }
+        for row, record, artifact_hash in zip(ledger, records, artifact_hashes, strict=True)
+    ):
+        raise ValueError("reconciliation reducer rejected audit ledger evidence")
+    output_root = Path(args.output_root)
+    if output_root.exists() and any(output_root.iterdir()):
+        raise ValueError("reconciliation reducer output directory must be empty")
+    output_root.mkdir(parents=True, exist_ok=True)
+    summary: dict[str, Any] = {
+        "schema_version": 1,
+        "stage": plan["stage"],
+        "records": len(records),
+        "contract_hash": plan["contract_hash"],
+        "parent_hash": plan["expected_parent_hash"],
+        "reconciliation_plan_sha256": plan["plan_sha256"],
+        "baseline_manifest_sha256": plan["baseline_manifest_sha256"],
+        "cohorts": cohorts,
+        "gate_b_evidence": plan.get("validated_gate_b_evidence"),
+        "artifact_hashes": artifact_hashes,
+        "status": "completed",
+    }
+    if not str(plan["stage"]).startswith("pilot_") and plan["stage"] != ("scheduler_diagnostic"):
+        summary["scientific_reduction"] = _execute_scientific_reduce(
+            records, output_dir=output_root
+        )
+    result_path = output_root / "reduced_result.json"
+    result_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    reducer_output_hash = _stable_hash(
+        {
+            "stage": plan["stage"],
+            "job_count": len(records),
+            "parent_hash": plan["expected_parent_hash"],
+            "contract_hash": plan["contract_hash"],
+            "reconciliation_plan_sha256": plan["plan_sha256"],
+            "artifact_hashes": artifact_hashes,
+        }
+    )
+    marker = {
+        "schema_version": 1,
+        "stage": plan["stage"],
+        "status": "completed",
+        "plan_sha256": plan["plan_sha256"],
+        "output_hash": reducer_output_hash,
+        "artifact_sha256": _hash_file(result_path),
+    }
+    (output_root / "_SUCCESS.json").write_text(
+        json.dumps(marker, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(json.dumps(marker, sort_keys=True))
+    return 0
+
+
 def _cli_reduce(args: argparse.Namespace) -> int:
     records = load_stage_manifest(args.manifest)
     _validate_runtime_identity(records)
@@ -5472,6 +6345,18 @@ def main(argv: list[str] | None = None) -> int:
     audit.add_argument("--output-root", required=True)
     audit.add_argument("--contract-hash", required=True)
     audit.set_defaults(func=_cli_audit)
+
+    reconcile_audit = subparsers.add_parser("reconcile-audit")
+    reconcile_audit.add_argument("--plan", required=True)
+    reconcile_audit.add_argument("--output-root", required=True)
+    reconcile_audit.set_defaults(func=_cli_reconcile_audit)
+
+    reconcile_reduce = subparsers.add_parser("reconcile-reduce")
+    reconcile_reduce.add_argument("--plan", required=True)
+    reconcile_reduce.add_argument("--output-root", required=True)
+    reconcile_reduce.add_argument("--audit-success", required=True)
+    reconcile_reduce.add_argument("--contract-hash", required=True)
+    reconcile_reduce.set_defaults(func=_cli_reconcile_reduce)
 
     live_smoke = subparsers.add_parser(
         "live-smoke",

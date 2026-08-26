@@ -2655,6 +2655,38 @@ def test_gate_b_evidence_accepts_complete_chain_and_rejects_semantic_tampering(
         hpc._validate_gate_b_evidence(evidence, contract_hash=contract_hash, contract=G11_CONTRACT)
 
 
+def test_gate_b_replay_relocates_contract_to_the_reconciliation_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    evidence, contract_hash = _write_valid_gate_b_evidence(tmp_path)
+    records = hpc.load_stage_manifest(Path(str(evidence["manifest"])))
+    original_contract_path = Path(str(records[0]["contract_config_path"]))
+    relocated_contract_path = tmp_path / "relocated" / "g11_campaign_contract.toml"
+    relocated_contract_path.parent.mkdir()
+    relocated_contract_path.write_bytes(original_contract_path.read_bytes())
+    decision = json.loads(Path(str(evidence["decision"])).read_text(encoding="utf-8"))
+
+    def replay(replay_records: list[dict[str, object]], **_: object) -> dict[str, object]:
+        assert {str(record["contract_config_path"]) for record in replay_records} == {
+            str(relocated_contract_path)
+        }
+        return {
+            **decision,
+            "artifact_path": str(evidence["decision"]),
+            "artifact_sha256": str(evidence["decision_sha256"]),
+            "scientific_artifacts": [],
+        }
+
+    monkeypatch.setattr(hpc, "_execute_scientific_reduce_at_runtime", replay)
+
+    hpc._validate_gate_b_evidence(
+        evidence,
+        contract_hash=contract_hash,
+        contract=G11_CONTRACT,
+        contract_path=relocated_contract_path,
+    )
+
+
 def test_reconciliation_rejects_contract_bytes_or_scientific_fields(tmp_path: Path) -> None:
     contract_case = tmp_path / "contract-case"
     contract_plan, _ = _reconciliation_fixture(contract_case)

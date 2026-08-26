@@ -5529,7 +5529,11 @@ def _validate_record_runtime_components(records: list[dict[str, Any]]) -> None:
 
 
 def _validate_gate_b_evidence(
-    raw: Any, *, contract_hash: str, contract: CampaignContract
+    raw: Any,
+    *,
+    contract_hash: str,
+    contract: CampaignContract,
+    contract_path: Path | None = None,
 ) -> dict[str, Any]:
     """Revalidate the complete sealed Gate-B prerequisite evidence chain."""
     required = {
@@ -5701,9 +5705,17 @@ def _validate_gate_b_evidence(
         raise ValueError("Gate-B decision wrapper differs from decision bytes")
     _validate_gate_b_decision(decision, contract_hash=contract_hash)
     _validate_scientific_artifacts(scientific, allowed_root=paths["reduced_result"].parent)
+    replay_records = records
+    if contract_path is not None:
+        replay_contract, replay_contract_hash = load_contract(contract_path)
+        if replay_contract_hash != contract_hash or replay_contract != contract:
+            raise ValueError("Gate-B replay contract differs from the reconciliation plan")
+        replay_records = [
+            {**record, "contract_config_path": str(contract_path)} for record in records
+        ]
     with tempfile.TemporaryDirectory(prefix="rfm-gate-b-replay-") as replay_root:
         replay = _execute_scientific_reduce_at_runtime(
-            records,
+            replay_records,
             runtime_root=Path(str(raw["runtime_root"])),
             replay_root=Path(replay_root),
         )
@@ -5852,7 +5864,10 @@ def _load_reconciled_records(
     if stage == "recovery":
         _validate_frozen_recovery_identity(ordered, contract=contract)
         plan["validated_gate_b_evidence"] = _validate_gate_b_evidence(
-            plan["gate_b_evidence"], contract_hash=contract_hash, contract=contract
+            plan["gate_b_evidence"],
+            contract_hash=contract_hash,
+            contract=contract,
+            contract_path=contract_path,
         )
     elif plan["gate_b_evidence"] is not None:
         raise ValueError("non-recovery reconciliation must not bind Gate-B evidence")

@@ -6,15 +6,17 @@ import hashlib
 import json
 import math
 import re
+import sys
 from argparse import Namespace
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from rfm_pipeline.campaign_contract import G11_CONTRACT, load_contract
+from rfm_pipeline import hpc_campaign_package as hpc
+from rfm_pipeline.campaign_contract import G11_CONTRACT, load_contract, wilson_upper_bound
 from rfm_pipeline.hpc_campaign_package import (
     _cli_audit,
     _cli_reduce,
@@ -454,6 +456,7 @@ def test_resume_artifact_validation_requires_atomic_success_marker(tmp_path: Pat
     (shard_dir / "_SUCCESS.json").write_text(
         json.dumps(
             {
+                "schema_version": 2,
                 "stage": record["stage"],
                 "shard_id": record["shard_id"],
                 "output_hash": record["output_hash"],
@@ -2043,6 +2046,712 @@ def test_reducer_requires_and_hashes_every_worker_artifact(tmp_path: Path) -> No
     assert _cli_reduce(reduce_args) == 0
     assert (stage.reducer_output_dir / "reduced_result.json").is_file()
     assert (stage.reducer_output_dir / "_SUCCESS.json").is_file()
+
+
+def _write_reconciliation_runtime(root: Path, payload: str) -> tuple[str, str]:
+    source = root / "src" / "rfm_pipeline"
+    source.mkdir(parents=True)
+    (source / "runtime.py").write_text(payload, encoding="utf-8")
+    (root / "pixi.lock").write_text("unchanged-lock", encoding="utf-8")
+    return hpc._hash_python_tree(source), hashlib.sha256(
+        (root / "pixi.lock").read_bytes()
+    ).hexdigest()
+
+
+def _write_reconciliation_artifact(record: dict[str, object]) -> None:
+    shard_dir = Path(str(record["output_dir"]))
+    shard_dir.mkdir(parents=True)
+    terminal = shard_dir / "terminal_record.json"
+    terminal.write_text(
+        json.dumps(
+            {
+                "operation": record["operation"],
+                "status": "completed",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    artifact = shard_dir / "result.json"
+    artifact.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "stage": record["stage"],
+                "shard_id": record["shard_id"],
+                "operation": record["operation"],
+                "status": "completed",
+                "input_hash": record["input_hash"],
+                "schedule_hash": record["schedule_hash"],
+                "source_hash": record["source_hash"],
+                "config_hash": record["config_hash"],
+                "lock_hash": record["lock_hash"],
+                "parent_hash": record["parent_hash"],
+                "output_hash": record["output_hash"],
+                "attempt": int(record["attempt"]) + 1,
+                "scientific_artifacts": [
+                    {
+                        "path": str(terminal),
+                        "relative_path": terminal.name,
+                        "sha256": hashlib.sha256(terminal.read_bytes()).hexdigest(),
+                        "bytes": terminal.stat().st_size,
+                    }
+                ],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    marker = {
+        "schema_version": 2,
+        "stage": record["stage"],
+        "shard_id": record["shard_id"],
+        "output_hash": record["output_hash"],
+        "artifact_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+        "parent_hash": record["parent_hash"],
+        "attempt": int(record["attempt"]) + 1,
+        "status": "completed",
+    }
+    (shard_dir / "_SUCCESS.json").write_text(
+        json.dumps(marker, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+
+def _gate_b_decision_payload(contract_hash: str) -> dict[str, object]:
+    scenarios: dict[str, object] = {}
+    for scenario in G11_CONTRACT.scenarios:
+        if scenario.kind == "null":
+            upper = wilson_upper_bound(
+                0,
+                scenario.n_replicates,
+                G11_CONTRACT.calibration_confidence,
+            )
+            row: dict[str, object] = {
+                "denominator": scenario.n_replicates,
+                "false_selection_events": 0,
+                "fwer": 0.0,
+                "one_sided_wilson_upper": upper,
+                "passes_calibration": upper <= G11_CONTRACT.gate_value,
+            }
+            if scenario.id != "global_null":
+                row.update(
+                    {
+                        "nondegenerate_count": scenario.n_replicates,
+                        "nondegenerate_rate": 1.0,
+                        "passes_nondegeneracy": True,
+                    }
+                )
+            scenarios[scenario.id] = row
+        elif scenario.kind == "strong":
+            lower = 1.0 - wilson_upper_bound(
+                0,
+                scenario.n_replicates,
+                G11_CONTRACT.calibration_confidence,
+            )
+            scenarios[scenario.id] = {
+                "denominator": scenario.n_replicates,
+                "discovery_events": scenario.n_replicates,
+                "power": 1.0,
+                "one_sided_wilson_lower": lower,
+                "passes_power": lower >= G11_CONTRACT.power_gate_lower_bound,
+            }
+    return {
+        "operation": "gate_b",
+        "status": "completed",
+        "decision": "PASS",
+        "contract_hash": contract_hash,
+        "terminal_record_count": 5600,
+        "scenarios": scenarios,
+    }
+
+
+def _write_valid_gate_b_evidence(tmp_path: Path) -> tuple[dict[str, object], str]:
+    dag = _package(tmp_path / "gate-b-campaign")
+    gate_b = _stage(dag, "gate_b")
+    records = hpc.load_stage_manifest(gate_b.manifest_path)
+    assert len(records) == 5600
+    decision = _gate_b_decision_payload(dag.config_hash)
+    adapter = tmp_path / "gate_b_adapter.py"
+    adapter.write_text(
+        "import hashlib, json\n"
+        f"DECISION = {decision!r}\n"
+        "def reduce_scientific_stage(records, output_dir):\n"
+        "    path = output_dir / 'gate_b_decision.json'\n"
+        "    path.write_text(json.dumps(DECISION, sort_keys=True) + '\\n')\n"
+        "    artifact = {'path': str(path), 'relative_path': path.name, "
+        "'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), "
+        "'bytes': path.stat().st_size}\n"
+        "    return {**DECISION, 'artifact_path': str(path), "
+        "'artifact_sha256': artifact['sha256'], 'scientific_artifacts': [artifact]}\n",
+        encoding="utf-8",
+    )
+    component_paths = {
+        "scientific_adapter_path": adapter,
+        "bsm_recovery_driver_path": tmp_path / "run_bsm_recovery_study.py",
+        "bsm_dgp_contract_path": tmp_path / "bsm_dgp_contract.yaml",
+        "applied_config_path": tmp_path / "manuscript_case_study.yml",
+        "applied_data_preparer_path": tmp_path / "prepare_g11_applied_data.py",
+    }
+    for path in component_paths.values():
+        if not path.exists():
+            path.write_text(f"fixture:{path.name}\n", encoding="utf-8")
+    hash_fields = {
+        "scientific_adapter_path": "scientific_adapter_sha256",
+        "bsm_recovery_driver_path": "bsm_recovery_driver_sha256",
+        "bsm_dgp_contract_path": "bsm_dgp_contract_sha256",
+        "applied_config_path": "applied_config_sha256",
+        "applied_data_preparer_path": "applied_data_preparer_sha256",
+    }
+    for record in records:
+        for path_field, path in component_paths.items():
+            record[path_field] = str(path)
+            record[hash_fields[path_field]] = hashlib.sha256(path.read_bytes()).hexdigest()
+        _write_reconciliation_artifact(record)
+    hpc._write_jsonl(gate_b.manifest_path, records)
+
+    audit_root = tmp_path / "gate_b_audit"
+    assert (
+        hpc._cli_audit(
+            Namespace(
+                manifest=gate_b.manifest_path,
+                stage="gate_b",
+                output_root=audit_root,
+                contract_hash=dag.config_hash,
+            )
+        )
+        == 0
+    )
+    reducer_root = tmp_path / "gate_b_reducer"
+    assert (
+        hpc._cli_reduce(
+            Namespace(
+                manifest=gate_b.manifest_path,
+                stage="gate_b",
+                output_root=reducer_root,
+                audit_success=audit_root / "_SUCCESS.json",
+                contract_config=dag.contract_config_path,
+                contract_hash=dag.config_hash,
+                expected_range_start=0,
+                expected_range_end=5600,
+                expected_parent_hash=records[0]["parent_hash"],
+            )
+        )
+        == 0
+    )
+    paths = {
+        "manifest": gate_b.manifest_path,
+        "audit_success": audit_root / "_SUCCESS.json",
+        "audit_result": audit_root / "audit_result.json",
+        "attempt_ledger": audit_root / "attempt_ledger.jsonl",
+        "reducer_success": reducer_root / "_SUCCESS.json",
+        "reduced_result": reducer_root / "reduced_result.json",
+        "decision": reducer_root / "gate_b_decision.json",
+    }
+    evidence: dict[str, object] = {"runtime_root": str(Path.cwd())}
+    for key, path in paths.items():
+        evidence[key] = str(path)
+        evidence[f"{key}_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return evidence, dag.config_hash
+
+
+def test_isolated_scientific_replay_uses_manifest_bound_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime_root = tmp_path / "historical-runtime"
+    package_root = runtime_root / "src" / "rfm_pipeline"
+    package_root.mkdir(parents=True)
+    (package_root / "__init__.py").write_text("", encoding="utf-8")
+    (package_root / "runtime_probe.py").write_text('VALUE = "historical"\n', encoding="utf-8")
+    runtime_python = runtime_root / ".pixi" / "envs" / "default" / "bin" / "python"
+    runtime_python.parent.mkdir(parents=True)
+    runtime_python.symlink_to(Path(sys.executable))
+    (runtime_root / "pixi.lock").write_text("historical-lock\n", encoding="utf-8")
+    adapter = tmp_path / "adapter.py"
+    adapter.write_text(
+        "import hashlib, json\n"
+        "from rfm_pipeline.runtime_probe import VALUE\n"
+        "def reduce_scientific_stage(records, output_dir):\n"
+        "    path = output_dir / 'decision.json'\n"
+        "    path.write_text(json.dumps({'runtime_value': VALUE}) + '\\n')\n"
+        "    artifact = {'path': str(path), 'relative_path': path.name, "
+        "'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), "
+        "'bytes': path.stat().st_size}\n"
+        "    return {'status': 'completed', 'runtime_value': VALUE, "
+        "'scientific_artifacts': [artifact]}\n",
+        encoding="utf-8",
+    )
+    current_probe = ModuleType("rfm_pipeline.runtime_probe")
+    current_probe.VALUE = "current"  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "rfm_pipeline.runtime_probe", current_probe)
+    records = [
+        {
+            "scientific_adapter_path": str(adapter),
+            "scientific_adapter_sha256": hashlib.sha256(adapter.read_bytes()).hexdigest(),
+        }
+    ]
+
+    replay = hpc._execute_scientific_reduce_at_runtime(
+        records,
+        runtime_root=runtime_root,
+        replay_root=tmp_path / "replay",
+    )
+
+    assert replay["runtime_value"] == "historical"
+
+
+def _reconciliation_fixture(
+    tmp_path: Path,
+    *,
+    stage_name: str = "scheduler_diagnostic",
+    repaired_seed: int | None = None,
+    repaired_ids: tuple[str, ...] = ("task-0001",),
+) -> tuple[Path, str]:
+    dag = _package(tmp_path / "campaign")
+    stage = _stage(dag, "scheduler_diagnostic")
+    template = load_stage_manifest(stage.manifest_path)[0]
+    adapter = tmp_path / "adapter.py"
+    adapter.write_text(
+        "import hashlib\n"
+        "def reduce_scientific_stage(records, output_dir):\n"
+        "    path = output_dir / 'decision.json'\n"
+        "    path.write_text('{}')\n"
+        "    artifact = {'path': str(path), 'relative_path': path.name, "
+        "'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), "
+        "'bytes': path.stat().st_size}\n"
+        "    return {'operation': 'recovery', 'status': 'completed', "
+        "'scientific_artifacts': [artifact]}\n",
+        encoding="utf-8",
+    )
+    adapter_sha256 = hashlib.sha256(adapter.read_bytes()).hexdigest()
+    baseline_root = tmp_path / "runtime-baseline"
+    repaired_root = tmp_path / "runtime-repaired"
+    baseline_source, baseline_lock = _write_reconciliation_runtime(baseline_root, "baseline")
+    repaired_source, repaired_lock = _write_reconciliation_runtime(repaired_root, "repaired")
+    output_root = tmp_path / "results"
+
+    baseline_records: list[dict[str, object]] = []
+    repaired_records: list[dict[str, object]] = []
+    for index in range(2):
+        shard_id = f"task-{index:04d}"
+        common = {
+            **template,
+            "stage": stage_name,
+            "operation": stage_name,
+            "shard_id": shard_id,
+            "output_dir": str(output_root / shard_id),
+            "success_marker": str(output_root / shard_id / "_SUCCESS.json"),
+            "seed": index + 100,
+            "expected_range_start": index,
+            "expected_range_end": index + 1,
+            "scientific_adapter_path": str(adapter),
+            "scientific_adapter_sha256": adapter_sha256,
+        }
+        baseline = {
+            **common,
+            "source_hash": baseline_source,
+            "lock_hash": baseline_lock,
+            "rfm_repository_root": str(baseline_root),
+            "input_hash": hashlib.sha256(f"baseline-input-{index}".encode()).hexdigest(),
+            "schedule_hash": hashlib.sha256(f"baseline-schedule-{index}".encode()).hexdigest(),
+            "output_hash": hashlib.sha256(f"baseline-output-{index}".encode()).hexdigest(),
+        }
+        repaired = {
+            **common,
+            "source_hash": repaired_source,
+            "lock_hash": repaired_lock,
+            "rfm_repository_root": str(repaired_root),
+            "input_hash": hashlib.sha256(f"repaired-input-{index}".encode()).hexdigest(),
+            "schedule_hash": hashlib.sha256(f"repaired-schedule-{index}".encode()).hexdigest(),
+            "output_hash": hashlib.sha256(f"repaired-output-{index}".encode()).hexdigest(),
+        }
+        if repaired_seed is not None and index == 1:
+            repaired["seed"] = repaired_seed
+        baseline_records.append(baseline)
+        repaired_records.append(repaired)
+
+    baseline_manifest = tmp_path / "baseline.jsonl"
+    repaired_manifest = tmp_path / "repaired.jsonl"
+    hpc._write_jsonl(baseline_manifest, baseline_records)
+    hpc._write_jsonl(repaired_manifest, repaired_records)
+    baseline_ids = tuple(
+        str(record["shard_id"])
+        for record in baseline_records
+        if record["shard_id"] not in repaired_ids
+    )
+    for record in baseline_records:
+        if record["shard_id"] in baseline_ids:
+            _write_reconciliation_artifact(record)
+    for record in repaired_records:
+        if record["shard_id"] in repaired_ids:
+            _write_reconciliation_artifact(record)
+
+    identity = {
+        "schema_version": 1,
+        "stage": stage_name,
+        "expected_shard_count": 2,
+        "contract_hash": dag.config_hash,
+        "contract_config": str(dag.contract_config_path),
+        "contract_config_sha256": hashlib.sha256(dag.contract_config_path.read_bytes()).hexdigest(),
+        "expected_parent_hash": str(template["parent_hash"]),
+        "baseline_manifest": str(baseline_manifest),
+        "baseline_manifest_sha256": hashlib.sha256(baseline_manifest.read_bytes()).hexdigest(),
+        "cohorts": [
+            {
+                "manifest": str(baseline_manifest),
+                "manifest_sha256": hashlib.sha256(baseline_manifest.read_bytes()).hexdigest(),
+                "runtime_root": str(baseline_root),
+                "shard_ids": list(baseline_ids),
+            },
+            {
+                "manifest": str(repaired_manifest),
+                "manifest_sha256": hashlib.sha256(repaired_manifest.read_bytes()).hexdigest(),
+                "runtime_root": str(repaired_root),
+                "shard_ids": list(repaired_ids),
+            },
+        ],
+        "gate_b_evidence": None,
+    }
+    plan = {**identity, "plan_sha256": hpc._stable_hash(identity)}
+    plan_path = tmp_path / "reconciliation_plan.json"
+    plan_path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return plan_path, dag.config_hash
+
+
+def test_reconciliation_audit_and_reduce_accept_exact_disjoint_runtime_cohorts(
+    tmp_path: Path,
+) -> None:
+    plan_path, contract_hash = _reconciliation_fixture(tmp_path)
+    audit_root = tmp_path / "audit"
+    reducer_root = tmp_path / "reducer"
+
+    assert hpc._cli_reconcile_audit(Namespace(plan=plan_path, output_root=audit_root)) == 0
+    audit = json.loads((audit_root / "audit_result.json").read_text(encoding="utf-8"))
+    assert audit["coverage"] == {"completed": 2, "failed": 0, "pending": 0}
+    assert [cohort["record_count"] for cohort in audit["cohorts"]] == [1, 1]
+
+    assert (
+        hpc._cli_reconcile_reduce(
+            Namespace(
+                plan=plan_path,
+                output_root=reducer_root,
+                audit_success=audit_root / "_SUCCESS.json",
+                contract_hash=contract_hash,
+            )
+        )
+        == 0
+    )
+    reduced = json.loads((reducer_root / "reduced_result.json").read_text(encoding="utf-8"))
+    assert reduced["records"] == 2
+    assert reduced["reconciliation_plan_sha256"] == audit["plan_sha256"]
+    assert (reducer_root / "_SUCCESS.json").is_file()
+
+
+def test_reconciliation_rejects_scientific_identity_drift(tmp_path: Path) -> None:
+    plan_path, _ = _reconciliation_fixture(tmp_path, repaired_seed=999)
+
+    with pytest.raises(ValueError, match="scientific identity drift"):
+        hpc._cli_reconcile_audit(Namespace(plan=plan_path, output_root=tmp_path / "audit"))
+
+
+def test_reconciliation_rejects_truncated_recovery_contract_coverage(tmp_path: Path) -> None:
+    plan_path, _ = _reconciliation_fixture(tmp_path, stage_name="recovery")
+
+    with pytest.raises(ValueError, match="exactly 800 frozen shards"):
+        hpc._cli_reconcile_audit(Namespace(plan=plan_path, output_root=tmp_path / "audit"))
+
+
+def test_frozen_replicate_inventory_rejects_descriptor_or_parent_drift(tmp_path: Path) -> None:
+    dag = _package(tmp_path / "campaign")
+    recovery_records = hpc.load_stage_manifest(_stage(dag, "recovery").manifest_path)
+    hpc._validate_frozen_recovery_identity(recovery_records)
+    recovery_records[0]["n_train"] += 1
+    with pytest.raises(ValueError, match="frozen contract inventory"):
+        hpc._validate_frozen_recovery_identity(recovery_records)
+
+    gate_b_records = hpc.load_stage_manifest(_stage(dag, "gate_b").manifest_path)
+    gate_b_records[1]["parent_hash"] = "0" * 64
+    with pytest.raises(ValueError, match="parent identity differs"):
+        hpc._validate_frozen_replicate_inventory(
+            gate_b_records,
+            kinds={"null", "strong"},
+            operation="gate_b",
+            expected_count=5600,
+            label="Gate-B evidence",
+        )
+
+
+def test_reconciliation_full_recovery_requires_byte_bound_gate_b_evidence(tmp_path: Path) -> None:
+    dag = _package(tmp_path / "campaign")
+    recovery = _stage(dag, "recovery")
+    records = hpc.load_stage_manifest(recovery.manifest_path)
+    assert len(records) == 800
+    shard_ids = [str(record["shard_id"]) for record in records]
+    identity = {
+        "schema_version": 1,
+        "stage": "recovery",
+        "expected_shard_count": 800,
+        "contract_hash": dag.config_hash,
+        "contract_config": str(dag.contract_config_path),
+        "contract_config_sha256": hashlib.sha256(dag.contract_config_path.read_bytes()).hexdigest(),
+        "expected_parent_hash": str(records[0]["parent_hash"]),
+        "baseline_manifest": str(recovery.manifest_path),
+        "baseline_manifest_sha256": hashlib.sha256(recovery.manifest_path.read_bytes()).hexdigest(),
+        "cohorts": [
+            {
+                "manifest": str(recovery.manifest_path),
+                "manifest_sha256": hashlib.sha256(recovery.manifest_path.read_bytes()).hexdigest(),
+                "runtime_root": str(Path.cwd()),
+                "shard_ids": shard_ids[:400],
+            },
+            {
+                "manifest": str(recovery.manifest_path),
+                "manifest_sha256": hashlib.sha256(recovery.manifest_path.read_bytes()).hexdigest(),
+                "runtime_root": str(Path.cwd()),
+                "shard_ids": shard_ids[400:],
+            },
+        ],
+        "gate_b_evidence": None,
+    }
+    plan = {**identity, "plan_sha256": hpc._stable_hash(identity)}
+    plan_path = tmp_path / "recovery_plan.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="requires sealed Gate-B evidence"):
+        hpc._load_reconciled_records(plan_path)
+
+    placeholder = tmp_path / "placeholder.json"
+    placeholder.write_text("{}", encoding="utf-8")
+    gate_b = {
+        "manifest": str(placeholder),
+        "manifest_sha256": "0" * 64,
+        "runtime_root": str(Path.cwd()),
+        "audit_success": str(placeholder),
+        "audit_success_sha256": hashlib.sha256(placeholder.read_bytes()).hexdigest(),
+        "audit_result": str(placeholder),
+        "audit_result_sha256": hashlib.sha256(placeholder.read_bytes()).hexdigest(),
+        "attempt_ledger": str(placeholder),
+        "attempt_ledger_sha256": hashlib.sha256(placeholder.read_bytes()).hexdigest(),
+        "reducer_success": str(placeholder),
+        "reducer_success_sha256": hashlib.sha256(placeholder.read_bytes()).hexdigest(),
+        "reduced_result": str(placeholder),
+        "reduced_result_sha256": hashlib.sha256(placeholder.read_bytes()).hexdigest(),
+        "decision": str(placeholder),
+        "decision_sha256": hashlib.sha256(placeholder.read_bytes()).hexdigest(),
+    }
+    with pytest.raises(ValueError, match="Gate-B manifest bytes differ"):
+        hpc._validate_gate_b_evidence(gate_b, contract_hash=dag.config_hash)
+
+
+def test_gate_b_evidence_accepts_complete_chain_and_rejects_semantic_tampering(
+    tmp_path: Path,
+) -> None:
+    evidence, contract_hash = _write_valid_gate_b_evidence(tmp_path)
+
+    assert hpc._validate_gate_b_evidence(evidence, contract_hash=contract_hash) == {
+        "manifest_sha256": evidence["manifest_sha256"],
+        "audit_result_sha256": evidence["audit_result_sha256"],
+        "reduced_result_sha256": evidence["reduced_result_sha256"],
+        "decision_sha256": evidence["decision_sha256"],
+        "records": 5600,
+        "decision": "PASS",
+    }
+
+    ledger_path = Path(str(evidence["attempt_ledger"]))
+    audit_result_path = Path(str(evidence["audit_result"]))
+    audit_success_path = Path(str(evidence["audit_success"]))
+    original_ledger = ledger_path.read_bytes()
+    original_audit_result = audit_result_path.read_bytes()
+    original_audit_success = audit_success_path.read_bytes()
+    ledger = [json.loads(line) for line in original_ledger.decode().splitlines()]
+    ledger[0]["retry_permitted"] = True
+    ledger_path.write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in ledger),
+        encoding="utf-8",
+    )
+    evidence["attempt_ledger_sha256"] = hashlib.sha256(ledger_path.read_bytes()).hexdigest()
+    audit_result = json.loads(original_audit_result)
+    audit_result["attempt_ledger_sha256"] = evidence["attempt_ledger_sha256"]
+    audit_result_path.write_text(json.dumps(audit_result, sort_keys=True) + "\n", encoding="utf-8")
+    evidence["audit_result_sha256"] = hashlib.sha256(audit_result_path.read_bytes()).hexdigest()
+    audit_success = json.loads(original_audit_success)
+    audit_success["artifact_sha256"] = evidence["audit_result_sha256"]
+    audit_success_path.write_text(
+        json.dumps(audit_success, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    evidence["audit_success_sha256"] = hashlib.sha256(audit_success_path.read_bytes()).hexdigest()
+    with pytest.raises(ValueError, match="Gate-B attempt ledger differs"):
+        hpc._validate_gate_b_evidence(evidence, contract_hash=contract_hash)
+
+    ledger_path.write_bytes(original_ledger)
+    audit_result_path.write_bytes(original_audit_result)
+    audit_success_path.write_bytes(original_audit_success)
+    for key, path in (
+        ("attempt_ledger", ledger_path),
+        ("audit_result", audit_result_path),
+        ("audit_success", audit_success_path),
+    ):
+        evidence[f"{key}_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    decision_path = Path(str(evidence["decision"]))
+    reduced_result_path = Path(str(evidence["reduced_result"]))
+    reducer_success_path = Path(str(evidence["reducer_success"]))
+    decision = json.loads(decision_path.read_text(encoding="utf-8"))
+    decision["scenarios"]["global_null"].update(
+        {
+            "false_selection_events": 1,
+            "fwer": 0.001,
+            "one_sided_wilson_upper": 0.01,
+            "passes_calibration": True,
+        }
+    )
+    decision_path.write_text(json.dumps(decision, sort_keys=True) + "\n", encoding="utf-8")
+    evidence["decision_sha256"] = hashlib.sha256(decision_path.read_bytes()).hexdigest()
+    reduced = json.loads(reduced_result_path.read_text(encoding="utf-8"))
+    scientific = reduced["scientific_reduction"]
+    scientific.update(decision)
+    scientific["artifact_sha256"] = evidence["decision_sha256"]
+    scientific["scientific_artifacts"] = [
+        {
+            "path": str(decision_path),
+            "relative_path": decision_path.name,
+            "sha256": evidence["decision_sha256"],
+            "bytes": decision_path.stat().st_size,
+        }
+    ]
+    reduced_result_path.write_text(json.dumps(reduced, sort_keys=True) + "\n", encoding="utf-8")
+    evidence["reduced_result_sha256"] = hashlib.sha256(reduced_result_path.read_bytes()).hexdigest()
+    reducer_success = json.loads(reducer_success_path.read_text(encoding="utf-8"))
+    reducer_success["artifact_sha256"] = evidence["reduced_result_sha256"]
+    reducer_success_path.write_text(
+        json.dumps(reducer_success, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    evidence["reducer_success_sha256"] = hashlib.sha256(
+        reducer_success_path.read_bytes()
+    ).hexdigest()
+    with pytest.raises(ValueError, match="Gate-B null decision metrics differ"):
+        hpc._validate_gate_b_evidence(evidence, contract_hash=contract_hash)
+
+
+def test_reconciliation_rejects_contract_bytes_or_scientific_fields(tmp_path: Path) -> None:
+    contract_case = tmp_path / "contract-case"
+    contract_plan, _ = _reconciliation_fixture(contract_case)
+    plan = json.loads(contract_plan.read_text(encoding="utf-8"))
+    Path(plan["contract_config"]).write_text("tampered", encoding="utf-8")
+    with pytest.raises(ValueError, match="contract bytes differ"):
+        hpc._cli_reconcile_audit(Namespace(plan=contract_plan, output_root=contract_case / "audit"))
+
+    for field, value in (
+        ("config_hash", "1" * 64),
+        ("lock_hash", "2" * 64),
+        ("parent_hash", "3" * 64),
+        ("scientific_adapter_sha256", "4" * 64),
+    ):
+        field_case = tmp_path / f"field-{field}"
+        field_plan, _ = _reconciliation_fixture(field_case)
+        payload = json.loads(field_plan.read_text(encoding="utf-8"))
+        repaired_manifest = Path(payload["cohorts"][1]["manifest"])
+        repaired = hpc.load_stage_manifest(repaired_manifest)
+        repaired[1][field] = value
+        hpc._write_jsonl(repaired_manifest, repaired)
+        payload["cohorts"][1]["manifest_sha256"] = hashlib.sha256(
+            repaired_manifest.read_bytes()
+        ).hexdigest()
+        identity = {key: item for key, item in payload.items() if key != "plan_sha256"}
+        payload["plan_sha256"] = hpc._stable_hash(identity)
+        field_plan.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(
+            ValueError,
+            match="scientific identity drift|runtime RFM|manifest mixes source or lock",
+        ):
+            hpc._cli_reconcile_audit(Namespace(plan=field_plan, output_root=field_case / "audit"))
+
+
+def test_reconciliation_rejects_duplicate_or_incomplete_cohort_coverage(
+    tmp_path: Path,
+) -> None:
+    plan_path, _ = _reconciliation_fixture(
+        tmp_path,
+        repaired_ids=("task-0000", "task-0001"),
+    )
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan["cohorts"][0]["shard_ids"] = ["task-0000"]
+    identity = {key: value for key, value in plan.items() if key != "plan_sha256"}
+    plan["plan_sha256"] = hpc._stable_hash(identity)
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="duplicate shard"):
+        hpc._cli_reconcile_audit(Namespace(plan=plan_path, output_root=tmp_path / "audit"))
+
+
+def test_reconciliation_rejects_runtime_or_artifact_identity_drift(tmp_path: Path) -> None:
+    runtime_case = tmp_path / "runtime-case"
+    runtime_plan, _ = _reconciliation_fixture(runtime_case)
+    (runtime_case / "runtime-baseline" / "src" / "rfm_pipeline" / "runtime.py").write_text(
+        "tampered", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="runtime RFM source tree"):
+        hpc._cli_reconcile_audit(Namespace(plan=runtime_plan, output_root=runtime_case / "audit"))
+
+    artifact_case = tmp_path / "artifact-case"
+    artifact_plan, _ = _reconciliation_fixture(artifact_case)
+    marker_path = artifact_case / "results" / "task-0001" / "_SUCCESS.json"
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    marker["output_hash"] = "0" * 64
+    marker_path.write_text(json.dumps(marker), encoding="utf-8")
+    with pytest.raises(ValueError, match="rejected shard identity"):
+        hpc._cli_reconcile_audit(Namespace(plan=artifact_plan, output_root=artifact_case / "audit"))
+
+    attempt_case = tmp_path / "attempt-case"
+    attempt_plan, _ = _reconciliation_fixture(attempt_case)
+    marker_path = attempt_case / "results" / "task-0001" / "_SUCCESS.json"
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    marker["attempt"] += 1
+    marker_path.write_text(json.dumps(marker), encoding="utf-8")
+    with pytest.raises(ValueError, match="rejected shard identity"):
+        hpc._cli_reconcile_audit(Namespace(plan=attempt_plan, output_root=attempt_case / "audit"))
+
+    result_case = tmp_path / "result-case"
+    result_plan, _ = _reconciliation_fixture(result_case)
+    result_path = result_case / "results" / "task-0001" / "result.json"
+    marker_path = result_path.parent / "_SUCCESS.json"
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    result["input_hash"] = "5" * 64
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    marker["artifact_sha256"] = hashlib.sha256(result_path.read_bytes()).hexdigest()
+    marker_path.write_text(json.dumps(marker), encoding="utf-8")
+    with pytest.raises(ValueError, match="result identity differs"):
+        hpc._cli_reconcile_audit(Namespace(plan=result_plan, output_root=result_case / "audit"))
+
+    nested_case = tmp_path / "nested-case"
+    nested_plan, _ = _reconciliation_fixture(
+        nested_case,
+        stage_name="applied_conditioning",
+    )
+    nested = nested_case / "results" / "task-0001" / "terminal_record.json"
+    nested.write_text("tampered", encoding="utf-8")
+    with pytest.raises(ValueError, match="scientific artifact byte"):
+        hpc._cli_reconcile_audit(Namespace(plan=nested_plan, output_root=nested_case / "audit"))
+
+
+def test_reconciliation_reducer_rejects_post_audit_ledger_tampering(tmp_path: Path) -> None:
+    plan_path, contract_hash = _reconciliation_fixture(tmp_path)
+    audit_root = tmp_path / "audit"
+    assert hpc._cli_reconcile_audit(Namespace(plan=plan_path, output_root=audit_root)) == 0
+    ledger = audit_root / "attempt_ledger.jsonl"
+    ledger.write_text(ledger.read_text(encoding="utf-8") + "{}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="rejected audit evidence"):
+        hpc._cli_reconcile_reduce(
+            Namespace(
+                plan=plan_path,
+                output_root=tmp_path / "reducer",
+                audit_success=audit_root / "_SUCCESS.json",
+                contract_hash=contract_hash,
+            )
+        )
 
 
 def test_production_worker_dispatches_only_through_content_hashed_adapter(

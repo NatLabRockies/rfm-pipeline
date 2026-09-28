@@ -18,6 +18,9 @@ EXCLUDED_PARTS = {
     "dist",
     "_build",
     "__MACOSX",
+    # Historical publication records are migrated intact and validated by the
+    # case-study test task rather than reformatted by the generic package gate.
+    "bsm-manuscript",
 }
 MARKDOWN_SUFFIXES = {".md", ".mdx", ".markdown"}
 

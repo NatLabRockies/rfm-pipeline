@@ -1,0 +1,9 @@
+# Repo-root marker for rfm_pipeline.manuscript_runtime.normalize_manuscript_repo_root,
+# which locates the repository root by the presence of pyproject.toml + configs/.
+# This project uses pixi.toml as its authoritative manifest; this file exists only
+# as a root marker and minimal PEP 621 metadata. Do not add a build backend here.
+[project]
+name = "bsm-public-rf"
+version = "0.0.0"
+description = "BSM reduced-form model case study (pixi-managed; see pixi.toml)."
+requires-python = ">=3.10"

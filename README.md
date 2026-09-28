@@ -32,6 +32,19 @@ Once published to PyPI:
 pip install rfm-pipeline  # coming soon
 ```
 
+## BSM publication example
+
+The complete BSM manuscript workflow now lives in
+[`examples/bsm-manuscript/`](examples/bsm-manuscript/). That example owns the
+study-specific configs, execution scripts, validation tests, committed
+publication artifacts, and rendered figures. The separate `bsm-public-rf`
+repository is reserved for the consumable model and inference files.
+
+```bash
+pixi run bsm-manuscript-example-tests
+pixi run bsm-manuscript-figure-check
+```
+
 ## Quick start
 
 Use `run_canonical_workflow(...)` for the core API, or the script entry point for the

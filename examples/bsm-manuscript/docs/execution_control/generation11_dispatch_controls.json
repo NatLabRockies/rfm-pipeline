@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "generation": 11,
+  "execution_boundary": "HPC_SUBMISSION_READY",
+  "scheduler_submission_permitted": false,
+  "authoritative_handoff": {
+    "path": "bsm-public-rf-manuscript/docs/ANALYSIS_HANDOFF.md",
+    "sha256": "c251d4d3532938ad5ce62d9d766c482b1b4bcbeb6ad622f04df1c8d92df8ac6a"
+  },
+  "local_dispatch_controls": {
+    "plan": {
+      "path": "docs/AUTONOMOUS_ANALYSIS_PLAN_G11.md",
+      "sha256": "e48b30ed74c309d51403b1d8b14005bef29b7bd6e158764d92f8afcc413e68b5"
+    },
+    "prompt": {
+      "path": "scripts/autonomous_slice_prompt_g11.md",
+      "sha256": "3b5a55958083c9dbf731ed7bcb4162e03090716bb98c7188b39fbce93042b506"
+    },
+    "validator": {
+      "path": "scripts/validate_autonomous_slice_g11.py",
+      "sha256": "ad4328c7091661d57f9842296a33c15845553727f4c2c4d06eb575d4a38afc9b"
+    }
+  },
+  "first_slice": "G11-CTRL-S1",
+  "gates": {
+    "G0": "OPEN",
+    "A": "OPEN",
+    "B": "OPEN",
+    "P": "OPEN",
+    "C": "OPEN",
+    "D": "OPEN"
+  }
+}

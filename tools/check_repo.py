@@ -17,6 +17,7 @@ EXCLUDED_PARTS = {
     "build",
     "dist",
     "__MACOSX",
+    "bsm-manuscript",
 }
 EXCLUDED_FRAGMENTS = {".egg-info/", "docs/_build/", ".ipynb_checkpoints/"}
 

@@ -65,6 +65,9 @@ markdown-check = "python -m tools.check_markdown"
 lint = "ruff check ."
 format-check = "ruff format . --check"
 unit-tests = "python -m pytest -q"
+bsm-manuscript-example-tests = "bash -c 'cd examples/bsm-manuscript && PYTHONPATH=../..:../../src python -m pytest -q tests'"
+bsm-manuscript-figure-check = "python examples/bsm-manuscript/scripts/reproduce_artifacts.py --validate-only"
+bsm-manuscript-figures = "python examples/bsm-manuscript/scripts/reproduce_artifacts.py"
 
 # Manuscript reproduction workflows
 manuscript-reproduce = "env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 python scripts/run_manuscript_reproduction.py"

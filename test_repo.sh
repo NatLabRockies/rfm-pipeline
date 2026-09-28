@@ -24,6 +24,7 @@ VALIDATION_TASKS=(
   notebook-workflow-check
   compile-check
   unit-tests
+  bsm-manuscript-example-tests
   workflow-tests
   manuscript-reproduction-smoke
   notebook-tests

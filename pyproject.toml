@@ -83,6 +83,9 @@ extend-exclude = [
   "build",
   "dist",
   "docs/_build",
+  # Preserve the migrated case-study scripts byte-for-byte; its own tests are
+  # part of the repository gate.
+  "examples/bsm-manuscript",
 ]
 
 [tool.ruff.lint]

@@ -1,0 +1,301 @@
+# RETIRED — archived 2026-09-07 during G11/G12 reconciliation.
+#
+# This file was the G0 method contract on the `main` line. The G11/G12 campaign
+# chain (codex/g12-interaction-reconcile) superseded it with:
+#   - configs/bsm_dgp_contract.yaml
+#   - configs/g0_seed_ledger.yaml
+#   - configs/g11_campaign_contract.toml
+#
+# It is retained here ONLY as durable evidence, because section 13 below records
+# the P9-A-S2 independent review (decision: PASS) which exists nowhere else in
+# the repository. Do NOT treat this file as an operative contract.
+# See docs/review_register.md entry REV-RECONCILE-001.
+# ---------------------------------------------------------------------------
+
+# method_contract.yaml — G0 statistical contract (frozen 2026-08-09)
+#
+# This file is the machine-readable record of the prespecified statistical
+# contract for the BSM manuscript interaction-discovery analysis.  It is the
+# authoritative single source for the equation, tie convention, alpha rule,
+# calibration gate, candidate-family definition, permutation schedule, regimes,
+# seeds, replicate counts, failure budget, and stop rule.
+#
+# Any change to this file constitutes a G0 invalidation event and requires
+# re-running Work B (calibration) before re-opening production.
+# ---------------------------------------------------------------------------
+
+schema_version: "1.0"
+frozen_date: "2026-08-09"
+gate: "G0"
+status: "PASS"  # P9-A-S2 independent reviewer; see independent_review section below
+
+# ---------------------------------------------------------------------------
+# 1. Finite-B global maxT equation (single authoritative definition)
+# ---------------------------------------------------------------------------
+equation:
+  name: "Westfall-Young single-step maxT adjusted p-value"
+  latex: "p_{\\text{adj},j} = \\frac{1 + \\#\\{b : \\max_{j'} T_{bj'} \\geq T_{0j}\\}}{B+1}"
+  plain: |
+    p_adj_j = (1 + #{b : max_over_pairs(null_b) >= observed_j}) / (B + 1)
+  tie_convention: ">="   # ties count as exceedances; strict > is WRONG
+  B_denominator: "B+1"   # B null draws + the observed draw in the denominator
+  reference: "Westfall & Young 1993, single-step maxT"
+  implementation_function: "rfm_pipeline.manuscript_stages.maxt_adjusted_pvalues"
+  implementation_status: "verified — see tests/alignment/test_P9_A_S1_statistical_contract.py"
+
+# ---------------------------------------------------------------------------
+# 2. Method name (one name on all surfaces)
+# ---------------------------------------------------------------------------
+method:
+  name: "fwer_max_stat_exact"
+  description: >
+    Exact finite-permutation Westfall-Young single-step maxT FWER control.
+    Pairs are selected when their adjusted p-value (per the equation above) is
+    <= alpha.  The name 'fwer_max_stat_exact' is the canonical string used in
+    production config, code, tests, and artifact metadata.
+  config_key: "family_error_method"
+  config_value: "fwer_max_stat_exact"
+  config_file: "configs/manuscript_case_study.yml"
+  allowed_aliases: []   # no aliases; use the canonical name only
+
+# ---------------------------------------------------------------------------
+# 3. Alpha rule
+# ---------------------------------------------------------------------------
+alpha:
+  value: 0.05
+  interpretation: "FWER control level (family-wise error rate)"
+  decision_rule: "retain pair j iff p_adj_j <= alpha"
+  one_sided: true  # upper tail
+
+# ---------------------------------------------------------------------------
+# 4. Candidate-family definition
+# ---------------------------------------------------------------------------
+candidate_family:
+  description: >
+    All unique unordered pairs {j, k} of features surviving the BH empirical-null
+    screening stage, restricted to the 72 retained first-order terms.  Pairs are
+    enumerated in a canonical lexicographic order by feature name before scoring.
+  screening_method: "BH empirical-null (SALib delta; BH q=0.05)"
+  retained_screening_count: 72   # from manuscript_case_study.yml
+  max_pairs: 2556   # C(72,2) = 72*71/2; actual total depends on screening output
+  family_size_parameter_for_adequacy_check: 1
+    # For fwer_max_stat_exact the adequacy check uses family_size=1 because the
+    # global null distribution already accounts for the full family via row-max.
+
+# ---------------------------------------------------------------------------
+# 5. Joint permutation schedule
+# ---------------------------------------------------------------------------
+permutation_schedule:
+  type: "joint shared-response permutation"
+  description: >
+    A single random permutation of the response matrix rows is applied
+    simultaneously to all candidate pairs per null draw.  All B null interaction
+    scores are computed from the SAME permuted response, creating the joint
+    null distribution required for single-step FWER control.
+  permutation_count_B: 499   # production (manuscript_case_study.yml)
+  min_exact_permutation_draws: 499
+  seed_derivation: >
+    Derived from the run-level master_seed via np.random.default_rng(master_seed)
+    at the start of each shard.  Each shard worker stores its own sub-seed in the
+    shard metadata; the reducer verifies seed consistency across shards.
+  schedule_hash_required: true  # reducer must verify canonical schedule hash
+
+# ---------------------------------------------------------------------------
+# 6. Calibration gate (G0 acceptance criterion — prespecified)
+# ---------------------------------------------------------------------------
+calibration_gate:
+  gate_equation: "wilson_ci_upper <= alpha + calibration_tolerance"
+  criterion: >
+    The one-sided calibration_confidence Wilson score CI upper bound on the
+    empirical null-rejection rate (FWER estimate over fwer_reps replicates) must
+    not exceed alpha + calibration_tolerance.
+  calibration_confidence: 0.95
+  calibration_tolerance: 0.04        # delta; scientifically pre-justified (see StudyScale docstring)
+  gate_value: 0.09                   # = alpha + tolerance = 0.05 + 0.04
+  alpha: 0.05
+  wilson_implementation: "rfm_pipeline.recovery_study._wilson_ci"
+  discarded_criterion: "point_estimate <= alpha + 3*SE"  # REMOVED; do not use
+  failure_action: "block production; gate G0 returns to OPEN; repair rule/config before retry"
+
+# ---------------------------------------------------------------------------
+# 7. Prespecified null regimes (calibration targets)
+# ---------------------------------------------------------------------------
+null_regimes:
+  - name: "global_null"
+    description: "Complete global null: no main, interaction, or transform signal."
+    true_interactions: 0
+    n_main: 0
+    n_nonlinear: 0
+    snr: 10.0
+  - name: "interaction_null"
+    description: >
+      Continuous main effects and a nonlinear main-effect transform but no true
+      interactions; tests for screening and discovery false-positive inflation.
+    true_interactions: 0
+    n_main: 4
+    n_nonlinear: 1
+    snr: 10.0
+  # Future binary null regimes (Work B — not yet implemented in bsm-public-rf driver)
+  - name: "binary_main_null"
+    description: >
+      PRESPECIFIED but not yet implemented: binary main effects only, no interaction
+      signal; required per ANALYSIS_HANDOFF Work B.  Must be added before G0 can
+      close for production.
+    status: "prespecified_not_implemented"
+    true_interactions: 0
+    n_main_binary: 2
+    snr: 10.0
+
+# ---------------------------------------------------------------------------
+# 8. Prespecified planted regimes
+# ---------------------------------------------------------------------------
+planted_regimes:
+  - name: "sparse_strong_hierarchical"
+    description: "Sparse strong-signal: continuous main + cc interaction + transform."
+    interaction_kinds: ["cc"]
+    n_main: 4
+    n_nonlinear: 1
+    snr: 12.0
+  - name: "weak_signal"
+    description: "Same hierarchical support as sparse_strong but low SNR."
+    interaction_kinds: ["cc"]
+    n_main: 4
+    n_nonlinear: 1
+    snr: 3.0
+  - name: "correlated_redundant"
+    description: "Dense active set with redundant predictors."
+    interaction_kinds: ["cc"]
+    n_main: 8
+    n_nonlinear: 0
+    snr: 8.0
+  - name: "pure_interaction"
+    description: "Pure cc interaction, negligible marginal main effects."
+    interaction_kinds: ["cc"]
+    marginal_main_scale: 0.0
+    n_main: 0
+    n_nonlinear: 0
+    snr: 10.0
+  - name: "nonlinear_misspecified"
+    description: "Nonlinear transform + one misspecified out-of-library form."
+    interaction_kinds: []
+    n_main: 2
+    n_nonlinear: 1
+    snr: 10.0
+    misspecified: true
+  # Future binary planted regimes (Work B — not yet implemented)
+  - name: "binary_continuous_planted"
+    description: >
+      PRESPECIFIED but not yet implemented: planted binary-continuous interaction
+      (bc kind); required per ANALYSIS_HANDOFF Work B.
+    status: "prespecified_not_implemented"
+    interaction_kinds: ["bc"]
+  - name: "binary_binary_planted"
+    description: >
+      PRESPECIFIED but not yet implemented: planted binary-binary interaction
+      (bb kind); required per ANALYSIS_HANDOFF Work B.
+    status: "prespecified_not_implemented"
+    interaction_kinds: ["bb"]
+
+# ---------------------------------------------------------------------------
+# 9. Replicate counts and seeds
+# ---------------------------------------------------------------------------
+replicates:
+  null_replicates_fwer: 100          # fwer_reps in _FULL_SCALE
+  planted_replicates_alt: 20         # alt_reps in _FULL_SCALE
+  permutation_count_B: 199           # B in _FULL_SCALE (reduced vs production 499)
+  master_seed: 42                    # --seed default; must be passed as --seed 42
+  seed_derivation: >
+    master_rng = np.random.default_rng(master_seed); per-replicate seeds drawn
+    from master_rng.integers(2**31) in scenario iteration order.
+
+# ---------------------------------------------------------------------------
+# 10. Failure budget and stop rule
+# ---------------------------------------------------------------------------
+failure_budget:
+  max_failed_replicates_per_scenario: 0
+  description: >
+    Every planned replicate must complete with a terminal success record.
+    Zero failed replicates are permitted.  A replicate that raises an unhandled
+    exception must be recorded as FAILED and does NOT count toward the empirical
+    FWER or power estimates.  If any replicate fails, the study exits nonzero
+    and the calibration gate cannot PASS.
+  failure_action: "exit nonzero; record failure stage/exception; block calibration gate"
+
+stop_rule:
+  rule: "prespecified_fixed_n"
+  description: >
+    Replicate count is fixed at fwer_reps and alt_reps before data are seen.
+    No optional stopping, sequential updating, or adaptive replicate addition.
+    The calibration decision is made once from the complete set of replicates.
+
+# ---------------------------------------------------------------------------
+# 11. Author facts (must not be reinterpreted)
+# ---------------------------------------------------------------------------
+author_facts:
+  total_inputs: 160
+  continuous_inputs: 158
+  binary_inputs: 2
+  eligible_outputs: 9954
+  total_outputs: 23495
+  macro_nrmse_formula: "arithmetic_mean of per-output RMSE/range over eligible outputs"
+  holdout_status: "not_contaminated; final-evaluation-only"
+
+# ---------------------------------------------------------------------------
+# 12. Evidence references
+# ---------------------------------------------------------------------------
+evidence:
+  production_test_finite_B_boundaries: >
+    rfm-pipeline/tests/alignment/test_P9_A_S1_statistical_contract.py —
+    test_P9_A_S1_finite_B_minimum_pvalue_is_one_over_Bplus1,
+    test_P9_A_S1_B1_boundary_cases,
+    test_P9_A_S1_ge_tie_convention_exact_boundary
+  production_test_formula: >
+    rfm-pipeline/tests/alignment/test_P9_A_S1_statistical_contract.py —
+    test_P9_A_S1_equation_formula_from_spec,
+    test_P9_A_S1_pvalue_sum_formula_consistency
+  calibration_gate_implementation: >
+    bsm-public-rf/scripts/run_bsm_recovery_study.py — _run_null_replicates(),
+    StudyScale.calibration_tolerance, StudyScale.calibration_confidence
+  method_contract_diff: >
+    equation in manuscript_stages.maxt_adjusted_pvalues,
+    family_error_method in manuscript_case_study.yml,
+    family_error_method in StudyScale._FULL_SCALE,
+    fwer_max_stat_exact in test_RS_S01_exact_fwer.py,
+    fwer_max_stat_exact in test_P9_A_S1_statistical_contract.py —
+    all surfaces use "fwer_max_stat_exact" and the >= equation
+
+# ---------------------------------------------------------------------------
+# 13. Independent review — P9-A-S2 (distinct reviewer invocation)
+# ---------------------------------------------------------------------------
+independent_review:
+  reviewer_id: "Copilot P9-A-S2 (distinct invocation, read-only start)"
+  review_date: "2026-08-09"
+  decision: "PASS"
+
+  methodology:
+    - "Read live source rfm-pipeline/src/rfm_pipeline/manuscript_stages.py lines 576-629"
+    - "Confirmed >= tie convention at source line 628: exceedances = (max_null[:, None] >= observed_scores[None, :]).sum(axis=0)"
+    - "Adversarially recomputed tie boundary: obs=5.0, null=[[5.0],[3.0],[2.0]], B=3 → p=(1+1)/4=0.5 (>= counts tie; strict > would give 0.25)"
+    - "Verified min p-value at B=499: 1/(499+1)=0.002 ✓"
+    - "Ran pixi run pytest tests/alignment/test_P9_A_S1_statistical_contract.py -v: 10/10 PASSED"
+    - "Verified multiplicity_controlled_interaction_selection returns p_adj (maxT row-max values) for fwer_max_stat_exact branch, not per-pair p_values"
+    - "Confirmed calibration gate in run_bsm_recovery_study.py line 883: passes_calibration = stats['wilson_ci_upper'] <= scale.alpha + scale.calibration_tolerance"
+    - "Confirmed method name fwer_max_stat_exact in manuscript_case_study.yml line 85"
+    - "Confirmed author_facts: total_inputs=160, continuous=158, binary=2, eligible_outputs=9954"
+
+  findings:
+    defects_found: []
+    warnings:
+      - "Binary null/planted regimes (binary_main_null, binary_continuous_planted, binary_binary_planted) are prespecified_not_implemented; this is a documented gap for Gate B, not a G0 defect"
+      - "p_values computed at line 749 of multiplicity_controlled_interaction_selection is dead code for fwer_max_stat_exact branch (p_adj returned instead); no scientific impact"
+
+  criteria_checklist:
+    finite_B_equation_correct: true
+    ge_tie_convention_enforced: true
+    B_plus_1_denominator: true
+    calibration_gate_is_wilson_ci_upper: true
+    method_name_consistent_all_surfaces: true
+    author_facts_confirmed: true
+    all_10_tests_pass: true
+    no_manuscript_local_substitutes: true
+    no_hard_coded_hashes_or_counts: true

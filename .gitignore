@@ -31,6 +31,8 @@ __MACOSX/
 .DS_Store
 configs/local/
 artifacts/
+!examples/bsm-manuscript/artifacts/
+!examples/bsm-manuscript/artifacts/**
 
 # Sensitivity study local analysis artifacts
 artifacts/sensitivity/wave1_results.csv

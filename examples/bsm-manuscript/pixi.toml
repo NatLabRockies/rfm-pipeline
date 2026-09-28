@@ -1,0 +1,23 @@
+[workspace]
+name = "bsm-public-rf"
+version = "0.1.0"
+description = "BSM case study reproducibility package"
+authors = ["Dylan Hettinger"]
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "linux-64"]
+
+[dependencies]
+python = ">=3.10,<3.13"
+psutil = ">=5.9"
+pyarrow = ">=16.0"
+tqdm = ">=4.0"
+pytest = ">=7.0"
+
+[pypi-dependencies]
+rfm-pipeline = {git = "https://github.com/NatLabRockies/rfm-pipeline.git", rev = "fb8b57f180ac24aba9ed6df01726cb1f380ee65f"}
+
+[tasks]
+reproduce-full = "python scripts/reproduce_full_dataset_run.py"
+reproduce-artifacts = "python scripts/reproduce_artifacts.py"
+hpc-workflow = "python scripts/hpc_workflow.py"
+rfm-hpc-submit = "python -m rfm_pipeline.hpc_submit"

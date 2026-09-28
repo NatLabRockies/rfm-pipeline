@@ -14,10 +14,12 @@ or, if pixi is not installed locally::
 
     python -m pytest tests/
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -44,6 +46,16 @@ def _read_csv(rel: str) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
+def _assert_float_vectors_match(actual: pd.Series, expected: pd.Series) -> None:
+    """Compare serialized floats without rejecting parser-level roundoff."""
+    np.testing.assert_allclose(
+        actual.to_numpy(dtype=float),
+        expected.to_numpy(dtype=float),
+        rtol=8 * np.finfo(float).eps,
+        atol=1e-12,
+    )
+
+
 def test_final_ols_summary_matches_manuscript():
     df = _read_csv("final_model/final_ols_summary.csv")
     assert len(df) == 1
@@ -52,12 +64,8 @@ def test_final_ols_summary_matches_manuscript():
         assert int(row[col]) == expected, (
             f"final_ols_summary[{col}]={row[col]} != manuscript v22 {expected}"
         )
-    assert row["final_ols_holdout_nrmse"] == pytest.approx(
-        MANUSCRIPT_HOLDOUT_NRMSE, abs=5e-4
-    )
-    assert row["null_mean_holdout_nrmse"] == pytest.approx(
-        MANUSCRIPT_NULL_NRMSE, abs=5e-4
-    )
+    assert row["final_ols_holdout_nrmse"] == pytest.approx(MANUSCRIPT_HOLDOUT_NRMSE, abs=5e-4)
+    assert row["null_mean_holdout_nrmse"] == pytest.approx(MANUSCRIPT_NULL_NRMSE, abs=5e-4)
     assert row["manuscript_final_predictor_count_reference"] == 245
     assert row["manuscript_final_ols_holdout_nrmse_reference"] == pytest.approx(0.0679)
 
@@ -123,5 +131,19 @@ def test_intercept_vector_matches_y_standardization():
     y_std = _read_csv("final_model/y_standardization.csv")
     merged = intercepts.merge(y_std, on=intercepts.columns[0], how="inner")
     # intercept must equal y_standardization.mean (the per-output training mean).
-    diff = (merged["intercept"] - merged["mean"]).abs().max()
-    assert diff < 1e-9, f"intercept and y_standardization.mean diverge by {diff}"
+    _assert_float_vectors_match(merged["intercept"], merged["mean"])
+
+
+def test_float_vector_comparison_accepts_serialization_roundoff():
+    actual = pd.Series([10_000_000_000.000002])
+    expected = pd.Series([10_000_000_000.0])
+
+    _assert_float_vectors_match(actual, expected)
+
+
+def test_float_vector_comparison_rejects_material_difference():
+    actual = pd.Series([10.01])
+    expected = pd.Series([10.0])
+
+    with pytest.raises(AssertionError):
+        _assert_float_vectors_match(actual, expected)

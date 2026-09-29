@@ -30,9 +30,9 @@ def test_engineering_manifest_records_latest_full_gate() -> None:
     text = MANIFEST_PATH.read_text(encoding="utf-8")
     required_phrases = [
         "## Latest Validation Record",
-        "`./test_repo.sh --check`: passed",
+        "`pixi run gate`: passed",
         "GitHub Actions CI run for PR #",
-        "- [x] Run and record a fresh full `./test_repo.sh --check` after manifest changes.",
+        "- [x] Run and record a fresh full `pixi run gate` after manifest changes.",
     ]
 
     for phrase in required_phrases:

@@ -211,7 +211,7 @@ for row in cur: print(row)
 # Start refactor (first todo: validate-artifacts)
 # Follow REFACTOR_CONFIG_DRIVEN_DESIGN.md migration checklist (8 steps)
 # Update todo status as work progresses
-# Final: bash ./test_repo.sh --check && git commit
+# Final: pixi run gate && git commit
 ```
 
 ______________________________________________________________________

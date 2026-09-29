@@ -35,14 +35,12 @@ def test_runtime_docs_link_alignment_audit_and_do_not_overclaim() -> None:
     assert "still need verification against the private manuscript run" in runtime
 
 
-def test_readme_distinguishes_audited_scaffold_from_exact_reproduction() -> None:
-    """The public README should not imply exact manuscript reproduction is finished."""
+def test_readme_links_to_the_concise_workflow_scope_guide() -> None:
+    """The public README should route implementation-limit questions to one guide."""
     readme = Path("README.md").read_text(encoding="utf-8")
-    # README should call out that at least one stage is still a public surrogate
-    # and direct the reader to the alignment audit for the full status ledger.
-    assert "Public surrogate" in readme
-    assert "de-biased LASSO" in readme
-    assert "docs/manuscript_alignment_audit.md" in readme
+    assert "[Workflow scope boundary](docs/scope_boundary.md)" in readme
+    assert "## Scientific scope" not in readme
+    assert "docs/manuscript_alignment_audit.md" not in readme
 
 
 def test_alignment_audit_maps_final_tables_and_figures_to_named_artifacts() -> None:

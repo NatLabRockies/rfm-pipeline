@@ -19,7 +19,7 @@ This plan implements the 2026-08-10 HPC audit.  It ends at
 **Depends on:** none
 **Phase:** G11
 **Task type:** implementation
-**Repositories:** bsm-public-rf-manuscript, bsm-public-rf
+**Repositories:** bsm-public-rf
 
 Create and validate the generation-11 plan, prompt, validator, and tracked
 control-bundle manifest.  Bind the bundle to the current handoff hash and the
@@ -43,7 +43,7 @@ wrong dimensions, wrong binary types, stale hashes, and incomplete inventories.
 **Depends on:** G11-CTRL-S1
 **Phase:** G11
 **Task type:** independent-review
-**Repositories:** bsm-public-rf-manuscript, bsm-public-rf
+**Repositories:** bsm-public-rf
 
 Read controls and manifests without trusting prior reports.  Reject missing,
 ignored-only, stale, or unbound control sources.
@@ -108,7 +108,7 @@ dependencies, paths, storage/inode/AU arithmetic, and placeholders locally.
 **Depends on:** G11-HPC-S1
 **Phase:** G11
 **Task type:** independent-review
-**Repositories:** rfm-pipeline, bsm-public-rf, bsm-public-rf-manuscript
+**Repositories:** rfm-pipeline, bsm-public-rf
 
 Read-only adversarial review of all `HPC_SUBMISSION_READY` criteria.  Scheduler
 submission remains prohibited regardless of the review decision.

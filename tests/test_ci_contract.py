@@ -8,7 +8,7 @@ from pathlib import Path
 def test_ci_runs_repo_gate() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "Run repository gate" in workflow
-    assert "./test_repo.sh --ci" in workflow
+    assert "pixi run ci" in workflow
 
 
 def test_ci_runs_locked_pixi_environment_once() -> None:

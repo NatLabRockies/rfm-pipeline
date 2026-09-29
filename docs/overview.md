@@ -44,7 +44,6 @@ boundary.
 
 - `rfm-pipeline`: generic workflow code, docs, tests, and case studies.
 - `bsm-public-rf`: ready-to-use BSM coefficients and prediction API.
-- `bsm-public-rf-manuscript`: article and submission source.
 
-Keeping these responsibilities separate lets model users avoid the research
+Keeping these two responsibilities separate lets model users avoid the research
 workflow and lets workflow users start from a neutral example.

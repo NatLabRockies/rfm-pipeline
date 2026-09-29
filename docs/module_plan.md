@@ -45,7 +45,7 @@ This page records the live package modules and what they currently cover.
 The live repository contract is built around:
 
 - `pixi.toml` for the canonical local and CI environment
-- `test_repo.sh` for the local and CI validation entrypoint
+- `pixi run gate` for the local and CI validation entrypoint
 - `.github/workflows/ci.yml` for CI orchestration through Pixi
 - `tools/check_repo.py` for repository hygiene checks
 - `tools/notebook_hygiene.py` for notebook output stripping and syntax validation

@@ -7,7 +7,7 @@ ______________________________________________________________________
 Responsibilities:
 
 - Reproduce failures locally with repo-local Pixi.
-- Compare CI commands to `test_repo.sh` and local validation.
+- Compare CI commands to `pixi run gate` and local validation.
 - Fix root causes.
 - Preserve or strengthen tests.
 - Align CI and local gates.

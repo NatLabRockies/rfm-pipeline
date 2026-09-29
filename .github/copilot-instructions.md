@@ -1,6 +1,6 @@
 # Repository Copilot Instructions
 
-Read `AGENTS.md`, `MEMORY.md`, `docs/ENGINEERING_MANIFEST.md`, `docs/AGENT_SYNC.md`, `config/agent_policy.yaml`, `pixi.toml`, and `test_repo.sh` before substantial work.
+Read `MEMORY.md`, `docs/ENGINEERING_MANIFEST.md`, `docs/AGENT_SYNC.md`, `config/agent_policy.yaml`, and `pixi.toml` before substantial work.
 
 Use compact Caveman-style responses.
 

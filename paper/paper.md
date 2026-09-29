@@ -122,9 +122,9 @@ in the synthetic-DGP study configuration
 tractable; the BSM case-study run uses the full manuscript baselines.
 
 The package uses [Pixi](https://pixi.sh) for reproducible environment
-management and ships with a `test_repo.sh` script that enforces code
-formatting, linting, notebook hygiene, unit tests, workflow smoke tests, and
-documentation builds as a single gate.
+management and provides a `pixi run gate` task that enforces code formatting,
+linting, notebook hygiene, unit tests, workflow smoke tests, and documentation
+builds as a single gate.
 
 # Acknowledgements
 

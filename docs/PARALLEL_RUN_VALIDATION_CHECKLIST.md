@@ -152,7 +152,7 @@ cat artifacts/validation_300_sample_no_caps/qa_audit_summary.json | pixi run pyt
 pixi run python tools/run_300_sample_validation.py --no-caps --seed 0
 
 # 4. Run full gate to ensure no regressions
-bash ./test_repo.sh --check
+pixi run gate
 ```
 
 ______________________________________________________________________

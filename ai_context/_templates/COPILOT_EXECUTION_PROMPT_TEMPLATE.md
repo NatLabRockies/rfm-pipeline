@@ -1,6 +1,6 @@
 # Copilot Execution Prompt: <feature>
 
-Follow AGENTS.md and repository Copilot instructions.
+Follow the repository Copilot instructions.
 
 Start by auditing the live repo. Then read these required ai_context artifacts:
 

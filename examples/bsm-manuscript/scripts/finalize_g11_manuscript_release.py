@@ -146,7 +146,7 @@ def finalize_manuscript_release(
     )
     for source in source_files:
         if not (manuscript / source).is_file():
-            raise ValueError(f"manuscript repository lacks {source}")
+            raise ValueError(f"article source directory lacks {source}")
     if release.exists() and any(release.iterdir()):
         raise ValueError("release output root must be new or empty")
     release.mkdir(parents=True, exist_ok=True)

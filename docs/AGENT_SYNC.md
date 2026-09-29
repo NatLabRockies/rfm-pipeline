@@ -1,3 +1,21 @@
+## SESSION STATE — 2026-09-29 — Public release surface cleanup
+
+- This user-authorized slice removes repository-local agent, conduct,
+  security, and shell-gate policy files from the public tree; preserves the
+  complete validation sequence behind `pixi run gate`; aligns the license with
+  `bsm-public-rf`; and removes links to the external article source.
+- Work starts from clean `main` at `b7c8ed7` in the isolated
+  `release-surface-cleanup` worktree. No dependency, scientific method, model
+  artifact, production analysis, or scheduler change is in scope.
+- Focused contract tests first failed because the new Pixi gate runner and
+  removals were not yet present. The implementation now routes local and CI
+  validation through Pixi while retaining the existing ordered task set.
+- Final validation passed: `pixi run gate` completed root and BSM case-study
+  tests, workflow and reproduction smokes, all nine notebooks,
+  warnings-as-errors documentation, source and wheel builds, installed-wheel
+  smoke testing, repository hygiene, and the final diff check. No production
+  analysis or scheduler command ran.
+
 ## SESSION STATE — 2026-09-29 — User documentation review
 
 - This slice is limited to release-facing documentation and small illustrative
@@ -19,7 +37,7 @@
   template were added. The first full gate exposed the required scientific
   scope statement; after restoring that concise warning, the focused guard
   suite and documentation build passed.
-- Final validation passed: `./test_repo.sh --check` completed root and BSM
+- Final validation passed: `pixi run gate` completed root and BSM
   case-study tests, workflow and reproduction smokes, all nine notebooks,
   warnings-as-errors documentation, source and wheel builds, installed-wheel
   smoke testing, repository hygiene, and the final diff check. No production
@@ -45,7 +63,7 @@
   `package-build`; it verifies the public import and all three console entry
   points directly from the wheel outside the source checkout.
 - Validation passed: focused gate/release/manifest tests, Ruff, Markdown, and
-  the authoritative `./test_repo.sh --check` gate. The full gate covered root
+  the authoritative `pixi run gate`. The full gate covered root
   tests, the complete canonical BSM example suite, workflow and reproduction
   smokes, all nine notebooks, documentation, source/wheel builds, the new wheel
   smoke, repository hygiene, and final diff checks. No production analysis or
@@ -69,7 +87,7 @@
   shells into a subset of the example tests. The dedicated example task remains
   required and runs the complete suite once.
 - Validation passed: 13 focused contract/bridge tests, Ruff lint and format
-  checks, the dedicated example test task, and `./test_repo.sh --fix`. The full
+  checks, the dedicated example test task, and `pixi run gate-fix`. The full
   gate included root tests, the complete BSM manuscript example suite, workflow
   and reproduction smoke checks, all nine notebooks, documentation, package
   builds, repository hygiene, and the final diff check. No production model fit
@@ -99,7 +117,7 @@
   public manuscript terminal path's nonempty-support failure.
 - Validation passed: the focused alignment module (11 tests), a 30-test
   terminal/recovery/interaction suite, Ruff formatting and lint checks,
-  `git diff --check`, and the authoritative `./test_repo.sh --check` gate. The
+  `git diff --check`, and the authoritative `pixi run gate`. The
   full gate included all unit and workflow tests, execution of all nine
   manuscript notebooks, the documentation build, package builds, repository
   hygiene, and final diff checks.
@@ -259,7 +277,7 @@
 - Validation passed:
   the focused HPC allocation/smoke/retry tests and Ruff checks after the final
   whole-campaign accounting correction. The substantive integration also
-  passed `./test_repo.sh --check` before that narrow correction. No scheduler
+  passed `pixi run gate` before that narrow correction. No scheduler
   submission or commit occurred.
 
 # Agent Sync
@@ -386,7 +404,8 @@ next_slice: Path A S-F release rebuild. Use the completed B=499 artifacts and BS
 - Corrected artifacts (seed 42, reduced-local scale, outputs/recovery_study/, gitignored): FWER global_null 0.100 [0.055,0.174], interaction_null 0.150 [0.093,0.233] at α=0.1 (both CIs cover α → control demonstrated within MC error). Exact interaction-support recovery (precision=recall=1.0) in all structured scenarios except correlated_redundant (documented collinearity failure mode). Comparators (oracle-OLS/GBT/elastic-net) behave as expected.
 - last_validation: `pixi run python -m pytest tests/alignment -q` → all pass (~500); `pixi run ruff check src/ scripts/ tests/` → clean (fixed 4 pre-existing RS-subagent lint findings).
 - Scope: rfm-pipeline stays generic (no case-study literals in RS code). `outputs/` gitignored (regenerable). Stray untracked scripts/build_track_a_v3_manuscript_addon.py left as-is (pre-existing case-specific WIP, not part of this slice).
-- next: manuscript recovery methods+results subsection using outputs/recovery_study/ numbers (bsm-public-rf-manuscript, M-phase, separate slice).
+- next: article recovery methods and results subsection using
+  `outputs/recovery_study/` numbers (M-phase, separate slice).
 
 ## SESSION STATE — 2026-06-30 — Monday slice W1 complete: docs-snippet smoke coverage
 
@@ -396,7 +415,7 @@ next_slice: Path A S-F release rebuild. Use the completed B=499 artifacts and BS
 - TDD red: `pixi run python -m pytest -q tests/test_docs_snippets_smoke.py::test_docs_snippets_follow_pixi_command_policy` failed on 3 bare `| python -m json.tool` snippets.
 - Fix: added `test_docs_snippets_follow_pixi_command_policy` (targeted file allowlist + prohibited command regex checks) and converted those 3 snippets to `| pixi run python -m json.tool`.
 - Targeted green: `pixi run python -m pytest -q tests/test_docs_snippets_smoke.py` and `pixi run python -m pytest -q tests/test_docs_snippets_smoke.py tests/test_markdown_formatting_contract.py` passed.
-- Full gate checkpoint: `./test_repo.sh --check` failed at pre-existing `repo-hygiene` trailing-whitespace findings under `artifacts/dsj_manuscript_update_package_20260520*/DSJ_manuscript_update_plan.md` (outside this bounded slice; tracked as hygiene blocker class).
+- Full gate checkpoint: `pixi run gate` failed at pre-existing `repo-hygiene` trailing-whitespace findings under `artifacts/dsj_manuscript_update_package_20260520*/DSJ_manuscript_update_plan.md` (outside this bounded slice; tracked as hygiene blocker class).
 
 ## SESSION STATE — 2026-06-30 — Bounded slice complete: D1 shared SVG→PDF helper rewrite
 
@@ -773,7 +792,7 @@ ______________________________________________________________________
 | 2 Rename package bsm_rfm → rfm_pipeline | ✅ done | ce6768b; 471 tests pass             |
 | 3 Rename GitHub repo → rfm-pipeline     | ✅ done | NatLabRockies/rfm-pipeline live     |
 | 4 Create bsm-public-rf (new)            | ✅ done | commit 8676314                      |
-| 5 Create bsm-public-rf-manuscript       | ✅ done | commit 26f7999                      |
+| 5 Create external article source        | ✅ done | commit 26f7999                      |
 | 6 Remove BSM configs from rfm-pipeline  | ✅ done | commit 372582f; 461 passed, 1 xfail |
 
 ### Post-split cleanup complete
@@ -789,13 +808,12 @@ ______________________________________________________________________
 - `~/src/rfm-pipeline` → rfm-pipeline repo ✅
 - `~/src/bsm-public-rf` → new BSM study repo ✅
 
-### Three repos live on GitHub ✅
+### Repository split live on GitHub ✅
 
-| Repo                                   | Visibility | Purpose                                 | Latest commit |
-| -------------------------------------- | ---------- | --------------------------------------- | ------------- |
-| NatLabRockies/rfm-pipeline             | private    | Generic pipeline package `rfm_pipeline` | b1aafa8       |
-| NatLabRockies/bsm-public-rf            | private    | BSM configs + model artifacts           | c5c6aa9       |
-| NatLabRockies/bsm-public-rf-manuscript | private    | LaTeX + figures                         | 26f7999       |
+| Repo                        | Visibility | Purpose                                 | Latest commit |
+| --------------------------- | ---------- | --------------------------------------- | ------------- |
+| NatLabRockies/rfm-pipeline  | private    | Generic pipeline package `rfm_pipeline` | b1aafa8       |
+| NatLabRockies/bsm-public-rf | private    | BSM configs + model artifacts           | c5c6aa9       |
 
 ### Sensitivity study — HPC state (UPDATED 2026-06-06T05:47 MT)
 
@@ -1460,7 +1478,7 @@ Priority order:
 - Validation:
   - `pixi run pytest -q tests/test_distributed_phase8a.py tests/test_hpc_shard_reduce.py` ✅
   - `pixi run pytest -q tests/test_parallel_executor.py tests/test_config_loader.py tests/test_manuscript_interaction_discovery.py tests/test_distributed_phase8a.py tests/test_hpc_shard_reduce.py tests/test_distributed_phase8bc_gpu.py` ✅
-  - `./test_repo.sh` ✅
+  - `pixi run gate` ✅
 
 ## Phase 8a — SLURM Array Baseline (2026-05-12)
 
@@ -1938,7 +1956,7 @@ pixi run env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_
 ## Full gate
 
 ```bash
-./test_repo.sh --check
+pixi run gate
 ```
 
 ## Latest slice update
@@ -2029,7 +2047,7 @@ pixi run env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_
 
 - Milestone checkpoint gate:
 
-  - `./test_repo.sh --check` ✅ pass
+  - `pixi run gate` ✅ pass
 
 - Added `--no-caps` and `--output-root` flags to `tools/run_300_sample_validation.py`.
   No-caps mode bypasses all `FAST_VALIDATION_OVERRIDES`, uses all 23,495 outputs, and applies
@@ -2560,7 +2578,7 @@ ______________________________________________________________________
   while retaining one exact 5,600-record scientific reducer. Recovery
   comparators run only for the 600 strong and 800 stress records, not the 5,000
   null-calibration records.
-- Validation: `./test_repo.sh --check` passed in full, including unit tests,
+- Validation: `pixi run gate` passed in full, including unit tests,
   workflow tests, manuscript reproduction smoke, all notebooks, docs, package
   build, hygiene, and `git diff --check`. The notebook gate emitted only the
   pre-existing missing-cell-ID warning.

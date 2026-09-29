@@ -5,15 +5,6 @@ inputs and outputs. It provides screening, linear fitting, holdout evaluation,
 artifact export, and optional staged discovery of interactions and nonlinear
 terms.
 
-## Choose the right repository
-
-| I want to...                                      | Go to...                                                                                |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Fit or adapt a reduced-form modeling workflow     | **This repository**                                                                     |
-| Use the ready-made BSM reduced-form model         | [`bsm-public-rf`](https://github.com/NatLabRockies/bsm-public-rf)                       |
-| Inspect the BSM workflow as a complete case study | [`examples/bsm-manuscript/`](examples/bsm-manuscript/)                                  |
-| Read or build the article                         | [`bsm-public-rf-manuscript`](https://github.com/NatLabRockies/bsm-public-rf-manuscript) |
-
 ## What the package provides
 
 Two execution surfaces serve different needs:
@@ -25,17 +16,6 @@ Two execution surfaces serve different needs:
   interaction and nonlinear discovery, stability selection, final OLS/HC3
   filtering, resumable execution, and distributed building blocks. Use this
   when you need the full research pipeline.
-
-The BSM-specific configs, scripts, figures, and publication outputs are a case
-study inside `examples/bsm-manuscript/`; they are not the default workflow.
-
-## Scientific scope
-
-An executable workflow is not automatically an exact reconstruction of every
-historical research stage. In particular, the de-biased LASSO path remains a
-**Public surrogate** pending external equivalence evidence. See
-`docs/manuscript_alignment_audit.md` for the stage-by-stage status ledger
-before making manuscript-exact claims.
 
 ## Install
 
@@ -111,7 +91,7 @@ The full documentation site starts at [`docs/index.md`](docs/index.md).
 ## Validate a checkout
 
 ```bash
-./test_repo.sh --check
+pixi run gate
 ```
 
 The full gate is intentionally comprehensive and can take a long time. It

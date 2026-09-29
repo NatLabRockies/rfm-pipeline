@@ -16,14 +16,12 @@ body:
       label: Required context
       description: Files the agent must read before planning or editing.
       value: |
-        - AGENTS.md
         - README.md
         - MEMORY.md
         - docs/ENGINEERING_MANIFEST.md
         - docs/AGENT_SYNC.md
         - config/agent_policy.yaml
         - pixi.toml
-        - test_repo.sh
     validations:
       required: true
   - type: textarea
@@ -64,8 +62,8 @@ body:
       value: |
         pixi install --locked
         pixi run pytest -q <targeted tests>
-        ./test_repo.sh --fix
-        ./test_repo.sh
+        pixi run gate-fix
+        pixi run gate
     validations:
       required: true
   - type: dropdown

@@ -31,7 +31,7 @@ ______________________________________________________________________
 #### Setup & Installation
 
 - **Clear** Pixi-based environment management
-- **Automated** test_repo.sh validation script
+- **Automated** Pixi validation gate
 - **Multiple** execution paths (demo, real data, custom)
 
 #### Code Quality

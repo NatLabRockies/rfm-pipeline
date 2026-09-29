@@ -10,7 +10,7 @@ Responsibilities:
 
 - Confirm the target repo path and desired profile.
 - Use the toolkit `make-compatible` flow to create standard directories and managed files.
-- Ensure `pixi.toml`, `pyproject.toml`, `test_repo.sh`, `MEMORY.md`, `README.md`, `docs/ENGINEERING_MANIFEST.md`, and `docs/AGENT_SYNC.md` exist.
+- Ensure `pixi.toml`, `pyproject.toml`, `MEMORY.md`, `README.md`, `docs/ENGINEERING_MANIFEST.md`, and `docs/AGENT_SYNC.md` exist.
 - Populate the initial engineering manifest from the user-provided project goal, README, and available repo evidence.
 - Run repo-local Pixi validation after scaffolding.
 - Produce next-step recommendations and install/usage instructions.

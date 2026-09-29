@@ -308,8 +308,6 @@ def evaluate_command(command: str, policy: AgentPolicy, pixi_repo: bool = True) 
         direct_ok = (
             command_starts_with(cmd, "pixi run")
             or command_starts_with(cmd, "pixi install --locked")
-            or command_starts_with(cmd, "./test_repo.sh")
-            or command_starts_with(cmd, "bash test_repo.sh")
             or command_starts_with(cmd, "git ")
             or command_starts_with(cmd, "gh ")
             or command_starts_with(cmd, "pwd")
@@ -324,7 +322,7 @@ def evaluate_command(command: str, policy: AgentPolicy, pixi_repo: bool = True) 
             or command_starts_with(cmd, "mkdir ")
         )
         if is_pixi_managed_tool(tool) and not direct_ok:
-            return False, "This repo has pixi.toml. Use `pixi run ...` or `./test_repo.sh`."
+            return False, "This repo has pixi.toml. Use `pixi run ...`."
 
     return True, "allowed"
 

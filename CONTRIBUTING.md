@@ -13,7 +13,7 @@ Thank you for your interest in contributing!
    ```
 1. Run the test suite to verify your setup:
    ```bash
-   ./test_repo.sh
+   pixi run gate
    ```
 
 > **Note on optional tests.** Tests that exercise SLURM/HPC orchestration or
@@ -27,7 +27,7 @@ Thank you for your interest in contributing!
 
 - Write tests before implementing (TDD).
 - Run targeted tests during development: `pixi run python -m pytest tests/<your_test>.py`
-- Run the full gate before submitting: `./test_repo.sh`
+- Run the full gate before submitting: `pixi run gate`
 - Follow existing code style (ruff enforces formatting and linting automatically).
 
 ## Pull requests
@@ -52,7 +52,3 @@ Open a GitHub issue describing:
 - The use case
 - Why the current API is insufficient
 - A proposed interface (optional)
-
-## Code of conduct
-
-This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).

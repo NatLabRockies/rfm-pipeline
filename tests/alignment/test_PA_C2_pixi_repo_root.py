@@ -1,8 +1,8 @@
-"""PA-C2: manuscript repo-root resolution must recognize pixi-based study repos.
+"""PA-C2: article-source resolution must recognize pixi-based study repos.
 
 ``normalize_manuscript_repo_root`` previously required a ``pyproject.toml`` marker,
 which excludes fully pixi-managed study repositories (``pixi.toml`` only). The
-publication run-of-record study repo is pixi-managed, so repo-root resolution
+publication run-of-record study directory is pixi-managed, so root resolution
 must accept either a ``pyproject.toml`` or a ``pixi.toml`` alongside ``configs/``.
 """
 

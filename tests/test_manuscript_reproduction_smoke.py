@@ -5,6 +5,8 @@ from __future__ import annotations
 import runpy
 from pathlib import Path
 
+from tools.run_repository_gate import VALIDATION_TASKS
+
 
 def test_manuscript_reproduction_smoke_script_imports_without_installed_package() -> None:
     namespace = runpy.run_path(
@@ -92,8 +94,7 @@ def test_metric_check_validation_rejects_nonpositive_or_nonnumeric_final_nrmse()
 
 
 def test_gate_runs_manuscript_reproduction_smoke_before_notebooks() -> None:
-    script = Path("test_repo.sh").read_text(encoding="utf-8")
-    smoke_position = script.index("manuscript-reproduction-smoke")
-    notebook_position = script.index("notebook-tests")
+    smoke_position = VALIDATION_TASKS.index("manuscript-reproduction-smoke")
+    notebook_position = VALIDATION_TASKS.index("notebook-tests")
 
     assert smoke_position < notebook_position

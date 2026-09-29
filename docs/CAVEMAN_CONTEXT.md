@@ -14,7 +14,7 @@ Recommended command:
 npx skills add JuliusBrussee/caveman -a github-copilot -g -y
 ```
 
-This targets GitHub Copilot and installs the skill globally for the current user. Avoid Caveman's broader `--all` or `--with-init` setup inside managed repositories unless you intentionally want Caveman to write repo-local instruction files such as `.github/copilot-instructions.md` or `AGENTS.md`. This toolkit manages those files.
+This targets GitHub Copilot and installs the skill globally for the current user. Avoid Caveman's broader `--all` or `--with-init` setup inside managed repositories unless you intentionally want Caveman to write repo-local instruction files. This toolkit manages those files.
 
 ## Refresh model
 
@@ -47,7 +47,6 @@ export CAVEMAN_COMPRESS_DIR=/path/to/caveman-compress
 
 Targets:
 
-- `AGENTS.md`
 - `.github/copilot-instructions.md`
 - `MEMORY.md`
 - `docs/ENGINEERING_MANIFEST.md`

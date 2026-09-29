@@ -31,7 +31,7 @@ Notebook stage-call correctness is checked by:
 pixi run notebook-workflow-check
 ```
 
-This check is part of `./test_repo.sh --check`.
+This check is part of `pixi run gate`.
 
 ## Recommended debug workflow
 

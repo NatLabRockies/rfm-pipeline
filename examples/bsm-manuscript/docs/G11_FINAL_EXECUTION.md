@@ -321,7 +321,7 @@ cd /Users/dhetting/src/bsm-public-rf-g11-integration
 pixi run python scripts/finalize_g11_manuscript_release.py \
   --publication-root /Users/dhetting/src/final-g11-release/publication_artifacts \
   --bsm-repo-root /Users/dhetting/src/bsm-public-rf-g11-integration \
-  --manuscript-root /Users/dhetting/src/bsm-public-rf-manuscript \
+  --manuscript-root /path/to/article-source \
   --release-root /Users/dhetting/src/final-g11-release/jds_release \
   --replace
 ```

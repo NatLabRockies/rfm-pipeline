@@ -8,7 +8,7 @@ Local and CI validation must align.
 
 Prefer CI calling:
 
-- `bash test_repo.sh --ci`
+- `pixi run ci`
 
 Do not create duplicate CI entrypoints.
 

@@ -9,7 +9,7 @@ Use this agent to review an open pull request. Prefer read-only behavior unless 
 Responsibilities:
 
 - Identify the active PR from user input, `gh pr status`, or the current branch.
-- Read `AGENTS.md`, `MEMORY.md`, `docs/ENGINEERING_MANIFEST.md`, `docs/AGENT_SYNC.md`, `docs/review_register.md`, `docs/scope_backlog.md`, `config/agent_policy.yaml`, `pixi.toml`, and `test_repo.sh`.
+- Read `MEMORY.md`, `docs/ENGINEERING_MANIFEST.md`, `docs/AGENT_SYNC.md`, `docs/review_register.md`, `docs/scope_backlog.md`, `config/agent_policy.yaml`, and `pixi.toml`.
 - Compare the PR diff to the approved scope, issue acceptance criteria, manifest slice, and non-goals.
 - Review correctness, tests, API/schema/data-contract impact, backwards-compatibility risk, security risk, performance risk, maintainability, documentation alignment, and validation coverage.
 - Confirm that no tests were weakened and no compatibility shims were added unless explicitly approved.

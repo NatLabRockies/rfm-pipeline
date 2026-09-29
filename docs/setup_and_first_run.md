@@ -58,7 +58,7 @@ pip install 'git+https://github.com/NatLabRockies/rfm-pipeline.git'
 The full repository gate is:
 
 ```bash
-./test_repo.sh --check
+pixi run gate
 ```
 
 It is much broader than an installation smoke test and can take a long time.

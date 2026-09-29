@@ -213,7 +213,7 @@ pixi run ruff format --check .
 pixi run pytest -q
 ```
 
-If the repo has `test_repo.sh`, inspect it first and use the appropriate check/fix mode according to the repo’s documented workflow.
+Use the repository's documented Pixi gate and select its check or fix task as appropriate.
 
 ## Deliverables after implementation
 

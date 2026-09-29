@@ -1,6 +1,6 @@
 ______________________________________________________________________
 
-## applyTo: "scripts/**/\*.py,scripts/**/\*.sh,test_repo.sh"
+## applyTo: "scripts/**/\*.py,scripts/**/\*.sh,tools/\*\*/\*.py"
 
 # Scripts and Validation
 
@@ -17,4 +17,5 @@ Shell scripts:
 - provide `--help` when user-facing
 - support check-only behavior by default when applicable
 
-`test_repo.sh` is the authoritative local gate when present. CI should call it.
+`pixi run gate` is the authoritative local gate. CI should call the matching
+`pixi run ci` task.

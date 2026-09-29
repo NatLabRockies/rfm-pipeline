@@ -6,7 +6,7 @@ Summary
 - Origin/main: 41f6ecb
 - Working tree: clean (no unstaged changes)
 - Targeted manuscript tests: executed locally (manuscript runtime, sparse-selection, final-artifacts, reproduction chain/audit, reproducibility example) — all passed under pixi-managed env
-- Full local gate: `./test_repo.sh --check` passed locally
+- Full local gate: `pixi run gate` passed locally
 - GitHub CI: latest CI for commit 41f6ecb completed: success
 
 Notebook discovery
@@ -31,7 +31,7 @@ Commands run (local)
 git rev-parse --short HEAD
 git status --short --branch
 pixi run pytest -q tests/test_manuscript_runtime.py tests/test_manuscript_sparse_selection.py tests/test_manuscript_final_artifacts.py tests/test_manuscript_reproduction_chain.py tests/test_manuscript_reproduction_audit.py tests/test_reproducibility_example.py
-./test_repo.sh --check
+pixi run gate
 gh run list --limit 10 --json headSha,conclusion,status,workflowName
 ```
 

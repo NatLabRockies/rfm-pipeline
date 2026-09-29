@@ -522,7 +522,7 @@ pixi run pytest tests/test_manuscript_interaction_discovery.py -v
 pixi run pytest tests/test_manuscript*.py -v
 
 # Full gate (lint, format, tests, build)
-bash ./test_repo.sh --check
+pixi run gate
 ```
 
 ### Benchmark Commands
@@ -665,7 +665,7 @@ ______________________________________________________________________
        assert np.all(np.isfinite(result))
    ```
 
-1. **Rerun full gate**: `bash ./test_repo.sh --check`
+1. **Rerun full gate**: `pixi run gate`
 
 ### Adding a New Parallelizable Stage
 

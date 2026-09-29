@@ -385,13 +385,12 @@ detail, add a one-paragraph pointer to this provenance doc.
 ### 1.6 Package rename: `bsm_rfm` → `rfm_pipeline`
 
 The generic pipeline package was renamed from `bsm_rfm` to `rfm_pipeline`
-(commit `ce6768b`, 2026-06-01) and split into three repos:
+(commit `ce6768b`, 2026-06-01) and split into dedicated repositories:
 
-| Repo                                   | Purpose                                 |
-| -------------------------------------- | --------------------------------------- |
-| NatLabRockies/rfm-pipeline             | Generic pipeline package `rfm_pipeline` |
-| NatLabRockies/bsm-public-rf            | BSM configs + committed model artifacts |
-| NatLabRockies/bsm-public-rf-manuscript | LaTeX + figures                         |
+| Repo                        | Purpose                                 |
+| --------------------------- | --------------------------------------- |
+| NatLabRockies/rfm-pipeline  | Generic pipeline package `rfm_pipeline` |
+| NatLabRockies/bsm-public-rf | BSM configs + committed model artifacts |
 
 **Manuscript impact:** any code citation or repo URL must point to the
 correct repo. Generic pipeline citations → `rfm-pipeline`; BSM dataset /

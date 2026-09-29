@@ -332,7 +332,7 @@ ______________________________________________________________________
 
 ### Step 7: Full validation
 
-- `bash ./test_repo.sh --check` — all tests pass
+- `pixi run gate` — all tests pass
 - `pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_no_caps.yml` — produces same artifacts as before
 - `pixi run python tools/run_300_sample_validation.py --no-caps` — backward compatible
 

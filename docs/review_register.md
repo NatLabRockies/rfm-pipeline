@@ -104,7 +104,7 @@ Agents use this file to convert review findings into planned work instead of lea
 - Severity: medium
 - Category: process
 - Disposition: required_follow_up
-- Source: checkpoint run `./test_repo.sh --check`
+- Source: checkpoint run `pixi run gate`
 - Evidence: `repo-hygiene` reports trailing whitespace in unrelated files (`COMPLETE_SETUP_GUIDE.md`, `DOCUMENTATION_STATUS.md`, `WORKFLOW_FINDINGS.md`, several `scripts/*.py`, `configs/datasets/README.md`)
 - Affected files: multiple docs/scripts outside current Stage 2/3/4 slice
 - Required action: run formatting cleanup for listed files (or remove from active branch) before rerunning full gate
@@ -386,7 +386,7 @@ ______________________________________________________________________
     while audits remain available for failure diagnosis.
 - Tests: new negative tests reject source/lock drift, stale inventory, forged
   prerequisites, and invalid phase evidence; focused HPC package suite and the
-  complete `./test_repo.sh --check` gate pass.
+  complete `pixi run gate` pass.
 - Blocks merge/submission: no after commit and clean-cluster preflight; the
   current dirty/uncommitted worktree and unresolved live Kestrel evidence still
   block scheduler submission.

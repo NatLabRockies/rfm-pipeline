@@ -67,7 +67,7 @@ Goal: keep a steady, review-friendly git history without jumping ahead of schedu
 | 3    | 2026-07-13    | Apply manuscript edit pass for the first third of R1–R11.                                    |
 | 4    | 2026-07-20    | Apply manuscript edit pass for the middle third of R1–R11.                                   |
 | 5    | 2026-07-27    | Apply manuscript edit pass for the final third of R1–R11 and sync impact log.                |
-| 6    | 2026-08-03    | Clean the repo-hygiene whitespace blockers that still fail `./test_repo.sh --check`.         |
+| 6    | 2026-08-03    | Clean the repo-hygiene whitespace blockers that still fail `pixi run gate`.                  |
 | 7    | 2026-08-10    | Reconcile the final-cost ladder pruning threshold and document the resulting support impact. |
 | 8    | 2026-08-17    | Tighten the interaction-retention audit and add a regression for threshold drift.            |
 | 9    | 2026-08-24    | Prepare release-surface docs for JOSS review wording and citation consistency.               |
@@ -115,11 +115,11 @@ Repeat the same pattern through 2026-12-21: one Monday slice per week, alternati
 
 ## Latest Validation Record
 
-- `./test_repo.sh --check`: passed
+- `pixi run gate`: passed
 - `env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_no_caps.yml`: in progress (full stage chain, no-caps, artifacts under `artifacts/validation_300_sample_no_caps/`)
 - `pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_smoke.yml --output-dir /tmp/runner_stage_test --stop-stage nonlinear_discovery` and resume with `--start-stage sparse_selection --stop-stage final_manuscript_artifacts`: passed (stage-window resume flow verified)
 - GitHub Actions CI run for PR #: pending/update-after-pr
-- [x] Run and record a fresh full `./test_repo.sh --check` after manifest changes.
+- [x] Run and record a fresh full `pixi run gate` after manifest changes.
 
 ## Next Steps
 
@@ -299,7 +299,7 @@ ______________________________________________________________________
   pilot and resolution plus confirmatory production and one shared 20% reserve
   fit the ceiling. Do not reserve a second full campaign merely because one
   retry is permitted.
-- [x] Pass the complete repository gate: `./test_repo.sh --check`.
+- [x] Pass the complete repository gate: `pixi run gate`.
 - [x] Commit the reviewed RFM and paired BSM integration diffs and install those
   exact clean commits in the Kestrel checkouts.
 - [x] Prepare the immutable applied train/holdout layout and bind its manifest

@@ -8,7 +8,7 @@ commit `3776ac5fd48b1ce0c03febbffb5f945de4fd8d64` on 2026-09-28.
 The migration copied the tracked `configs/`, `docs/`, `scripts/`, `tests/`,
 `tools/`, and `artifacts/` trees plus the pinned Pixi and Python manifests. It
 also captured the locally regenerated PDF and SVG files from `figures/`. No
-manuscript-repository working files were modified.
+external article-source files were modified.
 
 ## Ownership mapping
 
@@ -17,7 +17,6 @@ manuscript-repository working files were modified.
 | Generic reduced-form workflow code                                        | `rfm-pipeline`                         |
 | BSM publication configs, scripts, tests, tables, diagnostics, and figures | `rfm-pipeline/examples/bsm-manuscript` |
 | Consumable BSM coefficient bundle and inference API                       | `bsm-public-rf`                        |
-| Article, cover, bibliography, and submission package                      | `bsm-public-rf-manuscript`             |
 
 The coefficient bundle is intentionally present in both places: here as the
 output of the reproducible workflow example, and in `bsm-public-rf` as the

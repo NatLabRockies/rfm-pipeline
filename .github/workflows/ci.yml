@@ -20,7 +20,7 @@ jobs:
           cache: true
 
       - name: Run repository gate
-        run: ./test_repo.sh --ci
+        run: pixi run ci
 
   docs:
     runs-on: ubuntu-latest

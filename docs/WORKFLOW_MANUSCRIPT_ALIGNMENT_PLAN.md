@@ -1145,8 +1145,8 @@ ______________________________________________________________________
 
 Motivation: on the BSM fit, LASSO / stability / HC3 retain every enriched term,
 so the case study alone does not establish general sparse-support recovery or
-FWER control. Per `bsm-public-rf-manuscript/docs/ANALYSIS_HANDOFF.md`
-("Method-evidence requirement"), add (a) an exact finite-permutation maxT
+FWER control. Per the external analysis handoff's "Method-evidence
+requirement," add (a) an exact finite-permutation maxT
 interaction-FWER rule with global-null validation, (b) a prespecified
 known-support recovery study with recovery estimands and competitive
 comparators, and (c) a small, fully-local reproduction run producing released
@@ -1298,9 +1298,8 @@ mathematical guarantee is validated separately in RS-S01.
 
 ## Phase R4 — Validate the SUBMITTED production workflow in the recovery study (round-four audit)
 
-Motivation: the round-four adversarial audit
-(`bsm-public-rf-manuscript/docs/ANALYSIS_HANDOFF.md`, "Round-four audit of the
-current recovery attempt — not accepted") rejects both the generic and BSM
+Motivation: the external round-four adversarial audit ("Round-four audit of
+the current recovery attempt — not accepted") rejects both the generic and BSM
 recovery studies because they run a SEPARATE reimplementation
 (residualized-product score + PCA + quadratic-only transform) instead of the
 actual production stage functions. A substitute pipeline cannot validate the

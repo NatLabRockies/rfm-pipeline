@@ -34,7 +34,7 @@ repos:
 
       - id: repo-gate-check
         name: full repo gate
-        entry: bash -lc './test_repo.sh --check'
+        entry: bash -lc 'pixi run gate'
         language: system
         pass_filenames: false
         stages: [pre-push]

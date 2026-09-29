@@ -10,6 +10,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from tools.ci_shards import select_shard
+
 NOTEBOOK_DIR_CANDIDATES = (
     "notebooks",
     "examples",
@@ -137,7 +139,18 @@ def execute_notebook(notebook: Path, repo_root: Path, *, timeout: int) -> None:
         subprocess.run(command, cwd=repo_root, check=True, env=env)
 
 
-def execute_all_notebooks(root: Path, *, timeout: int) -> int:
+def select_notebooks(notebooks: list[Path], *, shard_index: int, shard_count: int) -> list[Path]:
+    """Select one deterministic notebook shard."""
+    return select_shard(notebooks, index=shard_index, count=shard_count)
+
+
+def execute_all_notebooks(
+    root: Path,
+    *,
+    timeout: int,
+    shard_index: int = 0,
+    shard_count: int = 1,
+) -> int:
     """Execute all discovered repository notebooks.
 
     Parameters
@@ -155,16 +168,24 @@ def execute_all_notebooks(root: Path, *, timeout: int) -> int:
     if shutil.which("jupyter") is None:
         raise RuntimeError("jupyter is required to execute notebooks in the repository gate.")
 
-    notebooks = discover_notebooks(root)
+    discovered = discover_notebooks(root)
+    notebooks = select_notebooks(
+        discovered,
+        shard_index=shard_index,
+        shard_count=shard_count,
+    )
     if not notebooks:
-        print("No notebooks discovered for execution.")
+        print(f"No notebooks selected for shard {shard_index + 1}/{shard_count}.")
         return 0
 
     for notebook in notebooks:
         relative = notebook.relative_to(root)
         print(f"Executing notebook: {relative}")
         execute_notebook(notebook, root, timeout=timeout)
-    print(f"Executed {len(notebooks)} notebook(s).")
+    print(
+        f"Executed {len(notebooks)} of {len(discovered)} notebook(s) "
+        f"for shard {shard_index + 1}/{shard_count}."
+    )
     return len(notebooks)
 
 
@@ -172,6 +193,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--timeout", type=int, default=1200)
+    parser.add_argument("--shard-index", type=int, default=0)
+    parser.add_argument("--shard-count", type=int, default=1)
     return parser.parse_args(argv)
 
 
@@ -179,7 +202,12 @@ def main(argv: list[str] | None = None) -> int:
     """Run the notebook execution command-line interface."""
     args = parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path(__file__).resolve().parents[1]
-    execute_all_notebooks(root, timeout=args.timeout)
+    execute_all_notebooks(
+        root,
+        timeout=args.timeout,
+        shard_index=args.shard_index,
+        shard_count=args.shard_count,
+    )
     return 0
 
 

@@ -91,12 +91,12 @@ The full documentation site starts at [`docs/index.md`](docs/index.md).
 ## Validate a checkout
 
 ```bash
+pixi run gate-fast  # routine development and pre-push checks
 pixi run gate
 ```
 
-The full gate is intentionally comprehensive and can take a long time. It
-checks formatting, tests, the BSM case study, notebooks, documentation, and the
-built wheel; it does not run the full BSM production analysis.
+The full gate checks every test, notebook, example, documentation page, and the
+built wheel. It does not run the full BSM production analysis.
 
 ## Citation and license
 

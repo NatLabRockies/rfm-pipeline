@@ -8,6 +8,7 @@ from tools.execute_notebooks import (
     build_nbconvert_command,
     discover_notebooks,
     execute_notebook,
+    select_notebooks,
 )
 
 
@@ -38,6 +39,14 @@ def test_build_nbconvert_command_uses_temp_output_dir(tmp_path: Path) -> None:
     assert "notebook" in command
     assert "--ExecutePreprocessor.timeout=900" in command
     assert "--ExecutePreprocessor.kernel_name=pixi-kernel-python3" in command
+
+
+def test_select_notebooks_partitions_discovered_notebooks() -> None:
+    notebooks = [Path(f"notebooks/{index}.ipynb") for index in range(7)]
+
+    shards = [select_notebooks(notebooks, shard_index=index, shard_count=3) for index in range(3)]
+
+    assert sorted(path for shard in shards for path in shard) == notebooks
 
 
 def test_execute_notebook_bounds_kernel_demo_storage(

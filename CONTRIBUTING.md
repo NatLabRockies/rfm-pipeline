@@ -11,9 +11,9 @@ Thank you for your interest in contributing!
    cd rfm-pipeline
    pixi install --locked
    ```
-1. Run the test suite to verify your setup:
+1. Run the development gate to verify your setup:
    ```bash
-   pixi run gate
+   pixi run gate-fast
    ```
 
 > **Note on optional tests.** Tests that exercise SLURM/HPC orchestration or
@@ -27,7 +27,7 @@ Thank you for your interest in contributing!
 
 - Write tests before implementing (TDD).
 - Run targeted tests during development: `pixi run python -m pytest tests/<your_test>.py`
-- Run the full gate before submitting: `pixi run gate`
+- Run `pixi run gate-fast` before pushing. CI runs the complete validation suite.
 - Follow existing code style (ruff enforces formatting and linting automatically).
 
 ## Pull requests

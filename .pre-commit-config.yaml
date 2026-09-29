@@ -33,8 +33,8 @@ repos:
         stages: [pre-commit]
 
       - id: repo-gate-check
-        name: full repo gate
-        entry: bash -lc 'pixi run gate'
+        name: fast pre-push gate
+        entry: bash -lc 'pixi run gate-fast'
         language: system
         pass_filenames: false
         stages: [pre-push]

@@ -38,11 +38,34 @@ VALIDATION_TASKS = (
     "git-diff-check",
 )
 
+FAST_VALIDATION_TASKS = (
+    "build-import-smoke",
+    "clean-transients",
+    "repo-hygiene",
+    "lint",
+    "format-check",
+    "markdown-check",
+    "notebook-check",
+    "notebook-workflow-check",
+    "compile-check",
+    "pre-push-tests",
+    "bsm-manuscript-example-tests",
+    "workflow-tests",
+    "docs",
+    "package-build",
+    "package-smoke",
+    "clean-transients",
+    "repo-hygiene",
+    "git-diff-check",
+)
+
 
 def task_sequence(mode: str) -> tuple[str, ...]:
     """Return the ordered tasks for a validation mode."""
     if mode == "check":
         return VALIDATION_TASKS
+    if mode == "fast":
+        return FAST_VALIDATION_TASKS
     if mode in {"fix", "clean"}:
         return PREP_TASKS + VALIDATION_TASKS
     raise ValueError(f"unknown gate mode: {mode}")
@@ -59,7 +82,12 @@ def run_tasks(tasks: Sequence[str]) -> None:
 def main() -> None:
     """Parse the mode and execute its task sequence."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("check", "fix", "clean"), nargs="?", default="check")
+    parser.add_argument(
+        "mode",
+        choices=("check", "fast", "fix", "clean"),
+        nargs="?",
+        default="check",
+    )
     args = parser.parse_args()
     run_tasks(task_sequence(args.mode))
 

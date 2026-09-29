@@ -5,7 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from tools.clean_transients import remove_transients
-from tools.run_repository_gate import PREP_TASKS, VALIDATION_TASKS, task_sequence
+from tools.run_repository_gate import (
+    FAST_VALIDATION_TASKS,
+    PREP_TASKS,
+    VALIDATION_TASKS,
+    task_sequence,
+)
 
 EXPECTED_PREP_TASKS = [
     "clean-transients",
@@ -29,6 +34,27 @@ EXPECTED_VALIDATION_TASKS = [
     "workflow-tests",
     "manuscript-reproduction-smoke",
     "notebook-tests",
+    "docs",
+    "package-build",
+    "package-smoke",
+    "clean-transients",
+    "repo-hygiene",
+    "git-diff-check",
+]
+
+EXPECTED_FAST_VALIDATION_TASKS = [
+    "build-import-smoke",
+    "clean-transients",
+    "repo-hygiene",
+    "lint",
+    "format-check",
+    "markdown-check",
+    "notebook-check",
+    "notebook-workflow-check",
+    "compile-check",
+    "pre-push-tests",
+    "bsm-manuscript-example-tests",
+    "workflow-tests",
     "docs",
     "package-build",
     "package-smoke",
@@ -79,10 +105,12 @@ def test_remove_transients_preserves_pixi_environment_contents(tmp_path: Path) -
 def test_repository_gate_declares_prepare_and_validation_task_sets() -> None:
     assert list(PREP_TASKS) == EXPECTED_PREP_TASKS
     assert list(VALIDATION_TASKS) == EXPECTED_VALIDATION_TASKS
+    assert list(FAST_VALIDATION_TASKS) == EXPECTED_FAST_VALIDATION_TASKS
 
 
 def test_repository_gate_modes_use_declared_task_sets() -> None:
     assert task_sequence("check") == VALIDATION_TASKS
+    assert task_sequence("fast") == FAST_VALIDATION_TASKS
     assert task_sequence("fix") == PREP_TASKS + VALIDATION_TASKS
     assert task_sequence("clean") == PREP_TASKS + VALIDATION_TASKS
 
@@ -104,11 +132,21 @@ def test_pixi_declares_required_gate_tasks_and_build_dependencies() -> None:
         'format-markdown = "python -m tools.format_markdown"',
         'markdown-check = "python -m tools.check_markdown"',
         'manuscript-reproduction-smoke = "python tools/check_manuscript_reproduction.py"',
+        'notebook-tests = "python -m tools.execute_notebooks --timeout 1200"',
+        'gate-fast = "python tools/run_repository_gate.py fast"',
         'gate = "python tools/run_repository_gate.py check"',
     ]
 
     for snippet in required_snippets:
         assert snippet in pixi
+
+
+def test_pre_push_hook_uses_fast_gate() -> None:
+    hooks = Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
+
+    assert "stages: [pre-push]" in hooks
+    assert "pixi run gate-fast" in hooks
+    assert "pixi run gate'" not in hooks
 
 
 def test_bsm_example_suite_is_owned_by_dedicated_gate_task() -> None:

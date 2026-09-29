@@ -175,6 +175,9 @@ SENSITIVITY_SPEC=configs/sensitivity_study/study_spec.yml \
 GitHub Actions runs the authoritative gate once in the locked Pixi
 environment, currently Python 3.12. The BSM manuscript example has a dedicated
 test task in that gate so its suite is not repeated by the root unit-test run.
+The gate also builds the source distribution and wheel, then imports the wheel
+from outside the source checkout and verifies every declared console entry
+point.
 
 ## Documentation
 

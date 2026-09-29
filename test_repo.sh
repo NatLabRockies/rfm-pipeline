@@ -30,6 +30,7 @@ VALIDATION_TASKS=(
   notebook-tests
   docs
   package-build
+  package-smoke
   clean-transients
   repo-hygiene
   git-diff-check

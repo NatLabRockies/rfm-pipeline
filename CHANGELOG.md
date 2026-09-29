@@ -14,6 +14,8 @@ Initial public package candidate for the rfm-pipeline reduced-form modeling work
 - canonical manifest-aware export and reload helpers for downstream visualization
 - deterministic end-to-end reproducibility example under `examples/`
 - MIT license and public release metadata
+- installed-wheel smoke validation for the public API and all console entry
+  points
 
 ### Notes
 

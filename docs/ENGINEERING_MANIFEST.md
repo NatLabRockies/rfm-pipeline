@@ -1,9 +1,9 @@
 # Engineering Manifest - Manuscript Workflow Replication
 
-**Repository**: bsm-public-rf
-**Primary Goal**: Exact replication of manuscript workflow methodology
-**Status**: Core workflow gap closed; 300-sample full-chain validation completed
-**Last Updated**: 2026-05-10
+**Repository**: rfm-pipeline
+**Primary Goal**: Reusable reduced-form modeling workflow with the BSM study as a canonical example
+**Status**: Software release candidate validated; production scientific gates remain in progress
+**Last Updated**: 2026-09-28
 
 ## 🚨 CRITICAL PRIORITY: Workflow Implementation Fix
 

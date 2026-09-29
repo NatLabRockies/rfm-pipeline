@@ -1,3 +1,29 @@
+## SESSION STATE — 2026-09-28 — Release-candidate packaging audit
+
+- This slice is limited to software release readiness: verify that the built
+  wheel, its public imports, and all declared console entry points work outside
+  the source checkout; reconcile release-facing metadata; and keep the
+  canonical gate authoritative.
+- The full BSM production pipeline and Kestrel campaign are explicitly out of
+  scope. Their open scientific gates remain open and no scheduler submission,
+  production fit, manuscript-result promotion, or dependency change is
+  authorized by this slice.
+- Work starts from `6183577` in the isolated `release-readiness-pipeline`
+  worktree. The primary checkout's untracked repair worktrees remain untouched.
+- Test-first target: extend the gate contract to require a post-build wheel
+  smoke task, observe the contract failure, then add the smallest wheel checker
+  and documentation updates needed for a release candidate.
+- The two focused gate-contract tests failed for the expected missing-task
+  reason before implementation. The completed slice adds `package-smoke` after
+  `package-build`; it verifies the public import and all three console entry
+  points directly from the wheel outside the source checkout.
+- Validation passed: focused gate/release/manifest tests, Ruff, Markdown, and
+  the authoritative `./test_repo.sh --check` gate. The full gate covered root
+  tests, the complete canonical BSM example suite, workflow and reproduction
+  smokes, all nine notebooks, documentation, source/wheel builds, the new wheel
+  smoke, repository hygiene, and final diff checks. No production analysis or
+  scheduler command ran.
+
 ## SESSION STATE — 2026-09-28 — CI contract cleanup validated
 
 - Scope is limited to removing redundant BSM-example test execution and the

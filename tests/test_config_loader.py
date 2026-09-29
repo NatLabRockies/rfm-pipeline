@@ -45,6 +45,14 @@ class TestLoadConfig:
             finally:
                 Path(f.name).unlink()
 
+    def test_public_workflow_template_loads(self):
+        """The user-facing staged-workflow template must match the live schema."""
+        config = load_config("configs/workflow.template.yml")
+
+        assert config.dataset.type == "custom"
+        assert config.dataset.path == "/absolute/path/to/dataset"
+        assert config.output.artifact_dir == "./artifacts/my-workflow-run/"
+
     def test_load_full_config(self):
         """Test loading config with all parameters specified."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:

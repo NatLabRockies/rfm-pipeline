@@ -1,77 +1,59 @@
-# End-to-end reproducibility example
+# Reproducibility examples
 
-The repository ships a deterministic toy example that exercises the canonical public
-workflow end to end. It is intended for CI and demonstration. The toy holdout responses include a fixed deterministic residual so the reported holdout nRMSE is nonzero and exercises the evaluation path rather than a perfect interpolation case. The same script can also run
-the complete demo manuscript-reproduction stage chain, which mirrors the source-backed
-Phase 3 notebook stages and writes every manuscript artifact family.
+## Neutral first example
 
-1. build aligned train and holdout DataFrames
-1. run `run_canonical_workflow(...)`
-1. write the canonical post-fit bundle with `write_postfit_bundle(...)`
-1. reload the written tables with `load_postfit_bundle(...)`
-
-## Run from the repo source tree
+`examples/basic_workflow.py` is the shortest complete example. It creates a
+small synthetic dataset, fits the canonical API, writes the bundle, reloads
+it, and prints the holdout summary.
 
 ```bash
-pixi run python examples/end_to_end_reproducibility.py \
-  --output-dir artifacts/toy-reproducibility-example
+pixi run python examples/basic_workflow.py \
+  --output-dir artifacts/basic-workflow
 ```
 
-To run the canonical example and the complete demo manuscript-reproduction chain together:
-
-```bash
-pixi run python examples/end_to_end_reproducibility.py \
-  --output-dir artifacts/toy-reproducibility-example \
-  --run-manuscript-chain \
-  --manuscript-output-dir artifacts/toy-manuscript-reproduction-example
-```
-
-The manuscript-chain path also writes `reproduction_audit/`, including an artifact manifest,
-metric checks, and a one-row audit summary. The audit explicitly checks that every artifact
-exists, every artifact is nonempty, the demo final-OLS holdout nRMSE is finite and positive,
-and the bootstrap interval is ordered around the point estimate. The local and CI gate also runs
-this audited path through `pixi run manuscript-reproduction-smoke`, using a temporary output root
-so the smoke check does not leave generated artifacts behind.
-
-The command writes a canonical bundle containing:
-
-- `manifest.json`
-- `postfit_diagnostics/all_input_metadata.*`
-- `postfit_diagnostics/selected_input_metadata.*`
-- `postfit_diagnostics/output_metadata.*`
-- `postfit_diagnostics/coef_matrix_standardized.*`
-- `postfit_diagnostics/coef_matrix_raw_scale.*`
-- `postfit_diagnostics/x_standardization.*`
-- `postfit_diagnostics/y_standardization.*`
-- `postfit_diagnostics/nrmse_summary.*`
-
-## Python entrypoint
-
-The example script exposes `run_reproducibility_example(...)` and `run_manuscript_reproduction_example(...)` for tests and notebook reuse.
+The reusable entry point is:
 
 ```python
 from pathlib import Path
 
-from examples.end_to_end_reproducibility import run_reproducibility_example
+from examples.basic_workflow import run_example
 
-result = run_reproducibility_example(Path("artifacts/toy-reproducibility-example"))
-print(result["manifest"]["dataset_tag"])
-print(result["loaded"]["nrmse_summary"])
+run, tables = run_example(Path("artifacts/basic-workflow"))
+print(run.holdout_summary)
+print(tables["coef_matrix_raw_scale"])
 ```
 
-The output bundle is deterministic because the example uses fixed synthetic data and fixed
-screening/bootstrap random seeds.
+Fixed data and random seeds make the output deterministic. The example is for
+orientation and contract testing, not scientific benchmarking.
 
-## Manuscript-reproduction chain output
+## Extended deterministic example
 
-When `--run-manuscript-chain` is supplied, the script writes the deterministic demo outputs for:
+`examples/end_to_end_reproducibility.py` exercises the same public bundle
+contract with a second toy dataset:
 
-- `output_conditioning/`
-- `empirical_null_screen/`
-- `interaction_discovery/`
-- `nonlinear_discovery/`
-- `sparse_selection/`
-- `final_manuscript_artifacts/`
-- `reproduction_audit/`
+```bash
+pixi run python examples/end_to_end_reproducibility.py \
+  --output-dir artifacts/reproducibility-example
+```
 
-This path is the public smoke-test companion to the real-data manuscript notebooks.
+It exposes `run_reproducibility_example(...)` for test and notebook reuse.
+
+## BSM-derived staged smoke test
+
+The extended script retains an optional historical
+`run_manuscript_reproduction_example(...)` path because it is part of the
+stage-chain validation surface:
+
+```bash
+pixi run python examples/end_to_end_reproducibility.py \
+  --output-dir artifacts/reproducibility-example \
+  --run-manuscript-chain \
+  --manuscript-output-dir artifacts/staged-smoke
+```
+
+This option writes all staged artifact families and a reproduction audit. It
+is useful for maintainers and for understanding the BSM-derived stage chain,
+but it is not required to fit a model through the canonical API.
+
+For the full study-specific example, see the
+[`examples/bsm-manuscript` case study](https://github.com/NatLabRockies/rfm-pipeline/tree/main/examples/bsm-manuscript).

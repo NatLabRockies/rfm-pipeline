@@ -1,45 +1,57 @@
-# HPC and Distributed Execution Guide
+# HPC and distributed execution
 
-The `rfm-pipeline` package itself does not ship cluster-specific HPC
-orchestration. It provides the building blocks (`rfm-hpc-submit`,
-`rfm-hpc-worker`, `rfm-hpc-reduce` console entry points) that downstream
-projects can wire into their own SLURM / cluster workflows.
+Start with the canonical API or a small staged run. Use distributed execution
+only after the data contract and configuration pass locally.
 
-## Console entry points
+## Package entry points
 
-After `pixi install`, the following commands are available:
+| Command          | Role                                                      |
+| ---------------- | --------------------------------------------------------- |
+| `rfm-hpc-submit` | Build a shard manifest and scheduler submission artifacts |
+| `rfm-hpc-worker` | Execute one stage shard                                   |
+| `rfm-hpc-reduce` | Verify and combine a complete shard set                   |
 
-| Command          | Purpose                                                 |
-| ---------------- | ------------------------------------------------------- |
-| `rfm-hpc-submit` | Generate SLURM array job scripts for a configured stage |
-| `rfm-hpc-worker` | Execute one shard of work on a compute node             |
-| `rfm-hpc-reduce` | Aggregate shard outputs into canonical stage artifacts  |
+After installation, run each command with `--help` for its exact arguments:
 
-Run any command with `--help` for full usage.
+```bash
+rfm-hpc-submit --help
+rfm-hpc-worker --help
+rfm-hpc-reduce --help
+```
 
-## Companion HPC orchestration repo
+The corresponding Python modules are
+`rfm_pipeline.hpc_submit`, `rfm_pipeline.hpc_shard_worker`, and
+`rfm_pipeline.hpc_reduce`.
 
-The BSM manuscript companion repository
-[`NatLabRockies/bsm-public-rf`](https://github.com/NatLabRockies/bsm-public-rf)
-provides a complete reference implementation of an end-to-end HPC
-workflow that drives this pipeline, including:
+## What the package does not assume
 
-- NREL Kestrel SLURM templates and submission wrappers
-  (`scripts/kestrel/`)
-- A local orchestration entry point (`scripts/hpc_workflow.py`) that
-  ties submit / status / collect into one local command
-- A four-step publication-grade run suite under
-  `scripts/publication-run/`
-- Six-stage cascade configuration for the manuscript study
-  (`configs/hpc/kestrel_publication_*.yml`)
+The package does not assume a particular cluster, account, filesystem, queue,
+or allocation. A project must provide its own scheduler configuration,
+storage paths, resource limits, submission authorization, and artifact
+collection policy.
 
-If you are adapting this pipeline to a new cluster, start from
-`bsm-public-rf`'s scripts and configs as a template rather than from
-this repository.
+## Reference integration
 
-## Programmatic shard / reduce usage
+The
+[`examples/bsm-manuscript` case study](https://github.com/NatLabRockies/rfm-pipeline/tree/main/examples/bsm-manuscript)
+contains a complete SLURM/Kestrel integration, including configs,
+orchestration wrappers, recovery controls, and validation records. It is an
+example to adapt, not a portable default and not required for ordinary package
+use.
 
-The HPC entry points are thin wrappers around the importable functions
-in `rfm_pipeline.hpc_submit`, `rfm_pipeline.hpc_shard_worker`, and
-`rfm_pipeline.hpc_reduce`. Custom cluster integrations can call these
-directly. See the module docstrings for argument contracts.
+The case study is fail-closed: its local checks do not authorize or submit a
+production campaign. Follow its own execution guide and scientific gates when
+working on that study.
+
+## Recommended sequence
+
+1. Validate a small local run.
+1. Freeze the config, data identities, output root, and expected shard set.
+1. Run submission generation or scheduler dry-run checks.
+1. Execute workers into isolated shard directories.
+1. Reduce only a complete, identity-matched shard set.
+1. verify terminal markers, manifests, and hashes before downstream stages.
+
+For out-of-core execution on one machine, use
+`runtime.out_of_core` in the [Configuration reference](configuration_reference.md);
+no scheduler is required.

@@ -1,18 +1,46 @@
 # rfm-pipeline
 
-A Python package for running reduced-form modeling (RFM) pipelines:
-empirical-null screening, interaction discovery, nonlinear discovery,
-sparse selection with stability filtering, and final table/figure generation.
+`rfm-pipeline` fits interpretable reduced-form models for datasets with many
+inputs and outputs. It provides screening, linear fitting, holdout evaluation,
+artifact export, and optional staged discovery of interactions and nonlinear
+terms.
 
-Designed for large-scale simulation or observational datasets where the
-number of candidate inputs and outputs is large and the structure of
-input–output relationships is unknown.
+## Choose the right repository
 
-## Installation
+| I want to...                                      | Go to...                                                                                |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Fit or adapt a reduced-form modeling workflow     | **This repository**                                                                     |
+| Use the ready-made BSM reduced-form model         | [`bsm-public-rf`](https://github.com/NatLabRockies/bsm-public-rf)                       |
+| Inspect the BSM workflow as a complete case study | [`examples/bsm-manuscript/`](examples/bsm-manuscript/)                                  |
+| Read or build the article                         | [`bsm-public-rf-manuscript`](https://github.com/NatLabRockies/bsm-public-rf-manuscript) |
 
-> **Note:** PyPI publication is pending. Until then, install from source.
+## What the package provides
 
-From source using [Pixi](https://pixi.sh) (recommended):
+Two execution surfaces serve different needs:
+
+- **Canonical Python API:** multitask elastic-net screening, output-wise OLS,
+  holdout macro nRMSE with bootstrap intervals, and a portable model bundle.
+  This is the best starting point for a new dataset.
+- **Staged research workflow:** output conditioning, empirical-null screening,
+  interaction and nonlinear discovery, stability selection, final OLS/HC3
+  filtering, resumable execution, and distributed building blocks. Use this
+  when you need the full research pipeline.
+
+The BSM-specific configs, scripts, figures, and publication outputs are a case
+study inside `examples/bsm-manuscript/`; they are not the default workflow.
+
+## Scientific scope
+
+An executable workflow is not automatically an exact reconstruction of every
+historical research stage. In particular, the de-biased LASSO path remains a
+**Public surrogate** pending external equivalence evidence. See
+`docs/manuscript_alignment_audit.md` for the stage-by-stage status ledger
+before making manuscript-exact claims.
+
+## Install
+
+Python 3.10–3.12 is supported. A locked source environment is the recommended
+way to run the repository examples:
 
 ```bash
 git clone https://github.com/NatLabRockies/rfm-pipeline.git
@@ -20,42 +48,30 @@ cd rfm-pipeline
 pixi install --locked
 ```
 
-Or via pip from GitHub (requires git):
+To install the package from GitHub into an existing environment:
 
 ```bash
-pip install git+https://github.com/NatLabRockies/rfm-pipeline.git
+python -m pip install 'git+https://github.com/NatLabRockies/rfm-pipeline.git'
 ```
 
-Once published to PyPI:
+## Run the two-minute example
 
 ```bash
-pip install rfm-pipeline  # coming soon
+pixi run python examples/basic_workflow.py \
+  --output-dir artifacts/basic-workflow
 ```
 
-## BSM publication example
+The example creates a tiny train/holdout dataset, fits the canonical workflow,
+writes a manifest-aware bundle, reloads it, and prints the holdout summary.
 
-The complete BSM manuscript workflow now lives in
-[`examples/bsm-manuscript/`](examples/bsm-manuscript/). That example owns the
-study-specific configs, execution scripts, validation tests, committed
-publication artifacts, and rendered figures. The separate `bsm-public-rf`
-repository is reserved for the consumable model and inference files.
-
-```bash
-pixi run bsm-manuscript-example-tests
-pixi run bsm-manuscript-figure-check
-```
-
-## Quick start
-
-Use `run_canonical_workflow(...)` for the core API, or the script entry point for the
-full config-driven manuscript workflow.
+## Use your own data
 
 ```python
 from pathlib import Path
 
 import pandas as pd
 
-from rfm_pipeline import run_canonical_workflow
+from rfm_pipeline import run_canonical_workflow, write_postfit_bundle
 
 X_train = pd.read_parquet("X_train.parquet")
 Y_train = pd.read_parquet("Y_train.parquet")
@@ -67,150 +83,43 @@ run = run_canonical_workflow(
     Y_train,
     X_holdout,
     Y_holdout,
-    dataset_tag="my-run",
+    dataset_tag="my-study",
 )
-print(f"Holdout nRMSE: {run.holdout_summary['point_estimate'].iloc[0]:.4f}")
+write_postfit_bundle(run.artifacts, Path("artifacts/my-study"))
+print(run.holdout_summary)
 ```
 
-For the full config-driven manuscript reproduction, use the script entry point:
+Rows and columns must already be aligned: train inputs with train outputs,
+holdout inputs with holdout outputs, and identical feature/output columns
+across splits.
+
+## Find the right guide
+
+| Need                             | Guide                                                              |
+| -------------------------------- | ------------------------------------------------------------------ |
+| Install and verify the package   | [Setup and first run](docs/setup_and_first_run.md)                 |
+| Fit a model with the Python API  | [Quickstart](docs/quickstart.md)                                   |
+| Run the staged workflow          | [Configuration reference](docs/configuration_reference.md)         |
+| Find a generated file            | [Artifact reference](docs/artifact_reference.md)                   |
+| Interpret a run                  | [Interpreting results](docs/interpreting_results.md)               |
+| Scale across shards or SLURM     | [HPC and distributed execution](docs/HPC_DISTRIBUTED_EXECUTION.md) |
+| Understand implementation limits | [Workflow scope boundary](docs/scope_boundary.md)                  |
+| Resolve a failure                | [Troubleshooting](docs/troubleshooting.md)                         |
+
+The full documentation site starts at [`docs/index.md`](docs/index.md).
+
+## Validate a checkout
 
 ```bash
-pixi run python scripts/run_manuscript_reproduction.py \
-  --config configs/datasets/my_dataset.yml
-
-# equivalent pixi task
-pixi run manuscript-reproduce --config configs/datasets/my_dataset.yml
+./test_repo.sh --check
 ```
 
-## Dataset config format
+The full gate is intentionally comprehensive and can take a long time. It
+checks formatting, tests, the BSM case study, notebooks, documentation, and the
+built wheel; it does not run the full BSM production analysis.
 
-```yaml
-case_study_input_matrix: /path/to/X.parquet
-case_study_output_matrix: /path/to/Y.parquet
-input_metadata: /path/to/input_metadata.parquet
-output_metadata: /path/to/output_metadata.parquet
-manuscript_feature_catalog: /path/to/feature_catalog.parquet
-fixed_holdout_assignments: /path/to/holdout_assignments.parquet
-output_root: /path/to/output  # optional
-```
+## Citation and license
 
-See `configs/datasets/template.yml` for a fully-annotated template.
-
-## Pipeline stages
-
-| Stage                        | Description                                         |
-| ---------------------------- | --------------------------------------------------- |
-| `output_conditioning`        | Normalize and validate inputs/outputs               |
-| `empirical_null_screening`   | Permutation-based null screening with BH correction |
-| `interaction_discovery`      | Tree-SHAP interaction scoring                       |
-| `nonlinear_discovery`        | GAM-based nonlinear term detection                  |
-| `sparse_selection`           | EBIC-selected L1 models with subsample stability    |
-| `final_manuscript_artifacts` | HC3 Wald filter, OLS refit, holdout nRMSE, figures  |
-
-## HPC / distributed execution
-
-For large datasets, individual stages can be distributed across SLURM array
-jobs. See `configs/sensitivity_study/study_spec.yml` for an example sensitivity
-study configuration and `scripts/submit_sensitivity_study.sh` for submission.
-
-The publication G11 campaign has a separate fail-closed pilot live-smoke
-entrypoint. Run it only from the clean, pinned Kestrel RFM checkout. Set the
-private campaign config's `allocation_quota` to the hard 25,000-AU campaign
-ceiling. Pass the current remaining value reported by `aus_report` when that
-tool lists the Slurm account. If it does not list the account, pass the same
-25,000-AU hard ceiling; the command then requires `sacctmgr` to confirm the
-exact Kestrel account association:
-
-```bash
-pixi run python -m rfm_pipeline.hpc_campaign_package live-smoke \
-  --package-root /scratch/$USER/bsm_runs/g11-live-smoke-package \
-  --evidence-root /projects/bsm/g11_authorizations/live-smoke-YYYY-MM-DD \
-  --repo-root /projects/bsm/software/rfm-pipeline \
-  --config /projects/bsm/g11_authorizations/g11-kestrel-live.yml \
-  --remaining-au <current-aus_report-value>
-```
-
-Both destination directories must be new or empty. The command runs only
-read-only allocation/Git/Lustre probes and `sbatch --test-only`; it never calls
-ordinary `sbatch`. It fails unless `nationalpfa` is confirmed by `sacctmgr` and
-the entered value is either bound by `aus_report` or equals the configured hard
-ceiling, both checkouts are clean and content-bound,
-every pilot script uses `debug` with at most one hour walltime and passes
-`--test-only`, output roots are empty, and the pilot's estimate plus 20% reserve
-fits. A successful live smoke produces
-`HPC_SUBMISSION_READY` evidence but does not authorize submission.
-
-The 25,000-AU ceiling applies to the complete campaign. `sbatch --test-only`
-uses zero AUs. The bounded pilot is admitted separately; its telemetry selects
-the minimum projected-AU resource profiles. The regenerated final package
-counts the already-run pilot and resolution with confirmatory production and
-rejects the campaign unless their combined projected use, including the single
-20% reserve for runtime overrun and occasional infrastructure retries, is at
-most 25,000 AUs. The pre-pilot worst-case walltime calculation is diagnostic
-only because it assumes every job runs to its time limit and is not an
-allocation forecast.
-
-## Sensitivity study
-
-The package includes a built-in sensitivity study framework for evaluating
-how pipeline hyperparameters affect NRMSE across synthetic DGPs:
-
-```bash
-pixi run python scripts/generate_sensitivity_study.py \
-  --spec configs/sensitivity_study/study_spec.yml \
-  --study-dir /path/to/sensitivity_output
-
-SENSITIVITY_SPEC=configs/sensitivity_study/study_spec.yml \
-  bash scripts/submit_sensitivity_study.sh --submit-all
-```
-
-## Repository gate
-
-```bash
-./test_repo.sh           # format + validate
-./test_repo.sh --check   # validate only (no mutations)
-./test_repo.sh --ci      # CI entrypoint
-```
-
-GitHub Actions runs the authoritative gate once in the locked Pixi
-environment, currently Python 3.12. The BSM manuscript example has a dedicated
-test task in that gate so its suite is not repeated by the root unit-test run.
-The gate also builds the source distribution and wheel, then imports the wheel
-from outside the source checkout and verifies every declared console entry
-point.
-
-## Documentation
-
-- `docs/setup_and_first_run.md` — Step-by-step setup guide
-- `docs/configuration_reference.md` — Config field reference
-- `docs/manuscript_alignment_audit.md` — Scientific alignment status
-- `docs/ENGINEERING_MANIFEST.md` — Development roadmap
-
-## Citation
-
-If you use this software, please cite it using the metadata in `CITATION.cff`.
-
-See `CHANGELOG.md` for release history.
-
-## Scientific alignment status
-
-The pipeline stages are tested and produce deterministic outputs. The current
-status, summarized from `docs/manuscript_alignment_audit.md`:
-
-- **Manuscript aligned:** tree-SHAP interaction discovery via gradient-boosted
-  trees, GAM-based nonlinear discovery via cubic smoothing splines, OLS-based
-  final fit and HC3 inferential filter, ablation comparisons, and bootstrap
-  confidence intervals.
-- **Partially aligned (provenance reconciled; private-script equivalence not
-  yet externally validated):** empirical-null screening (matches manuscript
-  BH q = 0.05 and 201 permutations) and PCA-based sparse stability selection.
-- **Public surrogate (not a validated implementation of the private notebook
-  reference):** the de-biased LASSO inference path remains a documented
-  surrogate; users requiring exact manuscript-method equivalence should
-  treat it as a generic L1/EBIC stability selector until externalization.
-
-See `docs/manuscript_alignment_audit.md` for stage-by-stage detail.
-
-## License
-
-MIT. See `LICENSE`.
+Cite the software using [`CITATION.cff`](CITATION.cff). See
+[`CHANGELOG.md`](CHANGELOG.md) for release history. Licensed under the
+[MIT License](LICENSE).

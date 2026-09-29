@@ -1,103 +1,34 @@
-# Configuration Files
+# Workflow configurations
 
-Configuration YAML files for the unified manuscript pipeline runner.
+Most users should begin with the Python API in
+[`docs/quickstart.md`](../docs/quickstart.md); it does not require YAML.
 
-## Quick Start
+For the full staged workflow:
 
-Run the pipeline with a config:
-
-```bash
-pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_no_caps.yml
-```
-
-## Provided Configs
-
-### `validation_300_sample_fast.yml`
-
-Fast validation for CI and smoke testing:
-
-- 5 null permutations (vs 1000)
-- 8 stability resamples (vs 100)
-- 20 bootstrap iterations (vs 200)
-- Serial execution (1 worker)
-- Output: `./artifacts/validation_300_sample_fast/`
-
-**Use**: Quick testing, continuous integration
-
-### `validation_300_sample_no_caps.yml`
-
-Full validation with parallel execution:
-
-- 1000 null permutations
-- 100 stability resamples
-- 200 bootstrap iterations
-- All CPUs (`n_jobs: -1`)
-- Output: `./artifacts/validation_300_sample_no_caps/`
-
-**Use**: Production validation, reproducibility baseline
-
-### `validation_300_sample_serial.yml`
-
-Full validation with serial execution:
-
-- Same parameters as `no_caps`
-- Serial execution (1 worker)
-- Output: `./artifacts/validation_300_sample_serial/`
-
-**Use**: Memory-constrained environments, baseline comparisons
-
-## Creating Custom Configs
-
-1. Copy an existing config
-1. Modify parameters (see `docs/CONFIGURATION_REFERENCE.md` for all options)
-1. Update `output.artifact_dir` to avoid conflicts
-1. Run: `pixi run python tools/run_manuscript_pipeline.py your_config.yml`
-
-## Config Structure
-
-All configs follow this structure:
-
-```yaml
-dataset:           # Dataset type and path
-algorithm:         # Algorithm hyperparameters (variance threshold, components)
-runtime:           # Parallelization (n_jobs, batch size)
-stages:            # Per-stage parameters (permutations, bootstrap count, etc.)
-validation:        # Fast-mode overrides for testing
-output:            # Output directory, seed, verbosity
-```
-
-See `docs/CONFIGURATION_REFERENCE.md` for complete parameter documentation.
-
-## CLI Overrides
-
-Override config values from command line:
+1. Copy `workflow.template.yml`.
+1. Set `dataset.path` and `output.artifact_dir`.
+1. Run the staged entry point.
 
 ```bash
-# Override output directory
-pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_no_caps.yml \
-  --output-dir /tmp/custom
-
-# Override random seed
-pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_no_caps.yml \
-  --seed 999
-
-# Enable fast-mode overrides
-pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_no_caps.yml \
-  --fast
+cp configs/workflow.template.yml configs/my-workflow.yml
+pixi run python tools/run_manuscript_pipeline.py configs/my-workflow.yml
 ```
 
-## Reproducibility
+The runner filename is retained for compatibility, but the typed config is
+reusable. See
+[`docs/configuration_reference.md`](../docs/configuration_reference.md) for
+the dataset layout, fields, and resume controls.
 
-To reproduce an exact run:
+## Directory map
 
-1. Use the same config file
-1. Use the same `--seed` value
-1. Save the exact command
+| Path                    | Purpose                                                          |
+| ----------------------- | ---------------------------------------------------------------- |
+| `workflow.template.yml` | Annotated starting point for a new staged run                    |
+| `validation_*.yml`      | Repository test and performance fixtures                         |
+| `sensitivity_study/`    | Sensitivity-study specifications                                 |
+| `datasets/`             | Legacy BSM-compatible direct-path adapter                        |
+| `hpc/`                  | Study-specific scheduler configuration retained for traceability |
+| `manuscript_*.yml`      | Historical BSM stage and notebook contracts                      |
 
-Example:
-
-```bash
-pixi run python tools/run_manuscript_pipeline.py configs/validation_300_sample_no_caps.yml \
-  --seed 123 \
-  --output-dir ./artifacts/exact_run_2026/
-```
+Validation, HPC, and manuscript configs are not general-purpose templates.
+Use them only with the data and execution contracts they name.

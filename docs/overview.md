@@ -1,28 +1,50 @@
 # Overview
 
-This repository provides the local and CI engineering contract for the BSM reduced-form modeling workflow package.
+`rfm-pipeline` is a reusable modeling package. The BSM analysis is one
+case study, not the package's default identity.
 
-## Canonical local gate
+## Pick an execution surface
 
-Run the full repository gate:
+| Surface            | Use it when                                                                                                                  | Entry point                                          |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Canonical API      | You have aligned train/holdout DataFrames and want a compact, exportable linear surrogate                                    | `run_canonical_workflow(...)`                        |
+| Staged workflow    | You need output PCA, empirical-null screening, interaction/nonlinear discovery, stability selection, and resumable artifacts | `tools/run_manuscript_pipeline.py`                   |
+| Distributed stages | A stage must be sharded and reduced on a scheduler                                                                           | `rfm-hpc-submit`, `rfm-hpc-worker`, `rfm-hpc-reduce` |
+| BSM case study     | You want a concrete, fully tracked application                                                                               | `examples/bsm-manuscript/`                           |
 
-```bash
-./test_repo.sh
+Some advanced modules and filenames retain `manuscript` in their names for
+compatibility. That label identifies their historical origin; it does not make
+the core API publication-specific.
+
+## Canonical API flow
+
+```text
+aligned train/holdout DataFrames
+        |
+        v
+multitask elastic-net screening
+        |
+        v
+output-wise OLS fit
+        |
+        v
+holdout macro nRMSE + bootstrap interval
+        |
+        v
+manifest + portable coefficient tables
 ```
 
-Run the repair path before committing:
+The canonical API does not automatically perform upstream permutation-null
+screening or feature expansion. Supply already prepared feature columns, or
+use the staged workflow when those steps are required. See
+[Workflow scope boundary](scope_boundary.md) for the exact implementation
+boundary.
 
-```bash
-./test_repo.sh --fix
-```
+## Repository boundaries
 
-## Expected standards
+- `rfm-pipeline`: generic workflow code, docs, tests, and case studies.
+- `bsm-public-rf`: ready-to-use BSM coefficients and prediction API.
+- `bsm-public-rf-manuscript`: article and submission source.
 
-- Pixi-managed environment and task execution
-- NumPy-style docstrings on public Python APIs
-- Ruff for Python and notebook linting and formatting
-- mdformat for Markdown formatting
-- stripped notebook outputs before commit
-- Sphinx documentation builds in the local and CI gates
-- explicit provenance boundaries for recovered scientific workflow stages
-- package metadata and docs versioning kept consistent from the live repo state
+Keeping these responsibilities separate lets model users avoid the research
+workflow and lets workflow users start from a neutral example.

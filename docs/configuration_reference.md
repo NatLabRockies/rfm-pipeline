@@ -1,482 +1,116 @@
-# Configuration Reference
+# Staged workflow configuration
 
-This document describes every configuration file in the repository and how to customize them for your workflow.
+The canonical Python API does not require YAML. This page covers the advanced
+staged runner, which adds output conditioning, empirical-null screening,
+interaction and nonlinear discovery, stability selection, and final
+artifacts.
 
-## Configuration File Structure
+Some command and artifact names retain `manuscript` for compatibility. The
+typed configuration itself is reusable.
 
-The repository uses YAML configuration files in two locations:
+## Start from the template
 
-| Location         | Purpose                        | Mutability                        |
-| ---------------- | ------------------------------ | --------------------------------- |
-| `configs/`       | Tracked defaults and templates | Read-only (checked into git)      |
-| `configs/local/` | Your local overrides           | Not tracked (add to `.gitignore`) |
+```bash
+cp configs/workflow.template.yml configs/my-workflow.yml
+```
 
-The runtime loads configuration in this priority order:
+Set `dataset.path` to a directory containing:
 
-1. **Defaults** from `configs/` (lowest priority)
-1. **Local overrides** from `configs/local/` (highest priority, if present)
+| File                                   | Required contents                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `X.parquet`                            | `sample_id` plus numeric input columns                                                      |
+| `Y.parquet`                            | matching `sample_id` plus numeric output columns                                            |
+| `holdout_assignments.parquet`          | `sample_id` and `split`; `train`, `holdout`, `test`, `val`, and `validation` are normalized |
+| `actual_input_feature_catalog.parquet` | feature catalog consumed by the discovery stages                                            |
 
-This allows you to customize parameters without modifying tracked files.
+Then run:
 
-## Core Configuration Files
+```bash
+pixi run python tools/run_manuscript_pipeline.py configs/my-workflow.yml
+```
 
-### `configs/manuscript_case_study.yml`
+Use a distinct `output.artifact_dir` for each run.
 
-**Purpose:** Frozen workflow contract for the manuscript case study.
-
-**When to edit:** Only when changing the scientific workflow (rare). Usually read-only.
-
-**Key fields** (sample — see the file for the full frozen contract):
+## Minimal configuration
 
 ```yaml
-case_study:
-  output_conditioning:
-    variance_threshold_status: frozen_repo_decision_matching_live_code
-    pca_variance_target: 0.90              # PCA dimensionality reduction target
+dataset:
+  type: custom
+  path: /absolute/path/to/dataset
 
-  empirical_null_screen:
-    statistic: coefficient_row_l2_norm
-    bh_q_screen: 0.05                      # BH FDR threshold (manuscript baseline)
-    permutation_count_B: 200               # null permutations; observed adds +1
+runtime:
+  n_jobs: 1
 
-  sparse_selection:
-    ebic_gamma: 0.5                        # EBIC penalty
-    public_implementation_method: ebic_l1_component_union_with_subsample_stability
-
-  final_inferential_filter:
-    interval_method: hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs
+output:
+  artifact_dir: ./artifacts/my-workflow-run/
+  seed: 123
 ```
 
-**Example change:** To loosen the BH FDR threshold:
+Unspecified values use the typed defaults in
+`src/rfm_pipeline/config.py`.
 
-```yaml
-case_study:
-  empirical_null_screen:
-    bh_q_screen: 0.10                      # Loosened from manuscript baseline 0.05
-```
+## Configuration sections
 
-> **Note.** The keys above are the contract-document field names consumed by
-> `case_study_config_from_workflow_config` and the per-stage `spec_from_case_study_config`
-> helpers in `src/rfm_pipeline/manuscript_stages.py`. They differ from the
-> `WorkflowConfig` dataclass field names (e.g. `bh_q_threshold`) used by the
-> generic non-case-study YAMLs under `configs/validation_*.yml`.
+| Section                           | Controls                                                                              |
+| --------------------------------- | ------------------------------------------------------------------------------------- |
+| `dataset`                         | Dataset label and root directory                                                      |
+| `algorithm`                       | PCA variance target or fixed component count                                          |
+| `runtime`                         | Worker count, memory limit, output batching, out-of-core I/O, and distributed backend |
+| `stages.empirical_null_screening` | Permutation count, BH threshold, and optional retained-term cap                       |
+| `stages.interaction_discovery`    | Error control, permutations, tree size/depth, and active-component limits             |
+| `stages.nonlinear_discovery`      | EDF threshold and transform library                                                   |
+| `stages.sparse_selection`         | Stability resamples, subsample fraction, thresholds, and candidate cap                |
+| `stages.final_artifacts`          | Bootstrap settings, HC3 output subset, and pruning controls                           |
+| `validation`                      | Optional fast-mode overrides                                                          |
+| `output`                          | Artifact directory, random seed, and verbosity                                        |
+| `categorical_inputs`              | Named categorical predictors and optional levels                                      |
 
-### `configs/manuscript_runtime.yml`
+The template shows the common fields. The dataclasses in
+`rfm_pipeline.config` are the authoritative complete schema.
 
-**Purpose:** Notebook execution order and runtime paths.
-
-**When to edit:** Only to change notebook execution sequence or runtime paths (rare).
-
-**Key fields:**
-
-```yaml
-notebook_execution_order:
-  - notebook: "00_case_study_data_intake.ipynb"
-    output_key: "artifact_root"
-  - notebook: "01_candidate_library_audit.ipynb"
-  - notebook: "02_output_conditioning.ipynb"
-  # ... stages 3-8 follow
-
-runtime_resolution_mode: "auto"  # or "demo" or "real"
-```
-
-### `configs/manuscript_data_contract.yml`
-
-**Purpose:** Data schema and validation constraints.
-
-**When to edit:** Only when input data schema changes (rare).
-
-**Key fields:**
-
-```yaml
-x_train:
-  shape: [18000, 352]               # Expected feature matrix dimensions
-  dtype: "float64"
-  required_columns: null             # or list of required column names
-
-y_train:
-  shape: [18000, 23]                # Expected output matrix dimensions
-  dtype: "float64"
-```
-
-______________________________________________________________________
-
-## Local Configuration (Your Customizations)
-
-### `configs/local/manuscript_paths.local.yml`
-
-**Purpose:** Point to your local data files and output directory.
-
-**When to create:** When running with real data (optional for demo).
-
-**How to create:**
+## Resume or stop at a stage
 
 ```bash
-cp configs/manuscript_paths.template.yml configs/local/manuscript_paths.local.yml
+# Run through nonlinear discovery.
+pixi run python tools/run_manuscript_pipeline.py configs/my-workflow.yml \
+  --stop-stage nonlinear_discovery
+
+# Continue from artifacts already written by the earlier stages.
+pixi run python tools/run_manuscript_pipeline.py configs/my-workflow.yml \
+  --start-stage sparse_selection
 ```
 
-**Edit the file:**
+Valid stage names are:
 
-```yaml
-# Example configuration
-paths:
-  # ABSOLUTE paths to your data files
-  x_train: "/Users/you/data/X_train.parquet"
-  y_train: "/Users/you/data/Y_train.parquet"
-  x_holdout: "/Users/you/data/X_holdout.parquet"
-  y_holdout: "/Users/you/data/Y_holdout.parquet"
+1. `output_conditioning`
+1. `empirical_null_screen`
+1. `interaction_discovery`
+1. `nonlinear_discovery`
+1. `sparse_selection`
+1. `final_manuscript_artifacts`
 
-  # Where to write outputs
-  artifact_root: "/Users/you/rfm-outputs"
-```
+The final name is historical; it contains the final model and reporting
+artifacts for any staged run.
 
-**Important notes:**
-
-- Use **absolute paths** (start with `/` on macOS/Linux, `C:\` on Windows)
-- Use **double quotes** around paths with spaces
-- Use `~` (home directory) for paths like `~/data/X_train.parquet`
-- Files must exist and be readable
-- Artifact root will be created if missing
-
-### `configs/local/custom_case_study.yml` (Optional)
-
-**Purpose:** Override workflow parameters for your custom data.
-
-**When to create:** When running with custom data and different parameters.
-
-**Example:**
-
-```yaml
-output_conditioning:
-  variance_filter_threshold: 0.05   # Stricter filter for your data
-  pca_variance_retained: 0.95       # Less aggressive PCA
-
-empirical_null_screen:
-  alpha: 0.05                       # Stricter BH threshold
-  n_permutations: 500               # Fewer permutations (faster)
-```
-
-______________________________________________________________________
-
-## Runtime Mode Detection
-
-The runtime automatically detects which mode to run based on file presence:
-
-```
-Does configs/local/manuscript_paths.local.yml exist?
-  ├─ YES: Does every referenced file exist and is readable?
-  │        ├─ YES → Mode: "real" (uses your data)
-  │        └─ NO  → Mode: "demo" (falls back to synthetic)
-  └─ NO: Mode: "demo" (uses built-in synthetic data)
-```
-
-### Check Your Runtime Mode
+## Track a long local run
 
 ```bash
-pixi run python -c "
-from rfm_pipeline import resolve_manuscript_runtime
-from pathlib import Path
-
-rt = resolve_manuscript_runtime(Path.cwd())
-print(f'Mode: {rt.mode}')
-print(f'Output root: {rt.output_root}')
-print(f'Artifacts available: {sorted(rt.artifact_paths)}')
-"
+pixi run workflow-run \
+  --config configs/my-workflow.yml \
+  --run-label my-study
 ```
 
-### Force Demo Mode (for testing)
-
-```bash
-# Temporarily rename the local config
-mv configs/local/manuscript_paths.local.yml configs/local/manuscript_paths.local.yml.bak
-
-# Run in demo mode
-pixi run jupyter notebook notebooks/manuscript/
-
-# Restore the config
-mv configs/local/manuscript_paths.local.yml.bak configs/local/manuscript_paths.local.yml
-```
-
-______________________________________________________________________
-
-## Example Configurations
-
-### Configuration 1: Demo Mode (Default)
-
-**Files:** None needed (uses built-ins)
-
-**Runtime:** ~2 min for full 9-stage chain
-
-**Use case:** First run, validation, CI testing
-
-```bash
-# Just run it—no config needed
-pixi run python examples/end_to_end_reproducibility.py \
-  --output-dir artifacts/demo-run \
-  --run-manuscript-chain \
-  --manuscript-output-dir artifacts/demo-run/manuscript
-```
-
-### Configuration 2: Real Data from Shared Server
-
-**Files:** Create `configs/local/manuscript_paths.local.yml`:
-
-```yaml
-paths:
-  x_train: "/Volumes/SharedDrive/MyData/X_train.parquet"
-  y_train: "/Volumes/SharedDrive/MyData/Y_train.parquet"
-  x_holdout: "/Volumes/SharedDrive/MyData/X_holdout.parquet"
-  y_holdout: "/Volumes/SharedDrive/MyData/Y_holdout.parquet"
-  artifact_root: "/Users/you/rfm-outputs"
-```
-
-**Verify:**
-
-```bash
-pixi run python -c "
-from pathlib import Path
-import yaml
-with open('configs/local/manuscript_paths.local.yml') as f:
-    cfg = yaml.safe_load(f)
-for key, path in cfg['paths'].items():
-    p = Path(path).expanduser()
-    print(f'{key}: exists={p.exists()}')"
-```
-
-**Run:**
-
-```bash
-pixi run jupyter notebook notebooks/manuscript/
-# Notebooks auto-detect and use real data
-```
-
-### Configuration 3: Custom Data with Modified Parameters
-
-**Files:**
-
-1. Create `configs/local/manuscript_paths.local.yml` pointing to your data
-1. Create `configs/local/custom_case_study.yml` with modified parameters:
-
-```yaml
-output_conditioning:
-  variance_filter_threshold: 0.02   # Stricter for your data
-  pca_variance_retained: 0.95       # Adjust PCA
-
-empirical_null_screen:
-  alpha: 0.05                       # Different BH threshold
-  n_permutations: 2000              # More permutations
-
-sparse_selection:
-  ebic_gamma: 0.25                  # Different EBIC tuning
-```
-
-**Run:**
-
-```bash
-pixi run python -c "
-from rfm_pipeline import run_manuscript_reproduction_audit_stage, resolve_manuscript_runtime
-from pathlib import Path
-
-rt = resolve_manuscript_runtime(Path.cwd())
-result = run_manuscript_reproduction_audit_stage(rt)
-print(f'All stages completed. Audit status: {result.audit_result.qa_status}')
-"
-```
-
-______________________________________________________________________
-
-## Configuration Validation
-
-### Check Runtime Paths
-
-```bash
-pixi run python << 'EOF'
-from rfm_pipeline import resolve_manuscript_runtime
-from pathlib import Path
-
-rt = resolve_manuscript_runtime(Path.cwd())
-print(f"Mode: {rt.mode}")
-print(f"Output root: {rt.output_root}")
-print(f"Repo root: {rt.repo_root}")
-print(f"Local override used: {rt.local_override_used}")
-print(f"Unresolved placeholders: {rt.unresolved_placeholders}")
-print("Artifact paths:")
-for key in sorted(rt.artifact_paths):
-    print(f"  {key}: {rt.artifact_paths[key]}")
-EOF
-```
-
-### Validate Configuration Parameters
-
-```bash
-pixi run python << 'EOF'
-from rfm_pipeline import load_manuscript_case_study_config
-from pathlib import Path
-
-config = load_manuscript_case_study_config(Path.cwd())
-print("Output Conditioning:")
-for key, val in config.output_conditioning.items():
-    print(f"  {key}: {val}")
-print("Empirical Null Screen:")
-for key, val in config.empirical_null_screen.items():
-    print(f"  {key}: {val}")
-EOF
-```
-
-______________________________________________________________________
-
-## Troubleshooting Configuration Issues
-
-### Issue: "File not found" when using real data
-
-**Diagnosis:**
-
-```bash
-pixi run python -c "
-from pathlib import Path
-path = Path('/Users/you/data/X_train.parquet').expanduser()
-print(f'Path: {path}')
-print(f'Exists: {path.exists()}')
-print(f'Is file: {path.is_file()}')
-print(f'Readable: {path.stat().st_mode & 0o400}')
-"
-```
-
-**Fixes:**
-
-- Check path is absolute (not relative)
-- Verify file exists: `ls /path/to/file`
-- Check permissions: `chmod 644 /path/to/file`
-- Use `~` for home: `~/data/X_train.parquet` expands correctly
-
-### Issue: Still using demo data after setting local config
-
-**Solution:**
-
-```bash
-# Force reload
-rm -rf ~/.cache/jupyter  # Clear notebook cache
-pkill jupyter            # Restart kernel
-
-# Verify config is found
-pixi run python -c "
-from pathlib import Path
-cfg_path = Path('configs/local/manuscript_paths.local.yml')
-print(f'Config exists: {cfg_path.exists()}')
-"
-
-# Then restart notebook
-pixi run jupyter notebook notebooks/manuscript/
-```
-
-### Issue: Parameters not taking effect
-
-**Solution:**
-
-1. Verify override file is in `configs/local/`, not `configs/`
-1. Use correct YAML indentation (2 spaces, not tabs)
-1. Restart Python kernel
-1. Test configuration loads:
-
-```bash
-pixi run python -c "
-from rfm_pipeline import load_manuscript_case_study_config
-from pathlib import Path
-cfg = load_manuscript_case_study_config(Path.cwd())
-# Print to verify it's your custom config
-print(cfg.empirical_null_screen)
-"
-```
-
-______________________________________________________________________
-
-## Common Configuration Patterns
-
-### Pattern 1: Reproduce Public Demo Exactly
-
-No configuration needed. Just run:
-
-```bash
-pixi run python examples/end_to_end_reproducibility.py \
-  --output-dir artifacts/exact-demo --run-manuscript-chain \
-  --manuscript-output-dir artifacts/exact-demo/manuscript
-```
-
-Output: Deterministic, reproducible on any machine.
-
-### Pattern 2: Run with Your Real Data
-
-```bash
-# 1. Set up local config
-cp configs/manuscript_paths.template.yml configs/local/manuscript_paths.local.yml
-# Edit configs/local/manuscript_paths.local.yml with your paths
-
-# 2. Verify
-pixi run python -c "from rfm_pipeline import resolve_manuscript_runtime; from pathlib import Path; rt = resolve_manuscript_runtime(Path.cwd()); print(f'Mode: {rt.mode}; output_root: {rt.output_root}')"
-
-# 3. Run
-pixi run python examples/end_to_end_reproducibility.py \
-  --output-dir artifacts/my-data --run-manuscript-chain \
-  --manuscript-output-dir artifacts/my-data/manuscript
-```
-
-### Pattern 3: Custom Data, Different Parameters
-
-```bash
-# 1. Set up data paths
-cp configs/manuscript_paths.template.yml configs/local/manuscript_paths.local.yml
-# Edit with your paths
-
-# 2. Set up custom parameters
-cat > configs/local/custom_case_study.yml << 'EOF'
-output_conditioning:
-  pca_variance_retained: 0.95
-empirical_null_screen:
-  alpha: 0.05
-EOF
-
-# 3. Run
-pixi run python << 'EOF'
-from rfm_pipeline import run_manuscript_reproduction_audit_stage, resolve_manuscript_runtime
-from pathlib import Path
-
-rt = resolve_manuscript_runtime(Path.cwd())
-result = run_manuscript_reproduction_audit_stage(rt)
-print(f"Status: {result.audit_result.qa_status}")
-EOF
-```
-
-______________________________________________________________________
-
-## Reference: All Configuration Fields
-
-| Config     | Section                  | Field                                   | Type  | Value (manuscript)                                          | Purpose                             |
-| ---------- | ------------------------ | --------------------------------------- | ----- | ----------------------------------------------------------- | ----------------------------------- |
-| case_study | output_conditioning      | variance_filter.epsilon_var             | float | 1e-12                                                       | Min train variance to retain output |
-| case_study | output_conditioning      | snr_filter.epsilon_snr                  | float | 0.01                                                        | Minimum SNR for retention           |
-| case_study | output_conditioning      | temporary_reduction.retained_components | int   | 20                                                          | PCA component count                 |
-| case_study | empirical_null_screen    | bh_q_screen                             | float | 0.05                                                        | BH FDR threshold                    |
-| case_study | empirical_null_screen    | permutation_count_B                     | int   | 200                                                         | Null permutations (observed + B)    |
-| case_study | empirical_null_screen    | statistic                               | str   | coefficient_row_l2_norm                                     | Screening statistic                 |
-| case_study | sparse_selection         | ebic_gamma                              | float | 0.5                                                         | EBIC penalty weight                 |
-| case_study | stability                | jaccard_threshold                       | float | 0.75                                                        | Stability Jaccard cutoff            |
-| case_study | stability                | spearman_threshold                      | float | 0.9                                                         | Stability Spearman cutoff           |
-| case_study | final_inferential_filter | interval_method                         | str   | hc3_wald_95_percent_drop_if_zero_compatible_for_all_outputs | HC3 Wald rule                       |
-| case_study | interaction_discovery    | null_threshold_quantile                 | float | 0.995                                                       | SHAP-interaction null quantile      |
-| case_study | nonlinear_discovery      | curvature_rule                          | str   | edf_gt_1_and_smooth_pvalue_lt_0p01                          | GAM curvature acceptance            |
-
-> **Note.** The keys above are from the **case-study contract YAML**
-> (`configs/manuscript_case_study.yml`); they are frozen-from-manuscript
-> values consumed by `manuscript_runtime.load_manuscript_case_study_config`.
-> The `WorkflowConfig` dataclass YAMLs (`configs/validation_*.yml`, HPC
-> YAMLs) use different field names — e.g. `bh_q_threshold` (not
-> `bh_q_screen`), `n_permutations` (not `permutation_count_B`), `lasso_alpha_grid_size`,
-> `n_stability_subsamples`, `subsample_fraction` — and live under top-level
-> `stages:`. The earlier section in this document describes both forms; see
-> `src/rfm_pipeline/config.py` for the authoritative dataclass schema.
-
-| paths | - | x_train | path | demo | Training feature matrix |
-| paths | - | y_train | path | demo | Training output matrix |
-| paths | - | x_holdout | path | demo | Holdout feature matrix |
-| paths | - | y_holdout | path | demo | Holdout output matrix |
-| paths | - | artifact_root | path | `temp` | Output directory for results |
+The tracker records the command, log, stage observations, terminal status, and
+elapsed time under `artifacts/workflow_runs/`.
+
+## Two config formats that should not be mixed
+
+- `configs/workflow.template.yml` and `configs/validation_*.yml` use the
+  typed `WorkflowConfig` schema described above.
+- `configs/datasets/template.yml` is a legacy BSM-compatible adapter for
+  `scripts/run_manuscript_reproduction.py`. It uses six direct artifact
+  paths and pins the BSM case-study contract.
+
+For new non-BSM work, use the Python API or `workflow.template.yml`. See the
+[`configs/datasets` guide](https://github.com/NatLabRockies/rfm-pipeline/tree/main/configs/datasets)
+only when you need the case-study adapter.

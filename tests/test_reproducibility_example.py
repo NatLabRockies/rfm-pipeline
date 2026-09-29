@@ -10,11 +10,29 @@ from pathlib import Path
 
 import pytest
 
+from examples.basic_workflow import run_example
 from examples.end_to_end_reproducibility import (
     DATASET_TAG,
     run_manuscript_reproduction_example,
     run_reproducibility_example,
 )
+
+
+def test_basic_workflow_example_writes_a_reloadable_bundle(tmp_path: Path) -> None:
+    run, loaded = run_example(tmp_path / "basic-workflow")
+
+    assert (tmp_path / "basic-workflow" / "manifest.json").is_file()
+    assert tuple(loaded) == (
+        "all_input_metadata",
+        "selected_input_metadata",
+        "output_metadata",
+        "coef_matrix_standardized",
+        "coef_matrix_raw_scale",
+        "x_standardization",
+        "y_standardization",
+        "nrmse_summary",
+    )
+    assert float(run.holdout_summary.loc[0, "point_estimate"]) > 0.0
 
 
 def test_reproducibility_example_function_writes_and_reloads_bundle(tmp_path: Path) -> None:

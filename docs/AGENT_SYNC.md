@@ -1,3 +1,30 @@
+## SESSION STATE — 2026-09-29 — User documentation review
+
+- This slice is limited to release-facing documentation and small illustrative
+  examples. It will simplify repository navigation, separate the generic
+  workflow from the BSM case study, correct stale commands and artifact names,
+  and preserve scientific/audit records as clearly labeled maintainer material.
+- No production analysis, HPC submission, scientific gate transition,
+  dependency change, or model-artifact change is authorized or planned.
+- Work starts from clean `main` at `0100586` in the isolated
+  `docs/user-guide-review` worktree. Validation will cover the documentation,
+  examples, package checks, and the repository gate without running the BSM
+  production pipeline.
+- Release-facing guides now lead with task-based navigation, a neutral
+  fit/export/reload example, and a reusable staged-workflow configuration.
+  The BSM material remains available as a clearly labeled case study, while
+  project plans and audit records are hidden from the user-facing navigation.
+- Test-first evidence: the focused example/config test initially failed because
+  `examples.basic_workflow` did not exist, then passed after the example and
+  template were added. The first full gate exposed the required scientific
+  scope statement; after restoring that concise warning, the focused guard
+  suite and documentation build passed.
+- Final validation passed: `./test_repo.sh --check` completed root and BSM
+  case-study tests, workflow and reproduction smokes, all nine notebooks,
+  warnings-as-errors documentation, source and wheel builds, installed-wheel
+  smoke testing, repository hygiene, and the final diff check. No production
+  analysis or scheduler command ran.
+
 ## SESSION STATE — 2026-09-28 — Release-candidate packaging audit
 
 - This slice is limited to software release readiness: verify that the built

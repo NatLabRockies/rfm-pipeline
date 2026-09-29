@@ -1,4 +1,4 @@
-"""Sphinx configuration for the BSM reduced-form workflow package docs."""
+"""Sphinx configuration for the rfm-pipeline documentation."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def _read_project_version(pyproject_path: Path) -> str:
     return match.group(1)
 
 
-project = "BSM reduced-form modeling workflow package"
+project = "rfm-pipeline"
 author = "Dylan Hettinger"
 release = _read_project_version(ROOT / "pyproject.toml")
 version = release

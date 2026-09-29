@@ -1,16 +1,35 @@
-# Quickstart
+# Python API quickstart
 
-This package exposes a tested canonical reduced-form workflow that runs screening,
-final OLS fitting, holdout evaluation, post-fit artifact assembly, and bundle writing.
+Use the canonical API when your features are already prepared and split into
+training and holdout sets.
 
-## Minimal workflow
+## Input contract
+
+`run_canonical_workflow(...)` accepts four pandas DataFrames:
+
+- `X_train`: training features
+- `Y_train`: training outputs
+- `X_holdout`: holdout features
+- `Y_holdout`: holdout outputs
+
+Before calling it, ensure:
+
+- `X_train` and `Y_train` have the same row order;
+- `X_holdout` and `Y_holdout` have the same row order;
+- train and holdout feature columns match exactly;
+- train and holdout output columns match exactly; and
+- all modeled values are numeric and finite.
+
+The API uses DataFrame column names as the feature and output identifiers.
+
+## Fit and export
 
 ```python
 from pathlib import Path
 
 import pandas as pd
 
-from rfm_pipeline import load_postfit_bundle, run_canonical_workflow, write_postfit_bundle
+from rfm_pipeline import run_canonical_workflow, write_postfit_bundle
 
 X_train = pd.read_parquet("X_train.parquet")
 Y_train = pd.read_parquet("Y_train.parquet")
@@ -22,62 +41,53 @@ run = run_canonical_workflow(
     Y_train,
     X_holdout,
     Y_holdout,
-    dataset_tag="rfm-demo",
+    dataset_tag="my-study",
+    screening_random_state=123,
+    bootstrap_random_state=123,
 )
-written = write_postfit_bundle(run.artifacts, Path("artifacts/rfm-demo"))
-reloaded = load_postfit_bundle(Path("artifacts/rfm-demo"))
+
+write_postfit_bundle(run.artifacts, Path("artifacts/my-study"))
+print(run.screening_result.selected_features)
+print(run.holdout_summary)
 ```
 
-## What `run_canonical_workflow(...)` does
+The result contains the screening fit, final OLS fit, holdout summary, and
+in-memory export tables. The writer records the actual file paths in
+`manifest.json`.
 
-The current canonical workflow performs these implemented stages:
+## Reload a bundle
 
-1. multitask elastic-net screening on the training data
-1. final output-wise OLS fitting on the retained features
-1. holdout macro nRMSE evaluation with bootstrap confidence intervals
-1. canonical post-fit artifact assembly with a manifest payload
+```python
+from pathlib import Path
 
-## Inputs and outputs
+from rfm_pipeline import load_postfit_bundle
 
-`run_canonical_workflow(...)` expects four aligned raw-scale pandas DataFrames:
-
-- `X_train`
-- `Y_train`
-- `X_holdout`
-- `Y_holdout`
-
-It returns a `CanonicalWorkflowRun` containing:
-
-- `screening_result`
-- `final_ols_result`
-- `holdout_summary`
-- `artifacts`
-- `artifact_format`
-
-## Bundle writing and reload
-
-`write_postfit_bundle(...)` writes the manifest and canonical tabular artifacts to disk.
-When Parquet support is unavailable, tabular artifacts automatically fall back to CSV while
-preserving the manifest file map.
-
-`load_postfit_bundle(...)` is the visualization-side read helper for the canonical exported
-post-fit tables.
-
-## Current provenance boundary
-
-The package implements the screening/final-fit/evaluation/export path directly. The upstream
-Delta permutation-null screen is still represented through the recovered source adapter in
-`rfm_pipeline.null_screening`, while the recovered notebook-specific feature-expansion specification
-is still only partially promoted into a source-driven canonical default.
-
-For a machine-readable summary of those current limits, call
-`rfm_pipeline.workflow_scope_boundary_table()`.
-
-## Reproducibility example
-
-For a deterministic end-to-end example that also writes and reloads the bundle, run
-`examples/end_to_end_reproducibility.py` from the repo source tree:
-
-```bash
-pixi run python examples/end_to_end_reproducibility.py --output-dir artifacts/toy-reproducibility-example
+tables = load_postfit_bundle(Path("artifacts/my-study"))
+coefficients = tables["coef_matrix_raw_scale"]
+performance = tables["nrmse_summary"]
 ```
+
+Parquet is used when requested and available; CSV is the fallback. The loader
+handles either format.
+
+## Common options
+
+| Option                | Default      | Purpose                              |
+| --------------------- | ------------ | ------------------------------------ |
+| `screening_cv`        | `5`          | Cross-validation folds for screening |
+| `screening_l1_ratio`  | `(0.9, 1.0)` | Elastic-net mixing values            |
+| `screening_alphas`    | `100`        | Alpha count or explicit alpha grid   |
+| `n_boot`              | `1000`       | Holdout bootstrap replicates         |
+| `alpha`               | `0.05`       | Bootstrap interval error level       |
+| `artifact_format`     | `"auto"`     | `"parquet"`, `"csv"`, or automatic   |
+| `upstream_provenance` | `None`       | Metadata to retain in the manifest   |
+
+See the `run_canonical_workflow` API reference for the complete signature.
+
+## Need feature discovery too?
+
+The canonical API screens the feature columns it receives; it does not
+automatically generate interactions or nonlinear transformations. For the
+larger staged workflow, continue with the
+[Configuration reference](configuration_reference.md). For a ready-to-run
+neutral example, see [Reproducibility examples](reproducibility_example.md).

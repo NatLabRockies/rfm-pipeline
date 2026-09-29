@@ -11,6 +11,15 @@ def test_ci_runs_repo_gate() -> None:
     assert "./test_repo.sh --ci" in workflow
 
 
+def test_ci_runs_locked_pixi_environment_once() -> None:
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "matrix:" not in workflow
+    assert "python-version" not in workflow
+    assert "name: validate (locked Python 3.12)" in workflow
+    assert workflow.count("Run repository gate") == 1
+
+
 def test_ci_rebuilds_docs_before_upload() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "Rebuild docs artifact" in workflow

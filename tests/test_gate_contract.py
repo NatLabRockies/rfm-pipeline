@@ -141,3 +141,13 @@ def test_pixi_declares_required_gate_tasks_and_build_dependencies() -> None:
 
     for snippet in required_snippets:
         assert snippet in pixi
+
+
+def test_bsm_example_suite_is_owned_by_dedicated_gate_task() -> None:
+    pixi = Path("pixi.toml").read_text(encoding="utf-8")
+    bridge = Path("tests/test_bsm_publication_example.py").read_text(encoding="utf-8")
+
+    assert "bsm-manuscript-example-tests" in VALIDATION_TASKS
+    assert "cd examples/bsm-manuscript" in pixi
+    assert "python -m pytest -q tests" in pixi
+    assert '"pytest"' not in bridge

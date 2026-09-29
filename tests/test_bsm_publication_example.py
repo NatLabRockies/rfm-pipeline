@@ -33,24 +33,3 @@ def test_bsm_manuscript_release_figures_validate() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stderr
-
-
-def test_bsm_manuscript_example_tests_pass() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pytest",
-            "-q",
-            "tests/test_artifact_bundle_consistency.py",
-            "tests/test_build_metadata_transforms.py",
-            "tests/test_configs_loadable.py",
-            "tests/test_manuscript_config_reconciliation.py",
-            "tests/test_publication_figure_polish.py",
-        ],
-        cwd=EXAMPLE,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert completed.returncode == 0, completed.stdout + completed.stderr

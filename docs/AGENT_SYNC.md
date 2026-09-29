@@ -1,3 +1,27 @@
+## SESSION STATE — 2026-09-28 — CI contract cleanup validated
+
+- Scope is limited to removing redundant BSM-example test execution and the
+  misleading GitHub Actions Python matrix. The locked Pixi environment pins
+  Python 3.12, so the current 3.10/3.11/3.12 labels execute the same
+  interpreter and repeat the complete gate three times.
+- The authoritative gate must retain root tests, the full
+  `examples/bsm-manuscript` suite, workflow and reproduction smoke checks,
+  notebook execution, docs, packaging, hygiene, and diff validation. No
+  scientific workflow, public API, dependency, or test expectation will be
+  changed.
+- Work was isolated on `clean-ci-contract` at main commit `034da77`.
+  Focused contract tests first failed on the three-entry matrix and the nested
+  example-suite invocation. GitHub Actions now runs the authoritative gate once
+  in the locked Python 3.12 Pixi environment, and the root suite no longer
+  shells into a subset of the example tests. The dedicated example task remains
+  required and runs the complete suite once.
+- Validation passed: 13 focused contract/bridge tests, Ruff lint and format
+  checks, the dedicated example test task, and `./test_repo.sh --fix`. The full
+  gate included root tests, the complete BSM manuscript example suite, workflow
+  and reproduction smoke checks, all nine notebooks, documentation, package
+  builds, repository hygiene, and the final diff check. No production model fit
+  or HPC workflow was launched.
+
 ## SESSION STATE — 2026-08-25 — G12 recovery empty-HC3 repair validated
 
 - Recovery execution stopped fail-closed after preserving exactly 593/800

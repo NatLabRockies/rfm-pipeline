@@ -5,10 +5,10 @@ from pathlib import Path
 MANIFEST_PATH = Path("docs/ENGINEERING_MANIFEST.md")
 
 
-def test_engineering_manifest_exists_and_is_indexed() -> None:
-    """The authoritative engineering manifest should be part of the public docs."""
+def test_engineering_manifest_exists_but_is_not_publicly_indexed() -> None:
+    """Keep the maintainer manifest without exposing it in the public docs."""
     assert MANIFEST_PATH.exists()
-    assert "ENGINEERING_MANIFEST" in Path("docs/index.md").read_text(encoding="utf-8")
+    assert "ENGINEERING_MANIFEST" not in Path("docs/index.md").read_text(encoding="utf-8")
 
 
 def test_engineering_manifest_records_current_completed_work() -> None:

@@ -81,30 +81,3 @@ workflow
    :members:
    :undoc-members:
    :show-inheritance:
-
-
-manuscript_data_contract
-------------------------
-
-.. automodule:: rfm_pipeline.manuscript_data_contract
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-
-manuscript_runtime
-------------------
-
-.. automodule:: rfm_pipeline.manuscript_runtime
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-
-manuscript_stages
------------------
-
-.. automodule:: rfm_pipeline.manuscript_stages
-   :members:
-   :undoc-members:
-   :show-inheritance:

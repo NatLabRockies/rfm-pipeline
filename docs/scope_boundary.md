@@ -1,11 +1,11 @@
 # Workflow scope boundary
 
-The public package exposes a tested canonical workflow, but it does not claim that every
-historical notebook stage has been fully ported into the live module implementation.
+The canonical API intentionally covers a smaller surface than the advanced
+staged runner.
 
 ## Implemented directly in the package
 
-These stages are part of the canonical package path today:
+`run_canonical_workflow(...)` implements:
 
 - regularized screening
 - final OLS fitting
@@ -15,15 +15,15 @@ These stages are part of the canonical package path today:
 
 ## Explicitly bounded stages
 
-Use `workflow_scope_boundary_table()` as the machine-readable source of truth for the current
-non-foundation stages. At the current release boundary, the canonical workflow still reports two
-important limits:
+Use `workflow_scope_boundary_table()` as the machine-readable statement of the
+remaining canonical-API limits:
 
-- `upstream_null_screening` is represented through the recovered source adapter in
-  `rfm_pipeline.null_screening`; the package does not yet reimplement the upstream
-  permutation-null Delta workflow natively.
-- `feature_expansion` has an explicit tested contract in `rfm_pipeline.feature_expansion`, but the
-  notebook-specific recovered default specification is still only partially promoted into the
-  canonical package path.
+- `upstream_null_screening` is available through the source adapter in
+  `rfm_pipeline.null_screening`, but is not called by the canonical workflow.
+- `feature_expansion` has a tested contract in
+  `rfm_pipeline.feature_expansion`, but no default expansion is called by the
+  canonical workflow.
 
-These names and statuses are frozen by tests so that the package scope cannot drift silently.
+Prepare those features before calling the canonical API, or use the staged
+workflow. The names and statuses are frozen by tests so the boundary cannot
+drift silently.

@@ -61,6 +61,20 @@ The `files` mapping is expected to contain one relative path for each canonical 
 The position-map payload preserves original ordering so downstream code can reconstruct
 feature/output provenance without recomputing modeling steps.
 
+## Prediction equation
+
+For raw-scale coefficient matrix `B`, retained input row `x`, training input
+means `x_mean`, and training output means `y_mean`:
+
+```text
+y_hat = y_mean + (x - x_mean) @ B.T
+```
+
+Use `retained_features` and `output_names` from `manifest.json` to preserve
+column and row order. During the fitting process, prefer
+`predict_final_ols(run.final_ols_result, X_new)` over reconstructing this
+equation manually.
+
 ## Reader entrypoint
 
 Use `rfm_pipeline.load_postfit_bundle(...)` to reload the canonical tables used by downstream

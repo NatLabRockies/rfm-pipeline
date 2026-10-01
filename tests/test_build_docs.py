@@ -100,11 +100,16 @@ def test_build_docs_respects_explicit_output_dir(tmp_path: Path) -> None:
     assert str(explicit.resolve()) in command
 
 
-def test_docs_index_includes_manuscript_data_contract_guide() -> None:
+def test_docs_index_omits_internal_project_records() -> None:
     index_text = Path("docs/index.md").read_text(encoding="utf-8")
-    assert "manuscript_data_contract" in index_text
+    assert "manuscript_data_contract" not in index_text
+    assert "ENGINEERING_MANIFEST" not in index_text
 
 
-def test_docs_index_includes_manuscript_runtime_guide() -> None:
-    index_text = Path("docs/index.md").read_text(encoding="utf-8")
-    assert "manuscript_runtime" in index_text
+def test_docs_conf_limits_the_public_source_set() -> None:
+    module = _load_docs_conf_module()
+
+    assert "quickstart.md" in module.include_patterns
+    assert "configuration_reference.md" in module.include_patterns
+    assert "api.rst" in module.include_patterns
+    assert "manuscript_runtime.md" not in module.include_patterns

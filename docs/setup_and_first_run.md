@@ -29,7 +29,8 @@ pixi run python examples/basic_workflow.py \
   --output-dir artifacts/basic-workflow
 ```
 
-A successful run prints a holdout summary and writes:
+A successful run prints holdout predictions and an evaluation summary, then
+writes:
 
 ```text
 artifacts/basic-workflow/
@@ -53,7 +54,7 @@ If you do not need repository tasks or examples:
 pip install 'git+https://github.com/NatLabRockies/rfm-pipeline.git'
 ```
 
-## Contributor verification
+## Development validation
 
 The full repository gate is:
 
@@ -62,8 +63,7 @@ pixi run gate
 ```
 
 It is much broader than an installation smoke test and can take a long time.
-It runs unit and workflow tests, the BSM case study tests, notebooks,
-documentation, packaging, and wheel-install checks. It does not run the full
-BSM production analysis.
+It runs unit and workflow tests, examples, notebooks, documentation, packaging,
+and wheel-install checks. It does not submit external or HPC work.
 
 If setup fails, use the short [Troubleshooting guide](troubleshooting.md).

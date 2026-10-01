@@ -30,19 +30,6 @@ or allocation. A project must provide its own scheduler configuration,
 storage paths, resource limits, submission authorization, and artifact
 collection policy.
 
-## Reference integration
-
-The
-[`examples/bsm-manuscript` case study](https://github.com/NatLabRockies/rfm-pipeline/tree/main/examples/bsm-manuscript)
-contains a complete SLURM/Kestrel integration, including configs,
-orchestration wrappers, recovery controls, and validation records. It is an
-example to adapt, not a portable default and not required for ordinary package
-use.
-
-The case study is fail-closed: its local checks do not authorize or submit a
-production campaign. Follow its own execution guide and scientific gates when
-working on that study.
-
 ## Recommended sequence
 
 1. Validate a small local run.

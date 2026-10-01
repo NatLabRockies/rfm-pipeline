@@ -93,12 +93,13 @@ def test_package_exports_postfit_bundle_loaders() -> None:
     assert callable(load_pipeline_outputs)
 
 
-def test_api_reference_documents_feature_expansion_viz_io_and_runtime_modules() -> None:
+def test_api_reference_documents_general_workflow_modules() -> None:
     api = Path("docs/api.rst").read_text(encoding="utf-8")
     assert ".. automodule:: rfm_pipeline.feature_expansion" in api
     assert ".. automodule:: rfm_pipeline.viz_io" in api
-    assert ".. automodule:: rfm_pipeline.manuscript_runtime" in api
-    assert ".. automodule:: rfm_pipeline.manuscript_stages" in api
+    assert ".. automodule:: rfm_pipeline.workflow" in api
+    assert ".. automodule:: rfm_pipeline.manuscript_runtime" not in api
+    assert ".. automodule:: rfm_pipeline.manuscript_stages" not in api
 
 
 def test_docs_include_quickstart_export_bundle_and_runtime_guides() -> None:
@@ -125,8 +126,8 @@ def test_package_exports_sensitivity_study_helpers() -> None:
 def test_docs_include_reproducibility_example_guide() -> None:
     example_doc = Path("docs/reproducibility_example.md").read_text(encoding="utf-8")
     assert "run_reproducibility_example" in example_doc
-    assert "run_manuscript_reproduction_example" in example_doc
-    assert "--run-manuscript-chain" in example_doc
+    assert "run_manuscript_reproduction_example" not in example_doc
+    assert "--run-manuscript-chain" not in example_doc
     assert "examples/end_to_end_reproducibility.py" in example_doc
 
 

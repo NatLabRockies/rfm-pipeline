@@ -53,6 +53,21 @@ exclude_patterns = [
     "WORKFLOW_MANUSCRIPT_ALIGNMENT_PLAN.md",
     "final_scripts_from_hpc/*",
 ]
+include_patterns = [
+    "index.md",
+    "overview.md",
+    "setup_and_first_run.md",
+    "quickstart.md",
+    "reproducibility_example.md",
+    "configuration_reference.md",
+    "artifact_reference.md",
+    "interpreting_results.md",
+    "export_bundle.md",
+    "HPC_DISTRIBUTED_EXECUTION.md",
+    "troubleshooting.md",
+    "scope_boundary.md",
+    "api.rst",
+]
 html_theme = "alabaster"
 source_suffix = {
     ".rst": "restructuredtext",

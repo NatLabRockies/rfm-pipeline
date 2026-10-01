@@ -10,6 +10,7 @@ import pandas as pd
 from rfm_pipeline import (
     CanonicalWorkflowRun,
     load_postfit_bundle,
+    predict_final_ols,
     run_canonical_workflow,
     write_postfit_bundle,
 )
@@ -82,7 +83,12 @@ def main() -> None:
     args = parser.parse_args()
 
     run, loaded = run_example(args.output_dir)
+    _, _, x_holdout, _ = make_example_data()
+    predictions = predict_final_ols(run.final_ols_result, x_holdout)
     print(f"Wrote {len(loaded)} tables to {args.output_dir}")
+    print("\nHoldout predictions:")
+    print(predictions.to_string(index=False))
+    print("\nHoldout summary:")
     print(run.holdout_summary.to_string(index=False))
 
 

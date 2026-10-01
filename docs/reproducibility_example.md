@@ -37,23 +37,3 @@ pixi run python examples/end_to_end_reproducibility.py \
 ```
 
 It exposes `run_reproducibility_example(...)` for test and notebook reuse.
-
-## BSM-derived staged smoke test
-
-The extended script retains an optional historical
-`run_manuscript_reproduction_example(...)` path because it is part of the
-stage-chain validation surface:
-
-```bash
-pixi run python examples/end_to_end_reproducibility.py \
-  --output-dir artifacts/reproducibility-example \
-  --run-manuscript-chain \
-  --manuscript-output-dir artifacts/staged-smoke
-```
-
-This option writes all staged artifact families and a reproduction audit. It
-is useful for maintainers and for understanding the BSM-derived stage chain,
-but it is not required to fit a model through the canonical API.
-
-For the full study-specific example, see the
-[`examples/bsm-manuscript` case study](https://github.com/NatLabRockies/rfm-pipeline/tree/main/examples/bsm-manuscript).

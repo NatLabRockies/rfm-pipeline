@@ -1,7 +1,7 @@
 # Interpreting results
 
-Interpret a run from its recorded contract and baselines, not from expected BSM
-feature counts.
+Interpret a run from its recorded contract and baselines, not from counts copied
+from another dataset.
 
 ## Confirm completion first
 
@@ -66,8 +66,8 @@ Record at least:
 - artifact manifest or hashes; and
 - whether execution was local, out-of-core, or distributed.
 
-The BSM case study's counts and thresholds describe that study only. They are
-not acceptance ranges for a new dataset.
+Counts and thresholds from another study are not acceptance ranges for a new
+dataset.
 
 ## Common warning signs
 

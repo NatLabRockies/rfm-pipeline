@@ -74,8 +74,8 @@ that its stage completed.
 
 ## Audit artifacts
 
-The deterministic reproduction example and BSM case study can additionally
-write `reproduction_audit/`:
+The extended staged validation path can additionally write
+`reproduction_audit/`:
 
 | File                    | Use                               |
 | ----------------------- | --------------------------------- |
@@ -84,6 +84,5 @@ write `reproduction_audit/`:
 | `audit_summary.csv`     | One-row overall QA status         |
 
 Artifact schemas evolve with their producing stage. For programmatic use,
-read the column headers from the generated file and the matching writer in
-`rfm_pipeline.manuscript_stages`; do not infer success from historical BSM
-row counts.
+read the generated column headers and manifest; do not infer success from
+historical case-study row counts.

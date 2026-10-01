@@ -48,8 +48,8 @@ Accepted holdout labels include `holdout`, `test`, `val`, and
 
 Place `actual_input_feature_catalog.parquet` in the configured dataset
 directory. Its feature names must match columns or supported expressions used
-by the staged workflow. The BSM case study contains a concrete catalog and
-validation tests.
+by the staged workflow. It must include the columns documented in the
+[Configuration reference](configuration_reference.md).
 
 ## Fit and result errors
 

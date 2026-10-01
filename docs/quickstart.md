@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from rfm_pipeline import run_canonical_workflow, write_postfit_bundle
+from rfm_pipeline import predict_final_ols, run_canonical_workflow, write_postfit_bundle
 
 X_train = pd.read_parquet("X_train.parquet")
 Y_train = pd.read_parquet("Y_train.parquet")
@@ -41,19 +41,22 @@ run = run_canonical_workflow(
     Y_train,
     X_holdout,
     Y_holdout,
-    dataset_tag="my-study",
+    dataset_tag="my-model",
     screening_random_state=123,
     bootstrap_random_state=123,
 )
 
-write_postfit_bundle(run.artifacts, Path("artifacts/my-study"))
+predictions = predict_final_ols(run.final_ols_result, X_holdout)
+write_postfit_bundle(run.artifacts, Path("artifacts/my-model"))
 print(run.screening_result.selected_features)
+print(predictions)
 print(run.holdout_summary)
 ```
 
-The result contains the screening fit, final OLS fit, holdout summary, and
-in-memory export tables. The writer records the actual file paths in
-`manifest.json`.
+The result contains the screening fit, fitted OLS model, holdout summary, and
+in-memory export tables. Pass any DataFrame containing the retained feature
+columns to `predict_final_ols(...)`. The writer records the actual bundle paths
+in `manifest.json`.
 
 ## Reload a bundle
 
@@ -62,13 +65,14 @@ from pathlib import Path
 
 from rfm_pipeline import load_postfit_bundle
 
-tables = load_postfit_bundle(Path("artifacts/my-study"))
+tables = load_postfit_bundle(Path("artifacts/my-model"))
 coefficients = tables["coef_matrix_raw_scale"]
 performance = tables["nrmse_summary"]
 ```
 
 Parquet is used when requested and available; CSV is the fallback. The loader
-handles either format.
+handles either format. It returns the coefficient and metadata tables rather
+than recreating the in-memory fitted estimator.
 
 ## Common options
 

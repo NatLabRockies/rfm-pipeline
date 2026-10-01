@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def test_docs_index_exposes_manuscript_alignment_audit() -> None:
-    """The docs toctree should expose the scientific-alignment status ledger."""
-    assert "manuscript_alignment_audit" in Path("docs/index.md").read_text(encoding="utf-8")
+def test_public_docs_omit_manuscript_alignment_audit() -> None:
+    """The public docs should not expose the internal alignment ledger."""
+    assert "manuscript_alignment_audit" not in Path("docs/index.md").read_text(encoding="utf-8")
 
 
 def test_alignment_audit_records_non_exact_stage_gaps() -> None:

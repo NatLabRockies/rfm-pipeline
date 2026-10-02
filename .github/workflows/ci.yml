@@ -16,7 +16,7 @@ permissions:
 jobs:
   quality_tests:
     name: quality and tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Check out repository
@@ -42,7 +42,7 @@ jobs:
 
   docs_package:
     name: package and documentation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Check out repository
@@ -52,6 +52,7 @@ jobs:
         uses: prefix-dev/setup-pixi@v0.10.2
         with:
           cache: true
+          cache-write: false
 
       - name: Build package and documentation
         run: |
@@ -71,7 +72,7 @@ jobs:
     name: validate (locked Python 3.12)
     if: ${{ always() }}
     needs: [quality_tests, docs_package]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Verify every validation job passed
         env:

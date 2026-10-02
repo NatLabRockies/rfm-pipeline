@@ -36,4 +36,5 @@ pixi run python examples/end_to_end_reproducibility.py \
   --output-dir artifacts/reproducibility-example
 ```
 
-It exposes `run_reproducibility_example(...)` for test and notebook reuse.
+It exposes `run_reproducibility_example(...)` for reuse in tests or other
+Python code.

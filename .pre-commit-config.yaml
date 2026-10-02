@@ -11,13 +11,6 @@ repos:
 
   - repo: local
     hooks:
-      - id: notebook-hygiene-fix
-        name: notebook hygiene fix
-        entry: bash -lc 'pixi run fix-notebooks'
-        language: system
-        pass_filenames: false
-        stages: [pre-commit]
-
       - id: markdown-format
         name: markdown format
         entry: bash -lc 'pixi run format-markdown'

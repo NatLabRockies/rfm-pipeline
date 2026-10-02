@@ -12,12 +12,13 @@ EXCLUDED_PARTS = {
     ".pytest_cache",
     ".ruff_cache",
     ".venv",
+    "artifacts",
     "docs",
     "_build",
     "build",
     "dist",
+    "outputs",
     "__MACOSX",
-    "bsm-manuscript",
 }
 EXCLUDED_FRAGMENTS = {".egg-info/", "docs/_build/", ".ipynb_checkpoints/"}
 

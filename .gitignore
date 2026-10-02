@@ -1,4 +1,3 @@
-docs/final_scripts_from_hpc/
 *.zip
 *.bak
 tmp_*.txt
@@ -19,8 +18,7 @@ dist/
 .ruff_cache/
 .mypy_cache/
 
-# Notebook and docs build artifacts
-.ipynb_checkpoints/
+# Documentation build artifacts
 docs/_build/
 
 
@@ -29,45 +27,5 @@ __MACOSX/
 
 # macOS Finder metadata
 .DS_Store
-configs/local/
 artifacts/
-!examples/bsm-manuscript/artifacts/
-!examples/bsm-manuscript/artifacts/**
-
-# Sensitivity study local analysis artifacts
-artifacts/sensitivity/wave1_results.csv
-artifacts/sensitivity/wave1_formula_table.csv
-
-# BSM-specific dev artifacts (not for public release)
-COMPLETE_SETUP_GUIDE.md
-DOCUMENTATION_STATUS.md
-MANUSCRIPT_QUICK_START.md
-README_kestrel_discovery_reporting.md
-REAL_DATA_README.md
-SIMPLE_CONFIG_SUMMARY.md
-WORKFLOW_FINDINGS.md
-WORKFLOW_SUMMARY.md
-codex_audit_plan.md
-collect_hpc_diagnostics.sh
-discovery_*.sh
-install_pixi_project_env.sh
-kestrel_bsm_hpc_discovery_answers.md
-mkdir_hpc_dirs.sh
-run_kestrel_discovery_suite.sh
-scaling_test.log
-scp.sh
-scp_gpu_artifacts.sh
-tmp_manuscript_raw_data.txt
-watch.sh
-hpc_kestrel_config.sh
-ai_context/api_docs/kestrel_*.md
-ai_context/api_docs/runtime_api_bundle_*.md
-
-# Internal agent workflow files — not for public consumption
-MEMORY.md
-docs/AGENT_SYNC.md
-docs/MEMORY.md
-
-# slice-runner local state
-.slice-runner/
 outputs/

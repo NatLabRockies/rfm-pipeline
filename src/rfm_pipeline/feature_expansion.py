@@ -1,9 +1,4 @@
-"""Explicit feature-expansion boundary recovered from the audited notebook workflow.
-
-The recovered archive includes a notebook that expands influential first-order inputs
-into a wider modeling matrix with scenario flags, nonlinear transforms, and second-
-order interactions. This module captures that boundary as an explicit, tested package
-contract without claiming that the notebook itself is canonical source code.
+"""Explicit feature expansion for reduced-form model inputs.
 
 Transforms are expressed as :class:`~rfm_pipeline.transforms.TransformDef` objects
 (SymPy expression strings) rather than hardcoded string labels.  Invalid values
@@ -42,18 +37,12 @@ class FeatureExpansionSpec:
         ``TransformDef.column_name(base_feature)`` (i.e. ``"{base}_{label}"``).
     interactions
         Ordered pairs of feature names whose product terms should be created.
-    provenance
-        Provenance label describing the strength of the recovered source.
-    source_artifact
-        Supporting artifact for the recovered specification.
     """
 
     base_features: tuple[str, ...]
     scenario_flags: tuple[str, ...]
     transforms: dict[str, tuple[TransformDef, ...]]
     interactions: tuple[tuple[str, str], ...]
-    provenance: str
-    source_artifact: str
 
 
 @dataclass(frozen=True)
@@ -118,7 +107,7 @@ def default_feature_expansion_spec(
     Returns
     -------
     FeatureExpansionSpec
-        Explicit feature-expansion contract labeled as notebook-derived.
+        Explicit feature-expansion specification.
     """
     ordered_base = _ordered_unique(list(base_features))
     transforms: dict[str, tuple[TransformDef, ...]] = {}
@@ -131,8 +120,6 @@ def default_feature_expansion_spec(
         scenario_flags=scenario_flags,
         transforms=transforms,
         interactions=tuple(interaction_pairs),
-        provenance="notebook-derived",
-        source_artifact="make_nonlinear_features.ipynb",
     )
 
 

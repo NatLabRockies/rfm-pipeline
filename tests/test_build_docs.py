@@ -13,7 +13,7 @@ from tools.build_docs import build_docs
 def _load_docs_conf_module():
     repo_root = Path(__file__).resolve().parents[1]
     conf_path = repo_root / "docs" / "conf.py"
-    spec = importlib.util.spec_from_file_location("bsm_docs_conf", conf_path)
+    spec = importlib.util.spec_from_file_location("rfm_docs_conf", conf_path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -46,21 +46,6 @@ def test_docs_index_includes_user_guides() -> None:
     assert "quickstart" in index_text
     assert "export_bundle" in index_text
     assert "reproducibility_example" in index_text
-
-
-def test_docs_index_includes_scope_boundary_guide() -> None:
-    index_text = Path("docs/index.md").read_text(encoding="utf-8")
-    assert "scope_boundary" in index_text
-
-
-def test_module_plan_uses_live_module_names() -> None:
-    module_plan = Path("docs/module_plan.md").read_text(encoding="utf-8")
-    assert "`rfm_pipeline.feature_expansion`" in module_plan
-    assert "`rfm_pipeline.regularized_screening`" in module_plan
-    assert "`rfm_pipeline.workflow`" in module_plan
-    assert "`rfm_pipeline.regularized_screen`" not in module_plan
-    assert "`rfm_pipeline.screening_null`" not in module_plan
-    assert "`rfm_pipeline.feature_engineering`" not in module_plan
 
 
 def test_build_docs_uses_repo_build_directory_by_default(tmp_path: Path) -> None:
@@ -102,7 +87,6 @@ def test_build_docs_respects_explicit_output_dir(tmp_path: Path) -> None:
 
 def test_docs_index_omits_internal_project_records() -> None:
     index_text = Path("docs/index.md").read_text(encoding="utf-8")
-    assert "manuscript_data_contract" not in index_text
     assert "ENGINEERING_MANIFEST" not in index_text
 
 
@@ -110,6 +94,5 @@ def test_docs_conf_limits_the_public_source_set() -> None:
     module = _load_docs_conf_module()
 
     assert "quickstart.md" in module.include_patterns
-    assert "configuration_reference.md" in module.include_patterns
     assert "api.rst" in module.include_patterns
-    assert "manuscript_runtime.md" not in module.include_patterns
+    assert "artifact_reference.md" in module.include_patterns

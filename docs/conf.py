@@ -48,10 +48,6 @@ exclude_patterns = [
     "_build",
     "Thumbs.db",
     ".DS_Store",
-    "MEMORY.md",
-    "AGENT_SYNC.md",
-    "WORKFLOW_MANUSCRIPT_ALIGNMENT_PLAN.md",
-    "final_scripts_from_hpc/*",
 ]
 include_patterns = [
     "index.md",
@@ -59,13 +55,10 @@ include_patterns = [
     "setup_and_first_run.md",
     "quickstart.md",
     "reproducibility_example.md",
-    "configuration_reference.md",
     "artifact_reference.md",
     "interpreting_results.md",
     "export_bundle.md",
-    "HPC_DISTRIBUTED_EXECUTION.md",
     "troubleshooting.md",
-    "scope_boundary.md",
     "api.rst",
 ]
 html_theme = "alabaster"

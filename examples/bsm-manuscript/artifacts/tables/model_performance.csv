@@ -1,3 +1,0 @@
-model_name,display_name,source,nrmse,ci_lower,ci_upper,n_boot,bootstrap_sample_size,normalization_reference
-null_mean_baseline_demo,Null mean baseline,demo_recomputed,0.1652714187691465,0.16352900936116846,0.1663258782690064,100,1500,Y_train range
-final_ols_demo,Final OLS,demo_recomputed,0.06788955117319458,0.06625891722607269,0.0689592840476999,100,1500,Y_train range

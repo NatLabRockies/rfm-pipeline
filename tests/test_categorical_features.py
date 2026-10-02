@@ -1,4 +1,4 @@
-"""R3-S04: Persist resolved categorical levels at fit for reproducible prediction.
+"""Tests for reproducible categorical design-matrix prediction.
 
 Tests:
 - Fitting with levels=None stores explicit levels in the design spec.
@@ -12,8 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from rfm_pipeline.config import CategoricalInputDecl
-from rfm_pipeline.features import DesignMatrixSpec
+from rfm_pipeline.features import CategoricalInputDecl, DesignMatrixSpec
 from rfm_pipeline.final_ols import (
     FinalOLSFitResult,
     fit_final_ols_with_design,

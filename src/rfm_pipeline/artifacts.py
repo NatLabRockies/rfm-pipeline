@@ -1,8 +1,7 @@
 """Artifact-schema helpers for the reduced-form workflow.
 
-The functions in this module preserve original ordering information so that downstream
-visualization code and manuscript tables can reconstruct feature and output provenance
-without re-running modeling code.
+The functions in this module preserve original ordering information so downstream
+tools can reconstruct feature and output provenance without rerunning model fitting.
 
 It also provides frozen-config provenance stamping (F2 closure).  A resolved
 configuration must be cryptographically stamped before any sealed-test evaluation

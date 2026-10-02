@@ -16,7 +16,6 @@ EXPECTED_PREP_TASKS = [
     "clean-transients",
     "format-python",
     "format-markdown",
-    "fix-notebooks",
 ]
 
 EXPECTED_VALIDATION_TASKS = [
@@ -26,14 +25,8 @@ EXPECTED_VALIDATION_TASKS = [
     "lint",
     "format-check",
     "markdown-check",
-    "notebook-check",
-    "notebook-workflow-check",
     "compile-check",
     "unit-tests",
-    "bsm-manuscript-example-tests",
-    "workflow-tests",
-    "manuscript-reproduction-smoke",
-    "notebook-tests",
     "docs",
     "package-build",
     "package-smoke",
@@ -49,15 +42,8 @@ EXPECTED_FAST_VALIDATION_TASKS = [
     "lint",
     "format-check",
     "markdown-check",
-    "notebook-check",
-    "notebook-workflow-check",
     "compile-check",
     "pre-push-tests",
-    "bsm-manuscript-example-tests",
-    "workflow-tests",
-    "docs",
-    "package-build",
-    "package-smoke",
     "clean-transients",
     "repo-hygiene",
     "git-diff-check",
@@ -131,8 +117,6 @@ def test_pixi_declares_required_gate_tasks_and_build_dependencies() -> None:
         'package-smoke = "python tools/check_wheel.py"',
         'format-markdown = "python -m tools.format_markdown"',
         'markdown-check = "python -m tools.check_markdown"',
-        'manuscript-reproduction-smoke = "python tools/check_manuscript_reproduction.py"',
-        'notebook-tests = "python -m tools.execute_notebooks --timeout 1200"',
         'gate-fast = "python tools/run_repository_gate.py fast"',
         'gate = "python tools/run_repository_gate.py check"',
     ]
@@ -144,16 +128,8 @@ def test_pixi_declares_required_gate_tasks_and_build_dependencies() -> None:
 def test_pre_push_hook_uses_fast_gate() -> None:
     hooks = Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
 
+    assert "notebook" not in hooks.lower()
+    assert "fix-notebooks" not in hooks
     assert "stages: [pre-push]" in hooks
     assert "pixi run gate-fast" in hooks
     assert "pixi run gate'" not in hooks
-
-
-def test_bsm_example_suite_is_owned_by_dedicated_gate_task() -> None:
-    pixi = Path("pixi.toml").read_text(encoding="utf-8")
-    bridge = Path("tests/test_bsm_publication_example.py").read_text(encoding="utf-8")
-
-    assert "bsm-manuscript-example-tests" in VALIDATION_TASKS
-    assert "cd examples/bsm-manuscript" in pixi
-    assert "python -m pytest -q tests" in pixi
-    assert '"pytest"' not in bridge

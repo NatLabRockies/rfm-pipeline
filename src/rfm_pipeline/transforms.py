@@ -231,15 +231,9 @@ SQRT = TransformDef(expr="sqrt(x)", label="sqrt", name="square_root")
 #: Natural exponential (eˣ).  Always domain-valid; may overflow for large x.
 EXPONENTIAL = TransformDef(expr="exp(x)", label="exp", name="exponential")
 
-#: Default library used when no ``transform_library`` is specified in config.
-#: Matches the families reported in the JDS manuscript Section 3.5: quadratic,
-#: logarithmic, inverse, and square-root. The :data:`EXPONENTIAL` symbol is
-#: still defined above for advanced users who want to extend the library
-#: programmatically (e.g. ``library = list(DEFAULT_TRANSFORM_LIBRARY) +
-#: [EXPONENTIAL]``), but it is **not** part of the public top-level
-#: ``rfm_pipeline`` API and is excluded from the default library because it
-#: is not part of the manuscript algebraic library and tends to overflow on
-#: standardized inputs.
+#: Conservative default library. The exponential transform remains available
+#: for explicit use but is excluded here because it can overflow on standardized
+#: inputs.
 DEFAULT_TRANSFORM_LIBRARY: list[TransformDef] = [
     QUADRATIC,
     LOGARITHMIC,

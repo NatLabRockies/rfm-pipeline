@@ -42,9 +42,8 @@ artifacts/basic-workflow/
     └── ...
 ```
 
-This example is synthetic, deterministic, and independent of the BSM case
-study. Continue with the [Python API quickstart](quickstart.md) to use your own
-DataFrames.
+This example is synthetic and deterministic. Continue with the
+[Python API quickstart](quickstart.md) to use your own DataFrames.
 
 ## Install only the package
 
@@ -62,8 +61,7 @@ The full repository gate is:
 pixi run gate
 ```
 
-It is much broader than an installation smoke test and can take a long time.
-It runs unit and workflow tests, examples, notebooks, documentation, packaging,
-and wheel-install checks. It does not submit external or HPC work.
+It runs style checks, unit tests, examples, documentation, packaging, and a
+wheel-import check. It does not run long model-fitting jobs.
 
 If setup fails, use the short [Troubleshooting guide](troubleshooting.md).

@@ -12,9 +12,7 @@ version: 0.1.0
 repository-code: "https://github.com/NatLabRockies/rfm-pipeline"
 url: "https://github.com/NatLabRockies/rfm-pipeline"
 abstract: >-
-  rfm-pipeline is a Python package for building and executing reduced-form
-  modeling (RFM) pipelines on large-scale simulation or observational datasets.
-  It provides empirical-null screening, interaction discovery, nonlinear
-  discovery, sparse selection with stability filtering, and final manuscript
-  table and figure generation. The package supports both local execution and
-  distributed SLURM array job workflows for HPC environments.
+  rfm-pipeline is a Python package for fitting interpretable multi-output
+  reduced-form models from prepared training and holdout tables. It provides
+  regularized feature screening, output-wise linear fitting, holdout
+  evaluation, and portable coefficient and metadata bundles.

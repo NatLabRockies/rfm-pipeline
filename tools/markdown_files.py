@@ -18,18 +18,10 @@ EXCLUDED_PARTS = {
     "dist",
     "_build",
     "__MACOSX",
-    # Historical publication records are migrated intact and validated by the
-    # case-study test task rather than reformatted by the generic package gate.
-    "bsm-manuscript",
 }
 MARKDOWN_SUFFIXES = {".md", ".mdx", ".markdown"}
 
-# Files where mdformat must NOT run because they require strict formatting that
-# the default mdformat rules would mangle (e.g. JOSS YAML front matter, where
-# the `---` opening delimiter would be reinterpreted as a Setext heading rule).
-EXCLUDED_FILES = {
-    Path("paper") / "paper.md",
-}
+EXCLUDED_FILES: set[Path] = set()
 
 
 def is_excluded(path: Path, repo_root: Path | None = None) -> bool:

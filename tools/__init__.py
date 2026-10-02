@@ -1,1 +1,1 @@
-"""Repository-gate utility helpers for the BSM reduced-form workflow."""
+"""Repository validation helpers for rfm-pipeline."""

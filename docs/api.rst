@@ -66,18 +66,34 @@ regularized_screening
    :undoc-members:
    :show-inheritance:
 
-null_screening
---------------
-
-.. automodule:: rfm_pipeline.null_screening
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 workflow
 --------
 
 .. automodule:: rfm_pipeline.workflow
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+baselines
+---------
+
+.. automodule:: rfm_pipeline.baselines
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+release_manifest
+----------------
+
+.. automodule:: rfm_pipeline.release_manifest
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+transforms
+----------
+
+.. automodule:: rfm_pipeline.transforms
    :members:
    :undoc-members:
    :show-inheritance:

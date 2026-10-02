@@ -1,6 +1,0 @@
-configs/manuscript_paths.yml
-configs/hpc/*.local.yml
-outputs/
-*.log
-__pycache__/
-*.pyc

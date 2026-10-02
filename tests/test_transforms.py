@@ -155,8 +155,7 @@ def test_warn_nan_transforms_skips_empty_feature_list():
 
 
 def test_default_transform_library_has_four_entries():
-    # Default library matches the manuscript algebraic family list (quadratic,
-    # logarithmic, inverse, square-root). EXPONENTIAL is intentionally omitted.
+    # The exponential transform is available explicitly but omitted by default.
     assert len(DEFAULT_TRANSFORM_LIBRARY) == 4
 
 

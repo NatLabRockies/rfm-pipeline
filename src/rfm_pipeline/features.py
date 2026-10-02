@@ -1,4 +1,4 @@
-"""Selected-feature parsing utilities for recovered pipeline naming conventions."""
+"""Feature parsing and categorical design-matrix utilities."""
 
 from __future__ import annotations
 
@@ -7,7 +7,14 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from rfm_pipeline.config import CategoricalInputDecl
+
+@dataclass(frozen=True)
+class CategoricalInputDecl:
+    """Declare one categorical predictor and its optional ordered levels."""
+
+    name: str
+    levels: list[str] | None = None
+
 
 KNOWN_TRANSFORMATIONS = {
     # Legacy labels (used by pre-existing artifact parsing)
@@ -174,7 +181,7 @@ class DesignMatrixSpec:
     Parameters
     ----------
     categorical_inputs:
-        Declared categorical/block predictors (from config). Each entry may
+        Declared categorical/block predictors. Each entry may
         optionally carry an explicit level list.
     interaction_pairs:
         Ordered pairs ``(categorical_name, scalar_name)`` for which a
@@ -367,7 +374,7 @@ def build_design_matrix(
 def resolve_spec_levels(X: pd.DataFrame, spec: DesignMatrixSpec) -> DesignMatrixSpec:
     """Return a new DesignMatrixSpec with all categorical levels resolved from *X*.
 
-    For each :class:`~rfm_pipeline.config.CategoricalInputDecl` whose ``levels``
+    For each :class:`CategoricalInputDecl` whose ``levels``
     is ``None``, the sorted unique non-null values in the corresponding column of
     *X* are used as the explicit level list.  Entries that already carry an
     explicit level list are kept unchanged.

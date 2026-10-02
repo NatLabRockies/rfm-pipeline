@@ -88,10 +88,25 @@ than recreating the in-memory fitted estimator.
 
 See the `run_canonical_workflow` API reference for the complete signature.
 
-## Need feature discovery too?
+## Add transformations or interactions
 
-The canonical API screens the feature columns it receives; it does not
-automatically generate interactions or nonlinear transformations. For the
-larger staged workflow, continue with the
-[Configuration reference](configuration_reference.md). For a ready-to-run
-neutral example, see [Reproducibility examples](reproducibility_example.md).
+The workflow screens the feature columns it receives; it does not automatically
+generate interactions or nonlinear transformations. Use
+`FeatureExpansionSpec` and `apply_feature_expansion(...)` to define those
+columns explicitly:
+
+```python
+from rfm_pipeline import QUADRATIC, apply_feature_expansion, default_feature_expansion_spec
+
+spec = default_feature_expansion_spec(
+    base_features=list(X_train.columns),
+    add_transforms={"temperature": [QUADRATIC]},
+    interaction_pairs=(("temperature", "pressure"),),
+)
+X_train = apply_feature_expansion(X_train, spec).expanded_frame
+X_holdout = apply_feature_expansion(X_holdout, spec).expanded_frame
+```
+
+Then pass the expanded tables to the workflow. See
+[Reproducibility examples](reproducibility_example.md) for two complete fitting
+examples.

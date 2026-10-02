@@ -7,7 +7,7 @@ Provides a generic fit/predict protocol and concrete baseline implementations:
 - OracleOLSBaseline (fits OLS on the planted support; unattainable diagnostic)
 - GBTBaseline (gradient-boosted tree nonlinear surrogate)
 
-All baselines operate on arbitrary NumPy X/Y arrays and are case-study-agnostic.
+All baselines operate on arbitrary NumPy input and output arrays.
 """
 
 from __future__ import annotations
@@ -349,8 +349,7 @@ class GBTBaseline:
     """Nonlinear predictive surrogate using gradient-boosted regression trees.
 
     Multi-output data is handled via :class:`~sklearn.multioutput.MultiOutputRegressor`.
-    This baseline is case-study-agnostic and serves as a nonlinear upper-bound
-    comparator for linear methods.
+    This baseline serves as a nonlinear comparator for linear methods.
 
     Parameters
     ----------

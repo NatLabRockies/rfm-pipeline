@@ -1,18 +1,16 @@
 # rfm-pipeline documentation
 
-Use `rfm-pipeline` to fit, evaluate, and export reduced-form models. For a
-ready-to-use fitted model, see
-[`bsm-public-rf`](https://github.com/NatLabRockies/bsm-public-rf).
+Use `rfm-pipeline` to fit, evaluate, and export reduced-form models from
+prepared pandas DataFrames.
 
 ## Start by outcome
 
-| Goal                             | Start here                                                    |
-| -------------------------------- | ------------------------------------------------------------- |
-| Verify an installation           | [Setup and first run](setup_and_first_run.md)                 |
-| Fit a model from four DataFrames | [Python API quickstart](quickstart.md)                        |
-| Run the staged workflow          | [Configuration reference](configuration_reference.md)         |
-| Locate or interpret outputs      | [Artifact reference](artifact_reference.md)                   |
-| Scale beyond one process         | [HPC and distributed execution](HPC_DISTRIBUTED_EXECUTION.md) |
+| Goal                             | Start here                                    |
+| -------------------------------- | --------------------------------------------- |
+| Verify an installation           | [Setup and first run](setup_and_first_run.md) |
+| Fit a model from four DataFrames | [Python API quickstart](quickstart.md)        |
+| Locate or interpret outputs      | [Artifact reference](artifact_reference.md)   |
+| Diagnose a failure               | [Troubleshooting](troubleshooting.md)         |
 
 ```{toctree}
 :maxdepth: 2
@@ -28,11 +26,9 @@ reproducibility_example
 :maxdepth: 2
 :caption: Use the workflow
 
-configuration_reference
 artifact_reference
 interpreting_results
 export_bundle
-HPC_DISTRIBUTED_EXECUTION
 troubleshooting
 ```
 
@@ -40,6 +36,5 @@ troubleshooting
 :maxdepth: 2
 :caption: Reference
 
-scope_boundary
 api
 ```

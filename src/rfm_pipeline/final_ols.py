@@ -1,13 +1,8 @@
-"""Final OLS foundations and post-fit artifact helpers.
-
-This module keeps the recovered notebook-derived post-fit contract explicit while also
-providing a small canonical implementation of the final OLS fit, prediction, holdout
-metric summarization, and artifact-bundle assembly.
-"""
+"""Final OLS fitting, prediction, evaluation, and artifact helpers."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -15,7 +10,6 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
-from tqdm import tqdm
 
 from .artifacts import PipelineManifest, make_metadata_frame
 from .data import SealedSplitResult, align_xy
@@ -25,7 +19,7 @@ from .metrics import bootstrap_macro_nrmse_ci
 
 @dataclass(frozen=True)
 class PostfitArtifactSpec:
-    """One expected artifact in the notebook-derived post-fit export bundle.
+    """One table in the portable post-fit artifact bundle.
 
     Parameters
     ----------
@@ -40,40 +34,6 @@ class PostfitArtifactSpec:
     artifact_name: str
     category: str
     description: str
-
-
-@dataclass(frozen=True)
-class FinalOLSContract:
-    """Recovered contract for the notebook-derived final OLS stage.
-
-    Parameters
-    ----------
-    provenance
-        Provenance label for the recovered workflow stage.
-    estimator
-        Summary of the final fitted model family.
-    selected_feature_handoff
-        Description of how the selected feature set reaches the final OLS stage.
-    holdout_fraction
-        External holdout fraction used by the notebook workflow.
-    selected_feature_count
-        Recovered feature count handed to final OLS.
-    coefficient_scales
-        Coefficient representations expected in the exported artifact bundle.
-    artifact_specs
-        Canonical post-fit artifacts expected by downstream visualization helpers.
-    diagnostics
-        Additional post-fit diagnostics and metadata exported by the notebook.
-    """
-
-    provenance: str
-    estimator: str
-    selected_feature_handoff: str
-    holdout_fraction: float
-    selected_feature_count: int
-    coefficient_scales: tuple[str, ...]
-    artifact_specs: tuple[PostfitArtifactSpec, ...]
-    diagnostics: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -150,103 +110,71 @@ def _coerce_numeric_frame(frame: pd.DataFrame, *, name: str) -> pd.DataFrame:
     return numeric
 
 
-def notebook_final_ols_contract() -> FinalOLSContract:
-    """Return the recovered notebook-derived final OLS contract.
-
-    Returns
-    -------
-    FinalOLSContract
-        Explicit contract for the final OLS handoff and post-fit export boundary.
-    """
-    return FinalOLSContract(
-        provenance="notebook-derived",
-        estimator="per-output ordinary least squares",
-        selected_feature_handoff=(
-            "selected inputs from the notebook sparse-screening stage are handed to a final OLS fit"
-        ),
-        holdout_fraction=0.10,
-        selected_feature_count=346,
-        coefficient_scales=("standardized", "raw_scale"),
-        artifact_specs=(
-            PostfitArtifactSpec(
-                artifact_name="all_input_metadata",
-                category="metadata",
-                description="Original-order metadata for all candidate inputs.",
-            ),
-            PostfitArtifactSpec(
-                artifact_name="selected_input_metadata",
-                category="metadata",
-                description="Original-order metadata for selected screening inputs.",
-            ),
-            PostfitArtifactSpec(
-                artifact_name="output_metadata",
-                category="metadata",
-                description="Original-order metadata for modeled outputs.",
-            ),
-            PostfitArtifactSpec(
-                artifact_name="coef_matrix_standardized",
-                category="coefficients",
-                description=(
-                    "Coefficient matrix on the standardized scale for downstream "
-                    "inspection and visualization."
-                ),
-            ),
-            PostfitArtifactSpec(
-                artifact_name="coef_matrix_raw_scale",
-                category="coefficients",
-                description=(
-                    "Coefficient matrix transformed back to the raw scale for interpretation."
-                ),
-            ),
-            PostfitArtifactSpec(
-                artifact_name="x_standardization",
-                category="standardization",
-                description="Means and scales used to standardize final-model inputs.",
-            ),
-            PostfitArtifactSpec(
-                artifact_name="y_standardization",
-                category="standardization",
-                description="Means and scales used to standardize modeled outputs.",
-            ),
-            PostfitArtifactSpec(
-                artifact_name="nrmse_summary",
-                category="evaluation",
-                description="Holdout nRMSE summaries and associated evaluation metadata.",
-            ),
-        ),
-        diagnostics=(
-            "all_input_order",
-            "selected_input_order",
-            "retained_input_order",
-            "output_order",
-            "transform_vectors",
-            "postfit_diagnostics",
-        ),
-    )
+POSTFIT_ARTIFACT_SPECS = (
+    PostfitArtifactSpec(
+        artifact_name="all_input_metadata",
+        category="metadata",
+        description="Original-order metadata for all candidate inputs.",
+    ),
+    PostfitArtifactSpec(
+        artifact_name="selected_input_metadata",
+        category="metadata",
+        description="Original-order metadata for selected inputs.",
+    ),
+    PostfitArtifactSpec(
+        artifact_name="output_metadata",
+        category="metadata",
+        description="Original-order metadata for modeled outputs.",
+    ),
+    PostfitArtifactSpec(
+        artifact_name="coef_matrix_standardized",
+        category="coefficients",
+        description="Coefficient matrix on the standardized scale.",
+    ),
+    PostfitArtifactSpec(
+        artifact_name="coef_matrix_raw_scale",
+        category="coefficients",
+        description="Coefficient matrix transformed to the raw input and output scales.",
+    ),
+    PostfitArtifactSpec(
+        artifact_name="x_standardization",
+        category="standardization",
+        description="Means and scales used to standardize model inputs.",
+    ),
+    PostfitArtifactSpec(
+        artifact_name="y_standardization",
+        category="standardization",
+        description="Means and scales used to standardize modeled outputs.",
+    ),
+    PostfitArtifactSpec(
+        artifact_name="nrmse_summary",
+        category="evaluation",
+        description="Holdout nRMSE summary and bootstrap interval.",
+    ),
+)
 
 
 def canonical_postfit_artifact_names() -> list[str]:
-    """Return canonical notebook-derived post-fit artifact names.
+    """Return the portable post-fit artifact names in write order.
 
     Returns
     -------
     list[str]
-        Ordered artifact stems under ``postfit_diagnostics``.
+        Ordered artifact stems.
     """
-    return [spec.artifact_name for spec in notebook_final_ols_contract().artifact_specs]
+    return [spec.artifact_name for spec in POSTFIT_ARTIFACT_SPECS]
 
 
 def postfit_artifact_table() -> pd.DataFrame:
-    """Tabulate the recovered notebook-derived post-fit artifact contract.
+    """Describe the portable post-fit artifact bundle.
 
     Returns
     -------
     pandas.DataFrame
         One row per canonical artifact with ordering preserved.
     """
-    contract = notebook_final_ols_contract()
     rows = []
-    for position, spec in enumerate(contract.artifact_specs):
+    for position, spec in enumerate(POSTFIT_ARTIFACT_SPECS):
         rows.append(
             {
                 "artifact_name": spec.artifact_name,
@@ -310,7 +238,7 @@ def fit_final_ols(
         coef_batches = []
         intercept_batches = []
         batches = range(0, n_outputs, output_batch_size)
-        for start in tqdm(batches, desc="OLS output batches", leave=False):
+        for start in batches:
             end = min(start + output_batch_size, n_outputs)
             batch_model = LinearRegression(fit_intercept=True)
             batch_model.fit(X_values, Y_values[:, start:end])
@@ -565,7 +493,7 @@ def build_postfit_artifacts(
     Returns
     -------
     dict[str, pandas.DataFrame | dict[str, Any]]
-        Artifact bundle keyed by the canonical notebook-derived artifact names plus a
+        Artifact bundle keyed by the canonical post-fit artifact names plus a
         ``manifest`` entry.
     """
     if artifact_format not in {"parquet", "csv"}:
@@ -716,6 +644,40 @@ class SupportSelectionResult:
     initial_coef_magnitudes: np.ndarray
 
 
+def select_threshold_on_internal_validation(
+    split: SealedSplitResult,
+    thresholds: Sequence[float],
+    scorer: Callable[[float, pd.DataFrame, pd.DataFrame], float],
+    *,
+    seed: int | None = None,
+) -> float:
+    """Choose a threshold using only the internal-validation partition.
+
+    Lower scorer values are preferred. Ties are resolved reproducibly with
+    ``seed``. The function refuses to run after the sealed test partition has
+    been exposed.
+    """
+    from .data import SealedTestAccessError
+
+    if not split._sealed:
+        raise SealedTestAccessError(
+            "Threshold selection requires a sealed test partition; use only "
+            "the training and internal-validation data during model selection."
+        )
+    if not thresholds:
+        raise ValueError("thresholds must be a non-empty sequence.")
+
+    candidates = [float(value) for value in thresholds]
+    scores = [scorer(value, split.train, split.val) for value in candidates]
+    best_score = min(scores)
+    tied = [value for value, score in zip(candidates, scores, strict=True) if score == best_score]
+    if len(tied) == 1:
+        return tied[0]
+
+    rng = np.random.default_rng(seed)
+    return tied[int(rng.integers(len(tied)))]
+
+
 def select_support_via_refit(
     feature_cols: Sequence[str],
     response_cols: Sequence[str],
@@ -771,7 +733,6 @@ def select_support_via_refit(
         If ``thresholds`` is empty or required columns are missing from the split data.
     """
     from .data import SealedTestAccessError
-    from .manuscript_pipeline_helpers import select_threshold_on_internal_validation
 
     feature_cols = list(feature_cols)
     response_cols = list(response_cols)

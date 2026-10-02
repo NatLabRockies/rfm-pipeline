@@ -29,16 +29,8 @@ dependencies = [
   "pyarrow>=14",
   "scikit-learn>=1.3",
   "joblib>=1.2",
-  "PyYAML>=6.0",
   "sympy>=1.12",
-  "scipy>=1.10",
-  "shap>=0.44",
 ]
-
-[project.scripts]
-rfm-hpc-submit = "rfm_pipeline.hpc_submit:main"
-rfm-hpc-worker = "rfm_pipeline.hpc_shard_worker:main"
-rfm-hpc-reduce = "rfm_pipeline.hpc_reduce:main"
 
 [project.urls]
 Homepage = "https://github.com/NatLabRockies/rfm-pipeline"
@@ -52,10 +44,8 @@ dev = [
   "ruff>=0.6",
   "mdformat>=0.7",
   "mdformat-gfm>=0.4",
-  "nbformat>=5.10",
   "sphinx>=8",
   "myst-parser>=4",
-  "jupyter>=1",
   "build>=1.2",
 ]
 
@@ -83,9 +73,6 @@ extend-exclude = [
   "build",
   "dist",
   "docs/_build",
-  # Preserve the migrated case-study scripts byte-for-byte; its own tests are
-  # part of the repository gate.
-  "examples/bsm-manuscript",
 ]
 
 [tool.ruff.lint]

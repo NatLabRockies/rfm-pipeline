@@ -5,11 +5,11 @@ from __future__ import annotations
 from rfm_pipeline.features import parse_selected_input_structure
 
 
-def test_parse_selected_input_structure_classifies_recovered_name_patterns():
+def test_parse_selected_input_structure_classifies_name_patterns():
     features = [
-        "AFSC",
-        "WW.progress ratios commercial[SludgeToHTL]*AFSC",
-        "OHC.Retirement Frac[TransEster]_quadratic",
+        "policy_case",
+        "conversion_yield*policy_case",
+        "feedstock_cost_quadratic",
     ]
     structure, type_summary, transformation_summary = parse_selected_input_structure(features)
     assert structure.loc[0, "input_type"] == "first_order"

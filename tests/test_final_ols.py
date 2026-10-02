@@ -13,19 +13,9 @@ from rfm_pipeline.final_ols import (
     make_coefficient_matrix_frame,
     make_holdout_nrmse_summary,
     make_standardization_frame,
-    notebook_final_ols_contract,
     postfit_artifact_table,
     predict_final_ols,
 )
-
-
-def test_notebook_final_ols_contract_captures_recovered_boundary() -> None:
-    contract = notebook_final_ols_contract()
-    assert contract.provenance == "notebook-derived"
-    assert contract.holdout_fraction == pytest.approx(0.10)
-    assert contract.selected_feature_count == 346
-    assert contract.coefficient_scales == ("standardized", "raw_scale")
-    assert "retained_input_order" in contract.diagnostics
 
 
 def test_canonical_postfit_artifact_names_match_loader_contract() -> None:

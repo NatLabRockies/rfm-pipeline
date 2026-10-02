@@ -1,4 +1,4 @@
-"""Tests for workflow provenance and end-to-end orchestration."""
+"""Tests for end-to-end workflow orchestration."""
 
 from __future__ import annotations
 
@@ -9,55 +9,9 @@ import pytest
 
 from rfm_pipeline.viz_io import load_postfit_bundle
 from rfm_pipeline.workflow import (
-    canonical_case_study_numbers,
-    canonical_workflow_stages,
-    case_study_number_table,
     run_canonical_workflow,
-    workflow_stage_table,
     write_postfit_bundle,
 )
-
-
-def test_canonical_workflow_stage_order_is_stable() -> None:
-    stages = canonical_workflow_stages()
-    assert [stage.name for stage in stages] == [
-        "upstream_null_screening",
-        "feature_expansion",
-        "modeling_subset_creation",
-        "regularized_screening",
-        "final_ols",
-        "evaluation_export",
-        "downstream_visualization",
-    ]
-    assert [stage.order for stage in stages] == list(range(1, 8))
-
-
-def test_workflow_stage_table_contains_recovered_provenance_and_current_status() -> None:
-    table = workflow_stage_table()
-    feature_stage = table.loc[table["name"] == "feature_expansion"].iloc[0]
-    screening_stage = table.loc[table["name"] == "regularized_screening"].iloc[0]
-    evaluation_stage = table.loc[table["name"] == "evaluation_export"].iloc[0]
-
-    assert feature_stage["provenance"] == "notebook-derived"
-    assert feature_stage["source_artifact"] == "make_nonlinear_features.ipynb"
-    assert feature_stage["status"] == "spec_recovered_not_fully_ported"
-    assert screening_stage["status"] == "implemented_foundation"
-    assert evaluation_stage["status"] == "implemented_foundation"
-
-
-def test_case_study_numbers_include_balanced_subset_and_selected_feature_counts() -> None:
-    numbers = {item.key: item.value for item in canonical_case_study_numbers()}
-    assert numbers["upstream_sample_size"] == 300000
-    assert numbers["modeling_subset_size"] == 20000
-    assert numbers["rows_per_boolean_stratum"] == 5000
-    assert numbers["selected_feature_count"] == 346
-
-
-def test_case_study_number_table_preserves_key_metadata() -> None:
-    table = case_study_number_table()
-    row = table.loc[table["key"] == "null_permutation_count"].iloc[0]
-    assert row["value"] == 200
-    assert row["provenance"] == "source-derived"
 
 
 def test_run_canonical_workflow_builds_artifacts_and_manifest_metadata() -> None:

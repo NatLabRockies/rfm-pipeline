@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from rfm_pipeline import (
     canonical_bundle_loader_keys,
@@ -14,6 +15,8 @@ from rfm_pipeline import (
     canonical_postfit_artifact_names,
     fit_final_ols,
     load_postfit_bundle,
+    predict_final_ols,
+    predict_from_postfit_bundle,
     write_postfit_bundle,
 )
 from rfm_pipeline.final_ols import build_postfit_artifacts
@@ -114,6 +117,39 @@ def test_written_bundle_manifest_and_loader_follow_stable_contract(tmp_path: Pat
     assert sorted(manifest["files"]) == sorted(canonical_postfit_artifact_names())
     assert sorted(loaded) == sorted(canonical_bundle_loader_keys())
     assert loaded["nrmse_summary"].loc[0, "n_boot"] == 25
+
+
+def test_written_bundle_predicts_after_reload(tmp_path: Path) -> None:
+    result = _make_demo_fit_result()
+    artifacts = build_postfit_artifacts(
+        result,
+        dataset_tag="prediction-bundle",
+        all_input_features=["x1", "x2"],
+        artifact_format="csv",
+    )
+    write_postfit_bundle(artifacts, tmp_path)
+    new_inputs = pd.DataFrame({"x1": [1.5, 2.5], "x2": [0.25, 1.25]}, index=["a", "b"])
+
+    expected = predict_final_ols(result, new_inputs)
+    actual = predict_from_postfit_bundle(tmp_path, new_inputs)
+    loaded = load_postfit_bundle(tmp_path)
+
+    pd.testing.assert_frame_equal(actual, expected)
+    assert loaded["nrmse_summary"].empty
+
+
+def test_bundle_writer_rejects_paths_outside_destination(tmp_path: Path) -> None:
+    result = _make_demo_fit_result()
+    artifacts = build_postfit_artifacts(
+        result,
+        dataset_tag="safe-paths",
+        all_input_features=["x1", "x2"],
+        artifact_format="csv",
+    )
+    artifacts["manifest"]["files"]["coef_matrix_raw_scale"] = "../outside.csv"
+
+    with pytest.raises(ValueError, match="outside the bundle directory"):
+        write_postfit_bundle(artifacts, tmp_path / "bundle")
 
 
 def test_export_bundle_docs_list_stable_contract_helpers() -> None:

@@ -1,4 +1,4 @@
-"""Tests for final OLS foundations and post-fit artifact helpers."""
+"""Tests for final OLS fitting and post-fit artifact helpers."""
 
 from __future__ import annotations
 

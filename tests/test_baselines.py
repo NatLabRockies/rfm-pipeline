@@ -1,4 +1,4 @@
-"""P1-S03: Competitive baseline model interface and comparison harness.
+"""Tests for baseline model interfaces and comparison helpers.
 
 Tests:
 - Each baseline (Ridge, PLS, ElasticNet, PerStratum) fits and predicts on synthetic data.
@@ -72,7 +72,7 @@ def strata_labels():
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S03_ridge_fits_predicts(synthetic_multioutput):
+def test_ridge_fits_predicts(synthetic_multioutput):
     X_train, Y_train, X_eval, Y_eval = synthetic_multioutput
     bl = RidgeBaseline(alpha=1.0)
     bl.fit(X_train, Y_train)
@@ -81,14 +81,14 @@ def test_P1_S03_ridge_fits_predicts(synthetic_multioutput):
     assert np.all(np.isfinite(Y_hat)), "Ridge predict produced non-finite values"
 
 
-def test_P1_S03_ridge_model_size(synthetic_multioutput):
+def test_ridge_model_size(synthetic_multioutput):
     X_train, Y_train, X_eval, Y_eval = synthetic_multioutput
     bl = RidgeBaseline()
     bl.fit(X_train, Y_train)
     assert bl.model_size_bytes() > 0
 
 
-def test_P1_S03_ridge_predict_before_fit_raises():
+def test_ridge_predict_before_fit_raises():
     bl = RidgeBaseline()
     with pytest.raises(RuntimeError):
         bl.predict(np.zeros((5, 10)))
@@ -99,7 +99,7 @@ def test_P1_S03_ridge_predict_before_fit_raises():
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S03_pls_fits_predicts(synthetic_multioutput):
+def test_pls_fits_predicts(synthetic_multioutput):
     X_train, Y_train, X_eval, Y_eval = synthetic_multioutput
     bl = PLSBaseline(n_components=3)
     bl.fit(X_train, Y_train)
@@ -108,14 +108,14 @@ def test_P1_S03_pls_fits_predicts(synthetic_multioutput):
     assert np.all(np.isfinite(Y_hat)), "PLS predict produced non-finite values"
 
 
-def test_P1_S03_pls_model_size(synthetic_multioutput):
+def test_pls_model_size(synthetic_multioutput):
     X_train, Y_train, X_eval, Y_eval = synthetic_multioutput
     bl = PLSBaseline(n_components=3)
     bl.fit(X_train, Y_train)
     assert bl.model_size_bytes() > 0
 
 
-def test_P1_S03_pls_predict_before_fit_raises():
+def test_pls_predict_before_fit_raises():
     bl = PLSBaseline()
     with pytest.raises(RuntimeError):
         bl.predict(np.zeros((5, 10)))
@@ -126,7 +126,7 @@ def test_P1_S03_pls_predict_before_fit_raises():
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S03_elasticnet_fits_predicts(synthetic_multioutput):
+def test_elasticnet_fits_predicts(synthetic_multioutput):
     X_train, Y_train, X_eval, Y_eval = synthetic_multioutput
     bl = ElasticNetBaseline(alpha=0.01, l1_ratio=0.5)
     bl.fit(X_train, Y_train)
@@ -135,14 +135,14 @@ def test_P1_S03_elasticnet_fits_predicts(synthetic_multioutput):
     assert np.all(np.isfinite(Y_hat)), "ElasticNet predict produced non-finite values"
 
 
-def test_P1_S03_elasticnet_model_size(synthetic_multioutput):
+def test_elasticnet_model_size(synthetic_multioutput):
     X_train, Y_train, X_eval, Y_eval = synthetic_multioutput
     bl = ElasticNetBaseline()
     bl.fit(X_train, Y_train)
     assert bl.model_size_bytes() > 0
 
 
-def test_P1_S03_elasticnet_predict_before_fit_raises():
+def test_elasticnet_predict_before_fit_raises():
     bl = ElasticNetBaseline()
     with pytest.raises(RuntimeError):
         bl.predict(np.zeros((5, 10)))
@@ -153,7 +153,7 @@ def test_P1_S03_elasticnet_predict_before_fit_raises():
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S03_perstratum_fits_predicts(synthetic_multioutput, strata_labels):
+def test_perstratum_fits_predicts(synthetic_multioutput, strata_labels):
     X_train, Y_train, X_eval, Y_eval = synthetic_multioutput
     train_labels, eval_labels = strata_labels
     bl = PerStratumFirstOrderBaseline()
@@ -163,7 +163,7 @@ def test_P1_S03_perstratum_fits_predicts(synthetic_multioutput, strata_labels):
     assert np.all(np.isfinite(Y_hat)), "PerStratum predict produced non-finite values"
 
 
-def test_P1_S03_perstratum_model_size(synthetic_multioutput, strata_labels):
+def test_perstratum_model_size(synthetic_multioutput, strata_labels):
     X_train, Y_train, X_eval, Y_eval = synthetic_multioutput
     train_labels, _ = strata_labels
     bl = PerStratumFirstOrderBaseline()
@@ -171,13 +171,13 @@ def test_P1_S03_perstratum_model_size(synthetic_multioutput, strata_labels):
     assert bl.model_size_bytes() > 0
 
 
-def test_P1_S03_perstratum_fit_requires_strata():
+def test_perstratum_fit_requires_strata():
     bl = PerStratumFirstOrderBaseline()
     with pytest.raises((ValueError, TypeError)):
         bl.fit(np.zeros((10, 5)), np.zeros((10, 2)))
 
 
-def test_P1_S03_perstratum_unseen_stratum_falls_back(synthetic_multioutput, strata_labels):
+def test_perstratum_unseen_stratum_falls_back(synthetic_multioutput, strata_labels):
     """Unseen strata at eval time should use fallback without error."""
     X_train, Y_train, X_eval, Y_eval = synthetic_multioutput
     train_labels, _ = strata_labels
@@ -194,7 +194,7 @@ def test_P1_S03_perstratum_unseen_stratum_falls_back(synthetic_multioutput, stra
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S03_harness_schema(synthetic_multioutput):
+def test_harness_schema(synthetic_multioutput):
     X_train, Y_train, X_eval, Y_eval = synthetic_multioutput
     baselines = [
         RidgeBaseline(alpha=1.0),
@@ -208,7 +208,7 @@ def test_P1_S03_harness_schema(synthetic_multioutput):
     assert not missing, f"Missing columns: {missing}"
 
 
-def test_P1_S03_harness_values_finite(synthetic_multioutput):
+def test_harness_values_finite(synthetic_multioutput):
     X_train, Y_train, X_eval, Y_eval = synthetic_multioutput
     baselines = [RidgeBaseline(), PLSBaseline(n_components=2), ElasticNetBaseline()]
     df = compare_baselines(baselines, X_train, Y_train, X_eval, Y_eval)
@@ -220,7 +220,7 @@ def test_P1_S03_harness_values_finite(synthetic_multioutput):
     assert (df["peak_memory_mb"] >= 0).all()
 
 
-def test_P1_S03_harness_with_perstratum(synthetic_multioutput, strata_labels):
+def test_harness_with_perstratum(synthetic_multioutput, strata_labels):
     """PerStratumFirstOrderBaseline integrates with the harness via fit/predict kwargs."""
     X_train, Y_train, X_eval, Y_eval = synthetic_multioutput
     train_labels, eval_labels = strata_labels
@@ -241,7 +241,7 @@ def test_P1_S03_harness_with_perstratum(synthetic_multioutput, strata_labels):
     assert df["rmse"].iloc[0] >= 0
 
 
-def test_P1_S03_harness_all_four_baselines(synthetic_multioutput, strata_labels):
+def test_harness_all_four_baselines(synthetic_multioutput, strata_labels):
     """All four baseline types are included and harness returns four rows."""
     X_train, Y_train, X_eval, Y_eval = synthetic_multioutput
     train_labels, eval_labels = strata_labels

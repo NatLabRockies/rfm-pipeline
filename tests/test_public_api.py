@@ -20,9 +20,9 @@ from rfm_pipeline import (
     canonical_manifest_position_map_keys,
     canonical_manifest_top_level_keys,
     default_feature_expansion_spec,
-    load_pipeline_outputs,
     load_postfit_bundle,
     ordered_expanded_feature_names,
+    predict_from_postfit_bundle,
     run_canonical_workflow,
     warn_nan_transforms,
     write_postfit_bundle,
@@ -33,7 +33,7 @@ def test_package_exports_modeling_workflow() -> None:
     assert callable(run_canonical_workflow)
     assert callable(write_postfit_bundle)
     assert callable(load_postfit_bundle)
-    assert callable(load_pipeline_outputs)
+    assert callable(predict_from_postfit_bundle)
 
 
 def test_package_exports_feature_expansion_contract() -> None:
@@ -103,3 +103,12 @@ def test_public_tree_has_no_study_output_directories() -> None:
         tracked / "paper",
     )
     assert not [path for path in forbidden_paths if path.exists()]
+
+
+def test_issue_templates_have_github_front_matter() -> None:
+    for path in Path(".github/ISSUE_TEMPLATE").glob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        assert text.startswith("---\n")
+        assert "\n---\n" in text[4:]
+        assert "name:" in text
+        assert "about:" in text

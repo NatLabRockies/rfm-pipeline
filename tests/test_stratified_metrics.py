@@ -1,4 +1,4 @@
-"""P1-S02: Stratified + excluded-output error reporting.
+"""Tests for stratified and excluded-output error reporting.
 
 Tests:
 - Stratified breakdown correctness: per-stratum nRMSE matches manual calculation.
@@ -75,11 +75,11 @@ def synthetic_strata_data():
 
 
 # ---------------------------------------------------------------------------
-# P1-S02-T01: metric_population label is present in overall and stratum results
+# Metric population labels are present in overall and stratum results.
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S02_population_label_present(synthetic_strata_data):
+def test_population_label_present(synthetic_strata_data):
     """Every result dict must contain a non-empty metric_population label."""
     d = synthetic_strata_data
     result = stratified_nrmse_summary(
@@ -102,7 +102,7 @@ def test_P1_S02_population_label_present(synthetic_strata_data):
             assert len(entry["metric_population"]) > 0
 
 
-def test_P1_S02_custom_population_label(synthetic_strata_data):
+def test_custom_population_label(synthetic_strata_data):
     """Caller-supplied metric_population is forwarded to result."""
     d = synthetic_strata_data
     label = "conditioned_outputs_eval_set"
@@ -117,7 +117,7 @@ def test_P1_S02_custom_population_label(synthetic_strata_data):
     assert result["metric_population"] == label
 
 
-def test_P1_S02_excluded_output_summary_has_population_label(synthetic_strata_data):
+def test_excluded_output_summary_has_population_label(synthetic_strata_data):
     """excluded_output_error_summary must carry metric_population='excluded_outputs'."""
     d = synthetic_strata_data
     result = excluded_output_error_summary(
@@ -130,11 +130,11 @@ def test_P1_S02_excluded_output_summary_has_population_label(synthetic_strata_da
 
 
 # ---------------------------------------------------------------------------
-# P1-S02-T02: stratified breakdown correctness
+# Stratified breakdown correctness.
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S02_stratified_breakdown_correctness(synthetic_strata_data):
+def test_stratified_breakdown_correctness(synthetic_strata_data):
     """Per-stratum macro_nrmse must match manual macro_nrmse_with_ref."""
     d = synthetic_strata_data
     result = stratified_nrmse_summary(
@@ -156,7 +156,7 @@ def test_P1_S02_stratified_breakdown_correctness(synthetic_strata_data):
         assert strata_entries[val]["macro_nrmse"] == pytest.approx(expected_nrmse, rel=1e-9)
 
 
-def test_P1_S02_stratified_n_rows_sum(synthetic_strata_data):
+def test_stratified_n_rows_sum(synthetic_strata_data):
     """Sum of per-stratum n_rows must equal total rows."""
     d = synthetic_strata_data
     result = stratified_nrmse_summary(
@@ -171,7 +171,7 @@ def test_P1_S02_stratified_n_rows_sum(synthetic_strata_data):
         assert total == d["n_rows"], f"n_rows sum for '{key}' is {total}, expected {d['n_rows']}"
 
 
-def test_P1_S02_multiple_strata_keys_independent(synthetic_strata_data):
+def test_multiple_strata_keys_independent(synthetic_strata_data):
     """Multiple strata keys produce separate independent marginal breakdowns."""
     d = synthetic_strata_data
     result = stratified_nrmse_summary(
@@ -195,11 +195,11 @@ def test_P1_S02_multiple_strata_keys_independent(synthetic_strata_data):
 
 
 # ---------------------------------------------------------------------------
-# P1-S02-T03: tail quantiles and worst-output
+# Tail quantiles and worst-output reporting.
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S02_tail_quantiles_present_and_ordered(synthetic_strata_data):
+def test_tail_quantiles_present_and_ordered(synthetic_strata_data):
     """tail_nrmse contains requested quantiles and p95 ≤ p99."""
     d = synthetic_strata_data
     result = stratified_nrmse_summary(
@@ -218,7 +218,7 @@ def test_P1_S02_tail_quantiles_present_and_ordered(synthetic_strata_data):
     assert tails[0.95] <= tails[0.99]
 
 
-def test_P1_S02_worst_output_is_maximum_nrmse(synthetic_strata_data):
+def test_worst_output_is_maximum_nrmse(synthetic_strata_data):
     """worst_output must be the output with the highest per-output nRMSE."""
     d = synthetic_strata_data
     result = stratified_nrmse_summary(
@@ -242,7 +242,7 @@ def test_P1_S02_worst_output_is_maximum_nrmse(synthetic_strata_data):
     assert worst["nrmse"] == pytest.approx(float(nrmse[manual_worst_idx]), rel=1e-9)
 
 
-def test_P1_S02_median_nrmse_between_min_and_max(synthetic_strata_data):
+def test_median_nrmse_between_min_and_max(synthetic_strata_data):
     """median_nrmse must lie between min and max per-output nRMSE."""
     d = synthetic_strata_data
     result = stratified_nrmse_summary(
@@ -258,11 +258,11 @@ def test_P1_S02_median_nrmse_between_min_and_max(synthetic_strata_data):
 
 
 # ---------------------------------------------------------------------------
-# P1-S02-T04: excluded-output summary correctness
+# Excluded-output summary correctness.
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S02_excluded_output_summary_covers_all_excluded(synthetic_strata_data):
+def test_excluded_output_summary_covers_all_excluded(synthetic_strata_data):
     """excluded_output_error_summary reports every excluded output."""
     d = synthetic_strata_data
     result = excluded_output_error_summary(
@@ -280,7 +280,7 @@ def test_P1_S02_excluded_output_summary_covers_all_excluded(synthetic_strata_dat
     assert reported_excluded == excluded_names
 
 
-def test_P1_S02_excluded_output_rmse_correct(synthetic_strata_data):
+def test_excluded_output_rmse_correct(synthetic_strata_data):
     """RMSE for each excluded output matches manual calculation."""
     d = synthetic_strata_data
     result = excluded_output_error_summary(
@@ -296,7 +296,7 @@ def test_P1_S02_excluded_output_rmse_correct(synthetic_strata_data):
         assert entry["rmse"] == pytest.approx(float(rmse_expected[idx]), rel=1e-9)
 
 
-def test_P1_S02_excluded_domain_scaled_rmse(synthetic_strata_data):
+def test_excluded_domain_scaled_rmse(synthetic_strata_data):
     """domain_scaled_rmse is computed for excluded outputs when domain_scales provided."""
     d = synthetic_strata_data
     rng = np.random.default_rng(SEED + 1)
@@ -320,7 +320,7 @@ def test_P1_S02_excluded_domain_scaled_rmse(synthetic_strata_data):
             assert entry["domain_scaled_rmse"] is None
 
 
-def test_P1_S02_excluded_output_summary_median_mean_finite(synthetic_strata_data):
+def test_excluded_output_summary_median_mean_finite(synthetic_strata_data):
     """median_rmse and mean_rmse are finite when there are excluded outputs."""
     d = synthetic_strata_data
     result = excluded_output_error_summary(
@@ -334,7 +334,7 @@ def test_P1_S02_excluded_output_summary_median_mean_finite(synthetic_strata_data
     assert np.isfinite(result["mean_rmse"])
 
 
-def test_P1_S02_excluded_output_summary_no_excluded():
+def test_excluded_output_summary_no_excluded():
     """When no outputs are excluded, n_excluded=0 and median/mean are nan."""
     rng = np.random.default_rng(0)
     Y = rng.standard_normal((20, 3))
@@ -347,11 +347,11 @@ def test_P1_S02_excluded_output_summary_no_excluded():
 
 
 # ---------------------------------------------------------------------------
-# P1-S02-T05: n_outputs_used / n_outputs_total in overall summary
+# Used and total output counts in the overall summary.
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S02_n_outputs_used_correct(synthetic_strata_data):
+def test_n_outputs_used_correct(synthetic_strata_data):
     """n_outputs_used reflects only outputs with sufficient ref range."""
     d = synthetic_strata_data
     result = stratified_nrmse_summary(
@@ -367,11 +367,11 @@ def test_P1_S02_n_outputs_used_correct(synthetic_strata_data):
 
 
 # ---------------------------------------------------------------------------
-# P1-S02-T06: error conditions
+# Error conditions.
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S02_strata_length_mismatch():
+def test_strata_length_mismatch():
     """ValueError when strata array length does not match n_rows."""
     rng = np.random.default_rng(0)
     Y = rng.standard_normal((10, 3))
@@ -385,7 +385,7 @@ def test_P1_S02_strata_length_mismatch():
         )
 
 
-def test_P1_S02_excluded_mask_length_mismatch():
+def test_excluded_mask_length_mismatch():
     """ValueError when excluded_mask length does not match n_outputs."""
     rng = np.random.default_rng(0)
     Y = rng.standard_normal((10, 3))

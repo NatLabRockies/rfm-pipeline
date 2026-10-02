@@ -1,6 +1,10 @@
-______________________________________________________________________
-
-## name: Feature request about: Suggest a new feature or enhancement title: '[FEAT] ' labels: enhancement assignees: ''
+---
+name: Feature request
+about: Suggest a new feature or enhancement
+title: "[FEAT] "
+labels: enhancement
+assignees: ""
+---
 
 **Use case**
 Describe the problem you're trying to solve or the workflow you want to enable.

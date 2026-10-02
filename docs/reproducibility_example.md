@@ -1,6 +1,4 @@
-# Reproducibility examples
-
-## Neutral first example
+# Reproducibility example
 
 `examples/basic_workflow.py` is the shortest complete example. It creates a
 small synthetic dataset, fits the canonical API, writes the bundle, reloads
@@ -25,16 +23,3 @@ print(tables["coef_matrix_raw_scale"])
 
 Fixed data and random seeds make the output deterministic. The example is for
 orientation and contract testing, not scientific benchmarking.
-
-## Extended deterministic example
-
-`examples/end_to_end_reproducibility.py` exercises the same public bundle
-contract with a second toy dataset:
-
-```bash
-pixi run python examples/end_to_end_reproducibility.py \
-  --output-dir artifacts/reproducibility-example
-```
-
-It exposes `run_reproducibility_example(...)` for reuse in tests or other
-Python code.

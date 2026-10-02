@@ -1,4 +1,4 @@
-"""P0-S11: Validated support-selection rule via internal validation (F6).
+"""Tests for support selection through internal validation.
 
 Tests cover:
 - signal_term_retention: true signal features are in the selected support.
@@ -108,7 +108,7 @@ def support_result(sparse_dgp: dict, sealed_split_fixture) -> SupportSelectionRe
 
 
 class TestSignalTermRetention:
-    def test_P0_S11_all_signal_features_retained(
+    def test_all_signal_features_retained(
         self, support_result: SupportSelectionResult, sparse_dgp: dict
     ) -> None:
         """All true signal features appear in the selected support."""
@@ -116,7 +116,7 @@ class TestSignalTermRetention:
         missing = [f for f in sparse_dgp["signal_features"] if f not in selected]
         assert missing == [], f"Signal features not retained: {missing}"
 
-    def test_P0_S11_selected_features_are_subset_of_candidates(
+    def test_selected_features_are_subset_of_candidates(
         self, support_result: SupportSelectionResult, sparse_dgp: dict
     ) -> None:
         """Every selected feature is among the enriched candidates."""
@@ -124,7 +124,7 @@ class TestSignalTermRetention:
         for f in support_result.selected_features:
             assert f in candidate_set, f"{f!r} not in enriched candidate set"
 
-    def test_P0_S11_support_is_strictly_reduced(
+    def test_support_is_strictly_reduced(
         self, support_result: SupportSelectionResult, sparse_dgp: dict
     ) -> None:
         """Selected support is strictly smaller than the enriched candidate set."""
@@ -137,7 +137,7 @@ class TestSignalTermRetention:
 
 
 class TestNullTermRemoval:
-    def test_P0_S11_some_null_features_removed(
+    def test_some_null_features_removed(
         self, support_result: SupportSelectionResult, sparse_dgp: dict
     ) -> None:
         """At least one null feature is excluded from the selected support."""
@@ -145,7 +145,7 @@ class TestNullTermRemoval:
         removed_nulls = [f for f in sparse_dgp["null_features"] if f not in selected]
         assert len(removed_nulls) > 0, f"No null features removed; selected={sorted(selected)}"
 
-    def test_P0_S11_majority_null_features_removed(
+    def test_majority_null_features_removed(
         self, support_result: SupportSelectionResult, sparse_dgp: dict
     ) -> None:
         """More than half of null features are excluded from the selected support."""
@@ -162,7 +162,7 @@ class TestNullTermRemoval:
 
 
 class TestInternalOnlyThresholdSelection:
-    def test_P0_S11_sealed_split_remains_sealed_after_selection(self, sparse_dgp: dict) -> None:
+    def test_sealed_split_remains_sealed_after_selection(self, sparse_dgp: dict) -> None:
         """After select_support_via_refit, the sealed split is still sealed."""
         split = make_sealed_split(
             sparse_dgp["df"],
@@ -181,7 +181,7 @@ class TestInternalOnlyThresholdSelection:
         with pytest.raises(SealedTestAccessError):
             _ = split.test
 
-    def test_P0_S11_unsealed_split_raises_sealed_test_access_error(self, sparse_dgp: dict) -> None:
+    def test_unsealed_split_raises_sealed_test_access_error(self, sparse_dgp: dict) -> None:
         """Passing an already-unsealed split raises SealedTestAccessError."""
         split = make_sealed_split(
             sparse_dgp["df"],
@@ -200,7 +200,7 @@ class TestInternalOnlyThresholdSelection:
                 seed=0,
             )
 
-    def test_P0_S11_unsealed_error_is_runtime_error_subtype(self, sparse_dgp: dict) -> None:
+    def test_unsealed_error_is_runtime_error_subtype(self, sparse_dgp: dict) -> None:
         """SealedTestAccessError is a RuntimeError subtype."""
         split = make_sealed_split(
             sparse_dgp["df"],
@@ -227,20 +227,20 @@ class TestInternalOnlyThresholdSelection:
 
 
 class TestThresholdSensitivity:
-    def test_P0_S11_sensitivity_table_has_all_thresholds(
+    def test_sensitivity_table_has_all_thresholds(
         self, support_result: SupportSelectionResult
     ) -> None:
         """Sensitivity table has one row per candidate threshold."""
         assert len(support_result.threshold_sensitivity) == len(_THRESHOLDS)
 
-    def test_P0_S11_sensitivity_table_has_required_columns(
+    def test_sensitivity_table_has_required_columns(
         self, support_result: SupportSelectionResult
     ) -> None:
         """Sensitivity table contains threshold, n_selected, val_score columns."""
         required = {"threshold", "n_selected", "val_score"}
         assert required.issubset(set(support_result.threshold_sensitivity.columns))
 
-    def test_P0_S11_n_selected_is_nonincreasing_with_threshold(
+    def test_n_selected_is_nonincreasing_with_threshold(
         self, support_result: SupportSelectionResult
     ) -> None:
         """Higher thresholds select at most as many features as lower thresholds."""
@@ -251,7 +251,7 @@ class TestThresholdSensitivity:
                 f"n_selected not non-increasing: {n_sel[i]} < {n_sel[i + 1]} at index {i}"
             )
 
-    def test_P0_S11_best_threshold_is_from_candidates(
+    def test_best_threshold_is_from_candidates(
         self, support_result: SupportSelectionResult
     ) -> None:
         """Best threshold is one of the supplied candidate thresholds."""
@@ -264,13 +264,13 @@ class TestThresholdSensitivity:
 
 
 class TestResultStructure:
-    def test_P0_S11_return_type_is_support_selection_result(
+    def test_return_type_is_support_selection_result(
         self, support_result: SupportSelectionResult
     ) -> None:
         """Return type is SupportSelectionResult."""
         assert isinstance(support_result, SupportSelectionResult)
 
-    def test_P0_S11_selected_mask_consistent_with_selected_features(
+    def test_selected_mask_consistent_with_selected_features(
         self, support_result: SupportSelectionResult
     ) -> None:
         """selected_mask and selected_features agree with each other."""
@@ -281,19 +281,17 @@ class TestResultStructure:
         )
         assert support_result.selected_features == expected
 
-    def test_P0_S11_coef_magnitudes_length_matches_candidates(
+    def test_coef_magnitudes_length_matches_candidates(
         self, support_result: SupportSelectionResult, sparse_dgp: dict
     ) -> None:
         """initial_coef_magnitudes has one value per enriched candidate."""
         assert len(support_result.initial_coef_magnitudes) == len(sparse_dgp["feature_names"])
 
-    def test_P0_S11_coef_magnitudes_all_nonnegative(
-        self, support_result: SupportSelectionResult
-    ) -> None:
+    def test_coef_magnitudes_all_nonnegative(self, support_result: SupportSelectionResult) -> None:
         """Coefficient magnitudes are all non-negative."""
         assert np.all(support_result.initial_coef_magnitudes >= 0)
 
-    def test_P0_S11_empty_thresholds_raises_value_error(
+    def test_empty_thresholds_raises_value_error(
         self, sparse_dgp: dict, sealed_split_fixture
     ) -> None:
         """Empty threshold list raises ValueError."""
@@ -313,9 +311,7 @@ class TestResultStructure:
 
 
 class TestScreeningImportanceHelper:
-    def test_P0_S11_compute_enriched_coef_magnitudes_returns_correct_type(
-        self, sparse_dgp: dict
-    ) -> None:
+    def test_compute_enriched_coef_magnitudes_returns_correct_type(self, sparse_dgp: dict) -> None:
         """compute_enriched_coef_magnitudes returns ScreeningImportanceResult."""
         result = compute_enriched_coef_magnitudes(
             sparse_dgp["X_df"],
@@ -323,7 +319,7 @@ class TestScreeningImportanceHelper:
         )
         assert isinstance(result, ScreeningImportanceResult)
 
-    def test_P0_S11_signal_coef_magnitudes_larger_than_null(self, sparse_dgp: dict) -> None:
+    def test_signal_coef_magnitudes_larger_than_null(self, sparse_dgp: dict) -> None:
         """Signal features have strictly larger coefficient magnitudes than null features."""
         result = compute_enriched_coef_magnitudes(
             sparse_dgp["X_df"],
@@ -336,7 +332,7 @@ class TestScreeningImportanceHelper:
             f"Signal min={min(signal_mags):.4f} not > null max={max(null_mags):.4f}"
         )
 
-    def test_P0_S11_feature_names_preserved_in_importance_result(self, sparse_dgp: dict) -> None:
+    def test_feature_names_preserved_in_importance_result(self, sparse_dgp: dict) -> None:
         """Feature names in ScreeningImportanceResult match the input DataFrame columns."""
         result = compute_enriched_coef_magnitudes(
             sparse_dgp["X_df"],
@@ -344,7 +340,7 @@ class TestScreeningImportanceHelper:
         )
         assert result.feature_names == tuple(sparse_dgp["feature_names"])
 
-    def test_P0_S11_coef_magnitudes_length_in_importance_result(self, sparse_dgp: dict) -> None:
+    def test_coef_magnitudes_length_in_importance_result(self, sparse_dgp: dict) -> None:
         """coef_magnitudes has one value per feature."""
         result = compute_enriched_coef_magnitudes(
             sparse_dgp["X_df"],

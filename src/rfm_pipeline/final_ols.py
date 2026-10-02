@@ -77,7 +77,7 @@ class FinalOLSFitResult:
     y_means: np.ndarray
     y_scales: np.ndarray
     n_training_rows: int
-    # P0-S03: design spec for categorical-aware round-trip prediction
+    # Optional design specification for categorical-aware prediction.
     design_spec: DesignMatrixSpec | None = None
     categorical_feature_columns: tuple[str, ...] = field(default_factory=tuple)  # type: ignore[assignment]
 
@@ -557,7 +557,7 @@ def build_postfit_artifacts(
         evaluation=dict(evaluation or {}),
         upstream_provenance=dict(upstream_provenance or {}),
     ).to_dict()
-    # P0-S03: record categorical encoding metadata when result carries a design spec.
+    # Record categorical encoding metadata when the fit carries a design spec.
     if result.design_spec is not None and result.design_spec.categorical_inputs:
         artifacts["manifest"]["categorical_inputs"] = [
             {"name": decl.name, "levels": decl.levels}
@@ -688,10 +688,8 @@ def select_support_via_refit(
 ) -> SupportSelectionResult:
     """Select sparse support from an enriched candidate set via refit-based criterion.
 
-    Implements the validated support-selection rule (P0-S11 / F6): replaces the
-    no-refit marginal-impact approximation with a justified OLS-refit criterion
-    whose coefficient-magnitude threshold is selected by internal validation only,
-    never the sealed test partition.
+    Uses an OLS-refit criterion whose coefficient-magnitude threshold is
+    selected by internal validation only, never the sealed test partition.
 
     Algorithm
     ---------
@@ -701,7 +699,7 @@ def select_support_via_refit(
     3. For each candidate threshold: retain features whose magnitude exceeds the
        threshold, refit OLS on the training partition, evaluate RMSE on the
        internal validation partition.
-    4. Select the best threshold using the P0-S05 internal-validation machinery;
+    4. Select the best threshold using internal validation;
        the sealed test partition is never accessed.
     5. Return the resulting sparse support and a threshold-sensitivity table.
 
@@ -798,7 +796,7 @@ def select_support_via_refit(
         residuals = Yval - pred
         return float(np.sqrt(np.mean(residuals**2)))
 
-    # Select best threshold via internal validation only (P0-S05 machinery).
+    # Select the best threshold using internal validation only.
     best_threshold = select_threshold_on_internal_validation(
         sealed_split, thresholds_list, _refit_scorer, seed=seed
     )

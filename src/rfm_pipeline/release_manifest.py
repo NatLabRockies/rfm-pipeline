@@ -4,7 +4,7 @@ Provides one-command enumeration of declared artifacts, SHA-256 checksums,
 sizes, and an environment/lockfile reference.  A verify mode recomputes
 checksums and reports drift without modifying the manifest.
 
-F7 closure: reproducibility resources must be enumerable and verifiable.
+Reproducibility resources must be enumerable and verifiable.
 """
 
 from __future__ import annotations

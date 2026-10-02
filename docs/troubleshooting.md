@@ -30,12 +30,12 @@ Check column identity and order before fitting:
 ```python
 assert X_train.columns.equals(X_holdout.columns)
 assert Y_train.columns.equals(Y_holdout.columns)
-assert len(X_train) == len(Y_train)
-assert len(X_holdout) == len(Y_holdout)
+assert X_train.index.equals(Y_train.index)
+assert X_holdout.index.equals(Y_holdout.index)
 ```
 
-Also check the row identifiers you use outside the numeric matrices. The
-canonical API assumes the caller has already aligned rows.
+The canonical API rejects duplicate labels and mismatched index or column
+order instead of silently realigning tables.
 
 ## Fit and result errors
 

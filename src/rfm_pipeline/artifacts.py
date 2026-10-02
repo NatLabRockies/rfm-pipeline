@@ -3,10 +3,9 @@
 The functions in this module preserve original ordering information so downstream
 tools can reconstruct feature and output provenance without rerunning model fitting.
 
-It also provides frozen-config provenance stamping (F2 closure).  A resolved
-configuration must be cryptographically stamped before any sealed-test evaluation
-is permitted.  The stamp records the config hash and the freeze timestamp so that
-post-hoc config drift is detectable.
+It also provides frozen-config provenance stamping. A resolved configuration
+can be cryptographically stamped before sealed-test evaluation so later config
+drift is detectable.
 """
 
 from __future__ import annotations
@@ -20,7 +19,7 @@ from typing import Any
 import pandas as pd
 
 # ---------------------------------------------------------------------------
-# Frozen-config provenance API (F2)
+# Frozen-config provenance API.
 # ---------------------------------------------------------------------------
 
 

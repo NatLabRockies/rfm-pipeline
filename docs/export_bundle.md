@@ -1,7 +1,7 @@
 # Export bundle contract
 
-The canonical workflow produces a manifest-aware post-fit bundle for downstream inspection and
-visualization.
+The canonical workflow produces a manifest-aware post-fit bundle for
+prediction and inspection.
 
 ## Writer entrypoint
 
@@ -77,6 +77,9 @@ equation manually.
 
 ## Reader entrypoint
 
-Use `rfm_pipeline.load_postfit_bundle(...)` to reload the canonical tables used by downstream
-visualization code. `rfm_pipeline.load_pipeline_outputs(...)` remains as a package-level alias for the
-same canonical loader.
+Use `rfm_pipeline.load_postfit_bundle(...)` to load the canonical tables. The
+loader follows the exact relative paths in `manifest.json` and rejects missing,
+absolute, or bundle-escaping paths.
+
+Use `rfm_pipeline.predict_from_postfit_bundle(...)` to predict from raw retained
+features without recreating the in-memory estimator.

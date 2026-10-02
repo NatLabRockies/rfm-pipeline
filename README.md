@@ -16,7 +16,7 @@ pixi run python examples/basic_workflow.py \
 ```
 
 The example generates deterministic data, fits a model, prints predictions and
-holdout metrics, and writes a reloadable model bundle.
+holdout metrics, and writes a bundle that can predict without refitting.
 
 ## Use your data
 
@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from rfm_pipeline import predict_final_ols, run_canonical_workflow, write_postfit_bundle
+from rfm_pipeline import predict_from_postfit_bundle, run_canonical_workflow, write_postfit_bundle
 
 X_train = pd.read_parquet("X_train.parquet")
 Y_train = pd.read_parquet("Y_train.parquet")
@@ -40,8 +40,9 @@ run = run_canonical_workflow(
     dataset_tag="my-model",
 )
 
-predictions = predict_final_ols(run.final_ols_result, X_holdout)
-write_postfit_bundle(run.artifacts, Path("artifacts/my-model"))
+bundle = Path("artifacts/my-model")
+write_postfit_bundle(run.artifacts, bundle)
+predictions = predict_from_postfit_bundle(bundle, X_holdout)
 print(run.holdout_summary)
 ```
 
@@ -56,6 +57,7 @@ interactions before fitting.
 | ------------------------------- | ---------------------------------------------------- |
 | Install and run the example     | [Setup and first run](docs/setup_and_first_run.md)   |
 | Fit and predict with DataFrames | [Python API quickstart](docs/quickstart.md)          |
+| See a released application      | [BSM application](docs/bsm_application.md)           |
 | Understand generated files      | [Artifact reference](docs/artifact_reference.md)     |
 | Interpret evaluation results    | [Interpreting results](docs/interpreting_results.md) |
 | Diagnose common failures        | [Troubleshooting](docs/troubleshooting.md)           |

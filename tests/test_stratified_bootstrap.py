@@ -1,4 +1,4 @@
-"""P1-S01: Stratified bootstrap with adequate replicates.
+"""Tests for stratified bootstrap intervals.
 
 Tests:
 - Stratified resampling stays within strata (no cross-contamination).
@@ -56,11 +56,11 @@ def synthetic_stratified_data():
 
 
 # ---------------------------------------------------------------------------
-# P1-S01-T01: stratified resampling stays within strata
+# Stratified resampling stays within strata.
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S01_stratified_resampling_within_strata(synthetic_stratified_data):
+def test_stratified_resampling_within_strata(synthetic_stratified_data):
     """Verify that bootstrap draws only resample rows from within each stratum.
 
     We monkey-patch the inner loop by checking that all boot replicates produce
@@ -88,7 +88,7 @@ def test_P1_S01_stratified_resampling_within_strata(synthetic_stratified_data):
     assert label_to_count["B"] == d["n_b"]
 
 
-def test_P1_S01_stratified_strata_isolation(synthetic_stratified_data):
+def test_stratified_strata_isolation(synthetic_stratified_data):
     """Direct test: resample with patched strata and confirm index membership.
 
     Build a test where stratum rows have a unique impossible prediction value
@@ -126,11 +126,11 @@ def test_P1_S01_stratified_strata_isolation(synthetic_stratified_data):
 
 
 # ---------------------------------------------------------------------------
-# P1-S01-T02: increasing replicates shrinks MC endpoint variability
+# Increasing replicates shrinks Monte Carlo endpoint variability.
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S01_more_replicates_shrinks_mc_variability(synthetic_stratified_data):
+def test_more_replicates_shrinks_mc_variability(synthetic_stratified_data):
     """MC stability std should decrease (in expectation) as n_boot increases."""
     d = synthetic_stratified_data
 
@@ -171,11 +171,11 @@ def test_P1_S01_more_replicates_shrinks_mc_variability(synthetic_stratified_data
 
 
 # ---------------------------------------------------------------------------
-# P1-S01-T03: MC stability dict is present and well-formed
+# Monte Carlo stability metadata is present and well formed.
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S01_mc_stability_present(synthetic_stratified_data):
+def test_mc_stability_present(synthetic_stratified_data):
     """mc_stability dict exists and contains required keys."""
     d = synthetic_stratified_data
     result = stratified_bootstrap_macro_nrmse_ci(
@@ -196,11 +196,11 @@ def test_P1_S01_mc_stability_present(synthetic_stratified_data):
 
 
 # ---------------------------------------------------------------------------
-# P1-S01-T04: default n_boot ≥ 1000
+# The default replicate count is at least 1,000.
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S01_default_n_boot_gte_1000(synthetic_stratified_data):
+def test_default_n_boot_gte_1000(synthetic_stratified_data):
     """Default n_boot must be ≥1000 per the slice acceptance criteria."""
     import inspect
 
@@ -210,11 +210,11 @@ def test_P1_S01_default_n_boot_gte_1000(synthetic_stratified_data):
 
 
 # ---------------------------------------------------------------------------
-# P1-S01-T05: paired-difference interval on synthetic data
+# Paired-difference intervals on synthetic data.
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S01_paired_difference_identical_models(synthetic_stratified_data):
+def test_paired_difference_identical_models(synthetic_stratified_data):
     """Paired CI should contain zero when both models are identical."""
     d = synthetic_stratified_data
     result = bootstrap_paired_difference_ci(
@@ -229,7 +229,7 @@ def test_P1_S01_paired_difference_identical_models(synthetic_stratified_data):
     assert result["ci_lower"] <= 0.0 <= result["ci_upper"]
 
 
-def test_P1_S01_paired_difference_better_model(synthetic_stratified_data):
+def test_paired_difference_better_model(synthetic_stratified_data):
     """Paired CI should exclude zero (negative) when A clearly outperforms B."""
     d = synthetic_stratified_data
     rng = np.random.default_rng(SEED + 1)
@@ -256,7 +256,7 @@ def test_P1_S01_paired_difference_better_model(synthetic_stratified_data):
     )
 
 
-def test_P1_S01_paired_difference_stratified(synthetic_stratified_data):
+def test_paired_difference_stratified(synthetic_stratified_data):
     """Paired CI with stratified option runs and returns a finite interval."""
     d = synthetic_stratified_data
     result = bootstrap_paired_difference_ci(
@@ -275,11 +275,11 @@ def test_P1_S01_paired_difference_stratified(synthetic_stratified_data):
 
 
 # ---------------------------------------------------------------------------
-# P1-S01-T06: rounding applied to CI endpoints
+# Confidence interval endpoints use the requested rounding.
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S01_rounding_applied(synthetic_stratified_data):
+def test_rounding_applied(synthetic_stratified_data):
     """CI endpoints are rounded to round_digits decimal places."""
     d = synthetic_stratified_data
     for digits in [2, 3, 4]:
@@ -301,7 +301,7 @@ def test_P1_S01_rounding_applied(synthetic_stratified_data):
             )
 
 
-def test_P1_S01_no_rounding_when_digits_none(synthetic_stratified_data):
+def test_no_rounding_when_digits_none(synthetic_stratified_data):
     """round_digits=None preserves full float precision."""
     d = synthetic_stratified_data
     result = stratified_bootstrap_macro_nrmse_ci(
@@ -319,11 +319,11 @@ def test_P1_S01_no_rounding_when_digits_none(synthetic_stratified_data):
 
 
 # ---------------------------------------------------------------------------
-# P1-S01-T07: error conditions
+# Error conditions.
 # ---------------------------------------------------------------------------
 
 
-def test_P1_S01_strata_length_mismatch():
+def test_strata_length_mismatch():
     """ValueError raised when strata length does not match n_rows."""
     rng = np.random.default_rng(0)
     Y = rng.standard_normal((10, 3))

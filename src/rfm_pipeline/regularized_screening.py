@@ -15,7 +15,7 @@ from .data import align_xy
 
 @dataclass(frozen=True)
 class ScreeningSelectionResult:
-    """Result from the executable multi-output screening foundation.
+    """Result from multi-output regularized feature screening.
 
     Parameters
     ----------

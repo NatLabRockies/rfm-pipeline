@@ -55,6 +55,7 @@ include_patterns = [
     "setup_and_first_run.md",
     "quickstart.md",
     "reproducibility_example.md",
+    "bsm_application.md",
     "artifact_reference.md",
     "interpreting_results.md",
     "export_bundle.md",

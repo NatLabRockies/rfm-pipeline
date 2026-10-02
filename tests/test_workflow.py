@@ -115,3 +115,35 @@ def test_write_postfit_bundle_round_trips_with_visualization_loader(tmp_path) ->
     assert loaded["coef_matrix_raw_scale"].columns.tolist()[:3] == ["output_name", "x1", "x2"]
     assert loaded["nrmse_summary"].loc[0, "n_boot"] == 20
     assert manifest["files"]["coef_matrix_raw_scale"].endswith(".csv")
+
+
+def test_workflow_rejects_misaligned_training_rows() -> None:
+    X_train = pd.DataFrame({"x": range(8)}, index=range(8))
+    Y_train = pd.DataFrame({"y": range(8)}, index=range(1, 9))
+    X_holdout = pd.DataFrame({"x": [8, 9]}, index=[8, 9])
+    Y_holdout = pd.DataFrame({"y": [8, 9]}, index=[8, 9])
+
+    with pytest.raises(ValueError, match="X_train and Y_train must have identical row indexes"):
+        run_canonical_workflow(
+            X_train,
+            Y_train,
+            X_holdout,
+            Y_holdout,
+            dataset_tag="misaligned",
+        )
+
+
+def test_workflow_rejects_mismatched_feature_columns() -> None:
+    X_train = pd.DataFrame({"x": range(8)})
+    Y_train = pd.DataFrame({"y": range(8)})
+    X_holdout = pd.DataFrame({"other": [8, 9]})
+    Y_holdout = pd.DataFrame({"y": [8, 9]})
+
+    with pytest.raises(ValueError, match="feature columns must match exactly"):
+        run_canonical_workflow(
+            X_train,
+            Y_train,
+            X_holdout,
+            Y_holdout,
+            dataset_tag="mismatched-columns",
+        )

@@ -17,7 +17,7 @@ class CategoricalInputDecl:
 
 
 KNOWN_TRANSFORMATIONS = {
-    # Legacy labels (used by pre-existing artifact parsing)
+    # Accepted descriptive labels.
     "quadratic",
     "inverse",
     "log",
@@ -28,7 +28,7 @@ KNOWN_TRANSFORMATIONS = {
     "reciprocal",
     "abs",
     "logarithmic",
-    # Current labels from DEFAULT_TRANSFORM_LIBRARY (TransformDef.label values)
+    # Short labels from DEFAULT_TRANSFORM_LIBRARY (TransformDef.label values).
     "sq",  # quadratic  x**2
     "inv",  # inverse    1/x
     "sqrt",  # square root

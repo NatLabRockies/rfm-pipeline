@@ -76,7 +76,7 @@ from .transforms import (
     TransformDef,
     warn_nan_transforms,
 )
-from .viz_io import canonical_bundle_loader_keys, load_pipeline_outputs, load_postfit_bundle
+from .viz_io import canonical_bundle_loader_keys, load_postfit_bundle, predict_from_postfit_bundle
 from .workflow import CanonicalWorkflowRun, run_canonical_workflow, write_postfit_bundle
 
 __all__ = [
@@ -124,7 +124,6 @@ __all__ = [
     "fit_final_ols",
     "fit_multitask_elastic_net_screen",
     "fit_standardizers",
-    "load_pipeline_outputs",
     "load_postfit_bundle",
     "macro_nrmse_from_ledger",
     "macro_nrmse_with_ref",
@@ -137,6 +136,7 @@ __all__ = [
     "parse_selected_input_structure",
     "postfit_artifact_table",
     "predict_final_ols",
+    "predict_from_postfit_bundle",
     "run_canonical_workflow",
     "screening_selection_table",
     "select_support_via_refit",

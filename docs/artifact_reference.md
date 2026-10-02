@@ -30,6 +30,7 @@
 `manifest.json` records the dataset tag, feature/output order, logical file
 map, metrics, evaluation settings, and supplied upstream provenance. Use
 `load_postfit_bundle(...)` instead of constructing filenames yourself.
+Use `predict_from_postfit_bundle(...)` for inference from the written bundle.
 
 See [Export bundle contract](export_bundle.md) for the exact manifest keys and
 prediction equation.

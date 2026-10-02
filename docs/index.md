@@ -9,6 +9,7 @@ prepared pandas DataFrames.
 | -------------------------------- | --------------------------------------------- |
 | Verify an installation           | [Setup and first run](setup_and_first_run.md) |
 | Fit a model from four DataFrames | [Python API quickstart](quickstart.md)        |
+| See the workflow in application  | [BSM application](bsm_application.md)         |
 | Locate or interpret outputs      | [Artifact reference](artifact_reference.md)   |
 | Diagnose a failure               | [Troubleshooting](troubleshooting.md)         |
 
@@ -20,6 +21,7 @@ overview
 setup_and_first_run
 quickstart
 reproducibility_example
+bsm_application
 ```
 
 ```{toctree}

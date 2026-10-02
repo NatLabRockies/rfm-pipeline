@@ -1,4 +1,4 @@
-"""P0-S04: Sealed train/validation/test split protocol.
+"""Tests for the sealed train/validation/test split protocol.
 
 Tests:
 - Stratification balance is preserved across all three partitions.
@@ -61,7 +61,7 @@ def sealed_split(stratified_data: pd.DataFrame) -> SealedSplitResult:
 
 
 class TestPartitionSizes:
-    def test_P0_S04_total_size_equals_input(self, sealed_split, stratified_data):
+    def test_total_size_equals_input(self, sealed_split, stratified_data):
         """Train + val + sealed-test must cover all input rows."""
         n_train = len(sealed_split.train)
         n_val = len(sealed_split.val)
@@ -70,14 +70,14 @@ class TestPartitionSizes:
         n_test = len(sealed_split.test)
         assert n_train + n_val + n_test == len(stratified_data)
 
-    def test_P0_S04_train_is_largest_partition(self, sealed_split, stratified_data):
+    def test_train_is_largest_partition(self, sealed_split, stratified_data):
         """Train partition should be larger than val (no access to test needed)."""
         assert len(sealed_split.train) > len(sealed_split.val)
 
-    def test_P0_S04_val_is_nonempty(self, sealed_split):
+    def test_val_is_nonempty(self, sealed_split):
         assert len(sealed_split.val) > 0
 
-    def test_P0_S04_train_is_nonempty(self, sealed_split):
+    def test_train_is_nonempty(self, sealed_split):
         assert len(sealed_split.train) > 0
 
 
@@ -87,38 +87,38 @@ class TestPartitionSizes:
 
 
 class TestStrataBalance:
-    def test_P0_S04_strata_balance_has_correct_columns(self, sealed_split):
+    def test_strata_balance_has_correct_columns(self, sealed_split):
         balance = sealed_split.strata_balance
         assert set(balance.columns) == {"train", "val", "test"}
 
-    def test_P0_S04_strata_balance_index_contains_all_strata(self, sealed_split):
+    def test_strata_balance_index_contains_all_strata(self, sealed_split):
         balance = sealed_split.strata_balance
         assert set(balance.index.tolist()) == {"A", "B", "C", "D"}
 
-    def test_P0_S04_all_strata_represented_in_train(self, sealed_split):
+    def test_all_strata_represented_in_train(self, sealed_split):
         """Every stratum must appear at least once in the training partition."""
         assert (sealed_split.strata_balance["train"] > 0).all()
 
-    def test_P0_S04_all_strata_represented_in_val(self, sealed_split):
+    def test_all_strata_represented_in_val(self, sealed_split):
         assert (sealed_split.strata_balance["val"] > 0).all()
 
-    def test_P0_S04_all_strata_represented_in_test(self, sealed_split):
+    def test_all_strata_represented_in_test(self, sealed_split):
         assert (sealed_split.strata_balance["test"] > 0).all()
 
-    def test_P0_S04_strata_proportions_roughly_equal_in_train(self, sealed_split):
+    def test_strata_proportions_roughly_equal_in_train(self, sealed_split):
         """With 4 equal strata each partition should be ~25% each stratum."""
         train_counts = sealed_split.strata_balance["train"]
         proportions = train_counts / train_counts.sum()
         assert (proportions > 0.15).all(), f"Stratum underrepresented in train: {proportions}"
         assert (proportions < 0.40).all(), f"Stratum overrepresented in train: {proportions}"
 
-    def test_P0_S04_strata_proportions_roughly_equal_in_val(self, sealed_split):
+    def test_strata_proportions_roughly_equal_in_val(self, sealed_split):
         val_counts = sealed_split.strata_balance["val"]
         proportions = val_counts / val_counts.sum()
         assert (proportions > 0.15).all(), f"Stratum underrepresented in val: {proportions}"
         assert (proportions < 0.40).all(), f"Stratum overrepresented in val: {proportions}"
 
-    def test_P0_S04_balance_row_sums_match_partition_lengths(self, sealed_split, stratified_data):
+    def test_balance_row_sums_match_partition_lengths(self, sealed_split, stratified_data):
         """Strata balance counts must add up to actual partition sizes."""
         balance = sealed_split.strata_balance
         assert balance["train"].sum() == len(sealed_split.train)
@@ -133,28 +133,28 @@ class TestStrataBalance:
 
 
 class TestSealedTestAccessGuard:
-    def test_P0_S04_accessing_test_before_unseal_raises(self, sealed_split):
+    def test_accessing_test_before_unseal_raises(self, sealed_split):
         """Accessing .test on a sealed result must raise SealedTestAccessError."""
         with pytest.raises(SealedTestAccessError):
             _ = sealed_split.test
 
-    def test_P0_S04_error_is_runtime_subtype(self, sealed_split):
+    def test_error_is_runtime_subtype(self, sealed_split):
         """SealedTestAccessError must be a RuntimeError."""
         assert issubclass(SealedTestAccessError, RuntimeError)
 
-    def test_P0_S04_train_accessible_while_sealed(self, sealed_split):
+    def test_train_accessible_while_sealed(self, sealed_split):
         """train is always accessible without unsealing."""
         df = sealed_split.train
         assert isinstance(df, pd.DataFrame)
         assert len(df) > 0
 
-    def test_P0_S04_val_accessible_while_sealed(self, sealed_split):
+    def test_val_accessible_while_sealed(self, sealed_split):
         """val is always accessible without unsealing."""
         df = sealed_split.val
         assert isinstance(df, pd.DataFrame)
         assert len(df) > 0
 
-    def test_P0_S04_second_access_still_raises_before_unseal(self, sealed_split):
+    def test_second_access_still_raises_before_unseal(self, sealed_split):
         """Repeated access before unseal must keep raising."""
         with pytest.raises(SealedTestAccessError):
             _ = sealed_split.test
@@ -168,21 +168,21 @@ class TestSealedTestAccessGuard:
 
 
 class TestExplicitUnseal:
-    def test_P0_S04_unseal_allows_test_access(self, sealed_split):
+    def test_unseal_allows_test_access(self, sealed_split):
         """After unsealing, .test must return a non-empty DataFrame."""
         sealed_split.unseal(reason="final evaluation")
         df = sealed_split.test
         assert isinstance(df, pd.DataFrame)
         assert len(df) > 0
 
-    def test_P0_S04_unseal_log_records_reason(self, sealed_split):
+    def test_unseal_log_records_reason(self, sealed_split):
         """unseal_log must capture the supplied reason string."""
         sealed_split.unseal(reason="final evaluation phase")
         log = sealed_split.unseal_log
         assert len(log) == 1
         assert log[0]["reason"] == "final evaluation phase"
 
-    def test_P0_S04_unseal_log_has_timestamp(self, sealed_split):
+    def test_unseal_log_has_timestamp(self, sealed_split):
         """Each unseal entry must contain a timestamp key."""
         sealed_split.unseal(reason="check timestamp")
         log = sealed_split.unseal_log
@@ -190,17 +190,17 @@ class TestExplicitUnseal:
         assert isinstance(log[0]["timestamp"], str)
         assert len(log[0]["timestamp"]) > 0
 
-    def test_P0_S04_unseal_log_is_snapshot(self, sealed_split):
+    def test_unseal_log_is_snapshot(self, sealed_split):
         """Mutating the returned unseal_log must not affect the internal log."""
         sealed_split.unseal(reason="snapshot test")
         log_copy = sealed_split.unseal_log
         log_copy.append({"reason": "injected", "timestamp": "fake"})
         assert len(sealed_split.unseal_log) == 1
 
-    def test_P0_S04_unseal_log_empty_before_unsealing(self, sealed_split):
+    def test_unseal_log_empty_before_unsealing(self, sealed_split):
         assert sealed_split.unseal_log == []
 
-    def test_P0_S04_multiple_unseal_calls_all_logged(self, sealed_split):
+    def test_multiple_unseal_calls_all_logged(self, sealed_split):
         sealed_split.unseal(reason="first")
         sealed_split.unseal(reason="second")
         log = sealed_split.unseal_log
@@ -215,11 +215,11 @@ class TestExplicitUnseal:
 
 
 class TestInputValidation:
-    def test_P0_S04_missing_strata_column_raises(self, stratified_data):
+    def test_missing_strata_column_raises(self, stratified_data):
         with pytest.raises(ValueError, match="strata_column"):
             make_sealed_split(stratified_data, strata_column="nonexistent")
 
-    def test_P0_S04_bad_fractions_raise(self, stratified_data):
+    def test_bad_fractions_raise(self, stratified_data):
         with pytest.raises(ValueError):
             make_sealed_split(
                 stratified_data,

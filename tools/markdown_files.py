@@ -21,7 +21,10 @@ EXCLUDED_PARTS = {
 }
 MARKDOWN_SUFFIXES = {".md", ".mdx", ".markdown"}
 
-EXCLUDED_FILES: set[Path] = set()
+EXCLUDED_FILES = {
+    Path(".github/ISSUE_TEMPLATE/bug_report.md"),
+    Path(".github/ISSUE_TEMPLATE/feature_request.md"),
+}
 
 
 def is_excluded(path: Path, repo_root: Path | None = None) -> bool:

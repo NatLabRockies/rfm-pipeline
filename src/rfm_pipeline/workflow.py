@@ -22,7 +22,7 @@ from .regularized_screening import ScreeningSelectionResult, fit_multitask_elast
 
 @dataclass(frozen=True)
 class CanonicalWorkflowRun:
-    """Outputs from the canonical end-to-end reduced-form workflow foundation.
+    """Outputs from the canonical end-to-end reduced-form workflow.
 
     Parameters
     ----------
@@ -75,6 +75,39 @@ def _supports_parquet() -> bool:
     return find_spec("pyarrow") is not None or find_spec("fastparquet") is not None
 
 
+def _validate_workflow_inputs(
+    X_train: pd.DataFrame,
+    Y_train: pd.DataFrame,
+    X_holdout: pd.DataFrame,
+    Y_holdout: pd.DataFrame,
+) -> None:
+    """Fail before fitting when labeled table alignment is ambiguous."""
+    frames = {
+        "X_train": X_train,
+        "Y_train": Y_train,
+        "X_holdout": X_holdout,
+        "Y_holdout": Y_holdout,
+    }
+    for name, frame in frames.items():
+        if not isinstance(frame, pd.DataFrame):
+            raise TypeError(f"{name} must be a pandas DataFrame")
+        if frame.index.has_duplicates:
+            raise ValueError(f"{name} must not contain duplicate row indexes")
+        if frame.columns.has_duplicates:
+            raise ValueError(f"{name} must not contain duplicate column names")
+
+    if not X_train.index.equals(Y_train.index):
+        raise ValueError("X_train and Y_train must have identical row indexes in the same order")
+    if not X_holdout.index.equals(Y_holdout.index):
+        raise ValueError(
+            "X_holdout and Y_holdout must have identical row indexes in the same order"
+        )
+    if not X_train.columns.equals(X_holdout.columns):
+        raise ValueError("training and holdout feature columns must match exactly and in order")
+    if not Y_train.columns.equals(Y_holdout.columns):
+        raise ValueError("training and holdout output columns must match exactly and in order")
+
+
 def run_canonical_workflow(
     X_train: pd.DataFrame,
     Y_train: pd.DataFrame,
@@ -111,8 +144,8 @@ def run_canonical_workflow(
     dataset_tag
         Human-readable run label stored in the manifest.
     all_input_features
-        Original-order candidate input list before screening. Defaults to ``X_train``
-        column order.
+        Original-order candidate input list before screening. Defaults to and,
+        when supplied, must exactly match ``X_train`` column order.
     screening_cv
         Cross-validation folds for multitask elastic-net screening.
     screening_l1_ratio
@@ -145,10 +178,19 @@ def run_canonical_workflow(
 
     Raises
     ------
+    TypeError
+        Raised when an input is not a pandas DataFrame.
     ValueError
-        Raised when screening retains no features.
+        Raised when labels are duplicated or misaligned, the dataset tag is
+        empty, or screening retains no features.
     """
-    resolved_all_features = list(all_input_features or [str(column) for column in X_train.columns])
+    _validate_workflow_inputs(X_train, Y_train, X_holdout, Y_holdout)
+    if not isinstance(dataset_tag, str) or not dataset_tag.strip():
+        raise ValueError("dataset_tag must be a non-empty string")
+    feature_names = [str(column) for column in X_train.columns]
+    resolved_all_features = list(all_input_features or feature_names)
+    if resolved_all_features != feature_names:
+        raise ValueError("all_input_features must match X_train columns exactly and in order")
     resolved_format = _resolve_artifact_format(artifact_format)
 
     screening_result = fit_multitask_elastic_net_screen(
@@ -237,7 +279,7 @@ def write_postfit_bundle(
     dict[str, pathlib.Path]
         Mapping from logical artifact names to the written on-disk paths.
     """
-    bundle_root = Path(root)
+    bundle_root = Path(root).resolve()
     bundle_root.mkdir(parents=True, exist_ok=True)
 
     manifest = dict(artifacts.get("manifest", {}))
@@ -262,7 +304,11 @@ def write_postfit_bundle(
 
 def _write_artifact_table(frame: pd.DataFrame, root: Path, relative_path: Path) -> Path:
     """Write one artifact table using parquet when available, otherwise CSV."""
-    destination = root / relative_path
+    if relative_path.is_absolute():
+        raise ValueError("Artifact path resolves outside the bundle directory.")
+    destination = (root / relative_path).resolve()
+    if root != destination and root not in destination.parents:
+        raise ValueError("Artifact path resolves outside the bundle directory.")
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.suffix == ".parquet":
         try:

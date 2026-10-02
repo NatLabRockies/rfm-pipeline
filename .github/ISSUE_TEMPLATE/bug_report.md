@@ -1,6 +1,10 @@
-______________________________________________________________________
-
-## name: Bug report about: Report a reproducible bug title: '[BUG] ' labels: bug assignees: ''
+---
+name: Bug report
+about: Report a reproducible defect
+title: "[BUG] "
+labels: bug
+assignees: ""
+---
 
 **Describe the bug**
 A clear description of what the bug is.

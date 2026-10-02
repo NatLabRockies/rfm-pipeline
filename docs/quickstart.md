@@ -14,8 +14,8 @@ training and holdout sets.
 
 Before calling it, ensure:
 
-- `X_train` and `Y_train` have the same row order;
-- `X_holdout` and `Y_holdout` have the same row order;
+- `X_train` and `Y_train` have identical row indexes in the same order;
+- `X_holdout` and `Y_holdout` have identical row indexes in the same order;
 - train and holdout feature columns match exactly;
 - train and holdout output columns match exactly; and
 - all modeled values are numeric and finite.
@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from rfm_pipeline import predict_final_ols, run_canonical_workflow, write_postfit_bundle
+from rfm_pipeline import predict_from_postfit_bundle, run_canonical_workflow, write_postfit_bundle
 
 X_train = pd.read_parquet("X_train.parquet")
 Y_train = pd.read_parquet("Y_train.parquet")
@@ -46,33 +46,38 @@ run = run_canonical_workflow(
     bootstrap_random_state=123,
 )
 
-predictions = predict_final_ols(run.final_ols_result, X_holdout)
-write_postfit_bundle(run.artifacts, Path("artifacts/my-model"))
+bundle = Path("artifacts/my-model")
+write_postfit_bundle(run.artifacts, bundle)
+predictions = predict_from_postfit_bundle(bundle, X_holdout)
 print(run.screening_result.selected_features)
 print(predictions)
 print(run.holdout_summary)
 ```
 
 The result contains the screening fit, fitted OLS model, holdout summary, and
-in-memory export tables. Pass any DataFrame containing the retained feature
-columns to `predict_final_ols(...)`. The writer records the actual bundle paths
-in `manifest.json`.
+in-memory export tables. The writer records feature/output order and actual
+file paths in `manifest.json`; the bundle predictor uses that contract.
 
 ## Reload a bundle
 
 ```python
 from pathlib import Path
 
-from rfm_pipeline import load_postfit_bundle
+import pandas as pd
 
-tables = load_postfit_bundle(Path("artifacts/my-model"))
+from rfm_pipeline import load_postfit_bundle, predict_from_postfit_bundle
+
+bundle = Path("artifacts/my-model")
+tables = load_postfit_bundle(bundle)
 coefficients = tables["coef_matrix_raw_scale"]
 performance = tables["nrmse_summary"]
+new_inputs = pd.read_parquet("X_new.parquet")
+predictions = predict_from_postfit_bundle(bundle, new_inputs)
 ```
 
 Parquet is used when requested and available; CSV is the fallback. The loader
-handles either format. It returns the coefficient and metadata tables rather
-than recreating the in-memory fitted estimator.
+handles either format. `predict_from_postfit_bundle(...)` validates the
+manifest, aligns retained features, and returns outputs in manifest order.
 
 ## Common options
 
@@ -107,6 +112,5 @@ X_train = apply_feature_expansion(X_train, spec).expanded_frame
 X_holdout = apply_feature_expansion(X_holdout, spec).expanded_frame
 ```
 
-Then pass the expanded tables to the workflow. See
-[Reproducibility examples](reproducibility_example.md) for two complete fitting
-examples.
+Then pass the expanded tables to the workflow. See the
+[reproducibility example](reproducibility_example.md) for a complete fit.

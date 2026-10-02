@@ -117,6 +117,45 @@ def test_fit_final_ols_recovers_raw_scale_coefficients_and_predictions() -> None
     assert np.allclose(pred.to_numpy(), Y.to_numpy())
 
 
+def test_fit_final_ols_rejects_misaligned_rows() -> None:
+    X = pd.DataFrame({"x": [1.0, 2.0]}, index=["a", "b"])
+    Y = pd.DataFrame({"y": [3.0, 4.0]}, index=["b", "c"])
+
+    with pytest.raises(ValueError, match="identical row indexes"):
+        fit_final_ols(X, Y)
+
+
+def test_fit_final_ols_requires_string_column_names() -> None:
+    X = pd.DataFrame([[1.0], [2.0]], columns=[0])
+    Y = pd.DataFrame({"y": [3.0, 4.0]})
+
+    with pytest.raises(ValueError, match="column names.*strings"):
+        fit_final_ols(X, Y)
+
+
+@pytest.mark.parametrize("output_batch_size", [0, -1])
+def test_fit_final_ols_rejects_nonpositive_output_batch_size(output_batch_size: int) -> None:
+    X = pd.DataFrame({"x": [1.0, 2.0]})
+    Y = pd.DataFrame({"y": [3.0, 4.0]})
+
+    with pytest.raises(ValueError, match="output_batch_size must be positive"):
+        fit_final_ols(X, Y, output_batch_size=output_batch_size)
+
+
+def test_build_postfit_artifacts_rejects_inconsistent_feature_lists() -> None:
+    X = pd.DataFrame({"x1": [0.0, 1.0, 2.0], "x2": [1.0, 0.0, 2.0]})
+    Y = pd.DataFrame({"y": [1.0, 2.0, 3.0]})
+    result = fit_final_ols(X, Y)
+
+    with pytest.raises(ValueError, match="selected_features.*all_input_features"):
+        build_postfit_artifacts(
+            result,
+            dataset_tag="bad-features",
+            all_input_features=["x1", "x2"],
+            selected_features=["x1", "not-an-input"],
+        )
+
+
 def test_make_holdout_nrmse_summary_and_postfit_artifacts_use_canonical_schema() -> None:
     X_train = pd.DataFrame(
         {
@@ -164,3 +203,20 @@ def test_make_holdout_nrmse_summary_and_postfit_artifacts_use_canonical_schema()
     assert artifacts["selected_input_metadata"]["input_name"].tolist() == ["x1", "x2"]
     assert artifacts["manifest"]["all_input_position_map"]["scenario_flag"] == 2
     assert artifacts["manifest"]["upstream_provenance"]["stage"] == "unit-test"
+
+
+def test_make_holdout_nrmse_summary_rejects_reordered_response_rows() -> None:
+    X_train = pd.DataFrame({"x": [0.0, 1.0, 2.0]})
+    Y_train = pd.DataFrame({"y": [1.0, 3.0, 5.0]})
+    result = fit_final_ols(X_train, Y_train)
+    X_holdout = pd.DataFrame({"x": [3.0, 4.0]}, index=["a", "b"])
+    Y_holdout = pd.DataFrame({"y": [9.0, 7.0]}, index=["b", "a"])
+
+    with pytest.raises(ValueError, match="identical row indexes"):
+        make_holdout_nrmse_summary(
+            result,
+            X_holdout,
+            Y_holdout,
+            Y_ref=Y_train,
+            n_boot=5,
+        )

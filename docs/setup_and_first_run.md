@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- macOS, Linux, or Windows through WSL2
+- macOS, Linux, or Windows
 - Git
 - [Pixi](https://pixi.sh) for the locked repository environment
 

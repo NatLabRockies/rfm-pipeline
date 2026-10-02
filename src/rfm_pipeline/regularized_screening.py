@@ -10,7 +10,7 @@ import pandas as pd
 from sklearn.linear_model import LinearRegression, MultiTaskElasticNetCV
 from sklearn.preprocessing import StandardScaler
 
-from .data import align_xy
+from .data import _require_matching_xy
 
 
 @dataclass(frozen=True)
@@ -126,7 +126,7 @@ def fit_multitask_elastic_net_screen(
     ValueError
         Raised when the inputs cannot support a valid multi-output screening fit.
     """
-    X_aligned, Y_aligned = align_xy(X, Y)
+    X_aligned, Y_aligned = _require_matching_xy(X, Y)
     X_numeric = _coerce_numeric_frame(X_aligned, name="X")
     Y_numeric = _coerce_numeric_frame(Y_aligned, name="Y")
 

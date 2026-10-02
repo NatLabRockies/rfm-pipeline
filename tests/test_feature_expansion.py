@@ -34,6 +34,14 @@ def test_ordered_expanded_feature_names_follow_expected_catalog_order():
     )
 
 
+def test_default_spec_rejects_transform_for_unknown_base_feature() -> None:
+    with pytest.raises(ValueError, match="unknown base features.*typo"):
+        default_feature_expansion_spec(
+            base_features=["x1"],
+            add_transforms={"typo": [QUADRATIC]},
+        )
+
+
 def test_apply_feature_expansion_materializes_expected_columns_and_values():
     frame = pd.DataFrame(
         {

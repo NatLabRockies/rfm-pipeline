@@ -189,6 +189,17 @@ def test_perstratum_unseen_stratum_falls_back(synthetic_multioutput, strata_labe
     assert Y_hat.shape == Y_eval.shape
 
 
+def test_perstratum_predict_rejects_wrong_number_of_labels(
+    synthetic_multioutput, strata_labels
+) -> None:
+    X_train, Y_train, X_eval, _ = synthetic_multioutput
+    train_labels, _ = strata_labels
+    bl = PerStratumFirstOrderBaseline().fit(X_train, Y_train, strata=train_labels)
+
+    with pytest.raises(ValueError, match="strata.*rows"):
+        bl.predict(X_eval, strata=np.array(["A"]))
+
+
 # ---------------------------------------------------------------------------
 # compare_baselines harness
 # ---------------------------------------------------------------------------
@@ -261,3 +272,10 @@ def test_harness_all_four_baselines(synthetic_multioutput, strata_labels):
     )
     assert len(df) == 4
     assert set(df["name"]) == {bl_ridge.name, bl_pls.name, bl_en.name, bl_ps.name}
+
+
+def test_harness_rejects_misaligned_evaluation_outputs(synthetic_multioutput) -> None:
+    X_train, Y_train, X_eval, Y_eval = synthetic_multioutput
+
+    with pytest.raises(ValueError, match="X_eval and Y_eval.*row"):
+        compare_baselines([RidgeBaseline()], X_train, Y_train, X_eval, Y_eval[:-1])

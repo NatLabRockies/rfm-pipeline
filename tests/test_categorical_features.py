@@ -106,3 +106,18 @@ class TestR3S04CategoricalLevelsPersist:
         assert preds.iloc[0] != preds.iloc[1], (
             "Two-row batch predictions must differ when categorical effect is nonzero."
         )
+
+    def test_prediction_rejects_unseen_categorical_level(self, levels_none_nonzero_fit):
+        batch = pd.DataFrame({"score": [0.0], "group": ["C"]})
+
+        with pytest.raises(ValueError, match="unknown levels.*group.*C"):
+            predict_from_raw_records(levels_none_nonzero_fit, batch)
+
+
+def test_fit_requires_interaction_categorical_declaration() -> None:
+    X = pd.DataFrame({"score": [1.0, 2.0, 3.0], "group": ["A", "B", "A"]})
+    Y = pd.DataFrame({"outcome": [1.0, 2.0, 3.0]})
+    spec = DesignMatrixSpec(interaction_pairs=(("group", "score"),))
+
+    with pytest.raises(ValueError, match="interaction categorical.*group.*declared"):
+        fit_final_ols_with_design(X, Y, spec)

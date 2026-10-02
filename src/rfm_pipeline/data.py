@@ -278,6 +278,22 @@ def align_xy(X: pd.DataFrame, Y: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFra
     return X_aligned, Y_aligned
 
 
+def _require_matching_xy(X: pd.DataFrame, Y: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return copies of an unambiguously aligned labeled input/response pair."""
+    if not isinstance(X, pd.DataFrame) or not isinstance(Y, pd.DataFrame):
+        raise TypeError("X and Y must be pandas DataFrames")
+    if X.index.has_duplicates or Y.index.has_duplicates:
+        raise ValueError("X and Y must not contain duplicate row indexes")
+    if X.columns.has_duplicates or Y.columns.has_duplicates:
+        raise ValueError("X and Y must not contain duplicate column names")
+    for label, frame in (("X", X), ("Y", Y)):
+        if not all(isinstance(column, str) and column for column in frame.columns):
+            raise ValueError(f"{label} column names must be non-empty strings")
+    if not X.index.equals(Y.index):
+        raise ValueError("X and Y must have identical row indexes in the same order")
+    return X.copy(), Y.copy()
+
+
 def combination_labels(
     frame: pd.DataFrame,
     *,

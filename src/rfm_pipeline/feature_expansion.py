@@ -9,15 +9,11 @@ expanded matrix; a :class:`UserWarning` is issued listing the affected features.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 
 from rfm_pipeline.transforms import TransformDef, warn_nan_transforms
-
-if TYPE_CHECKING:
-    pass
 
 
 @dataclass(frozen=True)
@@ -112,6 +108,9 @@ def default_feature_expansion_spec(
     ordered_base = _ordered_unique(list(base_features))
     transforms: dict[str, tuple[TransformDef, ...]] = {}
     if add_transforms:
+        unknown = sorted(set(add_transforms).difference(ordered_base))
+        if unknown:
+            raise ValueError(f"add_transforms contains unknown base features: {unknown}")
         for name in ordered_base:
             if name in add_transforms:
                 transforms[name] = _ordered_unique_transform_defs(add_transforms[name])

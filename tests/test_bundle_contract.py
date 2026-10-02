@@ -148,8 +148,99 @@ def test_bundle_writer_rejects_paths_outside_destination(tmp_path: Path) -> None
     )
     artifacts["manifest"]["files"]["coef_matrix_raw_scale"] = "../outside.csv"
 
+    bundle = tmp_path / "bundle"
     with pytest.raises(ValueError, match="outside the bundle directory"):
-        write_postfit_bundle(artifacts, tmp_path / "bundle")
+        write_postfit_bundle(artifacts, bundle)
+
+    assert not bundle.exists()
+
+
+def test_bundle_writer_requires_manifest_before_writing(tmp_path: Path) -> None:
+    result = _make_demo_fit_result()
+    artifacts = build_postfit_artifacts(
+        result,
+        dataset_tag="missing-manifest",
+        all_input_features=["x1", "x2"],
+        artifact_format="csv",
+    )
+    del artifacts["manifest"]
+    bundle = tmp_path / "bundle"
+
+    with pytest.raises(ValueError, match="manifest"):
+        write_postfit_bundle(artifacts, bundle)
+
+    assert not bundle.exists()
+
+
+def test_bundle_writer_rejects_duplicate_destinations_before_writing(tmp_path: Path) -> None:
+    result = _make_demo_fit_result()
+    artifacts = build_postfit_artifacts(
+        result,
+        dataset_tag="duplicate-destinations",
+        all_input_features=["x1", "x2"],
+        artifact_format="csv",
+    )
+    artifacts["manifest"]["files"]["x_standardization"] = artifacts["manifest"]["files"][
+        "y_standardization"
+    ]
+    bundle = tmp_path / "bundle"
+
+    with pytest.raises(ValueError, match="same destination"):
+        write_postfit_bundle(artifacts, bundle)
+
+    assert not bundle.exists()
+
+
+def test_bundle_writer_validates_manifest_serialization_before_writing(tmp_path: Path) -> None:
+    result = _make_demo_fit_result()
+    artifacts = build_postfit_artifacts(
+        result,
+        dataset_tag="invalid-json",
+        all_input_features=["x1", "x2"],
+        artifact_format="csv",
+    )
+    artifacts["manifest"]["upstream_provenance"] = {"invalid": object()}
+    bundle = tmp_path / "bundle"
+
+    with pytest.raises(TypeError, match="JSON serializable"):
+        write_postfit_bundle(artifacts, bundle)
+
+    assert not bundle.exists()
+
+
+def test_bundle_writer_rejects_incomplete_manifest_before_writing(tmp_path: Path) -> None:
+    result = _make_demo_fit_result()
+    artifacts = build_postfit_artifacts(
+        result,
+        dataset_tag="incomplete-manifest",
+        all_input_features=["x1", "x2"],
+        artifact_format="csv",
+    )
+    del artifacts["manifest"]["n_outputs"]
+    bundle = tmp_path / "bundle"
+
+    with pytest.raises(ValueError, match="manifest.*n_outputs"):
+        write_postfit_bundle(artifacts, bundle)
+
+    assert not bundle.exists()
+
+
+def test_bundle_prediction_validates_manifest_counts(tmp_path: Path) -> None:
+    result = _make_demo_fit_result()
+    artifacts = build_postfit_artifacts(
+        result,
+        dataset_tag="bad-counts",
+        all_input_features=["x1", "x2"],
+        artifact_format="csv",
+    )
+    write_postfit_bundle(artifacts, tmp_path)
+    manifest_path = tmp_path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["n_retained_features"] = 99
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="n_retained_features"):
+        predict_from_postfit_bundle(tmp_path, pd.DataFrame({"x1": [1.0], "x2": [2.0]}))
 
 
 def test_export_bundle_docs_list_stable_contract_helpers() -> None:

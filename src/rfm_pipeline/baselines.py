@@ -158,7 +158,7 @@ class ElasticNetBaseline:
                 mt.fit(X, Y2d)
                 self._models = [mt]  # type: ignore[list-item]
                 self._multi = True
-            except Exception:
+            except ValueError:
                 models = []
                 for j in range(Y2d.shape[1]):
                     m = ElasticNet(alpha=self.alpha, l1_ratio=self.l1_ratio, max_iter=self.max_iter)
@@ -228,6 +228,8 @@ class PerStratumFirstOrderBaseline:
         if labels is None:
             raise ValueError("strata labels required for PerStratumFirstOrderBaseline.fit()")
         labels = np.asarray(labels)
+        if labels.ndim != 1 or len(labels) != X.shape[0]:
+            raise ValueError("strata labels must have one value per training row")
         for s in np.unique(labels):
             mask = labels == s
             if mask.sum() < 2:
@@ -252,6 +254,8 @@ class PerStratumFirstOrderBaseline:
                 raise ValueError("strata required for predict() or fit a fallback first")
             return np.asarray(self._fallback.predict(X))
         labels = np.asarray(strata)
+        if labels.ndim != 1 or len(labels) != X.shape[0]:
+            raise ValueError("strata labels must align with all prediction rows")
         # Allocate output array using fallback shape
         sample_pred = self._fallback.predict(X[:1]) if self._fallback else None  # type: ignore
         out = np.empty(
@@ -462,6 +466,23 @@ def compare_baselines(
     pd.DataFrame
         One row per baseline with columns matching :class:`ComparisonRecord`.
     """
+    X_train = np.asarray(X_train)
+    Y_train = np.asarray(Y_train)
+    X_eval = np.asarray(X_eval)
+    Y_eval = np.asarray(Y_eval)
+    if X_train.ndim != 2 or X_eval.ndim != 2:
+        raise ValueError("X_train and X_eval must be two-dimensional arrays")
+    if Y_train.ndim not in {1, 2} or Y_eval.ndim != Y_train.ndim:
+        raise ValueError("Y_train and Y_eval must have matching one- or two-dimensional shapes")
+    if X_train.shape[0] != Y_train.shape[0]:
+        raise ValueError("X_train and Y_train must have the same number of rows")
+    if X_eval.shape[0] != Y_eval.shape[0]:
+        raise ValueError("X_eval and Y_eval must have the same number of rows")
+    if X_train.shape[1] != X_eval.shape[1]:
+        raise ValueError("X_train and X_eval must have the same number of feature columns")
+    if Y_train.shape[1:] != Y_eval.shape[1:]:
+        raise ValueError("Y_train and Y_eval must have the same number of output columns")
+
     fit_kwargs = fit_kwargs or {}
     predict_kwargs = predict_kwargs or {}
     records = []
@@ -486,6 +507,11 @@ def compare_baselines(
         tracemalloc.stop()
 
         peak_mb = max(fit_peak, eval_peak) / 1024 / 1024
+        Y_pred = np.asarray(Y_pred)
+        if Y_pred.shape != Y_eval.shape:
+            raise ValueError(
+                f"baseline {bname!r} returned shape {Y_pred.shape}; expected {Y_eval.shape}"
+            )
 
         records.append(
             ComparisonRecord(

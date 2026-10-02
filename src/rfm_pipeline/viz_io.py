@@ -55,13 +55,15 @@ def _artifact_path(root: Path, value: object, *, key: str) -> Path:
     return resolved
 
 
-def _read_artifact(path: Path) -> pd.DataFrame:
+def _read_artifact(path: Path, *, key: str) -> pd.DataFrame:
     if path.suffix == ".parquet":
         return pd.read_parquet(path)
     try:
         return pd.read_csv(path)
-    except pd.errors.EmptyDataError:
-        return pd.DataFrame()
+    except pd.errors.EmptyDataError as exc:
+        if key == "nrmse_summary":
+            return pd.DataFrame()
+        raise ValueError(f"bundle artifact '{key}' is empty") from exc
 
 
 def _load_artifacts(root: Path, keys: list[str]) -> dict[str, pd.DataFrame]:
@@ -71,7 +73,7 @@ def _load_artifacts(root: Path, keys: list[str]) -> dict[str, pd.DataFrame]:
     missing = [key for key in keys if key not in files]
     if missing:
         raise ValueError(f"manifest.json is missing canonical file entries: {missing}")
-    return {key: _read_artifact(_artifact_path(root, files[key], key=key)) for key in keys}
+    return {key: _read_artifact(_artifact_path(root, files[key], key=key), key=key) for key in keys}
 
 
 def load_postfit_bundle(root: Path) -> dict[str, pd.DataFrame]:
@@ -126,6 +128,13 @@ def predict_from_postfit_bundle(root: Path, X: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("manifest.json must contain a string list named 'output_names'")
     if len(retained) != len(set(retained)) or len(outputs) != len(set(outputs)):
         raise ValueError("manifest feature and output names must be unique")
+    for count_key, names in (
+        ("n_retained_features", retained),
+        ("n_outputs", outputs),
+    ):
+        count = manifest.get(count_key)
+        if not isinstance(count, int) or isinstance(count, bool) or count != len(names):
+            raise ValueError(f"manifest {count_key} does not match its ordered name list")
 
     missing = [name for name in retained if name not in X.columns]
     if missing:

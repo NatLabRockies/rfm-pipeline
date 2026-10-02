@@ -396,3 +396,26 @@ def test_excluded_mask_length_mismatch():
             np.array([True, False]),  # wrong length
             ["a", "b", "c"],
         )
+
+
+def test_stratified_summary_rejects_prediction_shape_broadcasting() -> None:
+    Y = np.zeros((4, 2))
+
+    with pytest.raises(ValueError, match="matching shapes"):
+        stratified_nrmse_summary(
+            Y,
+            np.zeros((4, 1)),
+            Y,
+            strata={},
+            output_names=["a", "b"],
+        )
+
+
+def test_excluded_summary_rejects_prediction_shape_broadcasting() -> None:
+    with pytest.raises(ValueError, match="matching shapes"):
+        excluded_output_error_summary(
+            np.zeros((4, 2)),
+            np.zeros((4, 1)),
+            np.array([True, False]),
+            ["a", "b"],
+        )

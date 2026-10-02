@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from rfm_pipeline.regularized_screening import (
     fit_multitask_elastic_net_screen,
@@ -63,3 +64,11 @@ def test_screening_selection_table_preserves_feature_order_and_selection_metadat
     selected_row = table.loc[table["feature_name"] == "b"].iloc[0]
     assert bool(selected_row["selected"])
     assert int(selected_row["nonzero_output_count"]) == 1
+
+
+def test_screening_rejects_misaligned_rows() -> None:
+    X = pd.DataFrame({"x": [1.0, 2.0, 3.0]}, index=["a", "b", "c"])
+    Y = pd.DataFrame({"y": [1.0, 2.0, 3.0]}, index=["b", "c", "d"])
+
+    with pytest.raises(ValueError, match="identical row indexes"):
+        fit_multitask_elastic_net_screen(X, Y, cv=2)

@@ -10,6 +10,7 @@ from typing import Any
 
 import pandas as pd
 
+from .artifacts import canonical_manifest_top_level_keys
 from .final_ols import (
     FinalOLSFitResult,
     build_postfit_artifacts,
@@ -279,45 +280,107 @@ def write_postfit_bundle(
     dict[str, pathlib.Path]
         Mapping from logical artifact names to the written on-disk paths.
     """
+    manifest_value = artifacts.get("manifest")
+    if not isinstance(manifest_value, dict):
+        raise ValueError("artifacts must contain a manifest object")
+    manifest = dict(manifest_value)
+    missing_manifest_keys = [
+        key for key in canonical_manifest_top_level_keys() if key not in manifest
+    ]
+    if missing_manifest_keys:
+        raise ValueError(f"artifact manifest is missing required keys: {missing_manifest_keys}")
+    if not isinstance(manifest["dataset_tag"], str) or not manifest["dataset_tag"].strip():
+        raise ValueError("artifact manifest dataset_tag must be a non-empty string")
+    collections = (
+        ("all_input_features", "n_all_input_features", "all_input_position_map"),
+        ("selected_features", "n_selected_features", "selected_input_position_map"),
+        ("retained_features", "n_retained_features", "retained_input_position_map"),
+        ("output_names", "n_outputs", "output_position_map"),
+    )
+    for names_key, count_key, positions_key in collections:
+        names = manifest[names_key]
+        if (
+            not isinstance(names, list)
+            or not names
+            or not all(isinstance(name, str) and name for name in names)
+        ):
+            raise ValueError(f"artifact manifest {names_key} must contain non-empty strings")
+        if len(names) != len(set(names)):
+            raise ValueError(f"artifact manifest {names_key} must contain unique names")
+        count = manifest[count_key]
+        if not isinstance(count, int) or isinstance(count, bool) or count != len(names):
+            raise ValueError(f"artifact manifest {count_key} does not match {names_key}")
+        expected_positions = {name: position for position, name in enumerate(names)}
+        if manifest[positions_key] != expected_positions:
+            raise ValueError(f"artifact manifest {positions_key} does not match {names_key}")
+    if not set(manifest["selected_features"]).issubset(manifest["all_input_features"]):
+        raise ValueError("artifact manifest selected_features must be a subset of all inputs")
+    if not set(manifest["retained_features"]).issubset(manifest["selected_features"]):
+        raise ValueError("artifact manifest retained_features must be a subset of selected inputs")
+    for mapping_key in ("metrics", "evaluation", "upstream_provenance"):
+        if not isinstance(manifest[mapping_key], dict):
+            raise ValueError(f"artifact manifest {mapping_key} must be an object")
+    files_value = manifest.get("files")
+    if not isinstance(files_value, dict):
+        raise ValueError("artifact manifest must contain a files object")
+    expected_file_keys = set(canonical_postfit_artifact_names())
+    if set(files_value) != expected_file_keys:
+        raise ValueError("artifact manifest files must contain exactly the canonical artifacts")
+    file_map = dict(files_value)
     bundle_root = Path(root).resolve()
-    bundle_root.mkdir(parents=True, exist_ok=True)
-
-    manifest = dict(artifacts.get("manifest", {}))
-    file_map = dict(manifest.get("files", {}))
     written: dict[str, Path] = {}
+    planned: dict[str, tuple[pd.DataFrame, Path]] = {}
 
     for artifact_name in canonical_postfit_artifact_names():
-        artifact = artifacts[artifact_name]
+        artifact = artifacts.get(artifact_name)
         if not isinstance(artifact, pd.DataFrame):
             raise TypeError(f"Artifact '{artifact_name}' must be a pandas DataFrame.")
         requested_rel = file_map.get(artifact_name, f"postfit_diagnostics/{artifact_name}.parquet")
-        actual_path = _write_artifact_table(artifact, bundle_root, Path(requested_rel))
-        written[artifact_name] = actual_path
-        file_map[artifact_name] = actual_path.relative_to(bundle_root).as_posix()
+        if not isinstance(requested_rel, str) or not requested_rel:
+            raise ValueError(f"Artifact path for '{artifact_name}' must be a non-empty string.")
+        destination = _resolve_artifact_destination(bundle_root, Path(requested_rel))
+        planned[artifact_name] = (artifact, destination)
 
+    destinations = [destination for _, destination in planned.values()]
+    if len(destinations) != len(set(destinations)):
+        raise ValueError("Artifact tables must not resolve to the same destination.")
+
+    for artifact_name, (_, destination) in planned.items():
+        file_map[artifact_name] = destination.relative_to(bundle_root).as_posix()
     manifest["files"] = file_map
+    manifest_text = json.dumps(manifest, indent=2, sort_keys=True)
+
+    bundle_root.mkdir(parents=True, exist_ok=True)
+    for artifact_name, (artifact, destination) in planned.items():
+        actual_path = _write_artifact_table(artifact, destination)
+        written[artifact_name] = actual_path
+
     manifest_path = bundle_root / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    manifest_path.write_text(manifest_text, encoding="utf-8")
     written["manifest"] = manifest_path
     return written
 
 
-def _write_artifact_table(frame: pd.DataFrame, root: Path, relative_path: Path) -> Path:
-    """Write one artifact table using parquet when available, otherwise CSV."""
+def _resolve_artifact_destination(root: Path, relative_path: Path) -> Path:
+    """Resolve and validate one bundle artifact destination without writing it."""
     if relative_path.is_absolute():
         raise ValueError("Artifact path resolves outside the bundle directory.")
     destination = (root / relative_path).resolve()
     if root != destination and root not in destination.parents:
         raise ValueError("Artifact path resolves outside the bundle directory.")
+    if destination.suffix not in {".parquet", ".csv"}:
+        raise ValueError("Artifact tables must use a .parquet or .csv extension.")
+    if destination.suffix == ".parquet" and not _supports_parquet():
+        destination = destination.with_suffix(".csv")
+    return destination
+
+
+def _write_artifact_table(frame: pd.DataFrame, destination: Path) -> Path:
+    """Write one prevalidated artifact table."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.suffix == ".parquet":
-        try:
-            frame.to_parquet(destination, index=False)
-            return destination
-        except (ImportError, ModuleNotFoundError, ValueError):
-            destination = destination.with_suffix(".csv")
-    elif destination.suffix != ".csv":
-        raise ValueError("Artifact tables must use a .parquet or .csv extension.")
+        frame.to_parquet(destination, index=False)
+        return destination
 
     frame.to_csv(destination, index=False)
     return destination

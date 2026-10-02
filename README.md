@@ -46,10 +46,10 @@ predictions = predict_from_postfit_bundle(bundle, X_holdout)
 print(run.holdout_summary)
 ```
 
-Rows must be aligned, train and holdout columns must match, and modeled values
-must be numeric and finite. The workflow expects prepared feature columns; use
-the feature-expansion utilities when you want to add named transformations or
-interactions before fitting.
+Rows must be aligned; train and holdout columns must match; column names must
+be non-empty strings; and modeled values must be numeric and finite. The
+workflow expects prepared feature columns; use the feature-expansion utilities
+when you want to add named transformations or interactions before fitting.
 
 ## Documentation
 

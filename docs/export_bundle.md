@@ -61,6 +61,10 @@ The `files` mapping is expected to contain one relative path for each canonical 
 The position-map payload preserves original ordering so downstream code can reconstruct
 feature/output provenance without recomputing modeling steps.
 
+The writer validates the manifest, artifact types, destinations, and JSON serialization
+before creating a new bundle directory. Invalid paths or duplicate destinations therefore
+fail before any tables are written.
+
 ## Prediction equation
 
 For raw-scale coefficient matrix `B`, retained input row `x`, training input

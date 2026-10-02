@@ -12,7 +12,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
 
 from .artifacts import PipelineManifest, make_metadata_frame
-from .data import SealedSplitResult, align_xy
+from .data import SealedSplitResult, _require_matching_xy
 from .features import DesignMatrixSpec, build_design_matrix, resolve_spec_levels
 from .metrics import bootstrap_macro_nrmse_ci
 
@@ -210,7 +210,13 @@ def fit_final_ols(
     FinalOLSFitResult
         Fitted model plus raw-scale and standardized representations.
     """
-    X_aligned, Y_aligned = align_xy(X, Y)
+    if output_batch_size is not None and (
+        not isinstance(output_batch_size, int)
+        or isinstance(output_batch_size, bool)
+        or output_batch_size <= 0
+    ):
+        raise ValueError("output_batch_size must be positive when provided")
+    X_aligned, Y_aligned = _require_matching_xy(X, Y)
     X_numeric = _coerce_numeric_frame(X_aligned, name="X")
     Y_numeric = _coerce_numeric_frame(Y_aligned, name="Y")
 
@@ -428,8 +434,9 @@ def make_holdout_nrmse_summary(
     pandas.DataFrame
         Single-row evaluation summary preserving key holdout metadata.
     """
-    predictions = predict_final_ols(result, X_holdout)
-    Y_eval = Y_holdout.loc[predictions.index, list(result.output_names)]
+    X_eval, Y_eval_all = _require_matching_xy(X_holdout, Y_holdout)
+    predictions = predict_final_ols(result, X_eval)
+    Y_eval = Y_eval_all.loc[:, list(result.output_names)]
     Y_ref_eval = Y_ref.loc[:, list(result.output_names)]
 
     metric_summary = bootstrap_macro_nrmse_ci(
@@ -499,8 +506,26 @@ def build_postfit_artifacts(
     if artifact_format not in {"parquet", "csv"}:
         raise ValueError("artifact_format must be either 'parquet' or 'csv'.")
 
-    selected = list(selected_features or result.feature_names)
+    if not isinstance(dataset_tag, str) or not dataset_tag.strip():
+        raise ValueError("dataset_tag must be a non-empty string")
+    selected = list(result.feature_names if selected_features is None else selected_features)
     retained = list(result.feature_names)
+    all_features = list(all_input_features)
+    outputs = list(result.output_names)
+    for label, names in (
+        ("all_input_features", all_features),
+        ("selected_features", selected),
+        ("retained_features", retained),
+        ("output_names", outputs),
+    ):
+        if not names or not all(isinstance(name, str) and name for name in names):
+            raise ValueError(f"{label} must contain non-empty strings")
+        if len(names) != len(set(names)):
+            raise ValueError(f"{label} must not contain duplicate names")
+    if not set(selected).issubset(all_features):
+        raise ValueError("selected_features must be a subset of all_input_features")
+    if not set(retained).issubset(selected):
+        raise ValueError("retained_features must be a subset of selected_features")
 
     if isinstance(evaluation_summary, pd.DataFrame):
         nrmse_summary = evaluation_summary.copy()
@@ -515,17 +540,17 @@ def build_postfit_artifacts(
     }
 
     artifacts: dict[str, pd.DataFrame | dict[str, Any]] = {
-        "all_input_metadata": make_metadata_frame(all_input_features, "input_name"),
+        "all_input_metadata": make_metadata_frame(all_features, "input_name"),
         "selected_input_metadata": make_metadata_frame(selected, "input_name"),
-        "output_metadata": make_metadata_frame(list(result.output_names), "output_name"),
+        "output_metadata": make_metadata_frame(outputs, "output_name"),
         "coef_matrix_standardized": make_coefficient_matrix_frame(
             result.coef_standardized,
-            output_names=list(result.output_names),
+            output_names=outputs,
             feature_names=retained,
         ),
         "coef_matrix_raw_scale": make_coefficient_matrix_frame(
             result.coef_raw_scale,
-            output_names=list(result.output_names),
+            output_names=outputs,
             feature_names=retained,
         ),
         "x_standardization": make_standardization_frame(
@@ -535,7 +560,7 @@ def build_postfit_artifacts(
             name_column="feature_name",
         ),
         "y_standardization": make_standardization_frame(
-            list(result.output_names),
+            outputs,
             result.y_means,
             result.y_scales,
             name_column="output_name",
@@ -544,14 +569,14 @@ def build_postfit_artifacts(
     }
     artifacts["manifest"] = PipelineManifest(
         dataset_tag=dataset_tag,
-        n_all_input_features=len(all_input_features),
+        n_all_input_features=len(all_features),
         n_selected_features=len(selected),
         n_retained_features=len(retained),
-        n_outputs=len(result.output_names),
-        all_input_features=list(all_input_features),
+        n_outputs=len(outputs),
+        all_input_features=all_features,
         selected_features=selected,
         retained_features=retained,
-        output_names=list(result.output_names),
+        output_names=outputs,
         files=files,
         metrics=dict(metrics or {}),
         evaluation=dict(evaluation or {}),

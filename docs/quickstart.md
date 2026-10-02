@@ -17,7 +17,8 @@ Before calling it, ensure:
 - `X_train` and `Y_train` have identical row indexes in the same order;
 - `X_holdout` and `Y_holdout` have identical row indexes in the same order;
 - train and holdout feature columns match exactly;
-- train and holdout output columns match exactly; and
+- train and holdout output columns match exactly;
+- feature and output column names are non-empty strings; and
 - all modeled values are numeric and finite.
 
 The API uses DataFrame column names as the feature and output identifiers.

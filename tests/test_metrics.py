@@ -8,8 +8,11 @@ import pytest
 import rfm_pipeline.metrics as metrics_module
 from rfm_pipeline.metrics import (
     bootstrap_macro_nrmse_ci,
+    build_output_eligibility_ledger,
+    macro_nrmse_from_ledger,
     macro_nrmse_with_ref,
     make_null_mean_prediction,
+    per_output_nrmse_frame,
 )
 
 
@@ -21,6 +24,15 @@ def test_macro_nrmse_with_ref_matches_manual_calculation():
     assert pytest.approx(macro) == (0.5 / 5.0)
     assert info == {"k_used": 1, "k_total": 1}
     assert pytest.approx(rmse[0]) == 0.5
+
+
+def test_macro_nrmse_rejects_shape_broadcasting() -> None:
+    y_true = np.zeros((4, 1))
+    y_pred = np.zeros(4)
+    y_ref = np.zeros((3, 1))
+
+    with pytest.raises(ValueError, match="two-dimensional.*matching shapes"):
+        macro_nrmse_with_ref(y_true, y_pred, y_ref)
 
 
 def test_bootstrap_macro_nrmse_ci_returns_expected_fields():
@@ -135,3 +147,62 @@ def test_bootstrap_macro_nrmse_ci_supports_active_replicate_subsets(
         active_bootstrap_indices=active_subset,
     )
     assert call_counter["count"] == 1
+
+
+def test_bootstrap_checkpoints_are_keyed_by_array_contents(tmp_path) -> None:
+    y_true = np.array([[0.0], [1.0], [2.0], [3.0]])
+    y_pred_a = np.array([[0.0], [0.0], [3.0], [3.0]])
+    y_pred_b = np.array([[1.0], [1.0], [2.0], [2.0]])
+    y_ref = np.array([[0.0], [3.0]])
+    assert y_pred_a.mean() == y_pred_b.mean()
+
+    checkpoint_dir = tmp_path / "bootstrap_ckpt"
+    bootstrap_macro_nrmse_ci(
+        y_true,
+        y_pred_a,
+        y_ref,
+        n_boot=20,
+        random_state=9,
+        checkpoint_dir=checkpoint_dir,
+    )
+    checkpointed = bootstrap_macro_nrmse_ci(
+        y_true,
+        y_pred_b,
+        y_ref,
+        n_boot=20,
+        random_state=9,
+        checkpoint_dir=checkpoint_dir,
+    )
+    fresh = bootstrap_macro_nrmse_ci(
+        y_true,
+        y_pred_b,
+        y_ref,
+        n_boot=20,
+        random_state=9,
+    )
+
+    assert checkpointed == fresh
+    assert len(list(checkpoint_dir.iterdir())) == 2
+
+
+def test_per_output_metrics_reject_shape_broadcasting() -> None:
+    with pytest.raises(ValueError, match="matching shapes"):
+        per_output_nrmse_frame(
+            np.zeros((4, 2)),
+            np.zeros((4, 1)),
+            np.zeros((3, 2)),
+            ["a", "b"],
+        )
+
+
+def test_eligibility_ledger_requires_two_dimensional_reference() -> None:
+    with pytest.raises(ValueError, match="two-dimensional"):
+        build_output_eligibility_ledger(np.zeros(4))
+
+
+def test_ledger_metric_rejects_row_count_mismatch() -> None:
+    Y = np.zeros((4, 2))
+    ledger = build_output_eligibility_ledger(np.array([[0.0, 0.0], [1.0, 1.0]]))
+
+    with pytest.raises(ValueError, match="matching shapes"):
+        macro_nrmse_from_ledger(Y, np.zeros((3, 2)), ledger)

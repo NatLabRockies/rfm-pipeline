@@ -248,8 +248,20 @@ def _indicator_columns(
     pandas.DataFrame
         One column per retained level named ``"{name}__{level}"``.
     """
+    if series.isna().any():
+        raise ValueError(f"categorical input {name!r} must not contain missing values")
+    observed = set(series.astype(str))
     if levels is None:
-        levels = sorted(series.dropna().unique().astype(str).tolist())
+        levels = sorted(observed)
+    else:
+        levels = [str(level) for level in levels]
+        if not levels:
+            raise ValueError(f"categorical input {name!r} must declare at least one level")
+        if len(levels) != len(set(levels)):
+            raise ValueError(f"categorical input {name!r} contains duplicate declared levels")
+        unknown = sorted(observed.difference(levels))
+        if unknown:
+            raise ValueError(f"unknown levels for categorical input {name!r}: {unknown}")
     if drop_first and len(levels) > 1:
         levels = levels[1:]
     result: dict[str, pd.Series] = {}
@@ -294,7 +306,18 @@ def build_design_matrix(
     if spec is None:
         spec = DesignMatrixSpec()
 
-    cat_names = {decl.name for decl in spec.categorical_inputs}
+    declared_names = [decl.name for decl in spec.categorical_inputs]
+    if len(declared_names) != len(set(declared_names)):
+        raise ValueError("categorical input declarations must have unique names")
+    cat_names = set(declared_names)
+    undeclared_interactions = sorted(
+        {cat_col for cat_col, _ in spec.interaction_pairs if cat_col not in cat_names}
+    )
+    if undeclared_interactions:
+        raise ValueError(
+            f"interaction categorical columns {undeclared_interactions} must be declared "
+            "in categorical_inputs"
+        )
     scalar_cols = [c for c in X.columns if c not in cat_names]
 
     # Validate all referenced columns exist.
@@ -341,16 +364,7 @@ def build_design_matrix(
 
     # Add interaction columns: each indicator column × scalar value.
     for cat_col, scalar_col in spec.interaction_pairs:
-        ind = indicator_frames.get(cat_col)
-        if ind is None:
-            # Interaction requested for a column not in categorical_inputs:
-            # build transient indicators (drop_first applies).
-            ind = _indicator_columns(
-                X[cat_col],
-                name=cat_col,
-                levels=None,
-                drop_first=spec.drop_first,
-            )
+        ind = indicator_frames[cat_col]
         scalar_values = X[scalar_col]
         for ind_col in ind.columns:
             ix_col_name = f"{ind_col}_x_{scalar_col}"

@@ -12,6 +12,40 @@ import pandas as pd
 from joblib import Parallel, delayed
 
 
+def _validate_prediction_arrays(Y_true: np.ndarray, Y_pred: np.ndarray) -> None:
+    """Reject ambiguous prediction shapes before arithmetic can broadcast them."""
+    if Y_true.ndim != 2 or Y_pred.ndim != 2 or Y_true.shape != Y_pred.shape:
+        raise ValueError("Y_true and Y_pred must be two-dimensional arrays with matching shapes")
+    if Y_true.shape[0] == 0 or Y_true.shape[1] == 0:
+        raise ValueError("prediction arrays must contain at least one row and output")
+
+
+def _validate_metric_arrays(
+    Y_true: np.ndarray,
+    Y_pred: np.ndarray,
+    Y_ref: np.ndarray,
+) -> None:
+    """Reject ambiguous shapes before metric arithmetic can broadcast them."""
+    _validate_prediction_arrays(Y_true, Y_pred)
+    if Y_ref.ndim != 2 or Y_ref.shape[1] != Y_true.shape[1]:
+        raise ValueError(
+            "Y_true and Y_pred must be two-dimensional arrays with matching shapes, "
+            "and Y_ref must have the same number of output columns"
+        )
+    if Y_ref.shape[0] == 0:
+        raise ValueError("metric arrays must contain at least one output and reference row")
+
+
+def _array_digest(array: np.ndarray) -> str:
+    """Return a stable digest over an array's dtype, shape, and contents."""
+    contiguous = np.ascontiguousarray(array)
+    digest = hashlib.sha256()
+    digest.update(contiguous.dtype.str.encode("ascii"))
+    digest.update(json.dumps(list(contiguous.shape)).encode("ascii"))
+    digest.update(contiguous.tobytes())
+    return digest.hexdigest()
+
+
 def macro_nrmse_with_ref(
     Y_true: np.ndarray,
     Y_pred: np.ndarray,
@@ -41,6 +75,9 @@ def macro_nrmse_with_ref(
     Y_true = np.asarray(Y_true, dtype=np.float64)
     Y_pred = np.asarray(Y_pred, dtype=np.float64)
     Y_ref = np.asarray(Y_ref, dtype=np.float64)
+    _validate_metric_arrays(Y_true, Y_pred, Y_ref)
+    if not np.isfinite(min_range) or min_range <= 0:
+        raise ValueError("min_range must be a positive finite value")
 
     rmse = np.sqrt(np.mean((Y_true - Y_pred) ** 2, axis=0))
     ref_range = np.nanmax(Y_ref, axis=0) - np.nanmin(Y_ref, axis=0)
@@ -149,9 +186,9 @@ def bootstrap_macro_nrmse_ci(
             "y_true_shape": list(Y_true.shape),
             "y_pred_shape": list(Y_pred.shape),
             "y_ref_shape": list(Y_ref.shape),
-            "y_true_mean": float(np.nanmean(Y_true)),
-            "y_pred_mean": float(np.nanmean(Y_pred)),
-            "y_ref_mean": float(np.nanmean(Y_ref)),
+            "y_true_sha256": _array_digest(Y_true),
+            "y_pred_sha256": _array_digest(Y_pred),
+            "y_ref_sha256": _array_digest(Y_ref),
         }
         signature = hashlib.sha256(
             json.dumps(signature_payload, sort_keys=True).encode("utf-8")
@@ -600,6 +637,7 @@ def stratified_nrmse_summary(
     Y_true = np.asarray(Y_true, dtype=np.float64)
     Y_pred = np.asarray(Y_pred, dtype=np.float64)
     Y_ref = np.asarray(Y_ref, dtype=np.float64)
+    _validate_metric_arrays(Y_true, Y_pred, Y_ref)
 
     n_rows, n_outputs = Y_true.shape
     if len(output_names) != n_outputs:
@@ -715,9 +753,10 @@ def excluded_output_error_summary(
     """
     Y_true = np.asarray(Y_true, dtype=np.float64)
     Y_pred = np.asarray(Y_pred, dtype=np.float64)
+    _validate_prediction_arrays(Y_true, Y_pred)
     excl = np.asarray(excluded_mask, dtype=bool)
 
-    n_outputs = Y_true.shape[1] if Y_true.ndim == 2 else 1
+    n_outputs = Y_true.shape[1]
     if len(output_names) != n_outputs:
         raise ValueError(f"output_names length ({len(output_names)}) != n_outputs ({n_outputs}).")
     if len(excl) != n_outputs:
@@ -821,8 +860,9 @@ def per_output_nrmse_frame(
     Y_true = np.asarray(Y_true, dtype=np.float64)
     Y_pred = np.asarray(Y_pred, dtype=np.float64)
     Y_ref = np.asarray(Y_ref, dtype=np.float64)
+    _validate_metric_arrays(Y_true, Y_pred, Y_ref)
 
-    n_outputs = Y_true.shape[1] if Y_true.ndim == 2 else 1
+    n_outputs = Y_true.shape[1]
     if len(output_names) != n_outputs:
         raise ValueError(
             f"output_names length ({len(output_names)}) does not match n_outputs ({n_outputs})."
@@ -871,6 +911,12 @@ def build_output_eligibility_ledger(
         ``min_range_threshold``.
     """
     Y_ref = np.asarray(Y_ref, dtype=np.float64)
+    if Y_ref.ndim != 2:
+        raise ValueError("Y_ref must be a two-dimensional array")
+    if Y_ref.shape[0] == 0 or Y_ref.shape[1] == 0:
+        raise ValueError("Y_ref must contain at least one row and output")
+    if not np.isfinite(min_range) or min_range <= 0:
+        raise ValueError("min_range must be a positive finite value")
     n_outputs = Y_ref.shape[1]
 
     if output_ids is None:
@@ -943,6 +989,15 @@ def macro_nrmse_from_ledger(
     """
     Y_true = np.asarray(Y_true, dtype=np.float64)
     Y_pred = np.asarray(Y_pred, dtype=np.float64)
+    _validate_prediction_arrays(Y_true, Y_pred)
+    if not isinstance(ledger, pd.DataFrame):
+        raise TypeError("ledger must be a pandas DataFrame")
+    required = {"eligible", "ref_range"}
+    missing = sorted(required.difference(ledger.columns))
+    if missing:
+        raise ValueError(f"ledger is missing required columns: {missing}")
+    if len(ledger) != Y_true.shape[1]:
+        raise ValueError("ledger row count must match the number of output columns")
 
     rmse = np.sqrt(np.mean((Y_true - Y_pred) ** 2, axis=0))
 
@@ -952,5 +1007,10 @@ def macro_nrmse_from_ledger(
 
     if not np.any(eligible_mask):
         return float("nan")
+    if (
+        not np.isfinite(ref_range_vals[eligible_mask]).all()
+        or (ref_range_vals[eligible_mask] <= 0).any()
+    ):
+        raise ValueError("eligible ledger rows must have positive finite ref_range values")
 
     return float(np.mean(rmse[eligible_mask] / ref_range_vals[eligible_mask]))
